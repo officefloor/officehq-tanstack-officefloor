@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useCap, useFloor, useLate } from '../settings/settingsQuery';
-import { excess, figure, personDue, personSum, ratesQuery, sumDue } from './ratesQuery';
+import { excess, figure, personDue, personSum, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
 
 function useSheetData(sheetId: string) {
   return {
@@ -47,10 +47,10 @@ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: numbe
   return <td data-testid="person-backing">{sumDue(dues)}</td>;
 }
 
-/** The sheet's due-total: every person's due-total added up, skipping n/a. */
+/** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
 export function useSheetDueTotal(sheetId: string) {
   const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
-  return sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
+  return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
 }
 
 function DueTotal({ sheetId }: { sheetId: string }) {

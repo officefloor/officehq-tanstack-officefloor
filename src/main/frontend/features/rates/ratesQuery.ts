@@ -67,6 +67,13 @@ export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
 }
 
+/** A sheet total of per-person figures: with three or more figures (n/a is none), the single highest and lowest are left out. */
+export function trimmedSum(dues: string[]): string {
+  const figures = dues.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
+  return show(kept.reduce((total, d) => total + d, 0n));
+}
+
 /**
  * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percents
  * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).

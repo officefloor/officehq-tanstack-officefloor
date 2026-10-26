@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useFloor, useLate } from '../settings/settingsQuery';
-import { figure, isOverdue, ratesQuery, sumDue } from './ratesQuery';
+import { figure, isOverdue, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
 
 function useOverdueData(sheetId: string) {
   return {
@@ -54,9 +54,11 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-/** The sheet's overdue claims that count: how many, and their total. */
+/** The sheet's overdue claims that count: how many, and their total (every person's, trimmed of the highest and lowest). */
 export function useSheetOverdue(sheetId: string) {
-  return overdue(useOverdueData(sheetId));
+  const data = useOverdueData(sheetId);
+  const { count } = overdue(data);
+  return { count, total: trimmedSum(data.people.map((p) => overdue(data, p).total)) };
 }
 
 function OverdueTotal({ sheetId }: { sheetId: string }) {

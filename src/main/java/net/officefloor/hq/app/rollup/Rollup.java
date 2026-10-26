@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +42,8 @@ public class Rollup {
                 .filter(c -> c.status().counts()).toList();
         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
-        BigDecimal dueTotal = ZERO;
-        BigDecimal overdueTotal = ZERO;
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
@@ -68,14 +69,21 @@ public class Rollup {
             due = settings.capped(sheetId, due);
             claimedTotal = claimedTotal.add(claimed);
             if (!none) {
-                dueTotal = dueTotal.add(due);
+                dues.add(due);
             }
-            overdueTotal = overdueTotal.add(overdue);
+            overdues.add(overdue);
             figures.put(person.id(), new Figures.PersonFigures(person.name(), claimed.toPlainString(),
                     none ? "n/a" : due.toPlainString(), overdue.toPlainString()));
         }
-        return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
-                overdueTotal.toPlainString());
+        return new Figures(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
+                trimmed(overdues).toPlainString());
+    }
+
+    /** A sheet total of per-person figures: with three or more, the single highest and lowest are left out. */
+    private static BigDecimal trimmed(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = figures.stream().sorted().toList();
+        List<BigDecimal> kept = sorted.size() >= 3 ? sorted.subList(1, sorted.size() - 1) : sorted;
+        return kept.stream().reduce(ZERO, BigDecimal::add);
     }
 
     /** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) is before {@code today}. */
