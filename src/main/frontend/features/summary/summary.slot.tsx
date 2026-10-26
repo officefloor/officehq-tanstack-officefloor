@@ -1,14 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
-import type { ClaimStatus } from '../claims/claimsQuery';
+import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
 import { periodDue, periodsQuery } from '../periods/periodsQuery';
 import { personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 
-const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+
+/** How many of the sheet's claims have the status. */
+export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filter((c) => c.status === status).length;
 
 /**
  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
@@ -79,7 +82,7 @@ function Summary({ sheetId }: { sheetId: string }) {
           {STATUSES.map((s) => (
             <tr key={s} data-testid={`summary-status-${s}`}>
               <td>{s}</td>
-              <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
+              <td data-testid={`summary-status-${s}-count`}>{statusCount(claims, s)}</td>
             </tr>
           ))}
         </tbody>

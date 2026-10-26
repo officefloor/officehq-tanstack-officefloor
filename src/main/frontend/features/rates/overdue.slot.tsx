@@ -54,8 +54,13 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
+/** The sheet's overdue claims that count: how many, and their total. */
+export function useSheetOverdue(sheetId: string) {
+  return overdue(useOverdueData(sheetId));
+}
+
 function OverdueTotal({ sheetId }: { sheetId: string }) {
-  const { count, total } = overdue(useOverdueData(sheetId));
+  const { count, total } = useSheetOverdue(sheetId);
   return (
     <p data-testid="rollup-overdue">
       Overdue <strong data-testid="rollup-overdue-count">{count}</strong> totalling{' '}

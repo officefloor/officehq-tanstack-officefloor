@@ -40,11 +40,16 @@ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: numbe
   return <td data-testid="person-backing">{sumDue(dues)}</td>;
 }
 
-function DueTotal({ sheetId }: { sheetId: string }) {
+/** The sheet's due-total: every person's due-total added up, skipping n/a. */
+export function useSheetDueTotal(sheetId: string) {
   const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
+  return sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late)));
+}
+
+function DueTotal({ sheetId }: { sheetId: string }) {
   return (
     <p data-testid="rollup-due">
-      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late)))}</strong>
+      Due total <strong data-testid="rollup-due-total">{useSheetDueTotal(sheetId)}</strong>
     </p>
   );
 }
