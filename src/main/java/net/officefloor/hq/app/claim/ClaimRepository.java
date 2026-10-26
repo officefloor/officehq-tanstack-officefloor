@@ -331,10 +331,45 @@ public class ClaimRepository {
         claim.setSettleBatch(batch);
     }
 
-    /** Take the sheet's next claim number, in one statement so two users never get the same one. */
+    /**
+     * Take the next claim number of the sheet's tree (its top ancestor and everything below it, the sheets sharing one
+     * sequence): one after the last number given on any of its sheets, kept as this sheet's last. The tree's sheets
+     * are locked first so two users never get the same one.
+     */
     public int nextNumber(String sheetId) {
-        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
-                + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, sheetId);
+        List<String> tree = treeOf(sheetId);
+        String in = String.join(",", java.util.Collections.nCopies(tree.size(), "?"));
+        List<Integer> last = jdbc.queryForList("SELECT last_claim_number FROM sheet WHERE id IN (" + in + ")"
+                + " ORDER BY id FOR UPDATE", Integer.class, tree.toArray());
+        int next = last.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        jdbc.update("UPDATE sheet SET last_claim_number = ? WHERE id = ?", next, sheetId);
+        return next;
+    }
+
+    /** The sheet's tree: its top ancestor (following parents up), then all the sheets below that, each once. */
+    private List<String> treeOf(String sheetId) {
+        java.util.Set<String> up = new java.util.LinkedHashSet<>();
+        String root = sheetId;
+        while (up.add(root)) {
+            String parent = jdbc.query("SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = 'parent'",
+                    (rs, n) -> rs.getString(1), root).stream().filter(v -> v != null && !v.isBlank()).findFirst().orElse(null);
+            if (parent == null) {
+                break;
+            }
+            root = parent;
+        }
+        java.util.Set<String> tree = new java.util.LinkedHashSet<>(List.of(root));
+        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(root));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.query("SELECT sheet_id FROM sheet_setting WHERE setting_key = 'parent' AND setting_value = ?",
+                    (rs, n) -> rs.getString(1), todo.poll())) {
+                if (tree.add(child)) {
+                    todo.add(child);
+                }
+            }
+        }
+        tree.add(sheetId); // under a parent cycle, the walk down may not reach it
+        return List.copyOf(tree);
     }
 
     /** Take the next number of one of the sheet's per-period sequences (a period's id, or X for no period), from 1. */
