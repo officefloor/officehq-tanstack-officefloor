@@ -1,0 +1,79 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 409302a6..e5c0bcdd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -1,15 +1,17 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
+ 
+ public class ApplyClaim {
+     // Claim is a record, so the edited claim is published in place of the loaded one.
+     public void apply(@Val ClaimInput input, @Val Claim claim, Claims claims, Sheets sheets,
+-            Out<ClaimResponse> responseOut) {
++            ServerHttpConnection connection, Out<ClaimResponse> responseOut) {
+         Claim edited = claim.with(input, input.date() != null ? input.date() : sheets.today(claim.sheetId()));
+-        claims.save(edited);
++        claims.save(edited, Audit.user(connection).trim());
+         responseOut.set(ClaimResponse.from(edited));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 642ad932..aa44943b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -70,6 +70,12 @@ public class ApplyClaimStatus {
+                     ? "The user who opened a claim cannot approve it."
+                     : "The user who opened a claim cannot settle it.");
+         }
++        // Nor can the user who last edited it.
++        if (next == ClaimStatus.SETTLED && user.equals(claims.editedBy(claim))) {
++            throw new ClaimStatusRefusedException(claim.status() == ClaimStatus.PENDING
++                    ? "The user who last edited a claim cannot approve it."
++                    : "The user who last edited a claim cannot settle it.");
++        }
+         // A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
+         if (next == ClaimStatus.SETTLED && claim.deferredOn(sheets.today(claim.sheetId()))) {
+             throw new ClaimStatusRefusedException("The claim is deferred until " + claim.deferredUntil() + ": it cannot be settled yet.");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index bf30ecf6..f5a9e233 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -123,10 +123,17 @@ public class Claims {
+                 Boolean.class, sheetId, Date.valueOf(dueBy), Date.valueOf(dueBy)));
+     }
+ 
+-    public void save(Claim claim) {
+-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ? WHERE id = ?",
++    /** Saves an edit of the claim, recording {@code user} as its last editor. */
++    public void save(Claim claim, String user) {
++        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, edited_by = ? WHERE id = ?",
+                 claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), refKey(claim.ref()),
+-                tagsColumn(claim.tags()), claim.id());
++                tagsColumn(claim.tags()), user, claim.id());
++    }
++
++    /** The user who last edited the claim, or null when it was never edited. */
++    public String editedBy(Claim claim) {
++        List<String> found = jdbc.queryForList("SELECT edited_by FROM claim WHERE id = ?", String.class, claim.id());
++        return found.isEmpty() ? null : found.get(0);
+     }
+ 
+     /**
+diff --git a/src/main/resources/db/migration/V48__claim_edited_by.sql b/src/main/resources/db/migration/V48__claim_edited_by.sql
+new file mode 100644
+index 00000000..25aa4965
+--- /dev/null
++++ b/src/main/resources/db/migration/V48__claim_edited_by.sql
+@@ -0,0 +1,7 @@
++-- The user who last edited a claim (through its form or its row's amount entry; null when never edited). Like its
++-- opener, they cannot settle or approve it. Kept in the claim's history too (see V39). The journal trigger is made
++-- again around the change, as in V41.
++DROP TRIGGER claim_journal;
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(255);
++ALTER TABLE claim_history ADD COLUMN edited_by VARCHAR(255);
++CREATE TRIGGER claim_journal AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
