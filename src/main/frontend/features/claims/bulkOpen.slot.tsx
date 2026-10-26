@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { putJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from '../people/peopleQuery';
 import { claimsKey, claimsQuery } from './claimsQuery';
 import type { Claim } from './claimsQuery';
 import { useSelectedClaims } from './useSelectedClaims';
+import { setClaimError } from './useClaimError';
 
 type Result = { opened: number; refused: number };
 
 /**
  * Opens every ticked claim, one at a time in list order (people in their list order, newest claim
  * first within a person), so each is numbered in that order. A claim the server refuses to open is
- * left as it is and counted as refused.
+ * left as it is and counted as refused; a refusal the server explains (e.g. a claim above the note threshold
+ * with an empty note) shows on the claim.
  */
 function BulkOpen({ user, sheetId }: { user: string; sheetId: string }) {
   const queryClient = useQueryClient();
@@ -29,11 +31,13 @@ function BulkOpen({ user, sheetId }: { user: string; sheetId: string }) {
     mutationFn: async (targets: Claim[]): Promise<Result> => {
       let opened = 0;
       for (const c of targets) {
+        setClaimError(c.id, '');
         try {
           await putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status/OPEN`, {}, user);
           opened++;
-        } catch {
+        } catch (e) {
           // refused: left as it is
+          if (e instanceof RefusedError) setClaimError(c.id, e.message);
         }
       }
       return { opened, refused: targets.length - opened };

@@ -12,7 +12,8 @@ function subscribe(listener: () => void) {
   };
 }
 
-function setError(claimId: number, error: string) {
+/** Sets a claim's refusal ('' clears it) from outside its row, e.g. a bulk action. */
+export function setClaimError(claimId: number, error: string) {
   if ((errors.get(claimId) ?? '') === error) return;
   if (error) errors.set(claimId, error);
   else errors.delete(claimId);
@@ -22,5 +23,5 @@ function setError(claimId: number, error: string) {
 /** The claim's refusal ('' when none) and its setter. */
 export function useClaimError(claimId: number): [string, (error: string) => void] {
   const error = useSyncExternalStore(subscribe, () => errors.get(claimId) ?? '');
-  return [error, (next) => setError(claimId, next)];
+  return [error, (next) => setClaimError(claimId, next)];
 }

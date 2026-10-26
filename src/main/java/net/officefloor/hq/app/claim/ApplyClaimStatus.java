@@ -24,7 +24,7 @@ public class ApplyClaimStatus {
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
             Periods periods, Rollup rollup, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
-            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException {
+            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException {
         ClaimStatus next;
         try {
             next = ClaimStatus.valueOf(status.trim().toUpperCase());
@@ -102,6 +102,16 @@ public class ApplyClaimStatus {
             if (threshold != null && due.compareTo(threshold) > 0) {
                 throw new ClaimProofNeededException("The claim's due is above the proof threshold (" + threshold.toPlainString()
                         + "): add a proof before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));
+            }
+        }
+        // A claim whose due is above the note threshold in force on its date is opened only once it has a note (a due
+        // of n/a is within any threshold).
+        if (next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT && due != null
+                && (claim.note() == null || claim.note().isBlank())) {
+            BigDecimal threshold = settings.noteThreshold(claim.sheetId(), claim.date());
+            if (threshold != null && due.compareTo(threshold) > 0) {
+                throw new ClaimNoteNeededException("The claim's due is above the note threshold (" + threshold.toPlainString()
+                        + "): give it a note before it is opened.");
             }
         }
         // A clerk settles only a claim whose due is at or below the clerk limit (a due of n/a is within any

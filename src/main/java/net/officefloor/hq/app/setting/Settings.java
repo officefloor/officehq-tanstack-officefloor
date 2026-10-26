@@ -30,11 +30,12 @@ public class Settings {
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
+    public static final String NOTE_THRESHOLD = "note-threshold";
     /** Days after a period's to-date it stays open once the sheet's today passes it (undated); blank is off. */
     public static final String GRACE_DAYS = "grace-days";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
-            gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD);
+            gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD);
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
@@ -112,6 +113,12 @@ public class Settings {
     /** The proof threshold in force on the date: a claim dated then whose due is above it is settled only with a proof; null when there is none. */
     public BigDecimal proofThreshold(String sheetId, LocalDate date) {
         String value = on(sheetId, PROOF_THRESHOLD, date);
+        return value.isEmpty() ? null : new BigDecimal(value);
+    }
+
+    /** The note threshold in force on the date: a claim dated then whose due is above it is opened only with a note; null when there is none. */
+    public BigDecimal noteThreshold(String sheetId, LocalDate date) {
+        String value = on(sheetId, NOTE_THRESHOLD, date);
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 

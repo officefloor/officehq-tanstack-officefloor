@@ -28,6 +28,7 @@ public class ValidateSettings {
     // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
     // The cap is missing: left as it is, blank: none, otherwise an amount of 0.00 or more with up to two decimals.
     // The proof threshold is like the cap: missing is left as it is, blank is none, otherwise an amount of 0.00 or more with up to two decimals.
+    // The note threshold is like the cap too.
     // The grace days are missing: left as they are, blank: off, otherwise a whole number of days, 0 or more (not dated).
     // An action's permitted roles are missing: left as they are, blank: the standing rule, otherwise clerk or steward, separated by commas.
     // A from-date, given by setting key, is blank (the sheet's today) or a yyyy-MM-dd date, and only a dated setting has one.
@@ -96,6 +97,13 @@ public class ValidateSettings {
             }
             threshold = twoDecimals(threshold);
         }
+        String noteThreshold = body == null || body.noteThreshold() == null ? null : body.noteThreshold().trim();
+        if (noteThreshold != null && !noteThreshold.isEmpty()) {
+            if (!AMOUNT.matcher(noteThreshold).matches()) {
+                throw new InvalidSettingException("The note threshold must be an amount of 0.00 or more, with up to two decimals.");
+            }
+            noteThreshold = twoDecimals(noteThreshold);
+        }
         String grace = body == null || body.graceDays() == null ? null : body.graceDays().trim();
         if (grace != null && !grace.isEmpty()) {
             if (!DAYS.matcher(grace).matches()) {
@@ -149,7 +157,7 @@ public class ValidateSettings {
             }
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !latePct.isEmpty() || policyDate != null
-                || numberingFrom != null || cap != null || threshold != null || grace != null || !perms.isEmpty();
+                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || !perms.isEmpty();
         if (typed == null && !others) {
             typed = "";
         }
@@ -157,7 +165,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, gradeTerms, from, perms));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, gradeTerms, from, perms));
     }
 
     private static String twoDecimals(String amount) {

@@ -25,9 +25,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today). A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) is settled or approved only once it has a proof. From the period numbering date on, an opened claim is numbered within its period (blank: off). When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated).
+ *  today). A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated).
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
- *  date, the cap, the proof threshold and the grace days was last worked in (the clerk limit unless it was one of the others).
+ *  date, the cap, the proof threshold, the note threshold and the grace days was last worked in (the clerk limit unless it was one of the others).
  *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
  *  (blank: the sheet's today), keeping the values recorded from other dates; what is shown in force is the value on the sheet's today.
  *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles allowed to do it as a comma
@@ -44,9 +44,10 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [numberingFrom, setNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
   const [threshold, setThreshold] = useState('');
+  const [noteThreshold, setNoteThreshold] = useState('');
   const [grace, setGrace] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'graceDays' | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -70,6 +71,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setNumberingFrom('');
       setCap('');
       setThreshold('');
+      setNoteThreshold('');
       setGrace('');
       setPerms({});
       setFrom({});
@@ -130,6 +132,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The proof threshold must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const nt = noteThreshold.trim();
+    if (nt !== '' && !AMOUNT.test(nt)) {
+      setError('The note threshold must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const gd = grace.trim();
     if (gd !== '' && !DAYS.test(gd)) {
       setError('The grace days must be a whole number of days, 0 or more.');
@@ -156,12 +163,13 @@ function Settings({ sheetId }: { sheetId: string }) {
       froms[key] = d;
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && gd === '' && Object.keys(pm).length === 0;
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
     if (c !== '' || (none && blank === 'cap')) body.cap = c;
     if (pt !== '' || (none && blank === 'proofThreshold')) body.proofThreshold = pt;
+    if (nt !== '' || (none && blank === 'noteThreshold')) body.noteThreshold = nt;
     if (gd !== '' || (none && blank === 'graceDays')) body.graceDays = gd;
     for (const action of PERM_ACTIONS) {
       if (pm[action] !== undefined || (none && blank === action)) body.perms = { ...body.perms, [action]: pm[action] ?? '' };
@@ -380,6 +388,31 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Note threshold{' '}
+          <input
+            data-testid="setting-note-threshold"
+            placeholder="none"
+            value={noteThreshold}
+            onFocus={() => setBlank('noteThreshold')}
+            onChange={(e) => {
+              setNoteThreshold(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid={`setting-note-threshold-from`}
+            placeholder="sheet's today"
+            value={from['note-threshold'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['note-threshold']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Grace days{' '}
           <input
             data-testid="setting-grace-days"
@@ -445,6 +478,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Proof threshold in force: <span data-testid="setting-proof-threshold-current">{current('proof-threshold')}</span>
+      </p>
+      <p>
+        Note threshold in force: <span data-testid="setting-note-threshold-current">{current('note-threshold')}</span>
       </p>
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</span>
