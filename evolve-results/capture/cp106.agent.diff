@@ -1,0 +1,238 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 49eb7809..40bd1266 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useUser } from '../session/useSession';
++import { poolsKey } from '../pools/pools.slot';
+ import { delegationsKey, rolesKey, settingsKey, useDelegations, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Delegation, type Role, type Setting } from './useAccess';
+ 
+ const ROLES = ['clerk', 'steward', 'viewer'];
+@@ -233,6 +234,8 @@ const SETTINGS: readonly SettingField[] = [
+     invalid: 'A grade\'s proof threshold is an amount with up to two decimals, or blank for the sheet\'s' })),
+   { key: 'note-threshold', label: 'Note threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
++  { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
++    invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
+   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
+     ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
+     key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',
+@@ -267,6 +270,8 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+     onSuccess: async () => {
+       setTouched(new Set());
+       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
++      // The pot changes each pool member's cut.
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+     },
+   });
+   const submit = useSubmitOnce(save);
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 8e78bbc2..0375a9eb 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -6,8 +6,9 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { peopleKey, usePeople } from '../people/people.slot';
+ import { useUser } from '../session/useSession';
+ 
+-/** A pool member: the person, their share (two decimals) and whether they are retired. */
+-export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
++/** A pool member: the person, their share (two decimals), whether they are retired, and their cut of the sheet's pot
++ *  (two decimals; null while the pool is unbalanced or the sheet has no pot). */
++export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string | null };
+ 
+ /** A pool of the sheet: its name, members in the order added, total share (a retired member's counts as 0.00) and
+  *  whether that total is exactly 100.00. */
+@@ -27,7 +28,7 @@ export function usePools(sheetId: string) {
+ 
+ type MemberBody = { person: string; share: string };
+ 
+-// A pool's row: its total share and balanced yes/no, each member's share on their line, and a person picker with a
++// A pool's row: its total share and balanced yes/no, each member's share and cut of the pot on their line, and a person picker with a
+ // share that adds one more member. A person already in the pool, or a share that is not more than 0.00 and at most
+ // 100.00 with at most two decimals, is refused with an error on the pool until its fields are changed or it is
+ // submitted again.
+@@ -65,7 +66,8 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
+         {pool.members.map((m) => (
+           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+             <span data-testid="pool-member-name">{m.name}</span>{' '}
+-            <span data-testid="pool-share">{m.share}</span>
++            <span data-testid="pool-share">{m.share}</span>{' '}
++            cut <span data-testid="pool-cut">{m.cut ?? ''}</span>
+             {m.retired && ' (retired)'}
+           </li>
+         ))}
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index ed85c3e1..ada189cc 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
+ /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
+ public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
+ 
+-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days and the permissions). */
++    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the pot and the permissions). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
++        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
+     }
+ 
+     /** Whether the key is one of the permission matrix's (perm-<action>). */
+@@ -38,6 +38,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The most a person's due-total may be; an amount with two decimals, blank for none. */
+     public static final String CAP = "cap";
+ 
++    /** The sheet's pot, cut among each balanced pool's members by their shares; an amount with two decimals, blank for none. */
++    public static final String POT = "pot";
++
+     /** The least a claim's live due may be; an amount with two decimals. */
+     public static final String FLOOR = "floor";
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+index 29e08d23..cba09d73 100644
+--- a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -38,7 +38,7 @@ public class SettingRepository {
+         this.people = people;
+     }
+ 
+-    /** The sheet's undated settings, by key (the policy date, period numbering from, the entry date, the grace days and the permissions); a key without a row is not listed. */
++    /** The sheet's undated settings, by key (the policy date, period numbering from, the entry date, the grace days, the pot and the permissions); a key without a row is not listed. */
+     public List<Setting> listUndated(String sheetId) {
+         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
+                 + " ORDER BY setting_key", ROW, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index c5afc993..73798f32 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -166,6 +166,18 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.POT.equals(key)) {
++            String value = null;
++            if (!text.isEmpty()) {
++                if (!AMOUNT.matcher(text).matches()) {
++                    throw new BadRequestException("A pot is an amount with up to two decimals, or blank for none");
++                }
++                value = new BigDecimal(text).setScale(2).toPlainString();
++            }
++            setting.set(new SettingInput(key, value, from));
++            changedBy.set(by);
++            return;
++        }
+         if (Setting.isPermission(key)) {
+             String value = null;
+             if (!text.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index e3025664..990160bb 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -1,10 +1,13 @@
+ package net.officefloor.hq.app.pool;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.access.Setting;
++import net.officefloor.hq.app.access.SettingRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -39,7 +42,10 @@ public class PoolRepository {
+ 
+     /**
+      * The sheet's pools, in the order added, each with its members in the order added, the total of their shares (a
+-     * member with a retirement date set, whatever the date, counts as 0.00) and whether it is exactly 100.00.
++     * member with a retirement date set, whatever the date, counts as 0.00) and whether it is exactly 100.00. Each
++     * member of a balanced pool on a sheet with a pot has a cut: the pot times their share over 100, half to even to
++     * two decimals (0.00 when retired), and the remainder to the member with the largest share (the earliest added on
++     * a tie), so the cuts total the pot.
+      */
+     public List<PoolResponse> list(String sheetId) {
+         Map<Long, String> names = new LinkedHashMap<>();
+@@ -53,9 +59,11 @@ public class PoolRepository {
+             List<PoolResponse.Member> of = members.get(rs.getLong("pool_id"));
+             if (of != null) {
+                 of.add(new PoolResponse.Member(rs.getLong("person_id"), rs.getString("name"),
+-                        rs.getBigDecimal("share").setScale(2).toPlainString(), rs.getDate("retired_from") != null));
++                        rs.getBigDecimal("share").setScale(2).toPlainString(), rs.getDate("retired_from") != null, null));
+             }
+         }, sheetId);
++        String potValue = new SettingRepository(jdbc).find(sheetId, Setting.POT);
++        BigDecimal pot = potValue == null ? null : new BigDecimal(potValue);
+         List<PoolResponse> pools = new ArrayList<>();
+         names.forEach((id, name) -> {
+             BigDecimal total = BigDecimal.ZERO.setScale(2);
+@@ -64,8 +72,36 @@ public class PoolRepository {
+                     total = total.add(new BigDecimal(m.share()));
+                 }
+             }
+-            pools.add(new PoolResponse(name, members.get(id), total.toPlainString(), total.compareTo(HUNDRED) == 0));
++            boolean balanced = total.compareTo(HUNDRED) == 0;
++            List<PoolResponse.Member> of = balanced && pot != null ? cut(members.get(id), pot) : members.get(id);
++            pools.add(new PoolResponse(name, of, total.toPlainString(), balanced));
+         });
+         return pools;
+     }
++
++    /** The members with their cuts of the pot; the remainder goes to the largest share, the earliest added on a tie. */
++    private static List<PoolResponse.Member> cut(List<PoolResponse.Member> members, BigDecimal pot) {
++        List<BigDecimal> cuts = new ArrayList<>();
++        BigDecimal sum = BigDecimal.ZERO.setScale(2);
++        int largest = -1;
++        for (int i = 0; i < members.size(); i++) {
++            PoolResponse.Member m = members.get(i);
++            BigDecimal cut = m.retired() ? BigDecimal.ZERO.setScale(2)
++                    : pot.multiply(new BigDecimal(m.share())).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
++            cuts.add(cut);
++            sum = sum.add(cut);
++            if (!m.retired() && (largest < 0
++                    || new BigDecimal(m.share()).compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
++                largest = i;
++            }
++        }
++        if (largest >= 0) {
++            cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
++        }
++        List<PoolResponse.Member> cut = new ArrayList<>();
++        for (int i = 0; i < members.size(); i++) {
++            cut.add(members.get(i).withCut(cuts.get(i).toPlainString()));
++        }
++        return cut;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 79f1f933..af0e39bc 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -8,7 +8,14 @@ import java.util.List;
+  */
+ public record PoolResponse(String name, List<Member> members, String totalShare, boolean balanced) {
+ 
+-    /** A member: the person's id and name, their share (two decimals) and whether they are retired. */
+-    public record Member(long personId, String name, String share, boolean retired) {
++    /**
++     * A member: the person's id and name, their share (two decimals), whether they are retired, and their cut of the
++     * sheet's pot (two decimals; null while the pool is unbalanced or the sheet has no pot).
++     */
++    public record Member(long personId, String name, String share, boolean retired, String cut) {
++
++        Member withCut(String cut) {
++            return new Member(personId, name, share, retired, cut);
++        }
+     }
+ }
