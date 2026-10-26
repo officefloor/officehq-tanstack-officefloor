@@ -19,6 +19,10 @@ public class AuditClaimStatus {
         if (number != null) {
             fields.add("number=" + number);
         }
+        // A settled claim's line carries the due it was fixed at.
+        if (ClaimStatus.valueOf(changed.status()) == ClaimStatus.SETTLED) {
+            fields.add("due=" + (changed.settledDue() == null ? "n/a" : changed.settledDue()));
+        }
         audit.record(Audit.line(ClaimStatus.valueOf(changed.status()).event(), loaded.sheetId(),
                 Audit.user(connection), fields.toArray(String[]::new)));
     }

@@ -3,7 +3,10 @@ import { sheetKey } from '../sheet/sheetQuery';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening (null for a draft or a voided claim). */
+/**
+ * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening (null for a draft or a voided claim);
+ * `settledDue` is the due fixed on settling (null when not settled, or settled while the grade had no rate).
+ */
 export type Claim = {
   id: number;
   personId: number;
@@ -12,6 +15,7 @@ export type Claim = {
   note: string;
   status: ClaimStatus;
   number: number | null;
+  settledDue: string | null;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not. */

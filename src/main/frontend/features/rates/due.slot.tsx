@@ -26,7 +26,8 @@ function useSheetData(sheetId: string) {
 function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const { people, rates } = useSheetData(sheetId);
   const person = people.find((p) => p.id === claim.personId);
-  return <td data-testid="claim-due">{due(claim.amount, rateFor(rates, person?.grade))}</td>;
+  // A settled claim shows the due it was fixed at; otherwise its due follows the current rate.
+  return <td data-testid="claim-due">{claim.settledDue ?? due(claim.amount, rateFor(rates, person?.grade))}</td>;
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {

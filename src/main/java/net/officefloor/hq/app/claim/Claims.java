@@ -19,7 +19,7 @@ public class Claims {
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Long.class));
+            rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"));
 
     private final JdbcTemplate jdbc;
 
@@ -50,7 +50,7 @@ public class Claims {
             ps.setString(5, note);
             return ps;
         }, key);
-        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null);
+        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null);
     }
 
     public void save(Claim claim) {
@@ -60,9 +60,10 @@ public class Claims {
 
     /**
      * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
-     * it has since changed. Opening gives it the sheet's next number; voiding clears its number.
+     * it has since changed. Opening gives it the sheet's next number; voiding clears its number. Settling
+     * stores {@code due} as its fixed due (null keeps it live).
      */
-    public Claim changeStatus(Claim claim, ClaimStatus next) {
+    public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due) {
         if (jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND status = ?", next.name(), claim.id(),
                 claim.status().name()) != 1) {
             return null;
@@ -72,8 +73,10 @@ public class Claims {
             case VOID -> null;
             default -> claim.number();
         };
-        jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
-        return claim.withStatus(next, number);
+        BigDecimal settledDue = next == ClaimStatus.SETTLED ? due : claim.settledDue();
+        jdbc.update("UPDATE claim SET claim_number = ?, settled_due = ? WHERE id = ?", number, settledDue,
+                claim.id());
+        return claim.withStatus(next, number, settledDue);
     }
 
     /**
