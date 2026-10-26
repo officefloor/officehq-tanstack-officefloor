@@ -14,12 +14,13 @@ public final class RollupLines {
         after.people().forEach((id, now) -> {
             if (!now.sameAs(before.people().get(id))) {
                 audit.record(Audit.line("ROLLUP", sheet, user, "person=" + now.name(), "claimed=" + now.claimed(),
-                        "due-total=" + now.dueTotal()));
+                        "due-total=" + now.dueTotal(), "overdue-total=" + now.overdueTotal()));
             }
         });
-        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())) {
+        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())
+                || !after.overdueTotal().equals(before.overdueTotal())) {
             audit.record(Audit.line("TOTALS", sheet, user, "claimed-total=" + after.claimedTotal(),
-                    "due-total=" + after.dueTotal()));
+                    "due-total=" + after.dueTotal(), "overdue-total=" + after.overdueTotal()));
         }
         return after;
     }

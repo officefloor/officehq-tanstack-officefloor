@@ -6,13 +6,14 @@ import java.util.Map;
  * A sheet's figures at one moment, as the screen shows them: each person's (by id, in the order they were
  * added) and the sheet's totals.
  */
-public record Figures(Map<Long, PersonFigures> people, String claimedTotal, String dueTotal) {
+public record Figures(Map<Long, PersonFigures> people, String claimedTotal, String dueTotal, String overdueTotal) {
 
-    /** A person's name, claimed and due-total ({@code "n/a"} when they have none). */
-    public record PersonFigures(String name, String claimed, String dueTotal) {
+    /** A person's name, claimed, due-total ({@code "n/a"} when they have none) and overdue-total. */
+    public record PersonFigures(String name, String claimed, String dueTotal, String overdueTotal) {
 
         public boolean sameAs(PersonFigures other) {
-            return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal);
+            return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)
+                    && overdueTotal.equals(other.overdueTotal);
         }
     }
 }

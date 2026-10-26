@@ -15,7 +15,7 @@ import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
-/** Works out a sheet's figures the way the screen shows them (claimed, due-total, and their totals). */
+/** Works out a sheet's figures the way the screen shows them (claimed, due-total, overdue-total, and their totals). */
 @Service
 public class Rollup {
 
@@ -42,9 +42,11 @@ public class Rollup {
         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         BigDecimal dueTotal = ZERO;
+        BigDecimal overdueTotal = ZERO;
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
+            BigDecimal overdue = ZERO;
             boolean anyFigure = false;
             for (Claim claim : counting) {
                 if (claim.personId() != person.id() || !counts(claim, person)) {
@@ -55,6 +57,9 @@ public class Rollup {
                 if (figure != null) {
                     due = due.add(figure);
                     anyFigure = true;
+                    if (overdue(claim, today)) {
+                        overdue = overdue.add(figure);
+                    }
                 }
             }
             // With no rate today and no figure, the due-total is n/a.
@@ -65,10 +70,17 @@ public class Rollup {
             if (!none) {
                 dueTotal = dueTotal.add(due);
             }
+            overdueTotal = overdueTotal.add(overdue);
             figures.put(person.id(), new Figures.PersonFigures(person.name(), claimed.toPlainString(),
-                    none ? "n/a" : due.toPlainString()));
+                    none ? "n/a" : due.toPlainString(), overdue.toPlainString()));
         }
-        return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString());
+        return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
+                overdueTotal.toPlainString());
+    }
+
+    /** An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is before {@code today}. */
+    private static boolean overdue(Claim claim, LocalDate today) {
+        return claim.status().isOpen() && claim.dueBy() != null && today != null && claim.dueBy().isBefore(today);
     }
 
     /** The figures of the sheet's counting claims dated from {@code from} to {@code to} inclusive, those without one skipped. */
