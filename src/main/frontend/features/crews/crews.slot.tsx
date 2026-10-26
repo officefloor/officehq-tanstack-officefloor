@@ -4,6 +4,7 @@ import { getJson, postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { peopleKey, usePeople } from '../people/people.slot';
+import { poolsKey } from '../pools/pools.slot';
 import { useDueTotals } from '../rates/rates.slot';
 import { showHundredths } from '../rates/useRates';
 import { useUser } from '../session/useSession';
@@ -47,6 +48,8 @@ function CrewRow({ sheetId, crew }: { sheetId: string; crew: Crew }) {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      // A crew is also a pool: its members and their cuts show among the pools.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setMember('');
     },
   });
@@ -125,6 +128,8 @@ function CrewsPanel({ sheetId }: { sheetId: string; user: string }) {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      // A crew is also a pool: its members and their cuts show among the pools.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setName('');
       setLead('');
     },

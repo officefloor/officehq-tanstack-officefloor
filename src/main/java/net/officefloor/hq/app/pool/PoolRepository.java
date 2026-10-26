@@ -146,6 +146,7 @@ public class PoolRepository {
                 parents.put(memberPoolId, poolId);
             }
         }, sheetId);
+        crews(sheetId, held, names, members, memberPools);
         String potValue = new SettingRepository(jdbc).find(sheetId, Setting.POT);
         BigDecimal pot = potValue == null ? null : new BigDecimal(potValue);
         Map<Long, String> totals = new HashMap<>();
@@ -165,6 +166,53 @@ public class PoolRepository {
         List<PoolResponse> pools = new ArrayList<>();
         names.forEach((id, name) -> pools.add(new PoolResponse(name, cutOf.get(id), totals.get(id), balanced.get(id))));
         return pools;
+    }
+
+    /**
+     * Adds the sheet's crews as pools, after the pools and in the order added (keyed by the crew's id negated): each
+     * has its lead and then its members in the order added, at equal shares of 100.00 split as patrons' shares are
+     * (each rounded half to even to two decimals, the remainder on the lead).
+     */
+    private void crews(String sheetId, Set<Long> held, Map<Long, String> names,
+            Map<Long, List<PoolResponse.Member>> members, Map<Long, List<Long>> memberPools) {
+        Map<Long, List<Object[]>> people = new LinkedHashMap<>();
+        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
+                + " JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+            long key = -rs.getLong("id");
+            names.put(key, rs.getString("name"));
+            List<Object[]> of = new ArrayList<>();
+            of.add(new Object[] { rs.getLong("lead_id"), rs.getString("person_name"), rs.getDate("retired_from") != null });
+            people.put(key, of);
+        }, sheetId);
+        jdbc.query("SELECT m.crew_id, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"
+                + " JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
+            List<Object[]> of = people.get(-rs.getLong("crew_id"));
+            if (of != null) {
+                of.add(new Object[] { rs.getLong("person_id"), rs.getString("person_name"),
+                        rs.getDate("retired_from") != null });
+            }
+        }, sheetId);
+        people.forEach((key, of) -> {
+            BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(of.size()), 2, RoundingMode.HALF_EVEN);
+            BigDecimal lead = HUNDRED.subtract(each.multiply(BigDecimal.valueOf(of.size() - 1)));
+            List<PoolResponse.Member> crew = new ArrayList<>();
+            List<Long> none = new ArrayList<>();
+            for (int i = 0; i < of.size(); i++) {
+                long personId = (Long) of.get(i)[0];
+                crew.add(new PoolResponse.Member(personId, null, (String) of.get(i)[1],
+                        (i == 0 ? lead : each).toPlainString(), (Boolean) of.get(i)[2], held.contains(personId), false,
+                        null));
+                none.add(null);
+            }
+            members.put(key, crew);
+            memberPools.put(key, none);
+        });
+    }
+
+    /** Whether the sheet has a crew of that name. */
+    public boolean isCrew(String sheetId, String name) {
+        return !jdbc.queryForList("SELECT id FROM crew WHERE sheet_id = ? AND name = ?", Long.class, sheetId, name)
+                .isEmpty();
     }
 
     private java.sql.Date today(String sheetId) {
