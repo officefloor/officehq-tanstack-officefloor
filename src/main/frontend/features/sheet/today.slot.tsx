@@ -1,0 +1,56 @@
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { putJson } from '../../api/http';
+import { SheetPanel } from '../../slots/defs/sheetPanel';
+import { sheetKey } from './sheetQuery';
+import type { Sheet } from './sheetQuery';
+import { useSheetToday } from './useSheetToday';
+
+function SheetToday({ sheetId }: { sheetId: string }) {
+  const today = useSheetToday(sheetId);
+  const queryClient = useQueryClient();
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState('');
+
+  const save = useMutation({
+    mutationFn: (date: string) =>
+      putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date }),
+    onSuccess: (sheet) => queryClient.setQueryData(sheetKey(sheetId), sheet),
+    onError: () => setError('That is not a date (yyyy-mm-dd).'),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    save.mutate(typed.trim());
+  };
+
+  return (
+    <form data-testid="sheet-today-form" onSubmit={submit}>
+      Today <strong data-testid="sheet-today">{today}</strong>{' '}
+      <label>
+        Change to{' '}
+        <input
+          data-testid="sheet-today-input"
+          placeholder="yyyy-mm-dd"
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="sheet-today-save">
+        Set today
+      </button>
+      {error && <p data-testid="sheet-error">{error}</p>}
+    </form>
+  );
+}
+
+// Keyed by sheet, so a typed date or an error never carries over to another sheet.
+export const contribution = SheetPanel.fill({
+  order: 0,
+  Component: ({ sheetId }) => <SheetToday key={sheetId} sheetId={sheetId} />,
+});
