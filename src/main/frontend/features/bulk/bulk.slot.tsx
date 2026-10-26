@@ -6,6 +6,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
 import { claimsKey, useLastSettleBatch } from '../claims/useClaims';
 import { usePeople } from '../people/people.slot';
+import { useVoidReasons } from '../voidreasons/voidReasons.slot';
 
 // The claims selected for a bulk action. Kept in a small store rather than the URL so a checkbox
 // shows its new state on the same click (a URL update lands a render later). It belongs to one sheet:
@@ -257,6 +258,75 @@ function BulkRedate({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+type BulkVoidResult = { voided: number; refused: number };
+
+// Voids the selected claims together with the chosen void reason (offered while the sheet has void reasons); the server
+// voids them in list order exactly as each row's void and leaves any it cannot void as they are. Shows how many were
+// voided and how many refused; the counts are gone while it runs.
+function BulkVoid({ sheetId }: { sheetId: string; user: string }) {
+  const chosen = useSelected(sheetId);
+  const [user] = useUser();
+  const voidReasons = useVoidReasons(sheetId);
+  const [reason, setReason] = useState('');
+  const queryClient = useQueryClient();
+  const voidAll = useMutation({
+    mutationFn: ({ ids, reason }: { ids: number[]; reason: string }) => {
+      if (ids.length === 0) throw new Error('Select the claims to void');
+      return postJson<BulkVoidResult>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/bulk-void`,
+        { ids, reason, by: user ?? '' });
+    },
+    onSuccess: async () => {
+      selection.set(sheetId, NONE);
+      setReason('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+  const reasons = voidReasons.data ?? [];
+
+  return (
+    <section data-testid="bulk-void-actions">
+      {reasons.length > 0 && (
+        <>
+          <select
+            data-testid="bulk-void-reason"
+            value={reason}
+            onChange={(e) => {
+              voidAll.reset();
+              setReason(e.target.value);
+            }}
+          >
+            <option value="">Void reason…</option>
+            {reasons.map((r) => (
+              <option key={r.reason} value={r.reason}>
+                {r.reason}
+              </option>
+            ))}
+          </select>{' '}
+        </>
+      )}
+      <button
+        type="button"
+        data-testid="bulk-void"
+        disabled={voidAll.isPending}
+        onClick={() => voidAll.mutate({ ids: [...chosen], reason })}
+      >
+        Void selected
+      </button>{' '}
+      {voidAll.isSuccess && (
+        <span>
+          Voided <strong data-testid="bulk-voided">{voidAll.data.voided}</strong>, refused{' '}
+          <strong data-testid="bulk-void-refused">{voidAll.data.refused}</strong>
+        </span>
+      )}
+      {voidAll.isError && (
+        <span data-testid="bulk-void-error" role="alert">
+          {voidAll.error.message}
+        </span>
+      )}
+    </section>
+  );
+}
+
 export const contributions = [
   ClaimCells.fill({ order: 0, Component: ClaimSelect }),
   ClaimCells.fill({ order: 21, Component: ClaimBatch }),
@@ -264,4 +334,5 @@ export const contributions = [
   SheetBody.fill({ order: 16, Component: BulkSettle }),
   SheetBody.fill({ order: 16.5, Component: BulkReassign }),
   SheetBody.fill({ order: 16.6, Component: BulkRedate }),
+  SheetBody.fill({ order: 16.7, Component: BulkVoid }),
 ];
