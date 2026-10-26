@@ -35,7 +35,7 @@ export const periodsQuery = (sheetId: string) => ({
   queryFn: () => getJson<Period[]>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`),
 });
 
-/** The period whose dates contain the date (yyyy-mm-dd), or undefined when none does. */
+/** The period whose dates contain the date (yyyy-mm-dd), or undefined when none does. A claim's period is the one containing its due-by. */
 export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
 }
@@ -56,7 +56,7 @@ export function statusOn(c: Claim, on: string): ClaimStatus {
 }
 
 /**
- * A person's due-total for a period: the figures (as shown now) of their claims dated in it that counted by the
+ * A person's due-total for a period: the figures (as shown now) of their claims in it (by due-by) that counted by the
  * status they had at the end of its last day. A hold leaves out only a claim that is open now. While the period is
  * closed or soft-closed it is the figure fixed then (0.00 for a person added since).
  */
@@ -75,8 +75,8 @@ export function personPeriodDue(
       .filter(
         (c) =>
           c.personId === person.id &&
-          period.from <= c.date &&
-          c.date <= period.to &&
+          period.from <= c.dueBy &&
+          c.dueBy <= period.to &&
           counts({ ...c, status: statusOn(c, period.to) }, isOpen(c) ? people : [], late.today),
       )
       .map((c) => figure(c, rates, person, floor, late)),

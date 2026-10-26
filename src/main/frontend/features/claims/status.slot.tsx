@@ -20,7 +20,7 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
 /**
  * A claim's status and the buttons that change it. Every button is offered; the server refuses a
  * change the status does not allow, a settle by the user who opened the claim, a clerk's settle of a claim
- * whose due is above the sheet's clerk limit, or any change to a claim dated in a closed period, and the refusal
+ * whose due is above the sheet's clerk limit, or any change to a claim due by a date in a closed period, and the refusal
  * shows on the claim until its next action. A clerk's settle above the clerk limit makes the claim PENDING: a
  * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN). A steward can
  * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.

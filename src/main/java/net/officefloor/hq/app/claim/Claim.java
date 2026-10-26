@@ -14,7 +14,7 @@ import java.time.LocalDate;
  * {@code deferredUntil} is the date an OPEN claim was deferred to (null when never deferred).
  * {@code proofs} is how many proofs it has been given (0 for none).
  * {@code splitFrom} is the number of the claim it was split off (null for any other claim).
- * {@code lateEntry} is whether it was added while the period its date falls in was soft-closed.
+ * {@code lateEntry} is whether it was added while the period its due-by falls in was soft-closed.
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,

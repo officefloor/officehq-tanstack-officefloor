@@ -23,7 +23,7 @@ public class ApplySplit {
     // Only an OPEN claim that is not deferred is split, by a role the permission matrix allows to open a claim (the new
     // claim is the user's to open), and only of an amount more than 0.00 and less than the claim's. The claim keeps the
     // rest and loses any statement figure; the new claim is opened now: numbered next (by period while the sheet numbers
-    // by period, as opening does), opened by the user, due by its date plus the terms of its person's grade on that date.
+    // by period, in the period of its own due-by, as opening does), opened by the user, due by its date plus the terms of its person's grade on that date.
     public void apply(@RequestBody(required = false) SplitRequest body, @Val Claim claim, Claims claims, People people,
             Settings settings, Sheets sheets, Periods periods, Rollup rollup, ServerHttpConnection connection,
             Out<ClaimResponse> responseOut, Out<Split> splitOut) throws ClaimSplitRefusedException {
@@ -53,7 +53,7 @@ public class ApplySplit {
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (numberingFrom != null && !today.isBefore(numberingFrom)) {
-            Period period = periods.on(claim.sheetId(), claim.date());
+            Period period = periods.on(claim.sheetId(), dueBy);
             scope = period == null ? "" : period.name();
         }
         Claim created = claims.split(claim, amount, user, scope, dueBy);

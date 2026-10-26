@@ -11,7 +11,7 @@ import { useClaimError } from './useClaimError';
 /**
  * The number of the claim this one was split off (blank for any other claim), and the entry and button that split an
  * amount off it into a new OPEN claim. The server refuses a claim that is not OPEN or is deferred, an amount not more
- * than 0.00 and less than the claim's, a role that may not open a claim, or a claim dated in a closed period, and the
+ * than 0.00 and less than the claim's, a role that may not open a claim, or a claim due by a date in a closed period, and the
  * refusal shows on the claim until its next action.
  */
 function ClaimSplit({ sheetId, claim }: { sheetId: string; claim: Claim }) {

@@ -5,9 +5,10 @@ import net.officefloor.hq.app.period.Periods;
 import net.officefloor.plugin.variable.Val;
 
 public class RefuseClosedClaim {
-    // A claim dated inside a closed period cannot be edited, opened, settled or voided.
+    // A claim belongs to the period its due-by falls in: one due by a date inside a closed period cannot be edited,
+    // opened, settled or voided.
     public void refuse(@Val Claim claim, Periods periods) throws ClaimInClosedPeriodException {
-        Period closed = periods.closedOn(claim.sheetId(), claim.date());
+        Period closed = periods.closedOn(claim.sheetId(), claim.dueBy());
         if (closed != null) {
             throw new ClaimInClosedPeriodException("The period " + closed.name() + " is closed: its claims cannot change.");
         }

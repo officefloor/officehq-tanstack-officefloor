@@ -123,11 +123,11 @@ public class ApplyClaimStatus {
             }
         }
         // While the sheet numbers by period (its today on or after the from-date), an opened claim is numbered
-        // within the period its date falls in, or in the no-period sequence; otherwise sheet-wide.
+        // within the period its due-by falls in, or in the no-period sequence; otherwise sheet-wide.
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (next == ClaimStatus.OPEN && numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
-            Period period = periods.on(claim.sheetId(), claim.date());
+            Period period = periods.on(claim.sheetId(), claim.dueBy());
             scope = period == null ? "" : period.name();
         }
         Claim changed = claims.changeStatus(claim, next, due, user, scope);

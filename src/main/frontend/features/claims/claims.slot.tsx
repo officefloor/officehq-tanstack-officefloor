@@ -51,7 +51,7 @@ function ClaimEditCell({ sheetId, claim, editing, onPress, onDone }: {
   // What the screen already knows refuses at once, before anything is sent; the server checks the rest (and these again).
   const refusal = () => {
     if (claim.status !== 'DRAFT') return `A ${claim.status} claim cannot be edited: only a draft can.`;
-    const period = periodOf(periods, claim.date);
+    const period = periodOf(periods, claim.dueBy);
     if (period?.closed) return `The period ${period.name} is closed: its claims cannot change.`;
     if (claim.lockedBy !== null && claim.lockedBy !== user) return `The claim is being edited by ${claim.lockedBy}.`;
     return '';

@@ -19,7 +19,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `proofs` is how many proofs it has been given: one above the sheet's proof threshold is settled or approved only with one;
  * `splitFrom` is the number of the claim it was split off (null for any other claim);
  * `lockedBy` is the user whose open editor locks it for everyone else (null when not locked);
- * `lateEntry` is whether it was added while the period its date falls in was soft-closed.
+ * `lateEntry` is whether it was added while the period its due-by falls in was soft-closed.
  */
 export type Claim = {
   id: number;

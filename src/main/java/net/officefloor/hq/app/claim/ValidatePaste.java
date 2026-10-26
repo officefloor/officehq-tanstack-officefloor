@@ -45,10 +45,11 @@ public class ValidatePaste {
                 throw new InvalidClaimException("Line " + n + ": " + e.getMessage());
             }
             LocalDate date = input.date() != null ? input.date() : settings.entryDate(sheet);
-            Period closed = periods.closedOn(sheet, date);
+            LocalDate dueBy = date.plusDays(person.termsOn(date, settings));
+            Period closed = periods.closedOn(sheet, dueBy);
             if (closed != null) {
                 throw new ClaimInClosedPeriodException("Line " + n + ": the period " + closed.name()
-                        + " is closed: no claim dated " + date + " can be added.");
+                        + " is closed: no claim due by " + dueBy + " can be added.");
             }
             RefuseRetiredInput.check(person, date);
             lines.add(new PastedLine(person, input));

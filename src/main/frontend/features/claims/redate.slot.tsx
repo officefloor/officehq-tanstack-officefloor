@@ -10,7 +10,7 @@ import { useClaimError } from './useClaimError';
 
 /**
  * The entry and button with which a steward re-dates an OPEN or PENDING claim. The server refuses anyone else, any
- * other status, a date after the person's retirement, and a claim in a closed period or a new date inside one; the
+ * other status, a date after the person's retirement, and a claim due by a date in a closed period (its due-by, and so its period, stay); the
  * refusal shows on the claim until its next action.
  */
 function ClaimRedate({ sheetId, claim }: { sheetId: string; claim: Claim }) {

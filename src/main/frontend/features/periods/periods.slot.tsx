@@ -20,7 +20,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
-  return <td data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</td>;
+  return <td data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</td>;
 }
 
 /** A column per period on the sheet, headed by its name. */
@@ -137,7 +137,7 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
   );
 }
 
-/** The sheet's periods, each with its due-total — the figures of the counting claims dated in it, fixed
+/** The sheet's periods, each with its due-total — the figures of the counting claims due by a date in it, fixed
  *  while the period is closed or soft-closed and live again once it is reopened — and the form a period is added through. */
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();

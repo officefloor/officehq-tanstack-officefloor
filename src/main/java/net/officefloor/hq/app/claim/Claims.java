@@ -52,12 +52,10 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Adds a draft claim, due by {@code dueBy} for good; a late entry when its date is in a soft-closed period. */
+    /** Adds a draft claim, due by {@code dueBy} for good; a late entry when its due-by is in a soft-closed period. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy) {
-        boolean late = Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT COUNT(*) > 0 FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND soft AND from_date <= ? AND ? <= to_date",
-                Boolean.class, sheetId, Date.valueOf(date), Date.valueOf(date)));
+        boolean late = lateEntry(sheetId, dueBy);
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -77,6 +75,13 @@ public class Claims {
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
                 false, null, corrects, dueBy, null, 0, null, late);
+    }
+
+    /** Whether a claim made now, due by {@code dueBy}, is a late entry: its due-by is in a soft-closed period. */
+    private boolean lateEntry(String sheetId, LocalDate dueBy) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT COUNT(*) > 0 FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND soft AND from_date <= ? AND ? <= to_date",
+                Boolean.class, sheetId, Date.valueOf(dueBy), Date.valueOf(dueBy)));
     }
 
     public void save(Claim claim) {
@@ -126,8 +131,8 @@ public class Claims {
      * Splits {@code amount} off the claim if it is still OPEN at the amount it was loaded with, and returns the new
      * claim; null when it has since changed. The claim keeps the rest of its amount and is unbound from any statement;
      * the new claim is OPEN with the same person, date and note, numbered next in {@code scope} (as
-     * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy}, split from the claim's number, and listed
-     * as the newest claim on the sheet.
+     * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy}, split from the claim's number, a late entry
+     * when its due-by is in a soft-closed period, and listed as the newest claim on the sheet.
      */
     public Claim split(Claim claim, BigDecimal amount, String user, String scope, LocalDate dueBy) {
         BigDecimal rest = claim.amount().subtract(amount);
@@ -137,11 +142,12 @@ public class Claims {
         }
         String number = scope == null ? Long.toString(nextNumber(claim.sheetId()))
                 : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+        boolean late = lateEntry(claim.sheetId(), dueBy);
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, listed) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, late_entry, listed) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -153,29 +159,24 @@ public class Claims {
             ps.setString(8, user);
             ps.setDate(9, Date.valueOf(dueBy));
             ps.setString(10, claim.number());
-            ps.setString(11, claim.sheetId());
+            ps.setBoolean(11, late);
+            ps.setString(12, claim.sheetId());
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), false);
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late);
     }
 
     /**
      * Re-dates the claim to {@code date} if it still has its loaded status and date, and returns it as re-dated; null
-     * when it has since changed. Its due-by and statement figure stay. A {@code scope} (a period's name, or "" for no
-     * period) gives it the next number of that sequence, as {@link #changeStatus}; null keeps its number.
+     * when it has since changed. Its due-by, statement figure and number stay.
      */
-    public Claim redate(Claim claim, LocalDate date, String scope) {
+    public Claim redate(Claim claim, LocalDate date) {
         if (jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND status = ? AND claim_date = ?", Date.valueOf(date),
                 claim.id(), claim.status().name(), Date.valueOf(claim.date())) != 1) {
             return null;
         }
-        String number = scope == null ? claim.number()
-                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
-        if (scope != null) {
-            jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
-        }
-        return claim.withDate(date, number);
+        return claim.withDate(date, claim.number());
     }
 
     /** Defers the claim to {@code until} if it is still OPEN, and returns it as deferred; null when it has since changed. */

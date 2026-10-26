@@ -93,14 +93,14 @@ public class Rollup {
 
     /**
      * Each person's due-total for the dates {@code from} to {@code to} inclusive, by person id in sheet order: the
-     * figures (as shown now) of their claims dated then that counted by the status their log records at the end of
+     * figures (as shown now) of their claims due by a date then that counted by the status their log records at the end of
      * {@code to} (a claim added after it counts not at all), those without one skipped.
      */
     public Map<Long, BigDecimal> personDueTotals(String sheetId, LocalDate from, LocalDate to) {
         LocalDate today = sheets.today(sheetId);
         Map<Long, ClaimStatus> ended = claims.statusesOn(sheetId, to);
         List<Claim> dated = claims.list(sheetId).stream()
-                .filter(c -> !c.date().isBefore(from) && !c.date().isAfter(to)).toList();
+                .filter(c -> !c.dueBy().isBefore(from) && !c.dueBy().isAfter(to)).toList();
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
             BigDecimal total = ZERO;
