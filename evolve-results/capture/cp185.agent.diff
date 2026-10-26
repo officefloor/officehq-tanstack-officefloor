@@ -1,0 +1,352 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 1724a764..a209d5fb 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -41,6 +41,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
+ // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
+ // An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
+ // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
++// An OPEN claim can be part-settled: the amount is split off as a split does and the new claim settled at once as a settle
++// does (PENDING under the clerk limit), with the four-eyes and proof rules judged on the original; either refusal refuses all.
+ // A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
+ // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
+ // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
+@@ -64,6 +66,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+   const [moveTo, setMoveTo] = useState('');
+   const [deferUntil, setDeferUntil] = useState('');
+   const [splitAmount, setSplitAmount] = useState('');
++  const [settlePartAmount, setSettlePartAmount] = useState('');
+   const [proofKind, setProofKind] = useState('');
+   const [newDate, setNewDate] = useState('');
+   const [inlineAmount, setInlineAmount] = useState('');
+@@ -170,6 +173,13 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+         { amount: amount.trim(), by: user ?? '' }),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+   });
++  // A part-settle: the amount split off as a split does, the new claim settled at once as a settle does; all or nothing.
++  const settlePart = useMutation({
++    mutationFn: (amount: string) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/settle-part`,
++        { amount: amount.trim(), by: user ?? '' }),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++  });
+   // A steward's re-date of an OPEN or PENDING claim: its due-by and any statement figure stay, and with them its period.
+   const redate = useMutation({
+     mutationFn: (date: string) => {
+@@ -248,6 +258,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     defer.reset();
+     proof.reset();
+     split.reset();
++          settlePart.reset();
+     redate.reset();
+     lock.reset();
+     remind.reset();
+@@ -266,6 +277,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     defer.reset();
+     proof.reset();
+     split.reset();
++          settlePart.reset();
+     redate.reset();
+     lock.reset();
+     remind.reset();
+@@ -276,9 +288,9 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     line.reset();
+     setRefused(undefined);
+   };
+-  const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
++  const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending || settlePart.isPending
+     || redate.isPending || remind.isPending || waive.isPending || hold.isPending || inline.isPending || comment.isPending || line.isPending;
+-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? waive.error ?? hold.error ?? inline.error ?? comment.error ?? line.error;
++  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? settlePart.error ?? redate.error ?? remind.error ?? waive.error ?? hold.error ?? inline.error ?? comment.error ?? line.error;
+ 
+   return (
+     <>
+@@ -343,6 +355,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           defer.reset();
+           proof.reset();
+           split.reset();
++          settlePart.reset();
+           redate.reset();
+           lock.reset();
+           remind.reset();
+@@ -368,6 +381,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           defer.reset();
+           proof.reset();
+           split.reset();
++          settlePart.reset();
+           redate.reset();
+           lock.reset();
+           remind.reset();
+@@ -404,6 +418,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           resettle.reset();
+           proof.reset();
+           split.reset();
++          settlePart.reset();
+           redate.reset();
+           lock.reset();
+           remind.reset();
+@@ -443,6 +458,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           resettle.reset();
+           defer.reset();
+           split.reset();
++          settlePart.reset();
+           redate.reset();
+           lock.reset();
+           remind.reset();
+@@ -487,12 +503,33 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           inline.reset();
+           comment.reset();
+           line.reset();
++          settlePart.reset();
+           setRefused(undefined);
+           split.mutate(splitAmount);
+         }}
+       >
+         Split
+       </button>{' '}
++      <input
++        data-testid="claim-settle-part-amount"
++        placeholder="Settle part amount"
++        value={settlePartAmount}
++        onChange={(e) => {
++          setSettlePartAmount(e.target.value);
++          settlePart.reset();
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-settle-part"
++        disabled={busy}
++        onClick={() => {
++          resetAll();
++          settlePart.mutate(settlePartAmount);
++        }}
++      >
++        Settle part
++      </button>{' '}
+       <input
+         type="date"
+         data-testid="claim-date-new"
+@@ -513,6 +550,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           defer.reset();
+           proof.reset();
+           split.reset();
++          settlePart.reset();
+           lock.reset();
+           remind.reset();
+     waive.reset();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 7f340027..01034d44 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -40,6 +40,18 @@ public class ApplyClaimStatus {
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+             PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, @Val VoidChoice voidChoice, VoidReasonRepository voidReasons,
+             Out<ClaimNumber> audited) throws BadRequestException {
++        change(status, claim, repository, people, rates, roles, settings, sheets, periods, log, by, review, voidChoice,
++                voidReasons, audited, false);
++    }
++
++    /**
++     * The change itself; with {@code judged}, a settle whose four-eyes rules and proof rule were already judged on another
++     * claim (a part-settle's original) and are not judged again on this one.
++     */
++    void change(ClaimStatus status, Claim claim, ClaimRepository repository,
++            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
++            PeriodRepository periods, ClaimLogRepository log, ChangedBy by, ClaimReview review, VoidChoice voidChoice, VoidReasonRepository voidReasons,
++            Out<ClaimNumber> audited, boolean judged) throws BadRequestException {
+         ClaimStatus from = claim.getStatus();
+         String role = roles.roleOf(claim.getSheetId(), by.name());
+         boolean steward = Role.STEWARD.equals(role);
+@@ -123,11 +135,8 @@ public class ApplyClaimStatus {
+                     throw new BadRequestException("That void reason is not on the sheet's list");
+                 }
+             }
+-            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+-                throw new BadRequestException("The user who opened a claim cannot settle it");
+-            }
+-            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getEditedBy())) {
+-                throw new BadRequestException("The user who last edited a claim cannot settle it");
++            if (status == ClaimStatus.SETTLED && !judged) {
++                refuseFourEyes(claim, by);
+             }
+             if (status == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
+                 throw new BadRequestException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+@@ -145,19 +154,8 @@ public class ApplyClaimStatus {
+         if (status == ClaimStatus.OPEN && !review.asked()) {
+             refuseOverCap(claim, repository, periods);
+         }
+-        if (status == ClaimStatus.SETTLED && due != null) {
+-            java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
+-            String missing = kinds.stream().filter(k -> claim.proofsOf(k) == 0).findFirst().orElse(null);
+-            if (claim.getProofs() == 0 || missing != null) {
+-                Person owner = people.find(claim.getSheetId(), claim.getPersonId());
+-                BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
+-                        claim.getDate());
+-                if (threshold != null && due.compareTo(threshold) > 0) {
+-                    throw new BadRequestException(claim.getProofs() == 0
+-                            ? "A claim whose due is above the proof threshold needs a proof before it is settled"
+-                            : "A claim whose due is above the proof threshold needs a " + missing + " proof before it is settled");
+-                }
+-            }
++        if (status == ClaimStatus.SETTLED && due != null && !judged) {
++            refuseWithoutProof(claim, due, people, settings, late);
+         }
+         ClaimStatus to = status;
+         if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
+@@ -196,6 +194,42 @@ public class ApplyClaimStatus {
+         audited.set(new ClaimNumber(claim.getNumber()));
+     }
+ 
++    /** Refuses the settle of a claim by the user who opened it or who last edited it. */
++    static void refuseFourEyes(Claim claim, ChangedBy by) throws BadRequestException {
++        if (by.name().equals(claim.getOpenedBy())) {
++            throw new BadRequestException("The user who opened a claim cannot settle it");
++        }
++        if (by.name().equals(claim.getEditedBy())) {
++            throw new BadRequestException("The user who last edited a claim cannot settle it");
++        }
++    }
++
++    /**
++     * Refuses the settle at {@code due} of a claim without a proof (or missing one of the sheet's proof kinds) when the due
++     * is above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's).
++     */
++    static void refuseWithoutProof(Claim claim, BigDecimal due, PersonRepository people, SettingRepository settings,
++            LateCharge late) throws BadRequestException {
++        java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
++        String missing = kinds.stream().filter(k -> claim.proofsOf(k) == 0).findFirst().orElse(null);
++        if (claim.getProofs() == 0 || missing != null) {
++            Person owner = people.find(claim.getSheetId(), claim.getPersonId());
++            BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
++                    claim.getDate());
++            if (threshold != null && due.compareTo(threshold) > 0) {
++                throw new BadRequestException(claim.getProofs() == 0
++                        ? "A claim whose due is above the proof threshold needs a proof before it is settled"
++                        : "A claim whose due is above the proof threshold needs a " + missing + " proof before it is settled");
++            }
++        }
++    }
++
++    /** The due the claim would be settled at now (null: n/a). */
++    static BigDecimal settleDue(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,
++            LateCharge late) {
++        return late.due(claim, dueNow(claim, people, rates, settings, late));
++    }
++
+     /**
+      * Refuses opening a claim belonging to a period (by its due-by) with a cap when its person already has that many
+      * OPEN or PENDING claims in it.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java b/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java
+new file mode 100644
+index 00000000..59a68878
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java
+@@ -0,0 +1,74 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.LateCharge;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.access.SettingRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.WatchRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupSnapshot;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.voidreason.VoidReasonRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Part-settles an OPEN claim: splits the amount off exactly as a split does, then settles the new claim at once by the
++ * user exactly as a settle does (PENDING when the clerk limit says so), with the same audit and rollup lines as the two
++ * actions. The four-eyes rules and the proof rule are judged on the original claim as it was before the split (the new
++ * claim's opener is the user). Either refused refuses the whole action: nothing is written.
++ */
++public class ApplySettlePart {
++    public void apply(@Val Claim claim, @Val SplitAmount amount, @Val ChangedBy by, ClaimRepository repository,
++            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
++            SheetRepository sheets, PeriodRepository periods, ClaimLogRepository logs, VoidReasonRepository voidReasons,
++            WatchRepository watches, Rollup rollup, Audit audit, ClaimLog log, Out<Split> split)
++            throws BadRequestException {
++        String sheetId = claim.getSheetId();
++        ApplyClaimStatus.refuseFourEyes(claim, by);
++        LateCharge late = settings.lateCharge(sheetId, sheets.today(sheetId));
++        BigDecimal due = ApplyClaimStatus.settleDue(claim, people, rates, settings, late);
++        if (due != null) {
++            ApplyClaimStatus.refuseWithoutProof(claim, due, people, settings, late);
++        }
++        BadRequestException[] refused = new BadRequestException[1];
++        Split[] made = new Split[1];
++        audit.hold();
++        boolean kept = false;
++        try {
++            kept = repository.keepOnly(() -> {
++                try {
++                    RollupSnapshot before = rollup.snapshot(sheetId);
++                    new ApplySplit().apply(claim, amount, by, repository, people, settings, sheets, periods,
++                            value -> made[0] = value);
++                    new RecordClaimSplit().record(claim, made[0], by, people, audit, log);
++                    rollup.record(sheetId, before, by);
++                    Claim into = made[0].into();
++                    RollupSnapshot settling = rollup.snapshot(sheetId);
++                    ClaimNumber[] number = new ClaimNumber[1];
++                    new ApplyClaimStatus().change(ClaimStatus.SETTLED, into, repository, people, rates, roles, settings,
++                            sheets, periods, logs, by, ClaimReview.NONE, VoidChoice.NONE, voidReasons,
++                            value -> number[0] = value, true);
++                    new RecordClaimStatus().record(into, number[0], by, ClaimReview.NONE, people, watches, logs, audit, log);
++                    rollup.record(sheetId, settling, by);
++                    return true;
++                } catch (BadRequestException e) {
++                    refused[0] = e;
++                    return false;
++                }
++            });
++        } finally {
++            audit.release(kept);
++        }
++        if (!kept) {
++            throw refused[0];
++        }
++        split.set(made[0]);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 00000000..45d45cac
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,27 @@
++# Part-settle an OPEN claim: split an amount off it exactly as a split does, and settle the new claim at once by the
++# user exactly as a settle does (PENDING when the clerk limit says so). The four-eyes rules and the proof rule are
++# judged on the original claim. A split or a settle that would be refused refuses the whole action; nothing is written.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: amount
++amount:
++  class: net.officefloor.hq.app.claim.ValidateSplit
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++closed:
++  class: net.officefloor.hq.app.claim.RefuseClosedClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplySettlePart
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
