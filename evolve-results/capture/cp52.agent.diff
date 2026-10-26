@@ -1,0 +1,110 @@
+diff --git a/src/main/frontend/features/periods/periodsQuery.ts b/src/main/frontend/features/periods/periodsQuery.ts
+index 4862bbe9..a870db4f 100644
+--- a/src/main/frontend/features/periods/periodsQuery.ts
++++ b/src/main/frontend/features/periods/periodsQuery.ts
+@@ -1,6 +1,6 @@
+ import { getJson } from '../../api/http';
+ import { counts } from '../claims/claimsQuery';
+-import type { Claim } from '../claims/claimsQuery';
++import type { Claim, ClaimStatus } from '../claims/claimsQuery';
+ import type { Person } from '../people/peopleQuery';
+ import { figure, sumDue } from '../rates/ratesQuery';
+ import type { Late, Rate } from '../rates/ratesQuery';
+@@ -36,7 +36,23 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
+ }
+ 
+ /**
+- * A person's due-total for a period: the figures of their counting claims dated in it. While the period is
++ * The claim's status at the end of the day `on` (yyyy-mm-dd), as its log records it: the last status logged on or
++ * before it, DRAFT (counting nowhere) when it was added after. A claim with no log has its status now.
++ */
++export function statusOn(c: Claim, on: string): ClaimStatus {
++  const log = c.log ?? [];
++  if (log.length === 0) return c.status;
++  let status: ClaimStatus = 'DRAFT';
++  for (const line of log) {
++    const m = /^(\S+) by .* on (\d{4}-\d{2}-\d{2}) due=\S*$/.exec(line);
++    if (m && m[2] <= on) status = m[1] as ClaimStatus;
++  }
++  return status;
++}
++
++/**
++ * A person's due-total for a period: the figures (as shown now) of their claims dated in it that counted by the
++ * status they had at the end of its last day. While the period is
+  * closed it is the figure fixed when it was closed (0.00 for a person added since).
+  */
+ export function personPeriodDue(
+@@ -51,7 +67,13 @@ export function personPeriodDue(
+   if (period.closed) return period.personTotals[String(person.id)] ?? '0.00';
+   return sumDue(
+     claims
+-      .filter((c) => c.personId === person.id && counts(c, people, late.today) && period.from <= c.date && c.date <= period.to)
++      .filter(
++        (c) =>
++          c.personId === person.id &&
++          period.from <= c.date &&
++          c.date <= period.to &&
++          counts({ ...c, status: statusOn(c, period.to) }, people, late.today),
++      )
+       .map((c) => figure(c, rates, person, floor, late)),
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 64cdda5f..cef1adf9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -167,6 +167,23 @@ public class Claims {
+         return logs;
+     }
+ 
++    /**
++     * Each logged claim's status at the end of {@code on}, by claim id: the last status its log records on or before it,
++     * DRAFT (counting nowhere) when it was added after. A claim with no log is not in the map.
++     */
++    public java.util.Map<Long, ClaimStatus> statusesOn(String sheetId, LocalDate on) {
++        java.util.Map<Long, ClaimStatus> statuses = new java.util.HashMap<>();
++        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
++            long id = rs.getLong("claim_id");
++            if (!rs.getObject("logged_on", LocalDate.class).isAfter(on)) {
++                statuses.put(id, ClaimStatus.valueOf(rs.getString("status")));
++            } else {
++                statuses.putIfAbsent(id, ClaimStatus.DRAFT);
++            }
++        }, sheetId);
++        return statuses;
++    }
++
+     /**
+      * Binds the person's claims to the figures of a statement: each claim in {@code figures} is stated at
+      * its figure (null: n/a), and every other claim of theirs is left unbound.
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 01fb589c..50a44085 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -85,17 +85,21 @@ public class Rollup {
+ 
+     /**
+      * Each person's due-total for the dates {@code from} to {@code to} inclusive, by person id in sheet order: the
+-     * figures of their counting claims dated then, those without one skipped.
++     * figures (as shown now) of their claims dated then that counted by the status their log records at the end of
++     * {@code to} (a claim added after it counts not at all), those without one skipped.
+      */
+     public Map<Long, BigDecimal> personDueTotals(String sheetId, LocalDate from, LocalDate to) {
+         LocalDate today = sheets.today(sheetId);
+-        List<Claim> dated = claims.list(sheetId).stream().filter(c -> c.status().counts()
+-                && !c.date().isBefore(from) && !c.date().isAfter(to)).toList();
++        Map<Long, ClaimStatus> ended = claims.statusesOn(sheetId, to);
++        List<Claim> dated = claims.list(sheetId).stream()
++                .filter(c -> !c.date().isBefore(from) && !c.date().isAfter(to)).toList();
+         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+         for (Person person : people.list(sheetId)) {
+             BigDecimal total = ZERO;
+             for (Claim claim : dated) {
+-                if (claim.personId() != person.id() || !counts(claim, person, today)) {
++                Claim then = claim.withStatus(ended.getOrDefault(claim.id(), claim.status()), claim.number(),
++                        claim.settledDue(), claim.openedBy());
++                if (claim.personId() != person.id() || !then.status().counts() || !counts(then, person, today)) {
+                     continue;
+                 }
+                 BigDecimal figure = figure(claim, person, today);
