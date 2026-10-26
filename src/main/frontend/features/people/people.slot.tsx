@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
@@ -15,11 +15,12 @@ import { useSheetToday } from '../today/today.slot';
  *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
  *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
- *  is due by its date plus these, else their grade's terms, else the sheet's. */
+ *  is due by its date plus these, else their grade's terms, else the sheet's. `contact`: the person's contact, trimmed
+ *  and lower-cased, null when they have none; no two people on a sheet share one. */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   holds: HoldSpan[];
-  patrons: string[]; terms: number | null };
+  patrons: string[]; terms: number | null; contact: string | null };
 
 export type GradeFrom = { grade: string; from: string | null };
 
@@ -42,6 +43,8 @@ export function gradeOn(person: Person | undefined, date: string): string | unde
 }
 
 const GRADES = ['A', 'B', 'C'] as const;
+
+const CONTACT_TAKEN = "That contact is already another person's on this sheet";
 
 /** The key every feature reads the sheet's people under. */
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
@@ -83,12 +86,25 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   const [gradeFrom, setGradeFrom] = useState('');
   // The person's own terms in days; blank for none.
   const [terms, setTerms] = useState(editing?.terms == null ? '' : String(editing.terms));
+  // The person's contact; blank for none.
+  const [contact, setContact] = useState(editing?.contact ?? '');
+  // A contact another person on the sheet already has, refused before anything is sent (the server
+  // refuses it too): the message, until the form is changed or submitted again.
+  const [taken, setTaken] = useState<string>();
+  const people = usePeople(sheetId);
   const [version, setVersion] = useState(editing?.version);
+  // Whether this form is still the one on screen: a save that finishes after another person's editor
+  // was opened must not close that editor.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [user] = useUser();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
   const save = useMutation({
-    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string }) => {
+    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a name');
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
@@ -102,6 +118,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
       ]);
+      if (!mounted.current) return;
       if (editing) {
         onRefused(undefined);
         setEditing(undefined);
@@ -110,13 +127,16 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setContact('');
       }
     },
     onError: async (error) => {
-      if (!editing) return;
+      if (!editing || !mounted.current) return;
       if (!(error instanceof HttpError) || error.status !== 409) {
         onRefused(error.message);
         setEditing(undefined);
+        // Re-read the people, so the next editor opened loads the person's current version.
+        await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
         return;
       }
       // Someone else saved this person: re-read the sheet's people and show their current values.
@@ -126,6 +146,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
         setName(now.name);
         setGrade(now.grade);
         setTerms(now.terms == null ? '' : String(now.terms));
+        setContact(now.contact ?? '');
         setVersion(now.version);
       }
     },
@@ -135,6 +156,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   const carried = editing ? undefined : refused;
   const reset = () => {
     save.reset();
+    setTaken(undefined);
     onRefused(undefined);
   };
   return (
@@ -143,7 +165,14 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
       onSubmit={(e) => {
         e.preventDefault();
         onRefused(undefined);
-        submit({ name, grade, gradeFrom, terms });
+        save.reset();
+        const key = contact.trim().toLowerCase();
+        if (key !== '' && (people.data ?? []).some((p) => p.id !== editing?.id && p.contact === key)) {
+          setTaken(CONTACT_TAKEN);
+          return;
+        }
+        setTaken(undefined);
+        submit({ name, grade, gradeFrom, terms, contact });
       }}
     >
       <label>
@@ -198,6 +227,17 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
           }}
         />
       </label>{' '}
+      <label>
+        Contact{' '}
+        <input
+          data-testid="person-form-contact"
+          value={contact}
+          onChange={(e) => {
+            setContact(e.target.value);
+            reset();
+          }}
+        />
+      </label>{' '}
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing ? 'Save' : 'Add person'}
       </button>
@@ -209,9 +249,9 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
           </button>
         </>
       )}
-      {(save.isError || carried !== undefined) && (
+      {(save.isError || taken !== undefined || carried !== undefined) && (
         <p data-testid="person-form-error" role="alert">
-          {save.error?.message ?? carried}
+          {taken ?? save.error?.message ?? carried}
         </p>
       )}
     </form>
@@ -301,12 +341,30 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const editing = people.data?.find((p) => p.id === editingId);
   // A refused edit's message, shown on the add form once the editor closes.
   const [refused, setRefused] = useState<string>();
+  // Each Edit press opens a fresh editor, filled once the sheet's people are re-read from the store,
+  // so it starts from the person's current values and version (`loading`: the press still re-reading).
+  const queryClient = useQueryClient();
+  const [opened, setOpened] = useState(0);
+  const [loading, setLoading] = useState<number>();
+  const openEditor = async (id: number) => {
+    const press = opened + 1;
+    setRefused(undefined);
+    setOpened(press);
+    setLoading(press);
+    setEditing(id);
+    await queryClient.refetchQueries({ queryKey: peopleKey(sheetId), exact: true }).catch(() => undefined);
+    setLoading((now) => (now === press ? undefined : now));
+  };
 
   return (
     <section data-testid="people-panel">
       <h2>People</h2>
-      <PersonForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} editing={editing}
-        refused={refused} onRefused={setRefused} />
+      {editingId !== undefined && loading !== undefined ? (
+        <p data-testid="person-form-loading">Loading…</p>
+      ) : (
+        <PersonForm key={editing ? `edit-${editing.id}-${opened}` : 'add'} sheetId={sheetId} editing={editing}
+          refused={refused} onRefused={setRefused} />
+      )}
       <QuickAddBar sheetId={sheetId} />
       {people.isError && (
         <p data-testid="people-error" role="alert">
@@ -328,6 +386,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th>Terms</th>
+            <th>Contact</th>
             <PersonHeads.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
@@ -338,9 +397,10 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
+              <td data-testid="person-contact">{p.contact ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} user={user} personId={p.id} />
               <td>
-                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => { setRefused(undefined); setEditing(p.id); }}>
+                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => void openEditor(p.id)}>
                   Edit
                 </button>
               </td>

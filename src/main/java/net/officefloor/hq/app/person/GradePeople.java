@@ -32,11 +32,13 @@ public class GradePeople {
                 continue;
             }
             PersonRequest request = new PersonRequest(person.getName(), bulk.grade(), by.name(), person.getVersion(),
-                    bulk.from(), person.getTerms() == null ? "" : String.valueOf(person.getTerms()));
+                    bulk.from(), person.getTerms() == null ? "" : String.valueOf(person.getTerms()),
+                    person.getContact() == null ? "" : person.getContact());
             RollupSnapshot before = rollup.snapshot(sheet.id());
             TermsEdit[] terms = new TermsEdit[1];
-            apply.apply(request, person, people, sheets, value -> terms[0] = value);
-            record.record(person, by, terms[0], audit);
+            ContactEdit[] contact = new ContactEdit[1];
+            apply.apply(request, person, people, sheets, value -> terms[0] = value, value -> contact[0] = value);
+            record.record(person, by, terms[0], contact[0], audit);
             rollup.record(sheet.id(), before, by);
             changed++;
         }

@@ -17,6 +17,7 @@ public class Person {
     private List<HoldSpan> holds = List.of();
     private List<String> patrons = List.of();
     private Integer terms;
+    private String contact;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -81,6 +82,15 @@ public class Person {
 
     public void setTerms(Integer terms) {
         this.terms = terms;
+    }
+
+    /** The person's contact, trimmed and lower-cased; null when they have none. */
+    public String getContact() {
+        return contact;
+    }
+
+    public void setContact(String contact) {
+        this.contact = contact;
     }
 
     public long getVersion() {

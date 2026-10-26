@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -31,6 +31,7 @@ public class PersonRepository {
                 rs.getObject("statement_date", LocalDate.class)));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         person.setTerms(rs.getObject("terms", Integer.class));
+        person.setContact(rs.getString("contact"));
         return person;
     };
 
@@ -40,6 +41,8 @@ public class PersonRepository {
     static final String CHANGED = "Someone else has saved this person since you opened it; the form now shows their changes";
 
     static final String NAME_TAKEN = "That name is already in use on this sheet";
+
+    static final String CONTACT_TAKEN = "That contact is already another person's on this sheet";
 
     private final JdbcTemplate jdbc;
 
@@ -74,20 +77,31 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
-    /** Add the person, their grade in force from the beginning of time. */
-    public Person insert(String sheetId, String name, String grade) {
-        return insert(sheetId, name, grade, null);
+    /** Whether another person on the sheet has this contact; false for no contact (null). */
+    public boolean contactTaken(String sheetId, String contact, Long exceptId) {
+        if (contact == null) {
+            return false;
+        }
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND id <> ?",
+                Integer.class, sheetId, contact, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
     }
 
-    /** Add the person with their own terms (null for none), their grade in force from the beginning of time. */
-    public Person insert(String sheetId, String name, String grade, Integer terms) {
+    /** Add the person, their grade in force from the beginning of time. */
+    public Person insert(String sheetId, String name, String grade) {
+        return insert(sheetId, name, grade, null, null);
+    }
+
+    /** Add the person with their own terms and contact (null for none), their grade in force from the beginning of time. */
+    public Person insert(String sheetId, String name, String grade, Integer terms, String contact) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, terms) VALUES (?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, terms, contact) VALUES (?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
+            ps.setString(4, contact);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -95,6 +109,7 @@ public class PersonRepository {
         Person person = new Person(id, sheetId, name, grade, 0);
         person.setGrades(List.of(new GradeFrom(grade, null)));
         person.setTerms(terms);
+        person.setContact(contact);
         return person;
     }
 
@@ -113,8 +128,8 @@ public class PersonRepository {
     /** Saves the person if it is still at the version it was loaded at, moving it to the next
      *  version; false (nothing written) when someone else saved it in the meantime. */
     public boolean update(Person person) {
-        int n = jdbc.update("UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getId(), person.getVersion());
+        int n = jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1"
+                + " WHERE id = ? AND version = ?", person.getName(), person.getTerms(), person.getContact(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }
