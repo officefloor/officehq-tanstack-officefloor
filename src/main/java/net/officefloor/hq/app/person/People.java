@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -13,7 +14,8 @@ import org.springframework.stereotype.Repository;
 public class People {
 
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
+            rs.getObject("retired_from", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -55,7 +57,7 @@ public class People {
             ps.setString(3, request.grade());
             return ps;
         }, key);
-        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0);
+        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null);
     }
 
     /**
@@ -65,5 +67,10 @@ public class People {
     public boolean save(Person person) {
         return jdbc.update("UPDATE person SET name = ?, grade = ?, version = ? WHERE id = ? AND version = ?",
                 person.name(), person.grade(), person.version(), person.id(), person.version() - 1) == 1;
+    }
+
+    /** Retire the person from the date (replacing any date they were retired from before). */
+    public void retire(long id, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", from, id);
     }
 }
