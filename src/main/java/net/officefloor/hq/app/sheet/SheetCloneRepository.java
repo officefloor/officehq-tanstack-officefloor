@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Copies a sheet to a sheet id never used: its today, settings, roles, rates, holidays, void reasons, templates, the
- * tags ever used on its claims, its people (grades, terms, contacts, aliases, holds, retirements, patrons), its pools,
+ * tags ever used on its claims, its people (grades, terms, contacts, aliases, holds, retirements, patrons), its pools, its crews,
  * its plans (with the dates they made claims for), its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs, lines). Its
  * statements are not copied (no claim is bound), nor its snapshots, watches, delegations, comments, editor locks or
  * settle batches.
@@ -81,6 +81,17 @@ public class SheetCloneRepository {
                     + " to_date) VALUES (?, ?, ?, ?, ?, ?, ?)", to, pools.get(id(member.get("pool_id"))),
                     people.get(id(member.get("person_id"))), pools.get(id(member.get("member_pool_id"))),
                     member.get("share"), member.get("from_date"), member.get("to_date"));
+        }
+        Map<Long, Long> crews = new HashMap<>();
+        for (Map<String, Object> crew : jdbc.queryForList("SELECT id, name, lead_id FROM crew WHERE sheet_id = ? ORDER BY id",
+                from)) {
+            crews.put(id(crew.get("id")), jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO crew (sheet_id, name,"
+                    + " lead_id) VALUES (?, ?, ?))", Long.class, to, crew.get("name"), people.get(id(crew.get("lead_id")))));
+        }
+        for (Map<String, Object> member : jdbc.queryForList("SELECT crew_id, person_id FROM crew_member WHERE sheet_id = ?"
+                + " ORDER BY id", from)) {
+            jdbc.update("INSERT INTO crew_member (sheet_id, crew_id, person_id) VALUES (?, ?, ?)", to,
+                    crews.get(id(member.get("crew_id"))), people.get(id(member.get("person_id"))));
         }
         for (Long id : ids("SELECT id FROM plan WHERE sheet_id = ? ORDER BY id", from)) {
             Long person = jdbc.queryForObject("SELECT person_id FROM plan WHERE id = ?", Long.class, id);

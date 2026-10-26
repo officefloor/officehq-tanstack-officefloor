@@ -312,7 +312,8 @@ public class PersonRepository {
      * keeping any figure a statement bound it to); their statements become the other's, taken before the other's own
      * (see {@link #carryStatements}); their name and aliases become the other's aliases; their patrons are added
      * to the other's and anyone naming them as patron names the other instead (never the other themselves, no
-     * repeats); their plans and pool memberships move to the other (shares added where the other is a member already) and their
+     * repeats); their plans and pool memberships move to the other (shares added where the other is a member already), their crews
+     * and crew memberships too (a membership dropped where the other is in that crew already or leads it) and their
      * closed periods' totals add to the other's. Their holds, watchers, grades and contact are dropped
      * with them. False (nothing written) when either was saved by someone else in the meantime.
      */
@@ -349,6 +350,13 @@ public class PersonRepository {
         jdbc.update("DELETE FROM pool_member m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM pool_member o"
                 + " WHERE o.pool_id = m.pool_id AND o.person_id = ?)", f, t);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", t, f);
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE lead_id = ?", t, f);
+        jdbc.update("DELETE FROM crew_member m WHERE m.person_id = ? AND (EXISTS (SELECT 1 FROM crew_member o"
+                + " WHERE o.crew_id = m.crew_id AND o.person_id = ?) OR EXISTS (SELECT 1 FROM crew c"
+                + " WHERE c.id = m.crew_id AND c.lead_id = ?))", f, t, t);
+        jdbc.update("DELETE FROM crew_member m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM crew c"
+                + " WHERE c.id = m.crew_id AND c.lead_id = ?)", t, t);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", t, f);
         jdbc.update("UPDATE plan SET person_id = ? WHERE person_id = ?", t, f);
         jdbc.update("UPDATE period_person_total m SET total = total + (SELECT o.total FROM period_person_total o"
                 + " WHERE o.period_id = m.period_id AND o.person_id = ?) WHERE m.person_id = ? AND EXISTS"
@@ -385,7 +393,7 @@ public class PersonRepository {
      * any figure a statement bound it to, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
      * as used there; their statements move with them. Everything else of theirs here — patron links either way, pool
-     * memberships, plans, watches, holds and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
+     * memberships, crews they lead and crew memberships, plans, watches, holds and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
      */
     public long transfer(Person from, String toSheet, Map<Long, String> numbers) {
         long f = from.getId();
@@ -477,6 +485,8 @@ public class PersonRepository {
     private void dropRest(long f) {
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ? OR crew_id IN (SELECT id FROM crew WHERE lead_id = ?)", f, f);
+        jdbc.update("DELETE FROM crew WHERE lead_id = ?", f);
         jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", f);
         jdbc.update("DELETE FROM plan WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
