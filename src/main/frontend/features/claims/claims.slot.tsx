@@ -8,6 +8,7 @@ import { useUser } from '../session/useSession';
 import { useHeld } from '../people/people.slot';
 import { claimLockKey, claimSaveKey, claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+import { useTemplates } from '../templates/templates.slot';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
@@ -15,6 +16,8 @@ type ClaimBody = { amount: string; date: string; note: string; corrects: string;
 
 // A person's claim form: adds a claim, or — with one of their claims' editor open — saves its
 // changes. It is re-mounted for each claim opened, so it starts filled with that claim's values.
+// Its template select adds a DRAFT claim from a sheet's template (its amount and note as they stand
+// then, no date) by the same rules; a refusal shows in the form's error.
 function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: number; editing?: Claim }) {
   const [, setEditing] = useEditingClaim();
   const [amount, setAmount] = useState(editing?.amount ?? '');
@@ -51,19 +54,34 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       }
     },
   });
+  const templates = useTemplates(sheetId);
+  const [template, setTemplate] = useState('');
+  const fromTemplate = useMutation({
+    mutationFn: async (name: string) => {
+      if (name === '') throw new Error('Choose a template');
+      return postJson<Claim>(`${sheet}/people/${personId}/claims/template`, { template: name, by: user ?? '' });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     save.reset();
+    fromTemplate.reset();
   };
 
   // While a claim's editor is being opened, the form may be about to become its editor: it waits.
   const locking = useIsMutating({ mutationKey: claimLockKey(sheetId) }) > 0;
   const submit = useSubmitOnce(save);
+  const submitTemplate = useSubmitOnce(fromTemplate);
+  const error = save.error ?? fromTemplate.error;
   return (
     <form
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
+        fromTemplate.reset();
         submit({ amount, date, note, corrects, ref, tags });
       }}
     >
@@ -76,9 +94,41 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
-      {save.isError && (
+      {!editing && (
+        <>
+          {' '}
+          <select
+            data-testid="claim-template-select"
+            value={template}
+            onChange={(e) => {
+              setTemplate(e.target.value);
+              save.reset();
+              fromTemplate.reset();
+            }}
+          >
+            <option value="">Template…</option>
+            {(templates.data ?? []).map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>{' '}
+          <button
+            type="button"
+            data-testid="claim-template-add"
+            disabled={fromTemplate.isPending || locking}
+            onClick={() => {
+              save.reset();
+              submitTemplate(template);
+            }}
+          >
+            Add from template
+          </button>
+        </>
+      )}
+      {error && (
         <p data-testid="claim-form-error" role="alert">
-          {save.error.message}
+          {error.message}
         </p>
       )}
     </form>
