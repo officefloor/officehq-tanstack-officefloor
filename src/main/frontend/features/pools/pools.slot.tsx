@@ -9,7 +9,9 @@ import { useUser } from '../session/useSession';
 /** A pool member: a person (their id), or another pool (personId null, `pool` its name); its name, share (two
  *  decimals), whether the person is retired, whether its membership dates leave out the sheet's today (`out`: not in
  *  the total share, no cut), and its cut of the pool's pot (two decimals; null while the pool is
- *  unbalanced or has no pot — a member pool's pot is its cut in the pool above, a top pool's the sheet's pot). */
+ *  unbalanced or has no pot — a member pool's pot is its cut in the pool above, a top pool's the sheet's pot), and
+ *  for each period whose to-date is on or before the sheet's today (by name, in period order) its cut as it stood at
+ *  the end of that period (null when there was none). */
 export type PoolMember = {
   personId: number | null;
   pool: string | null;
@@ -18,6 +20,7 @@ export type PoolMember = {
   retired: boolean;
   out: boolean;
   cut: string | null;
+  periodCuts: Record<string, string | null>;
 };
 
 /** A pool of the sheet: its name, members in the order added, total share (a retired member's counts as 0.00) and
@@ -91,6 +94,12 @@ function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools:
             <span data-testid="pool-member-name">{m.name}</span>{' '}
             <span data-testid="pool-share">{m.share}</span>{' '}
             cut <span data-testid="pool-cut">{m.cut ?? ''}</span>
+            {Object.entries(m.periodCuts ?? {}).map(([period, cut]) => (
+              <span key={period}>
+                {' '}
+                {period} <span data-testid={`pool-cut-${period}`}>{cut ?? ''}</span>
+              </span>
+            ))}
             {m.retired && ' (retired)'}
             {m.out && ' (not a member today)'}
           </li>
