@@ -1,0 +1,107 @@
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+index ad8eb4ea..0bb2038d 100644
+--- a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
++++ b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+@@ -29,7 +29,7 @@ public class SheetHistory {
+     /** The tables the screen reads (a statement's figures among them), parents before children. */
+     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_terms", "person_hold", "person_retirement",
+             "person_patron", "person_alias", "person_snapshot", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "rate_version", "sheet_setting",
+-            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_line", "claim_template",
++            "sheet_setting_from", "sheet_source", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_line", "claim_template",
+             "pool", "pool_member", "plan", "plan_claim", "crew", "crew_member", "period_opening", "sheet_note");
+ 
+     private final JdbcTemplate jdbc;
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index ca83a2bc..07e43454 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
+  * The rates for each grade on each sheet, each in force from its from-date (null: from the beginning
+  * of time), through its to-date (null: with no end). A grade without one in force on a date has no rate on
+  * that date on the sheet itself; then its parent's rate on that date is used, then the parent's parent's, up to
+- * three levels up (see {@link #chain}).
++ * three levels up, then for a cloned sheet the rate of the sheet it was cloned from (and so on, see {@link #ancestry}).
+  */
+ @Repository
+ public class RateRepository {
+@@ -57,21 +57,33 @@ public class RateRepository {
+                 .toList();
+     }
+ 
+-    /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
++    /**
++     * The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up; then, for a
++     * cloned sheet, the sheet it was cloned from with its parents and source in turn (each sheet once).
++     */
+     public List<String> ancestry(String sheetId) {
+-        List<String> found = new java.util.ArrayList<>(List.of(sheetId));
+-        String at = sheetId;
+-        while (found.size() <= PARENT_LEVELS) {
+-            String parent = parentOf(at);
+-            if (parent == null || found.contains(parent)) {
+-                break;
++        List<String> found = new java.util.ArrayList<>();
++        for (String at = sheetId; at != null && !found.contains(at); at = sourceOf(at)) {
++            found.add(at);
++            String child = at;
++            for (int level = 0; level < PARENT_LEVELS; level++) {
++                String parent = parentOf(child);
++                if (parent == null || found.contains(parent)) {
++                    break;
++                }
++                found.add(parent);
++                child = parent;
+             }
+-            found.add(parent);
+-            at = parent;
+         }
+         return found;
+     }
+ 
++    /** The sheet the sheet was cloned from; null when it was not cloned. */
++    public String sourceOf(String sheetId) {
++        return jdbc.query("SELECT source_id FROM sheet_source WHERE sheet_id = ?", (rs, n) -> rs.getString(1), sheetId)
++                .stream().findFirst().orElse(null);
++    }
++
+     /** The sheet's parent; null when it has none. */
+     public String parentOf(String sheetId) {
+         return jdbc.query("SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = 'parent'",
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 5cd3d375..4c5bb243 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -7,7 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /**
+- * Copies a sheet to a sheet id never used: its today, settings, roles, rates, holidays, void reasons, templates, the
++ * Copies a sheet to a sheet id never used, recording the sheet it was cloned from (see RateRepository#ancestry): its today, settings, roles, rates, holidays, void reasons, templates, the
+  * tags ever used on its claims, its people (grades, terms, contacts, aliases, holds, retirements, patrons), its pools, its crews,
+  * its plans (with the dates they made claims for), its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs, lines). Its
+  * statements are not copied (no claim is bound), nor its snapshots, watches, delegations, comments, editor locks or
+@@ -26,6 +26,7 @@ public class SheetCloneRepository {
+     public Map<Long, Long> copySheet(String from, String to) {
+         jdbc.update("INSERT INTO sheet (id, today, last_claim_listed) SELECT ?, today, last_claim_listed FROM sheet"
+                 + " WHERE id = ?", to, from);
++        jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
+         jdbc.update("INSERT INTO sheet_setting (sheet_id, setting_key, setting_value) SELECT ?, setting_key,"
+                 + " setting_value FROM sheet_setting WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_setting_from (sheet_id, setting_key, from_date, setting_value) SELECT ?,"
+diff --git a/src/main/resources/db/migration/V89__sheet_source.sql b/src/main/resources/db/migration/V89__sheet_source.sql
+new file mode 100644
+index 00000000..929aa9f7
+--- /dev/null
++++ b/src/main/resources/db/migration/V89__sheet_source.sql
+@@ -0,0 +1,11 @@
++-- The sheet a cloned sheet was cloned from: its rates (then its parents', then its own source's) stand in for a grade
++-- without a rate in force on a date on the clone nor on its parents.
++CREATE TABLE sheet_source (
++    sheet_id  VARCHAR(200) NOT NULL PRIMARY KEY REFERENCES sheet (id),
++    source_id VARCHAR(200) NOT NULL
++);
++
++-- Snapshotted with the rest of the screen (see V40, V41).
++CREATE TABLE hist.sheet_source AS SELECT s.*, CAST(NULL AS BIGINT) AS snapshot_id FROM sheet_source s WHERE FALSE;
++CREATE INDEX hist_sheet_source_snapshot ON hist.sheet_source (snapshot_id);
++CREATE TABLE asof.sheet_source AS SELECT * FROM sheet_source WHERE FALSE;
