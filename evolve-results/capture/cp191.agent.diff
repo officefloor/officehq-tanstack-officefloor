@@ -1,0 +1,176 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 8c302e70..94d14377 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -212,6 +212,9 @@ type SettingField = { key: string; label: string; placeholder: string; blank: bo
+ const SETTINGS: readonly SettingField[] = [
+   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A clerk limit is an amount with up to two decimals, or blank for no limit' },
++  ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `clerk-limit-${grade}`,
++    label: `Clerk limit for grade ${grade}`, placeholder: 'sheet\'s limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
++    invalid: 'A grade\'s clerk limit is an amount with up to two decimals, or blank for the sheet\'s' })),
+   { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A floor is an amount with up to two decimals' },
+   { key: 'terms', label: 'Terms (days)', placeholder: TERMS_DEFAULT, blank: false, valid: DAYS, inputMode: 'numeric',
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index a209d5fb..91a914d5 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -39,7 +39,7 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
+ // A claim not SETTLED or VOID takes a proof of a kind, receipt or photo (a receipt when none is chosen), raising its proofs
+ // count by one and its count of that kind; while the sheet has proof kinds, one above the threshold needs a proof of each; one whose due is above the proof threshold
+ // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
+-// An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
++// An OPEN claim (not deferred, not in a closed period) can be split by a user who may open a claim: an amount above 0.00 and below its own goes to a new
+ // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
+ // An OPEN claim can be part-settled: the amount is split off as a split does and the new claim settled at once as a settle
+ // does (PENDING under the clerk limit), with the four-eyes and proof rules judged on the original; either refusal refuses all.
+diff --git a/src/main/java/net/officefloor/hq/app/access/DatedSettings.java b/src/main/java/net/officefloor/hq/app/access/DatedSettings.java
+index 0a617fb2..029dc52a 100644
+--- a/src/main/java/net/officefloor/hq/app/access/DatedSettings.java
++++ b/src/main/java/net/officefloor/hq/app/access/DatedSettings.java
+@@ -68,6 +68,12 @@ public record DatedSettings(List<DatedValue> values) {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
++    /** The clerk limit in force on the date for a claim of the grade: the grade's own (setting clerk-limit-<grade>) when set, else the sheet's; null when there is none. */
++    public BigDecimal clerkLimit(String grade, LocalDate date) {
++        String value = grade == null ? null : on(Setting.CLERK_LIMIT_OF_GRADE + grade, date);
++        return value == null ? clerkLimit(date) : new BigDecimal(value);
++    }
++
+     /** The proof threshold in force on the date; null when there is none. */
+     public BigDecimal proofThreshold(LocalDate date) {
+         String value = on(Setting.PROOF_THRESHOLD, date);
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 6f8a86c2..02e960a9 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -26,6 +26,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The most a clerk may settle a claim's due for; blank means no limit. */
+     public static final String CLERK_LIMIT = "clerk-limit";
+ 
++    /** A grade's own clerk limit (the key is this plus the grade, clerk-limit-A); blank means the sheet's. */
++    public static final String CLERK_LIMIT_OF_GRADE = "clerk-limit-";
++
+     /** The due above which a claim needs a proof before it is settled or approved; blank means none. */
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+ 
+@@ -71,7 +74,7 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** A grade's grace (the key is this plus the grade, grace-A): the days past its due-by a claim of that grade on its date goes overdue and counts its late charge from; blank means none. */
+     public static final String GRACE_OF_GRADE = "grace-";
+ 
+-    /** The grades that may have their own terms, grace and proof threshold. */
++    /** The grades that may have their own terms, grace, clerk limit and proof threshold. */
+     public static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
+ 
+     /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue, the one in force on each 30-day boundary date; two decimals. */
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index 5646f9d8..772f995d 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The escalation gap is a whole number of days, or blank for off. The review SLA is a whole number of days, or blank for none. The default grade is one of the grades, or blank for A. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. The proof kinds are a comma separated list of receipt and photo, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. A grade's clerk limit (clerk-limit-<grade>) is an amount with up to two decimals, or blank for the sheet's. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The escalation gap is a whole number of days, or blank for off. The review SLA is a whole number of days, or blank for none. The default grade is one of the grades, or blank for A. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. The proof kinds are a comma separated list of receipt and photo, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -281,6 +281,19 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (key.startsWith(Setting.CLERK_LIMIT_OF_GRADE)
++                && Setting.GRADES.contains(key.substring(Setting.CLERK_LIMIT_OF_GRADE.length()))) {
++            String value = null;
++            if (!text.isEmpty()) {
++                if (!AMOUNT.matcher(text).matches()) {
++                    throw new BadRequestException("A grade's clerk limit is an amount with up to two decimals, or blank for the sheet's");
++                }
++                value = new BigDecimal(text).setScale(2).toPlainString();
++            }
++            setting.set(new SettingInput(key, value, from));
++            changedBy.set(by);
++            return;
++        }
+         if (!Setting.CLERK_LIMIT.equals(key)) {
+             throw new BadRequestException("No such setting: " + key);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 01034d44..f15e434b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -159,7 +159,8 @@ public class ApplyClaimStatus {
+         }
+         ClaimStatus to = status;
+         if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
+-            BigDecimal limit = late.settings().clerkLimit(late.today());
++            Person owner = people.find(claim.getSheetId(), claim.getPersonId());
++            BigDecimal limit = late.settings().clerkLimit(owner == null ? null : owner.gradeOn(late.today()), late.today());
+             if (limit != null && due.compareTo(limit) > 0) {
+                 to = ClaimStatus.PENDING; // awaits a steward's approval
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java b/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java
+index 59a68878..bdf114a3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySettlePart.java
+@@ -45,7 +45,7 @@ public class ApplySettlePart {
+             kept = repository.keepOnly(() -> {
+                 try {
+                     RollupSnapshot before = rollup.snapshot(sheetId);
+-                    new ApplySplit().apply(claim, amount, by, repository, people, settings, sheets, periods,
++                    new ApplySplit().apply(claim, amount, by, repository, people, roles, settings, sheets, periods,
+                             value -> made[0] = value);
+                     new RecordClaimSplit().record(claim, made[0], by, people, audit, log);
+                     rollup.record(sheetId, before, by);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index 3ccc2645..d737c872 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.RoleRepository;
+ import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+@@ -15,11 +16,12 @@ import net.officefloor.plugin.variable.Val;
+  * keeps the rest and loses any figure a statement bound it to; a new OPEN claim with the amount, the same date and note,
+  * the next number, opened by the user, split from the claim's number and due by the terms-th business day after its date,
+  * with the terms in force for its person on the sheet's today, the day it is created (their own, else their grade's on that day, else the sheet's), is listed as the person's newest;
+- * a late entry when that due-by is in a soft-closed period.
++ * a late entry when that due-by is in a soft-closed period. Opening the new claim takes the open permission: refused for a
++ * user whose role may not open a claim on the sheet.
+  */
+ public class ApplySplit {
+     public void apply(@Val Claim claim, @Val SplitAmount amount, @Val ChangedBy by, ClaimRepository repository,
+-            PersonRepository people, SettingRepository settings, SheetRepository sheets, PeriodRepository periods,
++            PersonRepository people, RoleRepository roles, SettingRepository settings, SheetRepository sheets, PeriodRepository periods,
+             Out<Split> split) throws BadRequestException {
+         if (claim.getStatus() != ClaimStatus.OPEN) {
+             throw new BadRequestException("Only an OPEN claim is split; this one is " + claim.getStatus());
+@@ -30,6 +32,10 @@ public class ApplySplit {
+         if (amount.value().signum() <= 0 || amount.value().compareTo(claim.getAmount()) >= 0) {
+             throw new BadRequestException("The amount split off is more than 0.00 and less than the claim's amount");
+         }
++        String role = roles.roleOf(claim.getSheetId(), by.name());
++        if (!settings.allows(claim.getSheetId(), "open", role)) {
++            throw new BadRequestException("A " + role + " may not open a claim on this sheet");
++        }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         Claim into = repository.split(claim, amount.value(), by.name(), BuildClaim.terms(person, sheets.today(claim.getSheetId()), settings));
+         if (into == null) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
+index e0db69f3..690e9160 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
+@@ -1,5 +1,5 @@
+ # Split an amount (above 0.00 and below the claim's) off an OPEN claim into a new OPEN claim with the next number.
+-# Refused for any other status, a deferred claim, or a claim in a closed period.
++# Refused for any other status, a deferred claim, a claim in a closed period, or a user whose role may not open a claim.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
+   next: split
