@@ -27,6 +27,7 @@ public class Settings {
     public static final String LATE_PCT_DEFAULT = "0.00";
     public static final String POLICY_DATE = "policy-date";
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+    public static final String CAP = "cap";
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
@@ -56,6 +57,18 @@ public class Settings {
     public BigDecimal clerkLimit(String sheetId) {
         String value = get(sheetId, CLERK_LIMIT);
         return value.isEmpty() ? null : new BigDecimal(value);
+    }
+
+    /** The cap, with two decimals: what a person's due-total is at most; null when there is none. */
+    public BigDecimal cap(String sheetId) {
+        String value = get(sheetId, CAP);
+        return value.isEmpty() ? null : new BigDecimal(value);
+    }
+
+    /** A person's due-total held to the sheet's cap; null (n/a) stays null. */
+    public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
+        BigDecimal cap = cap(sheetId);
+        return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap);
     }
 
     /** The floor, with two decimals: what a claim's live due is at least; 1.00 when never set. */

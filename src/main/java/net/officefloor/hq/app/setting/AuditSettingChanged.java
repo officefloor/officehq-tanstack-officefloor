@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 
 public class AuditSettingChanged {
-    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date.
+    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap.
     public void audit(@Val SheetSettings settings, ServerHttpConnection connection, Audit audit) {
         if (settings.clerkLimit() != null) {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
@@ -32,6 +32,10 @@ public class AuditSettingChanged {
         if (settings.periodNumberingFrom() != null) {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.PERIOD_NUMBERING_FROM, "value=" + settings.periodNumberingFrom()));
+        }
+        if (settings.cap() != null) {
+            audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
+                    "key=" + Settings.CAP, "value=" + settings.cap()));
         }
     }
 }

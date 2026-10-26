@@ -8,8 +8,8 @@ import type { Grade } from '../people/peopleQuery';
 
 /** `clerkLimit` has two decimals ("1.50"), or is "" when there is no limit; `floor` has two decimals;
  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
- *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string> };
+ *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string };
 
 /** What the request carries: a setting left out (or blank, for the floor, terms, a grade's terms and late percent) is left as it is; a blank policy date is none. */
 export type SettingsChange = {
@@ -20,6 +20,7 @@ export type SettingsChange = {
   policyDate?: string;
   periodNumberingFrom?: string;
   gradeTerms?: Partial<Record<Grade, string>>;
+  cap?: string;
 };
 
 /** The floor a sheet starts with. */
@@ -47,6 +48,11 @@ export const settingsQuery = (sheetId: string) => ({
 /** The sheet's floor: what a claim's live due is at least. */
 export function useFloor(sheetId: string): string {
   return useQuery(settingsQuery(sheetId)).data?.floor ?? DEFAULT_FLOOR;
+}
+
+/** The sheet's cap: what a person's due-total is at most ("" for none). */
+export function useCap(sheetId: string): string {
+  return useQuery(settingsQuery(sheetId)).data?.cap ?? '';
 }
 
 /** The sheet's late percent: what an overdue claim gains of its figure for every full 30 days it is overdue. */

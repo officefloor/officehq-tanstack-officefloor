@@ -114,9 +114,9 @@ function floored(live: string, floor: string): string {
 }
 
 /**
- * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
+ * A person's figures added up, before the cap: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
-export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
+export function personSum(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, gradeOn(person, today), today);
   const figures = claims
@@ -124,4 +124,19 @@ export function personDue(person: Person | undefined, people: Person[], claims: 
     .map((c) => figure(c, rates, person, floor, late))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
+}
+
+/** A sum of figures held to the sheet's `cap` (two decimals; "" for none); n/a is not capped. */
+export function capped(sum: string, cap: string): string {
+  return sum === 'n/a' || cap === '' || hundredths(sum) <= hundredths(cap) ? sum : show(hundredths(cap));
+}
+
+/** What a sum of figures is above the sheet's `cap`: 0.00 when it is not (or there is no cap, or it is n/a). */
+export function excess(sum: string, cap: string): string {
+  return sum === 'n/a' ? '0.00' : show(hundredths(sum) - hundredths(capped(sum, cap)));
+}
+
+/** A person's due-total: their figures added up (see `personSum`), held to the sheet's `cap` (two decimals; "" for none). */
+export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late, cap: string): string {
+  return capped(personSum(person, people, claims, rates, today, floor, late), cap);
 }

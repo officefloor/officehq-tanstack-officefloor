@@ -21,9 +21,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today). From the period numbering date on, an opened claim is numbered within its period (blank: off).
- *  A save with every field blank clears whichever of the clerk limit, the policy date and the period numbering
- *  date was last worked in (the clerk limit unless it was one of the others). */
+ *  today). A person's due-total is at most the cap (blank: none). From the period numbering date on, an opened claim is numbered within its period (blank: off).
+ *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
+ *  date and the cap was last worked in (the clerk limit unless it was one of the others). */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
@@ -34,7 +34,8 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [numberingFrom, setNumberingFrom] = useState('');
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom'>('clerkLimit');
+  const [cap, setCap] = useState('');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap'>('clerkLimit');
   const [error, setError] = useState('');
 
   const [user] = useUser();
@@ -51,6 +52,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setLatePct('');
       setPolicyDate('');
       setNumberingFrom('');
+      setCap('');
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -98,11 +100,17 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The period numbering from-date must be a date (yyyy-mm-dd).');
       return;
     }
+    const c = cap.trim();
+    if (c !== '' && !AMOUNT.test(c)) {
+      setError('The cap must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '';
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '';
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
+    if (c !== '' || (none && blank === 'cap')) body.cap = c;
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
     if (Object.keys(g).length > 0) body.gradeTerms = g;
@@ -205,6 +213,19 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="setting-cap"
+            placeholder="none"
+            value={cap}
+            onFocus={() => setBlank('cap')}
+            onChange={(e) => {
+              setCap(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -235,6 +256,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Period numbering from:{' '}
         <span data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</span>
+      </p>
+      <p>
+        Cap in force: <span data-testid="setting-cap-current">{settings.data?.cap ?? ''}</span>
       </p>
     </section>
   );

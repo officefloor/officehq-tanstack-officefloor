@@ -23,5 +23,8 @@ public class ApplySettings {
         if (settings.periodNumberingFrom() != null) {
             store.set(settings.sheetId(), Settings.PERIOD_NUMBERING_FROM, settings.periodNumberingFrom());
         }
+        if (settings.cap() != null) {
+            store.set(settings.sheetId(), Settings.CAP, settings.cap());
+        }
     }
 }

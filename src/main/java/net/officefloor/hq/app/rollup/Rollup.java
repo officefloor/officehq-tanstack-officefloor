@@ -59,6 +59,8 @@ public class Rollup {
             }
             // With no rate today and no figure, the due-total is n/a.
             boolean none = !anyFigure && rates.on(sheetId, person.gradeOn(today), today) == null;
+            // Otherwise it is held to the sheet's cap.
+            due = settings.capped(sheetId, due);
             claimedTotal = claimedTotal.add(claimed);
             if (!none) {
                 dueTotal = dueTotal.add(due);

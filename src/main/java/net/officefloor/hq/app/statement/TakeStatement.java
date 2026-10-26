@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 public class TakeStatement {
-    // Records the person's due-total now and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
+    // Records the person's due-total now (held to the sheet's cap) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
     // the rest of their claims are left unbound. The late charge is never bound: the due-total includes it,
     // but each claim is bound to the figure under it.
     public void take(@Val Person person, Claims claims, Rates rates, Settings settings, Sheets sheets, Statements statements,
@@ -41,7 +41,8 @@ public class TakeStatement {
         boolean none = rates.on(person.sheetId(), person.gradeOn(today), today) == null
                 && figures.values().stream().allMatch(Objects::isNull);
         claims.bind(person.sheetId(), person.id(), figures);
-        Statement statement = new Statement(person.sheetId(), person.id(), none ? "n/a" : total.toPlainString(),
+        Statement statement = new Statement(person.sheetId(), person.id(),
+                none ? "n/a" : settings.capped(person.sheetId(), total).toPlainString(),
                 figures.size(), today);
         statements.add(statement);
         statementOut.set(statement);

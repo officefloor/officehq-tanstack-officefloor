@@ -26,6 +26,7 @@ public class ValidateSettings {
     // A grade's own terms are like the terms: blank is left as it is, otherwise a whole number of days, 0 or more,
     // and only a grade (A, B or C) may have them.
     // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
+    // The cap is missing: left as it is, blank: none, otherwise an amount of 0.00 or more with up to two decimals.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
             Out<SheetSettings> settingsOut) throws InvalidSettingException {
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
@@ -77,8 +78,15 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The period numbering from-date must be a date (yyyy-mm-dd).");
             }
         }
+        String cap = body == null || body.cap() == null ? null : body.cap().trim();
+        if (cap != null && !cap.isEmpty()) {
+            if (!AMOUNT.matcher(cap).matches()) {
+                throw new InvalidSettingException("The cap must be an amount of 0.00 or more, with up to two decimals.");
+            }
+            cap = twoDecimals(cap);
+        }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !latePct.isEmpty() || policyDate != null
-                || numberingFrom != null;
+                || numberingFrom != null || cap != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -86,7 +94,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, gradeTerms));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, gradeTerms));
     }
 
     private static String twoDecimals(String amount) {

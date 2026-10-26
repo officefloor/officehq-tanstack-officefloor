@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import { personDue, ratesQuery } from '../rates/ratesQuery';
-import { useFloor, useLate } from '../settings/settingsQuery';
+import { useCap, useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, peopleQuery } from './peopleQuery';
 
@@ -19,12 +19,13 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
 
   const exportCsv = () => {
     const lines = [
       'name,grade,retired-from,due-total',
       ...people.map((p) =>
-        [p.name, gradeOn(p, today) ?? p.grade, p.retiredFrom ?? '', personDue(p, people, claims, rates, today, floor, late)]
+        [p.name, gradeOn(p, today) ?? p.grade, p.retiredFrom ?? '', personDue(p, people, claims, rates, today, floor, late, cap)]
           .map(csvValue)
           .join(','),
       ),
