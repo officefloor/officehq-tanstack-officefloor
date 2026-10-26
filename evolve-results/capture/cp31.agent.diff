@@ -1,0 +1,228 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 66304d96..80e70b1c 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -5,13 +5,13 @@ import { postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { ClaimCells } from '../../slots/defs/claimColumns';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+-import { claimsQuery, counts } from '../claims/claimsQuery';
++import { claimsQuery } from '../claims/claimsQuery';
+ import type { Claim } from '../claims/claimsQuery';
+ import { peopleQuery } from '../people/peopleQuery';
+-import { figure, ratesQuery, sumDue } from '../rates/ratesQuery';
++import { ratesQuery } from '../rates/ratesQuery';
+ import { useFloor, useLate } from '../settings/settingsQuery';
+ import { useUser } from '../session/useUser';
+-import { periodOf, periodsKey, periodsQuery } from './periodsQuery';
++import { periodDue, periodOf, periodsKey, periodsQuery } from './periodsQuery';
+ import type { Period } from './periodsQuery';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+@@ -140,13 +140,7 @@ function Periods({ sheetId }: { sheetId: string }) {
+     once(() => add.mutateAsync({ name: n, from: f, to: t }));
+   };
+ 
+-  const dueTotal = (period: Period) =>
+-    period.closedTotal ??
+-    sumDue(
+-      claims
+-        .filter((c) => counts(c, people) && period.from <= c.date && c.date <= period.to)
+-        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)),
+-    );
++  const dueTotal = (period: Period) => periodDue(period, claims, people, rates, floor, late);
+ 
+   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {
+     set(e.target.value);
+diff --git a/src/main/frontend/features/periods/periodsQuery.ts b/src/main/frontend/features/periods/periodsQuery.ts
+index f12c379b..e69b7e3d 100644
+--- a/src/main/frontend/features/periods/periodsQuery.ts
++++ b/src/main/frontend/features/periods/periodsQuery.ts
+@@ -1,4 +1,9 @@
+ import { getJson } from '../../api/http';
++import { counts } from '../claims/claimsQuery';
++import type { Claim } from '../claims/claimsQuery';
++import type { Person } from '../people/peopleQuery';
++import { figure, sumDue } from '../rates/ratesQuery';
++import type { Late, Rate } from '../rates/ratesQuery';
+ import { sheetKey } from '../sheet/sheetQuery';
+ 
+ /**
+@@ -20,3 +25,15 @@ export const periodsQuery = (sheetId: string) => ({
+ export function periodOf(periods: Period[], date: string): Period | undefined {
+   return periods.find((p) => p.from <= date && date <= p.to);
+ }
++
++/** A period's due-total: the figures of the counting claims dated in it, fixed while the period is closed. */
++export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: string, late: Late): string {
++  return (
++    period.closedTotal ??
++    sumDue(
++      claims
++        .filter((c) => counts(c, people) && period.from <= c.date && c.date <= period.to)
++        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)),
++    )
++  );
++}
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 06eabc5c..6d519346 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -2,28 +2,13 @@ import { useQuery } from '@tanstack/react-query';
+ import { ClaimCells } from '../../slots/defs/claimColumns';
+ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+-import { claimsQuery, counts } from '../claims/claimsQuery';
++import { claimsQuery } from '../claims/claimsQuery';
+ import type { Claim } from '../claims/claimsQuery';
+-import { gradeOn, peopleQuery } from '../people/peopleQuery';
++import { peopleQuery } from '../people/peopleQuery';
+ import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useFloor, useLate } from '../settings/settingsQuery';
+-import type { Person } from '../people/peopleQuery';
+-import { figure, rateFor, ratesQuery, sumDue } from './ratesQuery';
+-import type { Late, Rate } from './ratesQuery';
+-
+-/**
+- * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
+- */
+-function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
+-  if (!person) return 'n/a';
+-  const rate = rateFor(rates, gradeOn(person, today), today);
+-  const figures = claims
+-    .filter((c) => c.personId === person.id && counts(c, people))
+-    .map((c) => figure(c, rates, person, floor, late))
+-    .filter((d) => d !== 'n/a');
+-  return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
+-}
++import { figure, personDue, ratesQuery, sumDue } from './ratesQuery';
+ 
+ function useSheetData(sheetId: string) {
+   return {
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 42956210..8e70e84d 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -1,6 +1,6 @@
+ import { getJson } from '../../api/http';
+ import { sheetKey } from '../sheet/sheetQuery';
+-import { isCorrection } from '../claims/claimsQuery';
++import { counts, isCorrection } from '../claims/claimsQuery';
+ import type { Claim } from '../claims/claimsQuery';
+ import { gradeOn } from '../people/peopleQuery';
+ import type { Grade, Person } from '../people/peopleQuery';
+@@ -100,3 +100,16 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined,
+ function floored(live: string, floor: string): string {
+   return live === 'n/a' || hundredths(live) >= hundredths(floor) ? live : show(hundredths(floor));
+ }
++
++/**
++ * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
++ */
++export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
++  if (!person) return 'n/a';
++  const rate = rateFor(rates, gradeOn(person, today), today);
++  const figures = claims
++    .filter((c) => c.personId === person.id && counts(c, people))
++    .map((c) => figure(c, rates, person, floor, late))
++    .filter((d) => d !== 'n/a');
++  return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+new file mode 100644
+index 00000000..840875ce
+--- /dev/null
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -0,0 +1,91 @@
++import { useQuery } from '@tanstack/react-query';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { claimsQuery } from '../claims/claimsQuery';
++import type { ClaimStatus } from '../claims/claimsQuery';
++import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
++import { periodDue, periodsQuery } from '../periods/periodsQuery';
++import { personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
++import { useFloor, useLate } from '../settings/settingsQuery';
++import { useSheetToday } from '../sheet/useSheetToday';
++
++const STATUSES: Array<ClaimStatus | 'PENDING'> = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
++/**
++ * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
++ * today (retired people excluded) and their due-totals added up, skipping n/a. Per period: its
++ * due-total. Per status: how many claims have it.
++ */
++function Summary({ sheetId }: { sheetId: string }) {
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const rates = useQuery(ratesQuery(sheetId)).data ?? [];
++  const periods = useQuery(periodsQuery(sheetId)).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  const active = people.filter((p) => p.retiredFrom === null);
++
++  return (
++    <section data-testid="summary">
++      <h3>Summary</h3>
++      <table data-testid="summary-grades">
++        <thead>
++          <tr>
++            <th>Grade</th>
++            <th>People</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {GRADES.map((g) => {
++            const onGrade = active.filter((p) => gradeOn(p, today) === g);
++            return (
++              <tr key={g} data-testid={`summary-grade-${g}`}>
++                <td>{g}</td>
++                <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
++                <td data-testid={`summary-grade-${g}-due-total`}>
++                  {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late)))}
++                </td>
++              </tr>
++            );
++          })}
++        </tbody>
++      </table>
++      <table data-testid="summary-periods">
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name} data-testid={`summary-period-${p.name}`}>
++              <td>{p.name}</td>
++              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDue(p, claims, people, rates, floor, late)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <table data-testid="summary-statuses">
++        <thead>
++          <tr>
++            <th>Status</th>
++            <th>Claims</th>
++          </tr>
++        </thead>
++        <tbody>
++          {STATUSES.map((s) => (
++            <tr key={s} data-testid={`summary-status-${s}`}>
++              <td>{s}</td>
++              <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = SheetPanel.fill({ order: 30, Component: Summary });
