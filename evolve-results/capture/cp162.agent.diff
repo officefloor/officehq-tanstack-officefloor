@@ -1,0 +1,142 @@
+diff --git a/src/main/frontend/features/timeline/claimTimeline.slot.tsx b/src/main/frontend/features/timeline/claimTimeline.slot.tsx
+new file mode 100644
+index 00000000..b9e160b1
+--- /dev/null
++++ b/src/main/frontend/features/timeline/claimTimeline.slot.tsx
+@@ -0,0 +1,43 @@
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { ClaimCells } from '../../slots/defs/claimRow';
++
++// A claim's timeline: each press reads the audit lines about it, newest first, as the file holds them — those
++// carrying its number, or for a claim with no number those naming its person, amount and date. It records nothing.
++function ClaimTimeline({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { id: number } }) {
++  const show = useMutation({
++    mutationFn: () =>
++      getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/timeline`),
++  });
++
++  return (
++    <span>
++      <button
++        type="button"
++        data-testid="claim-timeline"
++        disabled={show.isPending}
++        onClick={() => {
++          show.reset();
++          show.mutate();
++        }}
++      >
++        Timeline
++      </button>
++      {show.isError && (
++        <span data-testid="claim-timeline-error" role="alert">
++          {' '}
++          {show.error.message}
++        </span>
++      )}
++      {show.data && (
++        <ol data-testid="claim-timeline-list">
++          {show.data.map((line, i) => (
++            <li key={i} data-testid="claim-timeline-line">{line}</li>
++          ))}
++        </ol>
++      )}
++    </span>
++  );
++}
++
++export const contribution = ClaimCells.fill({ order: 47, Component: ClaimTimeline });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+new file mode 100644
+index 00000000..8c04737c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+@@ -0,0 +1,57 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * A claim's timeline: the sheet's audit lines about it exactly as the file holds them, newest first. A numbered
++ * claim's lines are those carrying number=<its number>; an unnumbered claim's are those, carrying no number, naming
++ * its person, amount and date together. A field's value runs to the next " key=" field.
++ */
++public class RespondWithClaimTimeline {
++
++    private static final Pattern FIELD = Pattern.compile("(?:^| )([^\\s=]+)=(.*?)(?= [^\\s=]+=|$)");
++
++    public void respond(@Val SheetResponse sheet, @Val Claim claim, Audit audit, PersonRepository people,
++            ObjectResponse<List<String>> response) {
++        Person person = people.find(sheet.id(), claim.getPersonId());
++        String number = claim.getNumber();
++        String amount = claim.getAmount().setScale(2).toPlainString();
++        String date = String.valueOf(claim.getDate());
++        List<String> lines = new ArrayList<>();
++        for (String line : audit.lines(sheet.id())) {
++            Map<String, String> fields = fields(line);
++            boolean about = number != null
++                    ? number.equals(fields.get("number"))
++                    : !fields.containsKey("number") && person != null
++                            && person.getName().equals(fields.get("person")) && amount.equals(fields.get("amount"))
++                            && date.equals(fields.get("date"));
++            if (about) {
++                lines.add(line);
++            }
++        }
++        Collections.reverse(lines);
++        response.send(lines);
++    }
++
++    /** The line's fields, the first of each key. */
++    private static Map<String, String> fields(String line) {
++        Map<String, String> fields = new HashMap<>();
++        Matcher field = FIELD.matcher(line);
++        while (field.find()) {
++            fields.putIfAbsent(field.group(1), field.group(2));
++        }
++        return fields;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index f2e0f8c5..6ff1dc66 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -357,6 +357,8 @@ public class PersonRepository {
+                 + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
+         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
+         carryStatements(f, sheetId, t);
++        jdbc.update("DELETE FROM person_snapshot m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM person_snapshot o"
++                + " WHERE o.person_id = ? AND o.left_on = m.left_on)", f, t);
+         jdbc.update("UPDATE person_snapshot SET person_id = ? WHERE person_id = ?", t, f);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 00000000..f55d176b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,11 @@
++# A claim's timeline: the sheet's audit lines about it as the file holds them, newest first. It records nothing.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimTimeline
++  govern: [ readonly-transaction ]
