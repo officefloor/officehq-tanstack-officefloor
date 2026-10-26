@@ -60,6 +60,28 @@ public class RateRepository {
                 (rs, n) -> rs.getString(1), sheetId).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
 
+    /** The sheets naming this one as their parent, by id. */
+    public List<String> childrenOf(String sheetId) {
+        return jdbc.query("SELECT sheet_id FROM sheet_setting WHERE setting_key = 'parent' AND setting_value = ?"
+                + " ORDER BY sheet_id", (rs, n) -> rs.getString(1), sheetId);
+    }
+
+    /** The sheet's children, their children, and so on down (each once, the sheet itself never among them). */
+    public List<String> descendantsOf(String sheetId) {
+        List<String> found = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : childrenOf(todo.poll())) {
+                if (seen.add(child)) {
+                    found.add(child);
+                    todo.add(child);
+                }
+            }
+        }
+        return found;
+    }
+
     /** The sheet's own rates (level 0), then each of its parents' (see {@link #ancestry}), each at its level up. */
     public List<Rate> chain(String sheetId) {
         List<String> sheets = ancestry(sheetId);
