@@ -470,7 +470,7 @@ function Roles({ sheetId }: { sheetId: string }) {
       return;
     }
     if (!ROLES.includes(r as RoleName)) {
-      setError('The role must be clerk or steward.');
+      setError('The role must be clerk, steward or viewer.');
       return;
     }
     once(() => save.mutateAsync({ user: n, role: r as RoleName }));
@@ -495,7 +495,7 @@ function Roles({ sheetId }: { sheetId: string }) {
           Role{' '}
           <input
             data-testid="role-form-role"
-            placeholder="clerk or steward"
+            placeholder="clerk, steward or viewer"
             list="role-names"
             value={role}
             onChange={(e) => {

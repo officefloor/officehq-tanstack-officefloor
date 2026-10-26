@@ -39,12 +39,12 @@ export type SettingsChange = {
   perms?: Partial<Record<PermAction, string>>;
 };
 
-export type RoleName = 'clerk' | 'steward';
+export type RoleName = 'clerk' | 'steward' | 'viewer';
 
 /** The role a sheet gives a user name; a name with no entry is a clerk. */
 export type Role = { user: string; role: RoleName };
 
-export const ROLES: RoleName[] = ['clerk', 'steward'];
+export const ROLES: RoleName[] = ['clerk', 'steward', 'viewer'];
 
 /** Under the sheet's key, so re-loading the sheet re-reads its settings and roles. */
 export const settingsKey = (sheetId: string) => [...sheetKey(sheetId), 'settings'] as const;

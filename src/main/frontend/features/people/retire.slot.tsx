@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
+import { usePersonError } from './usePersonError';
 import { useUser } from '../session/useUser';
 import { peopleKey, peopleQuery } from './peopleQuery';
 import type { Person } from './peopleQuery';
@@ -17,7 +18,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [date, setDate] = useState('');
-  const [error, setError] = useState('');
+  const [, setError] = usePersonError(personId);
   const once = useSubmitOnce();
   const person = (useQuery(peopleQuery(sheetId)).data ?? []).find((p) => p.id === personId);
   const retire = useMutation({
@@ -59,7 +60,6 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
       >
         Retire
       </button>
-      {error && <span data-testid="person-error">{error}</span>}
     </td>
   );
 }

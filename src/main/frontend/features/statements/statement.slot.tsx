@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
@@ -7,6 +6,7 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { claimsKey } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { useUser } from '../session/useUser';
+import { usePersonError } from '../people/usePersonError';
 import { statementsKey, statementsQuery } from './statementsQuery';
 import type { Statements } from './statementsQuery';
 
@@ -17,7 +17,7 @@ import type { Statements } from './statementsQuery';
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
-  const [error, setError] = useState('');
+  const [, setError] = usePersonError(personId);
   const once = useSubmitOnce();
   const shown = (useQuery(statementsQuery(sheetId)).data ?? []).find((s) => s.personId === personId);
   const take = useMutation({
@@ -47,7 +47,6 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
       >
         Statement
       </button>
-      {error && <span data-testid="person-error">{error}</span>}
     </td>
   );
 }

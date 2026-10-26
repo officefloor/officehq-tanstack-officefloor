@@ -34,6 +34,8 @@ public class Settings {
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD);
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
+    /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
+    public static final String VIEWER = "viewer";
     /** The roles a sheet gives user names. */
     public static final List<String> ROLES = List.of(CLERK, STEWARD);
     /** The actions the permission matrix decides, each kept (undated) under {@link #permKey}. */
@@ -234,6 +236,11 @@ public class Settings {
         List<String> roles = jdbc.queryForList("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 String.class, sheetId, user);
         return roles.isEmpty() ? CLERK : roles.get(0);
+    }
+
+    /** Whether the user is a viewer on the sheet, and so may change nothing. */
+    public boolean isViewer(String sheetId, String user) {
+        return VIEWER.equals(role(sheetId, user == null ? "" : user.trim()));
     }
 
     public void save(Role role) {
