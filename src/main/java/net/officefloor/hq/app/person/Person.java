@@ -1,6 +1,10 @@
 package net.officefloor.hq.app.person;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** A person on a sheet. Mutable so an Apply step can change it in place. */
@@ -152,11 +156,36 @@ public class Person {
 
     /** The names of the person's patrons, sorted. */
     public List<String> getPatrons() {
+        return patrons.stream().sorted().toList();
+    }
+
+    /** The names of the person's patrons, in the order they were named. */
+    public List<String> getPatronsNamed() {
         return patrons;
     }
 
+    /** Sets the names of the person's patrons, in the order they were named. */
     public void setPatrons(List<String> patrons) {
         this.patrons = patrons;
+    }
+
+    /**
+     * The person's patrons with their shares, sorted by name: 100.00 split equally in the order they were named, each
+     * share rounded half to even to two decimals, the remainder (100.00 less the shares added up) to the first named.
+     */
+    public List<PatronShare> getPatronShares() {
+        if (patrons.isEmpty()) {
+            return List.of();
+        }
+        BigDecimal hundred = new BigDecimal("100.00");
+        BigDecimal each = hundred.divide(BigDecimal.valueOf(patrons.size()), 2, RoundingMode.HALF_EVEN);
+        BigDecimal first = hundred.subtract(each.multiply(BigDecimal.valueOf(patrons.size() - 1)));
+        List<PatronShare> shares = new ArrayList<>();
+        for (int i = 0; i < patrons.size(); i++) {
+            shares.add(new PatronShare(patrons.get(i), i == 0 ? first : each));
+        }
+        shares.sort(Comparator.comparing(PatronShare::name));
+        return shares;
     }
 
     /** The person's aliases, sorted as names are compared. */

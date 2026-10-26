@@ -19,7 +19,7 @@ public class AddPatron {
         if (!repository.addPatron(person.getId(), patron.getId())) {
             throw new BadRequestException(patron.getName() + " is already a patron; reload the sheet");
         }
-        person.setPatrons(Stream.concat(person.getPatrons().stream(), Stream.of(patron.getName())).sorted().toList());
+        person.setPatrons(Stream.concat(person.getPatronsNamed().stream(), Stream.of(patron.getName())).toList());
         added.set(new PatronAdded(patron));
     }
 }

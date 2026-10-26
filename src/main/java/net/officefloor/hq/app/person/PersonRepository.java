@@ -210,10 +210,11 @@ public class PersonRepository {
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, t,
                 from.getName());
-        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT DISTINCT ?, pp.patron_id FROM person_patron pp"
+        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT ?, pp.patron_id FROM person_patron pp"
                 + " WHERE pp.person_id = ? AND pp.patron_id <> ? AND NOT EXISTS"
-                + " (SELECT 1 FROM person_patron o WHERE o.person_id = ? AND o.patron_id = pp.patron_id)", t, f, t, t);
-        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT DISTINCT pp.person_id, ? FROM person_patron pp"
+                + " (SELECT 1 FROM person_patron o WHERE o.person_id = ? AND o.patron_id = pp.patron_id)"
+                + " ORDER BY pp.named", t, f, t, t);
+        jdbc.update("INSERT INTO person_patron (person_id, patron_id, named) SELECT pp.person_id, ?, pp.named FROM person_patron pp"
                 + " WHERE pp.patron_id = ? AND pp.person_id <> ? AND NOT EXISTS"
                 + " (SELECT 1 FROM person_patron o WHERE o.person_id = pp.person_id AND o.patron_id = ?)", t, f, t, t);
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
@@ -237,7 +238,7 @@ public class PersonRepository {
         return true;
     }
 
-    /** Sets each person's patrons' names, sorted, their grades and their holds. */
+    /** Sets each person's patrons' names, in the order named, their grades and their holds. */
     private List<Person> withPatrons(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return people;
@@ -263,12 +264,12 @@ public class PersonRepository {
         }
         Map<Long, List<String>> patrons = jdbc.query(
                 "SELECT pp.person_id, q.name FROM person_patron pp JOIN person q ON q.id = pp.patron_id"
-                        + " WHERE q.sheet_id = ?",
+                        + " WHERE q.sheet_id = ? ORDER BY pp.named",
                 (rs, n) -> Map.entry(rs.getLong("person_id"), rs.getString("name")), sheetId).stream()
                 .collect(Collectors.groupingBy(Map.Entry::getKey,
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
         for (Person person : people) {
-            person.setPatrons(patrons.getOrDefault(person.getId(), List.of()).stream().sorted().toList());
+            person.setPatrons(patrons.getOrDefault(person.getId(), List.of()));
         }
         Map<Long, List<String>> aliases = jdbc.query(
                 "SELECT a.person_id, a.alias FROM person_alias a WHERE a.sheet_id = ?",
