@@ -1,0 +1,121 @@
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 5211dc87..5c49f2dd 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -177,17 +177,17 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
+   return dueCents(correction ? -amount : amount, toHundredths(found.rate), halfUp);
+ }
+ 
+-/** A claim's due in cents: fixed when it was settled; otherwise the greater of the sheet's floor in force on the
+- *  claim's date and its figure (claimFigureCents: the rate figure, or the one a statement bound) with its late charge
+- *  on top while it is overdue. The charge and the floor are never bound by a statement; a correction has neither.
+- *  Null without a figure. */
++/** A claim's due in cents: fixed when it was settled; while a statement binds it, the due it was bound to (its late
++ *  charge and floor included, no longer following the sheet's today); otherwise the greater of the sheet's floor in
++ *  force on the claim's date and its rate figure (claimFigureCents) with its late charge on top while it is overdue.
++ *  A correction has neither. Null without a figure. */
+ export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
+   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
+     dueBy: string; corrects?: string | null; deferred?: boolean; added?: number | null },
+   floorOn: (date: string) => bigint, late: Late | undefined): bigint | null {
+   const figure = claimFigureCents(rates, grade, claim, roundsHalfUp(late, claim));
+   if (figure == null) return null;
+-  if (claim.settledDue != null) return figure;
++  if (claim.settledDue != null || isBound(claim)) return figure;
+   const due = figure + lateCents(late, claim, figure, grade);
+   if (isCorrection(claim)) return due;
+   const floor = floorOn(claim.date);
+diff --git a/src/main/java/net/officefloor/hq/app/access/LateCharge.java b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+index 403e06e5..9009b7a4 100644
+--- a/src/main/java/net/officefloor/hq/app/access/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+@@ -14,7 +14,9 @@ import net.officefloor.hq.app.person.Person;
+  * full 30 days it is overdue, the late percent in force on that boundary date (that date plus 30, 60, 90 ... days) of its figure
+  * plus the charges of the boundaries before it (compounding),
+  * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
+- * (a negative amount) never gains one, nor does a claim whose late charge a steward waived. The charge is never bound by a statement; settling freezes it into the settled due.
++ * (a negative amount) never gains one, nor does a claim whose late charge a steward waived. Settling freezes it into the
++ * settled due; a statement binds the due as shown (late charge and floor included), so a bound claim's late charge no
++ * longer follows today until the statement is cancelled.
+  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its
+  * late charge (a correction has no floor).
+  */
+@@ -55,7 +57,7 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
+     /** The claim's late charge on its figure (zero when it is not overdue, is deferred past today, or has no figure). */
+     public BigDecimal on(Claim claim, BigDecimal figure) {
+         BigDecimal none = BigDecimal.ZERO.setScale(2);
+-        if (!claim.getStatus().isOpen() || claim.isDeferredOn(today)) {
++        if (!claim.getStatus().isOpen() || claim.isDeferredOn(today) || bound(claim)) {
+             return none;
+         }
+         return onAsOpen(claim, figure);
+@@ -84,24 +86,32 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
+     }
+ 
+     /**
+-     * The claim's due: its settled due as it is; else the greater of the floor in force on its date and the figure with
++     * The claim's due: its settled due, or the due a statement bound it to, as it is; else the greater of the floor in force on its date and the figure with
+      * its late charge added on top (a correction has no floor); null without a figure.
+      */
+     public BigDecimal due(Claim claim, BigDecimal figure) {
+         if (figure == null) {
+             return null;
+         }
+-        if (claim.getSettledDue() != null) {
++        if (claim.getSettledDue() != null || bound(claim)) {
+             return figure.setScale(2);
+         }
+         return floored(claim, figure.setScale(2).add(on(claim, figure)));
+     }
+ 
+-    /** The due the claim would have were it OPEN (floored as {@link #due}); null without a figure. */
++    /** The due the claim would have were it OPEN (floored as {@link #due}; a bound due as it is); null without a figure. */
+     public BigDecimal dueAsOpen(Claim claim, BigDecimal figure) {
++        if (figure != null && bound(claim)) {
++            return figure.setScale(2);
++        }
+         return figure == null ? null : floored(claim, figure.setScale(2).add(onAsOpen(claim, figure)));
+     }
+ 
++    /** Whether a statement bound the claim's due (late charge included) and it is not settled: its figure is that due. */
++    private static boolean bound(Claim claim) {
++        return claim.isBound() && claim.getSettledDue() == null;
++    }
++
+     /** At least the floor in force on the claim's date, unless it is a correction. */
+     private BigDecimal floored(Claim claim, BigDecimal due) {
+         return claim.isCorrection() ? due : due.max(settings.floor(claim.getDate()));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index e2a0e2d7..391be33a 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -22,10 +22,11 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Takes the person's statement on the sheet's today: records their due-total, binds each of their counting claims
+- * to the figure it has now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
++ * to the due it shows now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
+  * figure its last statement bound it to, else its amount times the rate in force on the claim's date of its
+  * person's grade in force on that date (rounded as the claim rounds by the sheet's policy date; none without a rate) — the rate figure, never floored. The due-total is the counting claims' dues
+- * added up: each figure with its late charge on top while it is overdue, then at least the floor in force on the claim's date (neither is bound); n/a
++ * added up: each figure with its late charge on top while it is overdue, then at least the floor in force on the claim's date; each
++ * counting claim is bound to that due as shown (a claim already bound keeps its bound due); n/a
+  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure; at most the sheet's cap in force on its today.
+  * <p>
+  * Taken as of a date on or before the sheet's today, the statement reads the sheet as it stood at the end of that
+@@ -91,10 +92,12 @@ public class TakeStatement {
+             // A figure at a grade other than today's does not hang on today's grade having a rate; nor does one
+             // dated on or before today, whose rate may have ended since.
+             kept |= figure != null && (!person.gradeOn(c.getDate()).equals(person.getGrade()) || !c.getDate().isAfter(today));
+-            if (figure != null) {
+-                sum = sum.add(late.due(c, figure));
++            BigDecimal due = figure == null ? null : late.due(c, figure);
++            if (due != null) {
++                sum = sum.add(due);
+             }
+-            bound.put(c.getId(), figure);
++            // The claim is bound to its due as shown, late charge and floor included.
++            bound.put(c.getId(), due);
+         }
+         BigDecimal dueTotal = SettingRepository.capped(
+                 kept || rates.find(sheetId, person.getGrade(), today) != null ? sum : null, late.settings().cap(today));
