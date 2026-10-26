@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.Holidays;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.Period;
@@ -23,9 +24,9 @@ public class ApplySplit {
     // Only an OPEN claim that is not deferred is split, by a role the permission matrix allows to open a claim (the new
     // claim is the user's to open), and only of an amount more than 0.00 and less than the claim's. The claim keeps the
     // rest and loses any statement figure; the new claim is opened now: numbered next (by period while the sheet numbers
-    // by period, in the period of its own due-by, as opening does), opened by the user, due by its date plus the terms of its person's grade on that date.
+    // by period, in the period of its own due-by, as opening does), opened by the user, due by its date plus the terms of its person's grade on that date, moved past the sheet's holidays.
     public void apply(@RequestBody(required = false) SplitRequest body, @Val Claim claim, Claims claims, People people,
-            Settings settings, Sheets sheets, Periods periods, Rollup rollup, ServerHttpConnection connection,
+            Settings settings, Holidays holidays, Sheets sheets, Periods periods, Rollup rollup, ServerHttpConnection connection,
             Out<ClaimResponse> responseOut, Out<Split> splitOut) throws ClaimSplitRefusedException {
         String user = Audit.user(connection).trim();
         if (!settings.permits(claim.sheetId(), "open", user)) {
@@ -48,8 +49,8 @@ public class ApplySplit {
                     + claim.amount().toPlainString() + ".");
         }
         Person person = people.find(claim.sheetId(), claim.personId());
-        LocalDate dueBy = claim.date().plusDays(person == null ? settings.terms(claim.sheetId(), claim.date())
-                : person.termsOn(claim.date(), settings));
+        LocalDate dueBy = holidays.dueBy(claim.sheetId(), claim.date().plusDays(person == null
+                ? settings.terms(claim.sheetId(), claim.date()) : person.termsOn(claim.date(), settings)));
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (numberingFrom != null && !today.isBefore(numberingFrom)) {

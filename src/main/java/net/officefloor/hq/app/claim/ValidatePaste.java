@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.Holidays;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.period.Period;
@@ -17,7 +18,7 @@ public class ValidatePaste {
     // case and surrounding spaces), the rest by the claim form's rules (a blank date is the entry date, else the sheet's today, the note
     // may hold commas or be absent). Blank lines are skipped; a paste with no line is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest body, People people,
-            Settings settings, Periods periods, Out<PastedLines> out)
+            Settings settings, Holidays holidays, Periods periods, Out<PastedLines> out)
             throws InvalidClaimException, ClaimInClosedPeriodException, ClaimAfterRetirementException {
         String sheet = sheetId.trim();
         String text = body == null || body.text() == null ? "" : body.text();
@@ -45,7 +46,7 @@ public class ValidatePaste {
                 throw new InvalidClaimException("Line " + n + ": " + e.getMessage());
             }
             LocalDate date = input.date() != null ? input.date() : settings.entryDate(sheet);
-            LocalDate dueBy = date.plusDays(person.termsOn(date, settings));
+            LocalDate dueBy = holidays.dueBy(sheet, date.plusDays(person.termsOn(date, settings)));
             Period closed = periods.closedOn(sheet, dueBy);
             if (closed != null) {
                 throw new ClaimInClosedPeriodException("Line " + n + ": the period " + closed.name()
