@@ -17,7 +17,8 @@ public class Periods {
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of());
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
+            rs.getBoolean("soft"));
 
     private final JdbcTemplate jdbc;
 
@@ -59,21 +60,40 @@ public class Periods {
                 period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
     }
 
-    /** Closes the period, fixing its total and its people's figures; false when it was already closed (by someone else). */
+    /**
+     * Closes the period (open or soft-closed), fixing its total and its people's figures afresh; false when it was
+     * already closed (by someone else).
+     */
     public boolean close(Period closed) {
-        if (jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
+        if (jdbc.update("UPDATE period SET closed = TRUE, soft = FALSE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
                 closed.closedTotal(), closed.sheetId(), closed.name()) != 1) {
             return false;
         }
-        closed.personTotals().forEach((personId, total) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
-                closed.sheetId(), closed.name(), personId, total));
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", closed.sheetId(),
+                closed.name());
+        insertPersonTotals(closed);
         return true;
     }
 
-    /** Reopens the period, dropping its fixed total; false when it was not closed (someone else reopened it). */
+    /** Soft-closes the open period, fixing its total and its people's figures; false when it was not open (any more). */
+    public boolean softClose(Period soft) {
+        if (jdbc.update("UPDATE period SET soft = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed AND NOT soft",
+                soft.closedTotal(), soft.sheetId(), soft.name()) != 1) {
+            return false;
+        }
+        insertPersonTotals(soft);
+        return true;
+    }
+
+    private void insertPersonTotals(Period closed) {
+        closed.personTotals().forEach((personId, total) -> jdbc.update(
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
+                closed.sheetId(), closed.name(), personId, total));
+    }
+
+    /** Reopens the (soft-)closed period, dropping its fixed total; false when it was not closed (someone else reopened it). */
     public boolean reopen(Period period) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
                 period.sheetId(), period.name()) != 1) {
             return false;
         }

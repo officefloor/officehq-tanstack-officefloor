@@ -35,7 +35,7 @@ function PersonPeriodHeaders({ sheetId }: { sheetId: string }) {
   );
 }
 
-/** The person's due-total for each period on the sheet: live while it is open, fixed while it is closed. */
+/** The person's due-total for each period on the sheet: live while it is open, fixed while it is closed or soft-closed. */
 function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: number }) {
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
@@ -56,7 +56,7 @@ function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: nu
   );
 }
 
-/** A period's closed flag and the buttons that close and reopen it (each for the roles the settings' permission matrix allows: by default closing is a clerk's or a steward's, reopening a steward's). A refusal
+/** A period's closed flag (yes, soft or no) and the buttons that close, soft-close and reopen it (each for the roles the settings' permission matrix allows: by default closing and soft-closing are a clerk's or a steward's, reopening a steward's). A refusal
  *  shows on the period until its next action. */
 function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) {
   const queryClient = useQueryClient();
@@ -73,6 +73,17 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
     onError: () => setError(`The period ${period.name} could not be closed: it is already closed, or your role is not allowed to close it.`),
   });
+  const softClose = useMutation({
+    mutationFn: () =>
+      putJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/soft-close`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+    onError: () =>
+      setError(`The period ${period.name} could not be soft-closed: it is already closed, or your role is not allowed to close it.`),
+  });
   const reopen = useMutation({
     mutationFn: () =>
       putJson<Period>(
@@ -87,7 +98,7 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
 
   return (
     <td>
-      <span data-testid="period-closed">{period.closed ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</span>{' '}
       <button
         type="button"
         data-testid="period-close"
@@ -98,6 +109,17 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
         }}
       >
         Close
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="period-soft-close"
+        disabled={softClose.isPending}
+        onClick={() => {
+          setError('');
+          once(() => softClose.mutateAsync());
+        }}
+      >
+        Soft close
       </button>{' '}
       <button
         type="button"
@@ -116,7 +138,7 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
 }
 
 /** The sheet's periods, each with its due-total — the figures of the counting claims dated in it, fixed
- *  while the period is closed and live again once it is reopened — and the form a period is added through. */
+ *  while the period is closed or soft-closed and live again once it is reopened — and the form a period is added through. */
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery(periodsQuery(sheetId));

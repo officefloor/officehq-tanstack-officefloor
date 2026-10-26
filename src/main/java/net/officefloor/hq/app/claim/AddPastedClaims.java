@@ -26,6 +26,10 @@ public class AddPastedClaims {
             ClaimResponse shown = ClaimResponse.from(claim);
             audit.record(Audit.line("CLAIM_ADDED", claim.sheetId(), user, "person=" + person.name(),
                     "amount=" + shown.amount(), "date=" + shown.date()));
+            if (claim.lateEntry()) {
+                audit.record(Audit.line("LATE_ENTRY", claim.sheetId(), user, "person=" + person.name(),
+                        "amount=" + shown.amount(), "date=" + shown.date()));
+            }
         }
         result.set(new PasteResponse(pasted.lines().size()));
     }

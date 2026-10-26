@@ -7,7 +7,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class ReopenPeriod {
-    // Only a role the permission matrix allows to reopen (by default a steward) reopens a closed period; its due-total is then live again.
+    // Only a role the permission matrix allows to reopen (by default a steward) reopens a closed or soft-closed period; its due-total is then live again.
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name, Periods periods,
             Settings settings, ServerHttpConnection connection, Out<Period> periodOut) throws PeriodRefusedException {
         Period period = periods.find(sheetId.trim(), name.trim());
@@ -17,7 +17,7 @@ public class ReopenPeriod {
         if (!settings.permits(period.sheetId(), "reopen", Audit.user(connection).trim())) {
             throw new PeriodRefusedException("Your role is not allowed to reopen a period.");
         }
-        if (!period.closed() || !periods.reopen(period)) {
+        if (!(period.closed() || period.soft()) || !periods.reopen(period)) {
             throw new PeriodRefusedException("The period " + period.name() + " is not closed.");
         }
         periodOut.set(period.reopened());

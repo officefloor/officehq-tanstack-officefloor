@@ -23,7 +23,7 @@ public class Claims {
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
             rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"),
-            rs.getString("split_from"));
+            rs.getString("split_from"), rs.getBoolean("late_entry"));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -51,13 +51,16 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Adds a draft claim, due by {@code dueBy} for good. */
+    /** Adds a draft claim, due by {@code dueBy} for good; a late entry when its date is in a soft-closed period. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy) {
+        boolean late = Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT COUNT(*) > 0 FROM period WHERE sheet_id = ? AND soft AND from_date <= ? AND ? <= to_date",
+                Boolean.class, sheetId, Date.valueOf(date), Date.valueOf(date)));
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, listed) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
@@ -67,11 +70,12 @@ public class Claims {
             ps.setString(5, note);
             ps.setObject(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
-            ps.setString(8, sheetId);
+            ps.setBoolean(8, late);
+            ps.setString(9, sheetId);
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0, null);
+                false, null, corrects, dueBy, null, 0, null, late);
     }
 
     public void save(Claim claim) {
@@ -152,7 +156,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number());
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), false);
     }
 
     /**

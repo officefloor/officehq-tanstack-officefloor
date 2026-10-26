@@ -11,5 +11,9 @@ public class AuditClaimAdded {
         ClaimResponse shown = ClaimResponse.from(claim);
         audit.record(Audit.line("CLAIM_ADDED", claim.sheetId(), Audit.user(connection), "person=" + person.name(),
                 "amount=" + shown.amount(), "date=" + shown.date()));
+        if (claim.lateEntry()) {
+            audit.record(Audit.line("LATE_ENTRY", claim.sheetId(), Audit.user(connection), "person=" + person.name(),
+                    "amount=" + shown.amount(), "date=" + shown.date()));
+        }
     }
 }
