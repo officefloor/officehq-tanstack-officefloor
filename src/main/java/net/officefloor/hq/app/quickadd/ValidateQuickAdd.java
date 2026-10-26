@@ -10,8 +10,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * The quick-add bar's fields, under the person and claim forms' rules. Publishes the person it names (grade A, should
- * they be new) and a claim of the amount dated the sheet's today with an empty note, with the user making the change.
+ * The quick-add bar's fields, under the person and claim forms' rules. Publishes the person it names (the sheet's default grade, should
+ * they be new, given when they are resolved) and a claim of the amount dated the sheet's today with an empty note, with the user making the change.
  */
 public class ValidateQuickAdd {
 

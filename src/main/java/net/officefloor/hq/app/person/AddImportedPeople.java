@@ -9,6 +9,7 @@ import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.ConflictException;
+import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupSnapshot;
 import net.officefloor.hq.app.session.ChangedBy;
@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Imports the lines, in order. A line whose name is a person's name or alias on the sheet (as names are compared)
+ * Imports the lines, in order, a line with a blank grade taking the sheet's default grade. A line whose name is a person's name or alias on the sheet (as names are compared)
  * updates that person; any other line adds one. Every line is first checked as the person form checks it — an add as
  * a new person (name or alias in use on the sheet or its tree, contact another person's), an update as an edit keeping
  * the person's name (two lines naming the same person refuse it too); one refusal refuses them all before anything is
@@ -29,12 +30,16 @@ import net.officefloor.plugin.variable.Val;
 public class AddImportedPeople {
 
     public void add(@Val SheetResponse sheet, @Val ImportedPeople imported, @Val ChangedBy by,
-            PersonRepository repository, SheetRepository sheets, Rollup rollup, Audit audit,
+            PersonRepository repository, SheetRepository sheets, SettingRepository settings, Rollup rollup, Audit audit,
             Out<ImportPeopleResponse> response) throws BadRequestException, ConflictException {
+        String defaultGrade = settings.defaultGrade(sheet.id());
+        List<PersonRequest> requests = imported.people().stream().map(r -> r.grade() != null ? r
+                : new PersonRequest(r.name(), defaultGrade, r.by(), r.version(), r.gradeFrom(), r.terms(), r.contact(),
+                        r.tags(), r.termsFrom())).toList();
         List<Person> matched = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
         int n = 0;
-        for (PersonRequest request : imported.people()) {
+        for (PersonRequest request : requests) {
             n++;
             Person person = repository.findByName(sheet.id(), request.name());
             if (person == null) {
@@ -59,8 +64,8 @@ public class AddImportedPeople {
         LocalDate today = sheets.today(sheet.id());
         int added = 0;
         int updated = 0;
-        for (int i = 0; i < imported.people().size(); i++) {
-            PersonRequest request = imported.people().get(i);
+        for (int i = 0; i < requests.size(); i++) {
+            PersonRequest request = requests.get(i);
             Person person = matched.get(i);
             RollupSnapshot before = rollup.snapshot(sheet.id());
             if (person == null) {

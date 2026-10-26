@@ -196,13 +196,14 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // of the policy date, and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
-// the entry date (blank: off), the default date of a new claim in place of the sheet's today, the fiscal start month
+// the entry date (blank: off), the default date of a new claim in place of the sheet's today, the default grade (blank: A), the grade
+// a person added by the quick-add bar or an import line with a blank grade takes, the fiscal start month
 // (1 to 12, 1 until it is set), the month the sheet's fiscal year starts in,
 // the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
 // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
 // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
-// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent, the proof kinds (blank: none; a comma separated list of receipt and photo: a claim above the proof threshold needs a proof of each before it is settled or approved) and the permissions is dated: saving it records
+// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent, the default grade, the proof kinds (blank: none; a comma separated list of receipt and photo: a claim above the proof threshold needs a proof of each before it is settled or approved) and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -237,6 +238,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'An escalation gap is a whole number of days, or blank for off', dated: false },
   { key: 'review-sla', label: 'Review SLA (days)', placeholder: 'none', blank: true, valid: DAYS, inputMode: 'numeric',
     invalid: 'A review SLA is a whole number of days, or blank for none', dated: false },
+  { key: 'default-grade', label: 'Default grade', placeholder: 'A', blank: true, valid: /^[ABC]$/, inputMode: 'text',
+    invalid: 'A default grade is A, B or C, or blank for A', dated: false },
   { key: 'fiscal-start-month', label: 'Fiscal year start month', placeholder: '1', blank: false, valid: /^(0?[1-9]|1[0-2])$/,
     inputMode: 'numeric', invalid: 'A fiscal start month is a month from 1 to 12', dated: false, starting: '1' },
   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',

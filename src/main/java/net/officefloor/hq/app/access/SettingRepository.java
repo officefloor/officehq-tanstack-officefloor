@@ -104,6 +104,12 @@ public class SettingRepository {
         return value == null ? java.util.List.of() : java.util.List.of(value.split(","));
     }
 
+    /** The grade a person added by the quick-add bar or an import line with a blank grade takes; A until it is set. */
+    public String defaultGrade(String sheetId) {
+        String value = find(sheetId, Setting.DEFAULT_GRADE);
+        return value == null ? Setting.DEFAULT_GRADE_DEFAULT : value;
+    }
+
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
     public int fiscalStartMonth(String sheetId) {
         String value = find(sheetId, Setting.FISCAL_START_MONTH);

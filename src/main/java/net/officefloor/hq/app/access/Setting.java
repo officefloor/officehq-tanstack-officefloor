@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the escalation gap, the review SLA, the fiscal start month, the pot, the alert threshold, the parent, the proof kinds and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the escalation gap, the review SLA, the fiscal start month, the pot, the alert threshold, the parent, the proof kinds, the default grade and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -106,6 +106,12 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The review SLA: the days after its review day (the sheet's today when it went to REVIEW) a REVIEW claim may wait before the sheet's today makes it late; a whole number, blank for none. Not dated. */
     public static final String REVIEW_SLA = "review-sla";
+
+    /** The grade a person added by the quick-add bar or an import line with a blank grade takes: one of the grades, blank for A. Not dated. */
+    public static final String DEFAULT_GRADE = "default-grade";
+
+    /** The default grade a sheet starts with, until it is set. */
+    public static final String DEFAULT_GRADE_DEFAULT = "A";
 
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";

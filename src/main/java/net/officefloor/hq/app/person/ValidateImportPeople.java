@@ -11,8 +11,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * The import box's lines of name,grade,terms,contact (terms and contact may be absent or blank; blank lines are
- * skipped). Each line's fields are checked with the person form's rules; a name (ignoring case) or contact repeated
+ * The import box's lines of name,grade,terms,contact (terms and contact may be absent or blank; a blank grade is
+ * published as null, for the sheet's default grade; blank lines are skipped). Each line's fields are checked with the person form's rules; a name (ignoring case) or contact repeated
  * within the import refuses it. A refusal names the line. Publishes them parsed, in order, with the user making the
  * change.
  */
@@ -37,8 +37,14 @@ public class ValidateImportPeople {
                 throw new BadRequestException("Line " + (i + 1) + ": enter name,grade,terms,contact");
             }
             try {
-                PersonRequest person = ValidatePerson.parse(new PersonRequest(fields[0], fields[1], by.name(), null,
-                        "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "", ""), by);
+                boolean blankGrade = fields[1].trim().isEmpty();
+                PersonRequest person = ValidatePerson.parse(new PersonRequest(fields[0], blankGrade ? "A" : fields[1],
+                        by.name(), null, "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "",
+                        ""), by);
+                if (blankGrade) {
+                    person = new PersonRequest(person.name(), null, person.by(), person.version(), person.gradeFrom(),
+                            person.terms(), person.contact(), person.tags(), person.termsFrom());
+                }
                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
                     throw new BadRequestException(person.name() + " is repeated in the import");
                 }

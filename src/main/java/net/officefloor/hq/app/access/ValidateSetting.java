@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The escalation gap is a whole number of days, or blank for off. The review SLA is a whole number of days, or blank for none. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. The proof kinds are a comma separated list of receipt and photo, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The escalation gap is a whole number of days, or blank for off. The review SLA is a whole number of days, or blank for none. The default grade is one of the grades, or blank for A. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. The proof kinds are a comma separated list of receipt and photo, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
 public class ValidateSetting {
 
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -156,6 +156,14 @@ public class ValidateSetting {
                 throw new BadRequestException("A review SLA is a whole number of days, or blank for none");
             }
             setting.set(new SettingInput(key, text.isEmpty() ? null : String.valueOf(Integer.parseInt(text)), from));
+            changedBy.set(by);
+            return;
+        }
+        if (Setting.DEFAULT_GRADE.equals(key)) {
+            if (!text.isEmpty() && !Setting.GRADES.contains(text)) {
+                throw new BadRequestException("A default grade is A, B or C, or blank for A");
+            }
+            setting.set(new SettingInput(key, text.isEmpty() ? null : text, from));
             changedBy.set(by);
             return;
         }
