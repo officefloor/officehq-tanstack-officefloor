@@ -1,0 +1,245 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 81a13b81..de3c76e6 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -22,7 +22,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
+  * change the status does not allow, a settle by the user who opened the claim, a clerk's settle of a claim
+  * whose due is above the sheet's clerk limit, or any change to a claim dated in a closed period, and the refusal
+  * shows on the claim until its next action. A clerk's settle above the clerk limit makes the claim PENDING: a
+- * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN).
++ * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN). A steward can
++ * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.
+  */
+ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+   const queryClient = useQueryClient();
+@@ -56,6 +57,14 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim })
+       ),
+   });
+ 
++  const resettle = useMutation({
++    mutationFn: () =>
++      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/resettle`, {}, user),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++    onError: (e) =>
++      setError(e instanceof RefusedError ? e.message : 'The claim could not be re-settled.'),
++  });
++
+   return (
+     <td>
+       <span data-testid="claim-status">{claim.status}</span>{' '}
+@@ -73,6 +82,17 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim })
+           {label}
+         </button>
+       ))}
++      <button
++        type="button"
++        data-testid="claim-resettle"
++        disabled={resettle.isPending}
++        onClick={() => {
++          setError('');
++          once(() => resettle.mutateAsync());
++        }}
++      >
++        Re-settle
++      </button>
+       <input
+         data-testid="claim-reject-reason"
+         placeholder="Reason"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+new file mode 100644
+index 00000000..4d12a836
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+@@ -0,0 +1,43 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class ApplyResettle {
++    // Only a steward re-settles, and only a SETTLED claim. The new figure is the one the claim would have today as an
++    // open claim bound by no statement: its amount times its person's grade's rate on its date (as they stand now),
++    // rounded by the policy date, raised to the floor, with the late charge on the sheet's today added on top.
++    public void apply(@Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
++            ServerHttpConnection connection, Out<ClaimResponse> responseOut, Out<Resettled> resettledOut)
++            throws ClaimResettleRefusedException {
++        String user = Audit.user(connection).trim();
++        if (!Settings.STEWARD.equals(settings.role(claim.sheetId(), user))) {
++            throw new ClaimResettleRefusedException("Only a steward can re-settle a claim.");
++        }
++        if (claim.status() != ClaimStatus.SETTLED) {
++            throw new ClaimResettleRefusedException("Only a SETTLED claim can be re-settled.");
++        }
++        BigDecimal due = null;
++        Person person = people.find(claim.sheetId(), claim.personId());
++        if (person != null) {
++            BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
++            Claim open = claim.withStatus(ClaimStatus.OPEN, claim.number(), null, claim.openedBy());
++            due = settings.withLate(open, settings.live(claim, rate), sheets.today(claim.sheetId()));
++        }
++        Claim changed = claims.resettle(claim, due);
++        if (changed == null) {
++            throw new ClaimResettleRefusedException("Only a SETTLED claim can be re-settled.");
++        }
++        claims.log(changed, user, sheets.today(claim.sheetId()), due);
++        responseOut.set(ClaimResponse.from(changed));
++        resettledOut.set(new Resettled(claim.settledDue(), due));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+new file mode 100644
+index 00000000..0bb95c44
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditClaimResettled {
++    public void audit(@Val Claim loaded, @Val Resettled resettled, People people, ServerHttpConnection connection,
++            Audit audit) {
++        Person person = people.find(loaded.sheetId(), loaded.personId());
++        List<String> fields = new ArrayList<>(List.of("person=" + (person == null ? "" : person.name()),
++                "amount=" + loaded.amount().toPlainString(), "date=" + loaded.date()));
++        if (loaded.number() != null) {
++            fields.add("number=" + loaded.number());
++        }
++        fields.add("old=" + figure(resettled.old()));
++        fields.add("new=" + figure(resettled.now()));
++        audit.record(Audit.line("CLAIM_RESETTLED", loaded.sheetId(), Audit.user(connection),
++                fields.toArray(String[]::new)));
++    }
++
++    private static String figure(BigDecimal due) {
++        return due == null ? "n/a" : due.toPlainString();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResettleRefusedException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResettleRefusedException.java
+new file mode 100644
+index 00000000..d1f34b92
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResettleRefusedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++/** A re-settle by someone other than a steward, or of a claim that is not SETTLED. */
++public class ClaimResettleRefusedException extends Exception {
++
++    public ClaimResettleRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index a854bb6f..c6497bbc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -115,6 +115,18 @@ public class Claims {
+         return claim.withStatus(next, number, settledDue, openedBy);
+     }
+ 
++    /**
++     * Freezes the SETTLED claim again at {@code due} (null: n/a) if it is still SETTLED at the due it was loaded with,
++     * and returns it as re-settled; null when it has since changed.
++     */
++    public Claim resettle(Claim claim, BigDecimal due) {
++        if (jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND status = ? AND settled_due IS NOT DISTINCT FROM ?",
++                due, claim.id(), ClaimStatus.SETTLED.name(), claim.settledDue()) != 1) {
++            return null;
++        }
++        return claim.withStatus(ClaimStatus.SETTLED, claim.number(), due, claim.openedBy());
++    }
++
+     /** Appends a line to the claim's status log: its status now, by {@code user} on {@code on}, at {@code due} (null: n/a). */
+     public void log(Claim claim, String user, LocalDate on, BigDecimal due) {
+         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) VALUES (?, ?, ?, ?, ?, ?)",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimResettleRefused.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimResettleRefused.java
+new file mode 100644
+index 00000000..7c27436f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimResettleRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimResettleRefused {
++    public void handle(@Parameter ClaimResettleRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Resettled.java b/src/main/java/net/officefloor/hq/app/claim/Resettled.java
+new file mode 100644
+index 00000000..40bdc53c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Resettled.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** A re-settle: the claim's frozen due before ({@code old}) and after ({@code now}); null for n/a. */
++public record Resettled(BigDecimal old, BigDecimal now) {
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimResettleRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimResettleRefusedException.yml
+new file mode 100644
+index 00000000..d378f062
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimResettleRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimResettleRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+new file mode 100644
+index 00000000..fe4f9981
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+@@ -0,0 +1,30 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/resettle — a steward re-freezes a SETTLED claim at the figure it would
++# have today as an open claim bound by no statement. Refused with 422 for anyone else or any other status, and for a
++# claim dated inside a closed period; nothing is stored. 404 for a claim not on the sheet.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  next: load
++  govern: [ transaction ]
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  next: closed
++  govern: [ transaction ]
++closed:
++  class: net.officefloor.hq.app.claim.RefuseClosedClaim
++  next: apply
++  govern: [ transaction ]
++apply:
++  class: net.officefloor.hq.app.claim.ApplyResettle
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimResettled
++  next: rollup
++  govern: [ transaction ]
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithEditedClaim
++  govern: [ transaction ]
