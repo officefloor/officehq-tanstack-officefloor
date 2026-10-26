@@ -135,8 +135,68 @@ function BulkGrade({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+type BulkRetireResult = { retired: number };
+
+// Retires the selected people together from a date (blank: the sheet's today); the server retires them in list
+// order as the row's retire does. Shows how many were retired; the count is gone while it runs.
+function BulkRetire({ sheetId }: { sheetId: string; user: string }) {
+  const chosen = useSelected(sheetId);
+  const [date, setDate] = useState('');
+  const [user] = useUser();
+  const queryClient = useQueryClient();
+  const retire = useMutation({
+    mutationFn: (ids: number[]) => {
+      if (ids.length === 0) throw new Error('Select the people to retire');
+      return postJson<BulkRetireResult>(`/api/sheets/${encodeURIComponent(sheetId)}/people/bulk-retire`, {
+        ids,
+        date: date.trim(),
+        by: user ?? '',
+      });
+    },
+    onSuccess: async () => {
+      selection.set(sheetId, NONE);
+      // Retiring takes the people's claims out of the dues.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+    },
+  });
+
+  return (
+    <section data-testid="bulk-retire-actions">
+      <label>
+        Retire selected from{' '}
+        <input
+          type="date"
+          data-testid="bulk-retire-date"
+          value={date}
+          onChange={(e) => {
+            setDate(e.target.value);
+            retire.reset();
+          }}
+        />
+      </label>{' '}
+      <button type="button" data-testid="bulk-retire" disabled={retire.isPending} onClick={() => retire.mutate([...chosen])}>
+        Retire selected
+      </button>{' '}
+      {retire.isSuccess && (
+        <span>
+          Retired <strong data-testid="bulk-retired">{retire.data.retired}</strong>
+        </span>
+      )}
+      {retire.isError && (
+        <span data-testid="person-error" role="alert">
+          {retire.error.message}
+        </span>
+      )}
+    </section>
+  );
+}
+
 export const contributions = [
   PersonHeads.fill({ order: 0, Component: SelectHead }),
   PersonCells.fill({ order: 0, Component: PersonSelect }),
   SheetBody.fill({ order: 12, Component: BulkGrade }),
+  SheetBody.fill({ order: 12.5, Component: BulkRetire }),
 ];

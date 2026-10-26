@@ -249,6 +249,11 @@ public class PersonRepository {
                 java.sql.Date.valueOf(from), id) == 1;
     }
 
+    /** Retire the person from the date, whether or not they were retired already (moving the date when they were). */
+    public void retireFrom(long id, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", java.sql.Date.valueOf(from), id);
+    }
+
     /** Add a hold to the person. */
     public void addHold(long personId, HoldSpan hold) {
         jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", personId,
