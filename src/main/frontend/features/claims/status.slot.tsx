@@ -15,8 +15,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string }> = [
 
 /**
  * A claim's status and the buttons that change it. Every button is offered; the server refuses a
- * change the status does not allow, a settle by the user who opened the claim, or any change to a claim
- * dated in a closed period, and the refusal
+ * change the status does not allow, a settle by the user who opened the claim, a clerk's settle of a claim
+ * whose due is above the sheet's clerk limit, or any change to a claim dated in a closed period, and the refusal
  * shows on the claim until its next action.
  */
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {

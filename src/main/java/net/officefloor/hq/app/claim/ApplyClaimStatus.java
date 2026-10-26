@@ -6,6 +6,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -14,8 +15,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ApplyClaimStatus {
     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
     public void apply(@PathVariable("status") String status, @Val Claim claim, Claims claims,
-            People people, Rates rates, ServerHttpConnection connection,
-            Out<ClaimResponse> responseOut) throws ClaimStatusRefusedException {
+            People people, Rates rates, Settings settings, ServerHttpConnection connection,
+            Out<ClaimResponse> responseOut) throws ClaimStatusRefusedException, ClaimOverLimitException {
         ClaimStatus next;
         try {
             next = ClaimStatus.valueOf(status.trim().toUpperCase());
@@ -27,9 +28,22 @@ public class ApplyClaimStatus {
         if (next == ClaimStatus.SETTLED && claim.openedBy() != null && claim.openedBy().equals(user)) {
             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it.");
         }
-        Claim changed = claim.status().allows(next)
-                ? claims.changeStatus(claim, next, due(claim, people, rates), user)
-                : null;
+        if (!claim.status().allows(next)) {
+            throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
+        }
+        BigDecimal due = due(claim, people, rates);
+        // A clerk settles only a claim whose due is at or below the clerk limit; a due of n/a is within
+        // any limit, and a steward settles anything.
+        if (next == ClaimStatus.SETTLED && due != null) {
+            BigDecimal limit = settings.clerkLimit(claim.sheetId());
+            if (limit != null && due.compareTo(limit) > 0
+                    && !Settings.STEWARD.equals(settings.role(claim.sheetId(), user))) {
+                throw new ClaimOverLimitException(
+                        "A clerk cannot settle a claim whose due " + due.toPlainString() + " is above the clerk limit "
+                                + limit.toPlainString() + ".");
+            }
+        }
+        Claim changed = claims.changeStatus(claim, next, due, user);
         if (changed == null) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
