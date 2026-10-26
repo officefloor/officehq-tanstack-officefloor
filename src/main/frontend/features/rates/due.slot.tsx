@@ -11,16 +11,24 @@ import { due, rateFor, ratesQuery, sumDue } from './ratesQuery';
 import type { Rate } from './ratesQuery';
 
 /**
- * A person's due-total: the sum of their counting claims' rounded figures — a settled claim's frozen
- * figure, otherwise its due as the claim shows it (its amount times their grade's rate on the claim's
- * date). With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
+ * A claim's figure: a settled claim's frozen due, otherwise the figure its person's last statement bound
+ * it to, otherwise its amount times its person's grade's rate on the claim's date.
+ */
+function figure(claim: Claim, rates: Rate[], grade: Person['grade'] | undefined): string {
+  if (claim.settledDue !== null) return claim.settledDue;
+  if (claim.stated) return claim.statedDue ?? 'n/a';
+  return due(claim.amount, rateFor(rates, grade, claim.date));
+}
+
+/**
+ * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
 function personDue(person: Person | undefined, claims: Claim[], rates: Rate[], today: string): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, person.grade, today);
   const figures = claims
     .filter((c) => c.personId === person.id && counts(c))
-    .map((c) => c.settledDue ?? due(c.amount, rateFor(rates, person.grade, c.date)))
+    .map((c) => figure(c, rates, person.grade))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }
@@ -37,8 +45,7 @@ function useSheetData(sheetId: string) {
 function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const { people, rates } = useSheetData(sheetId);
   const person = people.find((p) => p.id === claim.personId);
-  // A settled claim shows the due it was fixed at; otherwise its due follows the rate on the claim's date.
-  return <td data-testid="claim-due">{claim.settledDue ?? due(claim.amount, rateFor(rates, person?.grade, claim.date))}</td>;
+  return <td data-testid="claim-due">{figure(claim, rates, person?.grade)}</td>;
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {

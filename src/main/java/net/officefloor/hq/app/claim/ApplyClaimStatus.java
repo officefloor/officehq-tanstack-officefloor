@@ -36,8 +36,14 @@ public class ApplyClaimStatus {
         responseOut.set(ClaimResponse.from(changed));
     }
 
-    /** The claim's due now: its amount times its person's grade's rate on the claim's date, half to even; null when none applies. */
+    /**
+     * The claim's due now: the figure its person's last statement bound it to, otherwise its amount times its
+     * person's grade's rate on the claim's date, half to even; null when none applies.
+     */
     private static BigDecimal due(Claim claim, People people, Rates rates) {
+        if (claim.stated()) {
+            return claim.statedDue();
+        }
         Person person = people.find(claim.sheetId(), claim.personId());
         if (person == null) {
             return null;

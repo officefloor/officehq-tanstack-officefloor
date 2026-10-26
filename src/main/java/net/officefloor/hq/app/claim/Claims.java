@@ -20,7 +20,7 @@ public class Claims {
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
 
     private final JdbcTemplate jdbc;
 
@@ -51,7 +51,8 @@ public class Claims {
             ps.setString(5, note);
             return ps;
         }, key);
-        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
+                false, null);
     }
 
     public void save(Claim claim) {
@@ -79,6 +80,17 @@ public class Claims {
         jdbc.update("UPDATE claim SET claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ?", number,
                 settledDue, openedBy, claim.id());
         return claim.withStatus(next, number, settledDue, openedBy);
+    }
+
+    /**
+     * Binds the person's claims to the figures of a statement: each claim in {@code figures} is stated at
+     * its figure (null: n/a), and every other claim of theirs is left unbound.
+     */
+    public void bind(String sheetId, long personId, java.util.Map<Long, BigDecimal> figures) {
+        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND person_id = ?",
+                sheetId, personId);
+        figures.forEach((id, figure) -> jdbc.update(
+                "UPDATE claim SET stated = TRUE, stated_due = ? WHERE id = ?", figure, id));
     }
 
     /**
