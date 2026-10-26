@@ -38,7 +38,7 @@ public class SettingRepository {
         this.people = people;
     }
 
-    /** The sheet's undated settings, by key (the policy date, period numbering from, the entry date, the grace days and the permissions); a key without a row is not listed. */
+    /** The sheet's undated settings, by key (the policy date, period numbering from, the entry date, the grace days, the pot and the permissions); a key without a row is not listed. */
     public List<Setting> listUndated(String sheetId) {
         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
                 + " ORDER BY setting_key", ROW, sheetId);

@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the pot and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -37,6 +37,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The most a person's due-total may be; an amount with two decimals, blank for none. */
     public static final String CAP = "cap";
+
+    /** The sheet's pot, cut among each balanced pool's members by their shares; an amount with two decimals, blank for none. */
+    public static final String POT = "pot";
 
     /** The least a claim's live due may be; an amount with two decimals. */
     public static final String FLOOR = "floor";

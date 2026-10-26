@@ -6,8 +6,9 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { peopleKey, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 
-/** A pool member: the person, their share (two decimals) and whether they are retired. */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
+/** A pool member: the person, their share (two decimals), whether they are retired, and their cut of the sheet's pot
+ *  (two decimals; null while the pool is unbalanced or the sheet has no pot). */
+export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string | null };
 
 /** A pool of the sheet: its name, members in the order added, total share (a retired member's counts as 0.00) and
  *  whether that total is exactly 100.00. */
@@ -27,7 +28,7 @@ export function usePools(sheetId: string) {
 
 type MemberBody = { person: string; share: string };
 
-// A pool's row: its total share and balanced yes/no, each member's share on their line, and a person picker with a
+// A pool's row: its total share and balanced yes/no, each member's share and cut of the pot on their line, and a person picker with a
 // share that adds one more member. A person already in the pool, or a share that is not more than 0.00 and at most
 // 100.00 with at most two decimals, is refused with an error on the pool until its fields are changed or it is
 // submitted again.
@@ -65,7 +66,8 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
             <span data-testid="pool-member-name">{m.name}</span>{' '}
-            <span data-testid="pool-share">{m.share}</span>
+            <span data-testid="pool-share">{m.share}</span>{' '}
+            cut <span data-testid="pool-cut">{m.cut ?? ''}</span>
             {m.retired && ' (retired)'}
           </li>
         ))}

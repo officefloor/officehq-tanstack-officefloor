@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
+import { poolsKey } from '../pools/pools.slot';
 import { delegationsKey, rolesKey, settingsKey, useDelegations, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Delegation, type Role, type Setting } from './useAccess';
 
 const ROLES = ['clerk', 'steward', 'viewer'];
@@ -233,6 +234,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A grade\'s proof threshold is an amount with up to two decimals, or blank for the sheet\'s' })),
   { key: 'note-threshold', label: 'Note threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
+  { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
     ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
     key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',
@@ -267,6 +270,8 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
     onSuccess: async () => {
       setTouched(new Set());
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
+      // The pot changes each pool member's cut.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
   });
   const submit = useSubmitOnce(save);
