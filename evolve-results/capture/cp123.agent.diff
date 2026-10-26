@@ -1,0 +1,261 @@
+diff --git a/src/main/frontend/features/bulkgrade/bulkGrade.slot.tsx b/src/main/frontend/features/bulkgrade/bulkGrade.slot.tsx
+index 5cfa9c94..f30aebbf 100644
+--- a/src/main/frontend/features/bulkgrade/bulkGrade.slot.tsx
++++ b/src/main/frontend/features/bulkgrade/bulkGrade.slot.tsx
+@@ -135,8 +135,68 @@ function BulkGrade({ sheetId }: { sheetId: string; user: string }) {
+   );
+ }
+ 
++type BulkRetireResult = { retired: number };
++
++// Retires the selected people together from a date (blank: the sheet's today); the server retires them in list
++// order as the row's retire does. Shows how many were retired; the count is gone while it runs.
++function BulkRetire({ sheetId }: { sheetId: string; user: string }) {
++  const chosen = useSelected(sheetId);
++  const [date, setDate] = useState('');
++  const [user] = useUser();
++  const queryClient = useQueryClient();
++  const retire = useMutation({
++    mutationFn: (ids: number[]) => {
++      if (ids.length === 0) throw new Error('Select the people to retire');
++      return postJson<BulkRetireResult>(`/api/sheets/${encodeURIComponent(sheetId)}/people/bulk-retire`, {
++        ids,
++        date: date.trim(),
++        by: user ?? '',
++      });
++    },
++    onSuccess: async () => {
++      selection.set(sheetId, NONE);
++      // Retiring takes the people's claims out of the dues.
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      ]);
++    },
++  });
++
++  return (
++    <section data-testid="bulk-retire-actions">
++      <label>
++        Retire selected from{' '}
++        <input
++          type="date"
++          data-testid="bulk-retire-date"
++          value={date}
++          onChange={(e) => {
++            setDate(e.target.value);
++            retire.reset();
++          }}
++        />
++      </label>{' '}
++      <button type="button" data-testid="bulk-retire" disabled={retire.isPending} onClick={() => retire.mutate([...chosen])}>
++        Retire selected
++      </button>{' '}
++      {retire.isSuccess && (
++        <span>
++          Retired <strong data-testid="bulk-retired">{retire.data.retired}</strong>
++        </span>
++      )}
++      {retire.isError && (
++        <span data-testid="person-error" role="alert">
++          {retire.error.message}
++        </span>
++      )}
++    </section>
++  );
++}
++
+ export const contributions = [
+   PersonHeads.fill({ order: 0, Component: SelectHead }),
+   PersonCells.fill({ order: 0, Component: PersonSelect }),
+   SheetBody.fill({ order: 12, Component: BulkGrade }),
++  SheetBody.fill({ order: 12.5, Component: BulkRetire }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkRetire.java b/src/main/java/net/officefloor/hq/app/person/BulkRetire.java
+new file mode 100644
+index 00000000..27a8e117
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkRetire.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.util.Set;
++
++/** The people selected to be retired together, and the date (null: the sheet's today). */
++public record BulkRetire(Set<Long> ids, LocalDate date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkRetireRequest.java b/src/main/java/net/officefloor/hq/app/person/BulkRetireRequest.java
+new file mode 100644
+index 00000000..9d3faa14
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkRetireRequest.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/** The selected people's ids to retire together, the date to retire them from (blank or null: the sheet's today),
++ *  and the signed-in user (`by`) retiring them. */
++public record BulkRetireRequest(List<Long> ids, String date, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkRetireResponse.java b/src/main/java/net/officefloor/hq/app/person/BulkRetireResponse.java
+new file mode 100644
+index 00000000..a3e88052
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkRetireResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** How many of the selected people were retired. */
++public record BulkRetireResponse(int retired) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 03ead433..4c85a38f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -249,6 +249,11 @@ public class PersonRepository {
+                 java.sql.Date.valueOf(from), id) == 1;
+     }
+ 
++    /** Retire the person from the date, whether or not they were retired already (moving the date when they were). */
++    public void retireFrom(long id, LocalDate from) {
++        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", java.sql.Date.valueOf(from), id);
++    }
++
+     /** Add a hold to the person. */
+     public void addHold(long personId, HoldSpan hold) {
+         jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", personId,
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithBulkRetire.java b/src/main/java/net/officefloor/hq/app/person/RespondWithBulkRetire.java
+new file mode 100644
+index 00000000..625a3aa5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithBulkRetire.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkRetire {
++    public void respond(@Val BulkRetireResponse result, ObjectResponse<BulkRetireResponse> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RetirePeople.java b/src/main/java/net/officefloor/hq/app/person/RetirePeople.java
+new file mode 100644
+index 00000000..e1fae5b0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RetirePeople.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupSnapshot;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Retires each selected person from the date (the sheet's today when blank) in list order — the people in their list
++ * positions — as the row's retire does: a PERSON_RETIRED line and the rollup lines it moved. A person retired already
++ * is retired from the new date instead. A selected id not on this sheet is skipped. A viewer retires no one.
++ */
++public class RetirePeople {
++    public void retire(@Val SheetResponse sheet, @Val BulkRetire bulk, @Val ChangedBy by, PersonRepository people,
++            SheetRepository sheets, RoleRepository roles, Rollup rollup, Audit audit, Out<BulkRetireResponse> result) {
++        if (roles.isViewer(sheet.id(), by.name())) {
++            result.set(new BulkRetireResponse(0));
++            return;
++        }
++        LocalDate from = bulk.date() != null ? bulk.date() : sheets.today(sheet.id());
++        RecordPersonRetired record = new RecordPersonRetired();
++        int retired = 0;
++        for (Person person : people.list(sheet.id())) {
++            if (!bulk.ids().contains(person.getId())) {
++                continue;
++            }
++            RollupSnapshot before = rollup.snapshot(sheet.id());
++            people.retireFrom(person.getId(), from);
++            person.setRetiredFrom(from);
++            record.record(person, by, audit);
++            rollup.record(sheet.id(), before, by);
++            retired++;
++        }
++        result.set(new BulkRetireResponse(retired));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateBulkRetire.java b/src/main/java/net/officefloor/hq/app/person/ValidateBulkRetire.java
+new file mode 100644
+index 00000000..2c513107
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateBulkRetire.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.LinkedHashSet;
++import java.util.Objects;
++import java.util.Set;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** The selected people (at least one), the date to retire them from (blank, or a date as YYYY-MM-DD) and the user
++ *  retiring them. */
++public class ValidateBulkRetire {
++    public void validate(@RequestBody BulkRetireRequest request, Out<BulkRetire> bulk, Out<ChangedBy> changedBy)
++            throws BadRequestException {
++        ChangedBy by = ChangedBy.of(request == null ? null : request.by());
++        Set<Long> selected = new LinkedHashSet<>();
++        if (request != null && request.ids() != null) {
++            request.ids().stream().filter(Objects::nonNull).forEach(selected::add);
++        }
++        if (selected.isEmpty()) {
++            throw new BadRequestException("Select the people to retire");
++        }
++        String date = request.date() == null ? "" : request.date().trim();
++        LocalDate parsed = null;
++        if (!date.isEmpty()) {
++            try {
++                parsed = LocalDate.parse(date);
++            } catch (DateTimeParseException e) {
++                throw new BadRequestException("Enter a date as YYYY-MM-DD");
++            }
++        }
++        bulk.set(new BulkRetire(selected, parsed));
++        changedBy.set(by);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/bulk-retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/bulk-retire.POST.yml
+new file mode 100644
+index 00000000..c3c9578d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/bulk-retire.POST.yml
+@@ -0,0 +1,19 @@
++# Retire the selected people together from a date, in list order (people as added). Each is retired as the row's
++# retire does (the same PERSON_RETIRED and rollup lines); answers how many were retired.
++# A viewer may retire no one: their bulk retire changes nothing and answers none.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: selected
++selected:
++  class: net.officefloor.hq.app.person.ValidateBulkRetire
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: retire
++retire:
++  class: net.officefloor.hq.app.person.RetirePeople
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithBulkRetire
++  govern: [ transaction ]
