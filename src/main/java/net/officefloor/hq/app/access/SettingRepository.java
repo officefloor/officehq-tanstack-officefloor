@@ -92,6 +92,12 @@ public class SettingRepository {
         return value == null ? null : Integer.valueOf(value);
     }
 
+    /** The sheet's escalation gap in days; null while off. */
+    public Integer escalateAfter(String sheetId) {
+        String value = find(sheetId, Setting.ESCALATE_AFTER);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
     public int fiscalStartMonth(String sheetId) {
         String value = find(sheetId, Setting.FISCAL_START_MONTH);

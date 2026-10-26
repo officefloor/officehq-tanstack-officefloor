@@ -262,6 +262,11 @@ public class ClaimRepository {
         return reminded;
     }
 
+    /** Escalate the claim. Whether it was not yet escalated: a claim escalates once ever. */
+    public boolean escalate(Claim claim) {
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE id = ? AND escalated = FALSE", claim.getId()) == 1;
+    }
+
     /**
      * Re-date the claim to {@code date}, its due-by still counting from the date it was added and any statement figure. Whether it was still in its status
      * at its old date: another user may have changed it.

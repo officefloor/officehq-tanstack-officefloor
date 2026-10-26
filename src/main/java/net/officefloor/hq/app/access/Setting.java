@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the fiscal start month, the pot, the alert threshold, the parent and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the escalation gap, the fiscal start month, the pot, the alert threshold, the parent and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -97,6 +97,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The days after its to-date an open period is closed by itself when the sheet's today moves past them; a whole number, blank for off. */
     public static final String GRACE_DAYS = "grace-days";
+
+    /** The escalation gap: the days at least which a claim's previous reminder was before the sheet's today for its next reminder to escalate it (once ever); a whole number, blank for off. Not dated. */
+    public static final String ESCALATE_AFTER = "escalate-after";
 
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
