@@ -31,6 +31,7 @@ public class Person {
     private String tags;
 
     private String origin;
+    private LocalDate arrivedOn;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -157,6 +158,15 @@ public class Person {
 
     public void setOrigin(String origin) {
         this.origin = origin;
+    }
+
+    /** The sheet's today on which the person arrived by transfer; null when they were not transferred in. */
+    public LocalDate getArrivedOn() {
+        return arrivedOn;
+    }
+
+    public void setArrivedOn(LocalDate arrivedOn) {
+        this.arrivedOn = arrivedOn;
     }
 
     public long getVersion() {

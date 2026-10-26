@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin, p.arrived_on,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -38,6 +38,7 @@ public class PersonRepository {
         person.setContact(rs.getString("contact"));
         person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin"));
+        person.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
         return person;
     };
 
@@ -412,7 +413,8 @@ public class PersonRepository {
 
     /**
      * Transfer the person to the other sheet (stored already): they are added there with their name, terms, contact,
-     * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from; their claims move with them (status, dates,
+     * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from
+     * and the other sheet's today as the day they arrived there; their claims move with them (status, dates,
      * notes, settled figures, logs, comments and lines kept), listed there in the order they were listed here, each keeping
      * any figure a statement bound it to, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
@@ -423,7 +425,8 @@ public class PersonRepository {
         long f = from.getId();
         String grade = from.getGrade() != null ? from.getGrade() : from.getGrades().get(0).grade();
         long t = insert(toSheet, from.getName(), grade, from.getTerms(), from.getContact(), from.getTags()).getId();
-        jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), t);
+        jdbc.update("UPDATE person SET origin = ?, arrived_on = COALESCE((SELECT today FROM sheet WHERE id = ?), CURRENT_DATE) WHERE id = ?",
+                from.getSheetId(), toSheet, t);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", t);
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
                 + " WHERE person_id = ?", t, f);

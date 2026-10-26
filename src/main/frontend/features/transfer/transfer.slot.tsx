@@ -31,7 +31,20 @@ function TransferCells({ sheetId, personId }: { sheetId: string; user: string; p
       await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
     },
   });
+  // Undo the transfer that brought this person here: back to the sheet they came from, by a steward on the sheet's
+  // today they arrived. The person leaves this sheet, so the whole sheet is re-read.
+  const undo = useMutation({
+    mutationKey: personActionKey(sheetId, personId),
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/transfer-undo`, {
+        by: user ?? '',
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+    },
+  });
   const last = useLastPersonAction(sheetId, personId, transfer.submittedAt);
+  const lastUndo = useLastPersonAction(sheetId, personId, undo.submittedAt);
 
   return (
     <td>
@@ -47,9 +60,17 @@ function TransferCells({ sheetId, personId }: { sheetId: string; user: string; p
       <button type="button" data-testid="person-transfer" disabled={transfer.isPending} onClick={() => transfer.mutate(to)}>
         Transfer
       </button>
+      <button type="button" data-testid="person-transfer-undo" disabled={undo.isPending} onClick={() => undo.mutate()}>
+        Undo transfer
+      </button>
       {transfer.isError && last && (
         <span data-testid="person-error" role="alert">
           {transfer.error.message}
+        </span>
+      )}
+      {undo.isError && lastUndo && (
+        <span data-testid="person-error" role="alert">
+          {undo.error.message}
         </span>
       )}
     </td>
