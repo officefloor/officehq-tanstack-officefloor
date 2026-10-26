@@ -17,7 +17,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `log` is its status log, oldest first, one line per status it has had: "<STATUS> by <user> on <date> due=<due>";
  * `deferredUntil` (yyyy-mm-dd) is the date an OPEN claim was deferred to (null when never deferred), see `isDeferred`;
  * `proofs` is how many proofs it has been given: one above the sheet's proof threshold is settled or approved only with one;
- * `splitFrom` is the number of the claim it was split off (null for any other claim).
+ * `splitFrom` is the number of the claim it was split off (null for any other claim);
+ * `lockedBy` is the user whose open editor locks it for everyone else (null when not locked).
  */
 export type Claim = {
   id: number;
@@ -37,6 +38,7 @@ export type Claim = {
   deferredUntil: string | null;
   proofs: number;
   splitFrom: string | null;
+  lockedBy: string | null;
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */
