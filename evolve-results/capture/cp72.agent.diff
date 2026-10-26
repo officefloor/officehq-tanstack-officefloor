@@ -1,0 +1,99 @@
+diff --git a/src/main/frontend/features/claims/claimsQuery.ts b/src/main/frontend/features/claims/claimsQuery.ts
+index 686692f5..be252f8b 100644
+--- a/src/main/frontend/features/claims/claimsQuery.ts
++++ b/src/main/frontend/features/claims/claimsQuery.ts
+@@ -55,14 +55,18 @@ export const isDeferred = (c: Claim, today: string) =>
+ 
+ /**
+  * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts and voided
+- * ones do not, nor do a person's open claims dated within one of their holds, unless a statement bound them,
+- * nor an OPEN claim deferred on the sheet's `today`.
++ * ones do not, nor do a person's open claims dated within one of their holds, or once the sheet's `today` reaches
++ * their retirement date, unless a statement bound them, nor an OPEN claim deferred on the sheet's `today`.
+  */
+ export const counts = (c: Claim, people: Person[], today: string) =>
+   !isDeferred(c, today) &&
+   (c.status === 'SETTLED' ||
+   (isOpen(c) &&
+-    ((c.stated && c.status !== 'PENDING') || !heldOn(people.find((p) => p.id === c.personId), c.date))));
++    ((c.stated && c.status !== 'PENDING') || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
++
++/** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
++const leftOut = (person: Person | undefined, date: string, today: string) =>
++  heldOn(person, date) || (!!person?.retiredFrom && !!today && person.retiredFrom <= today);
+ 
+ /** The first day (yyyy-mm-dd) of the 30 days up to and including the sheet's `today`. */
+ const activeFrom = (today: string) => new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 91434a7e..0a2d2d21 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -46,6 +46,11 @@ public record Person(long id, String sheetId, String name, String grade, long ve
+         return holds.stream().anyMatch(h -> h.covers(date));
+     }
+ 
++    /** Whether the person's retirement date is reached on the date (it is on or after it). */
++    public boolean retiredOn(LocalDate date) {
++        return retiredFrom != null && date != null && !date.isBefore(retiredFrom);
++    }
++
+     public boolean retired() {
+         return retiredFrom != null;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 0d8ebfff..a79301d0 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -130,14 +130,15 @@ public class Rollup {
+ 
+     /**
+      * Whether the (OPEN, PENDING or SETTLED) claim counts: a person's open claims dated within one of their holds
+-     * count in no live total, unless a statement bound them; nor does an OPEN claim deferred on {@code today}.
++     * count in no live total, unless a statement bound them, nor do they once {@code today} reaches their retirement date;
++     * nor does an OPEN claim deferred on {@code today}.
+      */
+     public static boolean counts(Claim claim, Person person, LocalDate today) {
+         if (claim.deferredOn(today)) {
+             return false;
+         }
+         boolean bound = claim.stated() && claim.status() != ClaimStatus.PENDING;
+-        return !(claim.status().isOpen() && !bound && person.heldOn(claim.date()));
++        return !(claim.status().isOpen() && !bound && (person.heldOn(claim.date()) || person.retiredOn(today)));
+     }
+ 
+     /**
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
+index 172dd8e8..dd24774e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
+@@ -1,6 +1,7 @@
+ # PUT /api/sheets/{sheetId}/people/{personId}/retire — retire a person from a date. Body
+ # {"from":"yyyy-mm-dd"}; a blank date is the sheet's today. A date that is not real is refused with
+-# 400 and nothing is stored; 404 for a person not on the sheet. Retiring again moves the date.
++# 400 and nothing is stored; 404 for a person not on the sheet. Retiring again moves the date. From the
++# day it is reached, their open claims not bound by a statement count in no live total.
+ viewer:
+   class: net.officefloor.hq.app.setting.RefuseViewer
+   next: archived
+@@ -11,6 +12,10 @@ archived:
+   govern: [ transaction ]
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
++  next: snapshot
++  govern: [ transaction ]
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
+   next: load
+   govern: [ transaction ]
+ load:
+@@ -23,6 +28,10 @@ retire:
+   govern: [ transaction ]
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonRetired
++  next: rollup
++  govern: [ transaction ]
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
+   next: respond
+   govern: [ transaction ]
+ respond:
