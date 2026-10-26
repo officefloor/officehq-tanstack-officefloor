@@ -17,15 +17,16 @@ public class Sheets {
     }
 
     public Sheet find(String id) {
-        List<Sheet> found = jdbc.query("SELECT today_date, archived FROM sheet WHERE id = ?",
-                (rs, n) -> new Sheet(id, rs.getObject(1, LocalDate.class), rs.getBoolean(2)), id);
-        return found.isEmpty() ? new Sheet(id, LocalDate.now(), false) : found.get(0);
+        // While the store is read as of a date, that date stands in for the sheet's today.
+        LocalDate asOf = AsOf.date();
+        List<Sheet> found = jdbc.query("SELECT today_date, archived FROM " + AsOf.table("sheet") + " WHERE id = ?",
+                (rs, n) -> new Sheet(id, asOf != null ? asOf : rs.getObject(1, LocalDate.class), rs.getBoolean(2)), id);
+        return found.isEmpty() ? new Sheet(id, asOf != null ? asOf : LocalDate.now(), false) : found.get(0);
     }
 
     /** The sheet's today: use this, never the real clock, for anything that depends on the date. */
     public LocalDate today(String id) {
-        // While the store is read as of a date, that date stands in for the sheet's today.
-        return AsOf.date() != null ? AsOf.date() : find(id).today();
+        return find(id).today();
     }
 
     /** Whether the sheet is archived, and so refuses every change. */

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.statement;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.sql.Date;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +41,8 @@ public class Statements {
 
     /** Each person of the sheet who has a statement: their count, and their last statement's due-total and date. */
     public List<StatementResponse> list(String sheetId) {
-        return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.stated_on FROM statement s "
-                + "JOIN (SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM statement WHERE sheet_id = ? "
+        return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.stated_on FROM " + AsOf.table("statement", "s")
+                + " JOIN (SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + AsOf.table("statement") + " WHERE sheet_id = ? "
                 + "GROUP BY person_id) c ON s.id = c.last_id ORDER BY s.person_id",
                 (rs, n) -> new StatementResponse(rs.getLong(1), rs.getInt(2), rs.getString(3),
                         rs.getDate(4).toLocalDate().toString()),

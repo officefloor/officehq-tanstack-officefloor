@@ -41,7 +41,7 @@ public class Claims {
     }
 
     public Claim find(String sheetId, long id) {
-        List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+        List<Claim> found = jdbc.query("SELECT * FROM " + AsOf.table("claim") + " WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -56,7 +56,7 @@ public class Claims {
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy) {
         boolean late = Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT COUNT(*) > 0 FROM period WHERE sheet_id = ? AND soft AND from_date <= ? AND ? <= to_date",
+                "SELECT COUNT(*) > 0 FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND soft AND from_date <= ? AND ? <= to_date",
                 Boolean.class, sheetId, Date.valueOf(date), Date.valueOf(date)));
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -221,7 +221,7 @@ public class Claims {
     /** The sheet's today on which the claim was last logged SETTLED; null when its log records no settlement. */
     public LocalDate settledOn(Claim claim) {
         List<LocalDate> on = jdbc.query(
-                "SELECT logged_on FROM claim_log WHERE claim_id = ? AND status = ? ORDER BY id DESC",
+                "SELECT logged_on FROM " + AsOf.table("claim_log") + " WHERE claim_id = ? AND status = ? ORDER BY id DESC",
                 (rs, n) -> rs.getObject("logged_on", LocalDate.class), claim.id(), ClaimStatus.SETTLED.name());
         return on.isEmpty() ? null : on.get(0);
     }
@@ -229,7 +229,7 @@ public class Claims {
     /** The status logs of the sheet's claims, by claim id, each oldest first as "STATUS by user on date due=due". */
     public java.util.Map<Long, List<String>> logs(String sheetId) {
         java.util.Map<Long, List<String>> logs = new java.util.HashMap<>();
-        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+        jdbc.query("SELECT * FROM " + AsOf.table("claim_log") + " WHERE sheet_id = ? ORDER BY id", rs -> {
             logs.computeIfAbsent(rs.getLong("claim_id"), k -> new java.util.ArrayList<>())
                     .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
                             + rs.getObject("logged_on", LocalDate.class) + " due=" + rs.getString("due"));
@@ -243,7 +243,7 @@ public class Claims {
      */
     public java.util.Map<Long, ClaimStatus> statusesOn(String sheetId, LocalDate on) {
         java.util.Map<Long, ClaimStatus> statuses = new java.util.HashMap<>();
-        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+        jdbc.query("SELECT * FROM " + AsOf.table("claim_log") + " WHERE sheet_id = ? ORDER BY id", rs -> {
             long id = rs.getLong("claim_id");
             if (!rs.getObject("logged_on", LocalDate.class).isAfter(on)) {
                 statuses.put(id, ClaimStatus.valueOf(rs.getString("status")));

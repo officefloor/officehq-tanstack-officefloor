@@ -1,3 +1,5 @@
+import { currentAsOf } from './asOf';
+
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
 /** A write refused because the record was saved by someone else since it was loaded (409). */
@@ -7,7 +9,9 @@ export class ConflictError extends Error {}
 export class RefusedError extends Error {}
 
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  // A screen shown as of a date names it on every request: reads come back as of it, changes are refused (422).
+  const asOf = currentAsOf();
+  const res = await fetch(path, asOf ? { ...init, headers: { ...init?.headers, 'X-As-Of': asOf } } : init);
   if (res.status === 409) {
     throw new ConflictError(`${init?.method ?? 'GET'} ${path} -> 409`);
   }

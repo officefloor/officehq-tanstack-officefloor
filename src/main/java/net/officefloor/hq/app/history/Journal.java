@@ -29,7 +29,8 @@ public class Journal implements Trigger {
                 columns.add(rs.getString("COLUMN_NAME"));
             }
         }
-        sheetColumn = columns.indexOf("SHEET_ID");
+        // The sheet's own row names its sheet by its id.
+        sheetColumn = columns.indexOf("SHEET".equals(tableName) ? "ID" : "SHEET_ID");
         personColumn = columns.indexOf("PERSON_ID");
         insert = "INSERT INTO " + tableName + "_HISTORY (" + String.join(", ", columns)
                 + ", HISTORY_ON, HISTORY_GONE) VALUES (" + "?, ".repeat(columns.size()) + "?, ?)";

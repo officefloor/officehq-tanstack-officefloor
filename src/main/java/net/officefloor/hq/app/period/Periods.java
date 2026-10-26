@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.period;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -29,29 +30,29 @@ public class Periods {
     /** The sheet's periods, by from-date, each closed one with its people's fixed figures. */
     public List<Period> list(String sheetId) {
         Map<String, Map<Long, BigDecimal>> totals = new HashMap<>();
-        jdbc.query("SELECT * FROM period_person_total WHERE sheet_id = ? ORDER BY person_id", rs -> {
+        jdbc.query("SELECT * FROM " + AsOf.table("period_person_total") + " WHERE sheet_id = ? ORDER BY person_id", rs -> {
             totals.computeIfAbsent(rs.getString("period_name"), k -> new LinkedHashMap<>())
                     .put(rs.getLong("person_id"), rs.getBigDecimal("total"));
         }, sheetId);
-        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId).stream()
+        return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId).stream()
                 .map(p -> p.withPersonTotals(totals.getOrDefault(p.name(), Map.of()))).toList();
     }
 
     /** The sheet's period of that name, or null when there is none. */
     public Period find(String sheetId, String name) {
-        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND name = ?", ROW, sheetId, name).stream()
+        return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND name = ?", ROW, sheetId, name).stream()
                 .findFirst().orElse(null);
     }
 
     /** The sheet's period containing the date, or null when none does. */
     public Period on(String sheetId, LocalDate date) {
-        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND from_date <= ? AND ? <= to_date",
+        return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND from_date <= ? AND ? <= to_date",
                 ROW, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
     }
 
     /** The sheet's closed period containing the date, or null when none does. */
     public Period closedOn(String sheetId, LocalDate date) {
-        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND closed AND from_date <= ? AND ? <= to_date",
+        return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND closed AND from_date <= ? AND ? <= to_date",
                 ROW, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
     }
 

@@ -37,7 +37,11 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
       await queryClient.invalidateQueries({ queryKey: statementsKey(sheetId) });
     },
-    onError: () => setError('The statement could not be taken.'),
+    // A refused date is not kept for the next statement, which is taken now unless a date is given again.
+    onError: () => {
+      setAsOf('');
+      setError('The statement could not be taken.');
+    },
   });
   const cancel = useMutation({
     mutationFn: () =>

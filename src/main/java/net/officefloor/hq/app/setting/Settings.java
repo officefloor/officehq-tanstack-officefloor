@@ -83,7 +83,7 @@ public class Settings {
 
     /** A dated setting's values, by from-date. */
     public List<DatedValue> history(String sheetId, String key) {
-        return jdbc.query("SELECT from_date, setting_value FROM setting_from WHERE sheet_id = ? AND setting_key = ? ORDER BY from_date",
+        return jdbc.query("SELECT from_date, setting_value FROM " + AsOf.table("setting_from") + " WHERE sheet_id = ? AND setting_key = ? ORDER BY from_date",
                 (rs, n) -> new DatedValue(rs.getDate("from_date").toLocalDate().toString(), rs.getString("setting_value")),
                 sheetId, key);
     }
@@ -250,7 +250,7 @@ public class Settings {
 
     /** The sheet's roles, by user name. */
     public List<Role> roles(String sheetId) {
-        return jdbc.query("SELECT * FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
+        return jdbc.query("SELECT * FROM " + AsOf.table("sheet_role") + " WHERE sheet_id = ? ORDER BY user_name",
                 (rs, n) -> new Role(rs.getString("sheet_id"), rs.getString("user_name"), rs.getString("role")), sheetId);
     }
 
@@ -267,7 +267,7 @@ public class Settings {
 
     /** The role the sheet gave the user: clerk unless it gave them another (a delegation aside). */
     public String givenRole(String sheetId, String user) {
-        List<String> roles = jdbc.queryForList("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
+        List<String> roles = jdbc.queryForList("SELECT role FROM " + AsOf.table("sheet_role") + " WHERE sheet_id = ? AND user_name = ?",
                 String.class, sheetId, user);
         return roles.isEmpty() ? CLERK : roles.get(0);
     }
