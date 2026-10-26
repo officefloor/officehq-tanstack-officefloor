@@ -1,0 +1,440 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 4555c6bd..7391fcd0 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,7 +1,13 @@
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
++/** A write refused because the record was saved by someone else since it was loaded (409). */
++export class ConflictError extends Error {}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const res = await fetch(path, init);
++  if (res.status === 409) {
++    throw new ConflictError(`${init?.method ?? 'GET'} ${path} -> 409`);
++  }
+   if (!res.ok) {
+     throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+   }
+diff --git a/src/main/frontend/api/useSubmitOnce.ts b/src/main/frontend/api/useSubmitOnce.ts
+new file mode 100644
+index 00000000..3fb2bb2b
+--- /dev/null
++++ b/src/main/frontend/api/useSubmitOnce.ts
+@@ -0,0 +1,22 @@
++import { useRef } from 'react';
++
++/**
++ * Guard a form's submit so a second submit while the first is still unanswered (a double click)
++ * sends nothing. The guard is a ref, set synchronously, so it holds before React re-renders the
++ * button as disabled.
++ *
++ *     const once = useSubmitOnce();
++ *     once(() => save.mutateAsync(body));
++ */
++export function useSubmitOnce() {
++  const busy = useRef(false);
++  return (run: () => Promise<unknown>) => {
++    if (busy.current) return;
++    busy.current = true;
++    run()
++      .catch(() => undefined) // the mutation's onError shows the refusal
++      .finally(() => {
++        busy.current = false;
++      });
++  };
++}
+diff --git a/src/main/frontend/features/claims/ClaimForm.tsx b/src/main/frontend/features/claims/ClaimForm.tsx
+index 072cd2df..d01338e8 100644
+--- a/src/main/frontend/features/claims/ClaimForm.tsx
++++ b/src/main/frontend/features/claims/ClaimForm.tsx
+@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useUser } from '../session/useUser';
+ import { claimsKey } from './claimsQuery';
+ import type { Claim } from './claimsQuery';
+@@ -33,6 +34,7 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
+   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+ 
+   const [user] = useUser();
++  const once = useSubmitOnce();
+   const save = useMutation({
+     mutationFn: (body: Body) =>
+       editing
+@@ -64,7 +66,7 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
+       setError('The date must be yyyy-mm-dd.');
+       return;
+     }
+-    save.mutate({ amount: a, date: d, note: note.trim() });
++    once(() => save.mutateAsync({ amount: a, date: d, note: note.trim() }));
+   };
+ 
+   const edit = <T,>(set: (v: T) => void) => (v: T) => {
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index acd89f07..2f404c64 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { ClaimCells } from '../../slots/defs/claimColumns';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useUser } from '../session/useUser';
+ import { claimsKey } from './claimsQuery';
+ import type { Claim, ClaimStatus } from './claimsQuery';
+@@ -21,6 +22,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim })
+   const queryClient = useQueryClient();
+   const [user] = useUser();
+   const [error, setError] = useState('');
++  const once = useSubmitOnce();
+   const change = useMutation({
+     mutationFn: (to: ClaimStatus) =>
+       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`, {}, user),
+@@ -44,7 +46,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim })
+           disabled={change.isPending}
+           onClick={() => {
+             setError('');
+-            change.mutate(to);
++            once(() => change.mutateAsync(to));
+           }}
+         >
+           {label}
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+index 99f35fa5..4d44255c 100644
+--- a/src/main/frontend/features/people/PersonForm.tsx
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -1,7 +1,8 @@
+ import { useEffect, useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+-import { postJson, putJson } from '../../api/http';
++import { ConflictError, postJson, putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useUser } from '../session/useUser';
+ import { GRADES, peopleKey, peopleQuery } from './peopleQuery';
+ import type { Grade, Person } from './peopleQuery';
+@@ -16,17 +17,25 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
+   const [name, setName] = useState('');
+   const [grade, setGrade] = useState<Grade>('A');
+   const [error, setError] = useState('');
++  // The version of the person the editor loaded; a save is refused once someone else has saved since.
++  const [version, setVersion] = useState<number | undefined>(undefined);
++
++  const fill = (p: Person | undefined) => {
++    setName(p?.name ?? '');
++    setGrade(p?.grade ?? 'A');
++    setVersion(p?.version);
++  };
+ 
+   // Opening an editor (or closing it) refills the form.
+   useEffect(() => {
+-    setName(editing?.name ?? '');
+-    setGrade(editing?.grade ?? 'A');
++    fill(editing);
+     setError('');
+   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+ 
+   const [user] = useUser();
++  const once = useSubmitOnce();
+   const save = useMutation({
+-    mutationFn: (body: { name: string; grade: Grade }) =>
++    mutationFn: (body: { name: string; grade: Grade; version?: number }) =>
+       editing
+         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
+         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
+@@ -39,7 +48,16 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
+       }
+       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+     },
+-    onError: () => setError('The person could not be saved.'),
++    onError: async (e) => {
++      if (e instanceof ConflictError && editing) {
++        // Someone else saved this person since the editor loaded it: show what is stored now.
++        setError('Someone else has saved this person since you opened it. The form now shows their changes.');
++        const fresh = await queryClient.fetchQuery({ ...peopleQuery(sheetId), staleTime: 0 });
++        fill(fresh.find((p) => p.id === editing.id));
++      } else {
++        setError('The person could not be saved.');
++      }
++    },
+   });
+ 
+   const submit = (e: FormEvent) => {
+@@ -55,7 +73,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
+       setError('That name is already in use.');
+       return;
+     }
+-    save.mutate({ name: trimmed, grade });
++    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version } : { name: trimmed, grade }));
+   };
+ 
+   return (
+diff --git a/src/main/frontend/features/people/peopleQuery.ts b/src/main/frontend/features/people/peopleQuery.ts
+index aa07f488..fd992e98 100644
+--- a/src/main/frontend/features/people/peopleQuery.ts
++++ b/src/main/frontend/features/people/peopleQuery.ts
+@@ -4,7 +4,8 @@ import { sheetKey } from '../sheet/sheetQuery';
+ export type Grade = 'A' | 'B' | 'C';
+ export const GRADES: Grade[] = ['A', 'B', 'C'];
+ 
+-export type Person = { id: number; name: string; grade: Grade };
++/** `version` is raised on every edit; an edit names the version it loaded. */
++export type Person = { id: number; name: string; grade: Grade; version: number };
+ 
+ /** Under the sheet's key, so re-loading the sheet re-reads its people. */
+ export const peopleKey = (sheetId: string) => [...sheetKey(sheetId), 'people'] as const;
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 98564c21..c1da3841 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -12,15 +12,15 @@ import type { Rate } from './ratesQuery';
+ 
+ /**
+  * A person's due-total: the sum of their counting claims' rounded figures — a settled claim's frozen
+- * figure, otherwise its amount times their grade's rate in force on the sheet's today. With no rate
+- * today it is n/a, unless a settled claim keeps a figure: then it is the sum of the figures there are.
++ * figure, otherwise its due as the claim shows it (its amount times their grade's rate on the claim's
++ * date). With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
+  */
+ function personDue(person: Person | undefined, claims: Claim[], rates: Rate[], today: string): string {
+   if (!person) return 'n/a';
+   const rate = rateFor(rates, person.grade, today);
+   const figures = claims
+     .filter((c) => c.personId === person.id && counts(c))
+-    .map((c) => c.settledDue ?? due(c.amount, rate))
++    .map((c) => c.settledDue ?? due(c.amount, rateFor(rates, person.grade, c.date)))
+     .filter((d) => d !== 'n/a');
+   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
+ }
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index a906b2b8..56912e5b 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useUser } from '../session/useUser';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { GRADES } from '../people/peopleQuery';
+@@ -25,6 +26,7 @@ function Rates({ sheetId }: { sheetId: string }) {
+   const [error, setError] = useState('');
+ 
+   const [user] = useUser();
++  const once = useSubmitOnce();
+   const save = useMutation({
+     mutationFn: (body: { grade: Grade; rate: string; from: string }) =>
+       putJson<Rate>(
+@@ -53,7 +55,7 @@ function Rates({ sheetId }: { sheetId: string }) {
+       setError('The from-date must be a date (yyyy-mm-dd).');
+       return;
+     }
+-    save.mutate({ grade, rate: p, from: f });
++    once(() => save.mutateAsync({ grade, rate: p, from: f }));
+   };
+ 
+   const list = rates.data ?? [];
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 1975b334..4856433d 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { sheetKey } from './sheetQuery';
+ import type { Sheet } from './sheetQuery';
+@@ -13,6 +14,8 @@ function SheetToday({ sheetId }: { sheetId: string }) {
+   const [typed, setTyped] = useState('');
+   const [error, setError] = useState('');
+ 
++  const once = useSubmitOnce();
++
+   const save = useMutation({
+     mutationFn: (date: string) =>
+       putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date }),
+@@ -23,7 +26,7 @@ function SheetToday({ sheetId }: { sheetId: string }) {
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+     setError('');
+-    save.mutate(typed.trim());
++    once(() => save.mutateAsync(typed.trim()));
+   };
+ 
+   return (
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 0e77a2d3..84c674fa 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -4,14 +4,20 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+-    // Person is a record, so the edited person is published in place of the loaded one.
++    // Person is a record, so the edited person is published in place of the loaded one. The edit is
++    // refused when the version its form loaded is not the stored one: someone else saved it since.
+     public void apply(@Val PersonRequest request, @Val Person person, People people, Out<PersonResponse> responseOut)
+-            throws InvalidPersonException {
++            throws InvalidPersonException, PersonConflictException {
++        if (request.version() != null && request.version() != person.version()) {
++            throw new PersonConflictException("Someone else has saved this person since it was opened.");
++        }
+         if (people.nameTaken(person.sheetId(), request.name(), person.id())) {
+             throw new InvalidPersonException("The name is already in use.");
+         }
+         Person edited = person.with(request);
+-        people.save(edited);
++        if (!people.save(edited)) {
++            throw new PersonConflictException("Someone else has saved this person since it was opened.");
++        }
+         responseOut.set(PersonResponse.from(edited));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandlePersonConflict.java b/src/main/java/net/officefloor/hq/app/person/HandlePersonConflict.java
+new file mode 100644
+index 00000000..684070e4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandlePersonConflict.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandlePersonConflict {
++    public void handle(@Parameter PersonConflictException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 29c70932..d9114a5c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
+ public class People {
+ 
+     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
+-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
++            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -48,10 +48,15 @@ public class People {
+             ps.setString(3, request.grade());
+             return ps;
+         }, key);
+-        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade());
++        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0);
+     }
+ 
+-    public void save(Person person) {
+-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ?", person.name(), person.grade(), person.id());
++    /**
++     * Store an edited person, whose version is one past the version it was loaded at. False, storing
++     * nothing, when the person has been saved since it was loaded.
++     */
++    public boolean save(Person person) {
++        return jdbc.update("UPDATE person SET name = ?, grade = ?, version = ? WHERE id = ? AND version = ?",
++                person.name(), person.grade(), person.version(), person.id(), person.version() - 1) == 1;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 4ad7fa49..33de2079 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -1,9 +1,9 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** A person on a sheet. {@code grade} is one of A, B or C. */
+-public record Person(long id, String sheetId, String name, String grade) {
++/** A person on a sheet. {@code grade} is one of A, B or C; {@code version} is raised on every edit. */
++public record Person(long id, String sheetId, String name, String grade, long version) {
+ 
+     public Person with(PersonRequest request) {
+-        return new Person(id, sheetId, request.name(), request.grade());
++        return new Person(id, sheetId, request.name(), request.grade(), version + 1);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonConflictException.java b/src/main/java/net/officefloor/hq/app/person/PersonConflictException.java
+new file mode 100644
+index 00000000..7b36f32f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonConflictException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.person;
++
++/** An edit named a version of the person that is no longer current: someone else saved it since. */
++public class PersonConflictException extends Exception {
++
++    public PersonConflictException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index f855ead5..36482ed6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,5 +1,8 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** The body of an add or an edit of a person: the name as typed and the grade (A, B or C). */
+-public record PersonRequest(String name, String grade) {
++/**
++ * The body of an add or an edit of a person: the name as typed and the grade (A, B or C). An edit
++ * also names the {@code version} its form loaded (null on an add).
++ */
++public record PersonRequest(String name, String grade, Long version) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index a560e71c..e5275a12 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -1,9 +1,9 @@
+ package net.officefloor.hq.app.person;
+ 
+ /** A person as the screen sees it. */
+-public record PersonResponse(long id, String name, String grade) {
++public record PersonResponse(long id, String name, String grade, long version) {
+ 
+     public static PersonResponse from(Person person) {
+-        return new PersonResponse(person.id(), person.name(), person.grade());
++        return new PersonResponse(person.id(), person.name(), person.grade(), person.version());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index a09f781c..124d7471 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -18,6 +18,6 @@ public class ValidatePerson {
+         if (!GRADES.contains(grade)) {
+             throw new InvalidPersonException("The grade must be A, B or C.");
+         }
+-        request.set(new PersonRequest(name, grade));
++        request.set(new PersonRequest(name, grade, body.version()));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V11__person_version.sql b/src/main/resources/db/migration/V11__person_version.sql
+new file mode 100644
+index 00000000..e6801692
+--- /dev/null
++++ b/src/main/resources/db/migration/V11__person_version.sql
+@@ -0,0 +1,3 @@
++-- The version of a person, raised on every edit. An edit names the version its form loaded and is
++-- refused when the person has been saved since.
++ALTER TABLE person ADD COLUMN version BIGINT DEFAULT 0 NOT NULL;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonConflictException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonConflictException.yml
+new file mode 100644
+index 00000000..0fbec973
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonConflictException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandlePersonConflict
