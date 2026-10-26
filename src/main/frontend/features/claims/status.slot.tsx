@@ -43,6 +43,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // A claim in any status can be commented; an empty comment is refused.
 // A DRAFT claim (not in a closed period) can be deleted: DELETED, it counts nowhere and takes no edit, open or void; on
 // the sheet-today it was deleted it can be restored to a DRAFT, and on a later day the restore is refused.
+// A DRAFT claim (not in a closed period, nor held open by another user's editor) takes lines — a label, a whole quantity
+// of 1 or more and a unit amount — and its amount becomes their total; adding one counts as editing the claim.
 // A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
@@ -56,6 +58,9 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [newDate, setNewDate] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
   const [commentText, setCommentText] = useState('');
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineQty, setLineQty] = useState('');
+  const [lineUnit, setLineUnit] = useState('');
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingClaim();
   const periods = usePeriods(sheetId);
@@ -191,6 +196,24 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
+  // A line added to a DRAFT; the server refuses one on a claim locked by another user, and checks the fields too.
+  const line = useMutation({
+    mutationFn: (f: { label: string; qty: string; unit: string }) => {
+      const why = refusal();
+      if (why !== undefined) throw new Error(why);
+      if (f.label.trim() === '') throw new Error("Enter the line's label");
+      if (!/^\d+$/.test(f.qty.trim()) || Number(f.qty.trim()) < 1) throw new Error("A line's quantity is a whole number, at least 1");
+      if (!/^\d+(\.\d{1,2})?$/.test(f.unit.trim())) throw new Error('A unit amount is a number, 0.00 or more, with up to two decimals');
+      return postJson<Claim>(`${base}/${claim.id}/line`,
+        { label: f.label.trim(), qty: f.qty.trim(), unit: f.unit.trim(), by: user ?? '' });
+    },
+    onSuccess: () => {
+      setLineLabel('');
+      setLineQty('');
+      setLineUnit('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
@@ -203,6 +226,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     remind.reset();
     inline.reset();
     comment.reset();
+    line.reset();
     setRefused(undefined);
     change.mutate(to);
   };
@@ -218,11 +242,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     remind.reset();
     inline.reset();
     comment.reset();
+    line.reset();
     setRefused(undefined);
   };
   const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
-    || redate.isPending || remind.isPending || inline.isPending || comment.isPending;
-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error ?? comment.error;
+    || redate.isPending || remind.isPending || inline.isPending || comment.isPending || line.isPending;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error ?? comment.error ?? line.error;
 
   return (
     <>
@@ -292,6 +317,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
           inline.reset();
           comment.reset();
+          line.reset();
           setRefused(undefined);
           reassign.mutate(moveTo);
         }}
@@ -313,6 +339,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
           inline.reset();
           comment.reset();
+          line.reset();
           setRefused(undefined);
           resettle.mutate();
         }}
@@ -345,6 +372,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
           inline.reset();
           comment.reset();
+          line.reset();
           setRefused(undefined);
           defer.mutate(deferUntil);
         }}
@@ -367,6 +395,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
           inline.reset();
           comment.reset();
+          line.reset();
           setRefused(undefined);
           proof.mutate();
         }}
@@ -398,6 +427,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
           inline.reset();
           comment.reset();
+          line.reset();
           setRefused(undefined);
           split.mutate(splitAmount);
         }}
@@ -428,6 +458,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
           inline.reset();
           comment.reset();
+          line.reset();
           setRefused(undefined);
           redate.mutate(newDate);
         }}
@@ -503,6 +534,46 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         }}
       >
         Comment
+      </button>{' '}
+      <input
+        data-testid="claim-line-label"
+        placeholder="Line"
+        value={lineLabel}
+        onChange={(e) => {
+          setLineLabel(e.target.value);
+          line.reset();
+        }}
+      />
+      <input
+        data-testid="claim-line-qty"
+        placeholder="Qty"
+        inputMode="numeric"
+        value={lineQty}
+        onChange={(e) => {
+          setLineQty(e.target.value);
+          line.reset();
+        }}
+      />
+      <input
+        data-testid="claim-line-unit"
+        placeholder="Unit"
+        inputMode="decimal"
+        value={lineUnit}
+        onChange={(e) => {
+          setLineUnit(e.target.value);
+          line.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-line-add"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          line.mutate({ label: lineLabel, qty: lineQty, unit: lineUnit });
+        }}
+      >
+        Add line
       </button>
       {editingId === claim.id && (
         <button

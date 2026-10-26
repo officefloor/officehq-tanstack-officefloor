@@ -378,7 +378,7 @@ public class PersonRepository {
     /**
      * Transfer the person to the other sheet (stored already): they are added there with their name, terms, contact,
      * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from; their claims move with them (status, dates,
-     * notes, settled figures, logs and comments kept), listed there in the order they were listed here, each keeping
+     * notes, settled figures, logs, comments and lines kept), listed there in the order they were listed here, each keeping
      * any figure a statement bound it to, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
      * as used there; their statements move with them. Everything else of theirs here — patron links either way, pool
@@ -444,6 +444,7 @@ public class PersonRepository {
                     renumbered.get((String) claim.get("split_from")), id);
             jdbc.update("UPDATE claim_log SET sheet_id = ? WHERE claim_id = ?", toSheet, id);
             jdbc.update("UPDATE claim_comment SET sheet_id = ? WHERE claim_id = ?", toSheet, id);
+            jdbc.update("UPDATE claim_line SET sheet_id = ? WHERE claim_id = ?", toSheet, id);
             jdbc.update("DELETE FROM claim_lock WHERE claim_id = ?", id);
             String tags = (String) claim.get("tags");
             if (tags != null) {

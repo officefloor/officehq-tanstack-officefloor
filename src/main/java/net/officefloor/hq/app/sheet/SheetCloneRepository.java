@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository;
 /**
  * Copies a sheet to a sheet id never used: its today, settings, roles, rates, holidays, void reasons, templates, the
  * tags ever used on its claims, its people (grades, terms, contacts, aliases, holds, retirements, patrons), its pools,
- * its plans (with the dates they made claims for), its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs). Its
+ * its plans (with the dates they made claims for), its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs, lines). Its
  * statements are not copied (no claim is bound), nor its snapshots, watches, delegations, comments, editor locks or
  * settle batches.
  */
@@ -92,7 +92,7 @@ public class SheetCloneRepository {
     }
 
     /**
-     * Copy the sheet's claims, each with its log, to the clone's people: a claim that had a number takes its new one
+     * Copy the sheet's claims, each with its log and lines, to the clone's people: a claim that had a number takes its new one
      * from {@code numbers} (by claim id), and a correction or split names its claim by the new number.
      */
     public void copyClaims(String from, String to, Map<Long, Long> people, Map<Long, String> numbers) {
@@ -117,6 +117,8 @@ public class SheetCloneRepository {
                     renumbered.get((String) claim.get("split_from")), id);
             jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) SELECT ?, ?,"
                     + " status, by_user, logged_on, due FROM claim_log WHERE claim_id = ? ORDER BY id", to, copy, id);
+            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
+                    + " FROM claim_line WHERE claim_id = ? ORDER BY id", to, copy, id);
         }
     }
 

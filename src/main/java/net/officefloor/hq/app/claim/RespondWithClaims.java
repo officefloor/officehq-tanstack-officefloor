@@ -16,10 +16,12 @@ public class RespondWithClaims {
         response.send(history.view(sheet.id(), asOf.on(), jdbc -> {
             Map<Long, List<String>> lines = new ClaimLogRepository(jdbc).lines(sheet.id());
             Map<Long, List<String>> comments = new ClaimCommentRepository(jdbc).lines(sheet.id());
+            Map<Long, List<String>> claimLines = new ClaimLineRepository(jdbc).lines(sheet.id());
             LocalDate today = new SheetRepository(jdbc).today(sheet.id());
             return new ClaimRepository(jdbc).list(sheet.id()).stream()
                     .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()),
-                            comments.getOrDefault(c.getId(), List.of()), today)).toList();
+                            comments.getOrDefault(c.getId(), List.of()),
+                            claimLines.getOrDefault(c.getId(), List.of()), today)).toList();
         }));
     }
 }
