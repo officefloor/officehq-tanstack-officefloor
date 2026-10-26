@@ -7,9 +7,18 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 /**
  * `version` is raised on every edit; an edit names the version it loaded. `retiredFrom` (yyyy-mm-dd) is
  * set once the person is retired, which they are at once, whatever the date; null otherwise. `held` is whether
- * they are on hold: while held, their OPEN claims count in no live total.
+ * they have any hold; `holds` are their holds by from-date: their OPEN claims dated within one, unless bound by a
+ * statement, count in no live total.
  */
-export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean };
+export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[] };
+
+/** A hold from `from` to `to` inclusive (yyyy-mm-dd); `to` is null when it has no end. */
+export type Held = { from: string; to: string | null };
+
+/** Whether the date (yyyy-mm-dd) falls within any of the person's holds. */
+export function heldOn(person: Person | undefined, date: string): boolean {
+  return (person?.holds ?? []).some((h) => h.from <= date && (h.to === null || date <= h.to));
+}
 
 /** A grade a person was given from `from` (yyyy-mm-dd) on; null for the first, from the beginning of time. */
 export type Graded = { from: string | null; grade: Grade };

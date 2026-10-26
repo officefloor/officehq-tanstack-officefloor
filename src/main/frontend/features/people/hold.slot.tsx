@@ -7,36 +7,78 @@ import { useUser } from '../session/useUser';
 import { peopleKey, peopleQuery } from './peopleQuery';
 import type { Person } from './peopleQuery';
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * Whether the person is on hold, and the control that puts them on hold or takes them off it. While held,
- * their OPEN claims count in no live total; their SETTLED ones still do.
+ * Whether the person has any hold, their holds, and the control that adds one from a from-date (blank: the
+ * sheet's today) to an optional to-date. Their OPEN claims dated within a hold, unless bound by a statement,
+ * count in no live total; a hold ends on its to-date.
  */
 function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
   const person = (useQuery(peopleQuery(sheetId)).data ?? []).find((p) => p.id === personId);
   const hold = useMutation({
-    mutationFn: () =>
-      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/hold`, {}, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
-    onError: () => setError('The hold could not be changed.'),
+    mutationFn: (body: { from: string; to: string }) =>
+      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/hold`, body, user),
+    onSuccess: async () => {
+      setFrom('');
+      setTo('');
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+    },
+    onError: () => setError('The hold could not be added.'),
   });
 
   return (
     <td>
       <span data-testid="person-hold">{person?.held ? 'yes' : 'no'}</span>{' '}
+      {(person?.holds ?? []).map((h, i) => (
+        <span key={i} data-testid="person-hold-line">
+          {h.from} to {h.to ?? '…'}{' '}
+        </span>
+      ))}
+      <input
+        data-testid="person-hold-from"
+        placeholder="from yyyy-mm-dd"
+        value={from}
+        onChange={(e) => {
+          setFrom(e.target.value);
+          setError('');
+        }}
+      />{' '}
+      <input
+        data-testid="person-hold-to"
+        placeholder="to yyyy-mm-dd"
+        value={to}
+        onChange={(e) => {
+          setTo(e.target.value);
+          setError('');
+        }}
+      />{' '}
       <button
         type="button"
         data-testid="person-hold-toggle"
         disabled={hold.isPending}
         onClick={() => {
           setError('');
-          once(() => hold.mutateAsync());
+          const f = from.trim();
+          const t = to.trim();
+          if ((f !== '' && !DATE.test(f)) || (t !== '' && !DATE.test(t))) {
+            setError('The dates must be yyyy-mm-dd.');
+            return;
+          }
+          if (f !== '' && t !== '' && t < f) {
+            setError('The to-date is before the from-date.');
+            return;
+          }
+          once(() => hold.mutateAsync({ from: f, to: t }));
         }}
       >
-        {person?.held ? 'Release' : 'Hold'}
+        Hold
       </button>
       {error && <span data-testid="person-error">{error}</span>}
     </td>

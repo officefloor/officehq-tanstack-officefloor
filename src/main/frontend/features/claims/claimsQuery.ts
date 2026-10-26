@@ -1,5 +1,5 @@
 import { getJson } from '../../api/http';
-import type { Person } from '../people/peopleQuery';
+import { heldOn, type Person } from '../people/peopleQuery';
 import { sheetKey } from '../sheet/sheetQuery';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
@@ -38,10 +38,12 @@ export const isCorrection = (c: Claim) => Number(c.amount) < 0;
 
 /**
  * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts and voided
- * ones do not, nor do the open claims of a person on hold.
+ * ones do not, nor do a person's open claims dated within one of their holds, unless a statement bound them.
  */
 export const counts = (c: Claim, people: Person[]) =>
-  c.status === 'SETTLED' || (isOpen(c) && !people.find((p) => p.id === c.personId)?.held);
+  c.status === 'SETTLED' ||
+  (isOpen(c) &&
+    ((c.stated && c.status !== 'PENDING') || !heldOn(people.find((p) => p.id === c.personId), c.date)));
 
 /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;

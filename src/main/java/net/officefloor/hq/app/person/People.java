@@ -19,7 +19,7 @@ public class People {
 
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"), List.of());
+            rs.getObject("retired_from", LocalDate.class), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -45,8 +45,14 @@ public class People {
                     dated.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
                             new DatedGrade(rs.getObject("from_date", LocalDate.class), rs.getString("grade")));
                 }, sheetId);
+        Map<Long, List<Hold>> holds = new HashMap<>();
+        jdbc.query("SELECT h.* FROM person_hold h JOIN person p ON p.id = h.person_id WHERE p.sheet_id = ? "
+                + "ORDER BY h.from_date, h.id", rs -> {
+                    holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
+                            new Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+                }, sheetId);
         return found.stream().map(p -> new Person(p.id(), p.sheetId(), p.name(), p.grade(), p.version(),
-                p.retiredFrom(), p.held(), dated.getOrDefault(p.id(), List.of()))).toList();
+                p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()))).toList();
     }
 
     /** The person on the sheet with this name, ignoring case and surrounding spaces; null when none. */
@@ -73,7 +79,7 @@ public class People {
             ps.setString(3, request.grade());
             return ps;
         }, key);
-        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, false,
+        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
                 List.of());
     }
 
@@ -98,8 +104,9 @@ public class People {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", from, id);
     }
 
-    /** Put the person on hold (true) or take them off it (false). */
-    public void hold(long id, boolean held) {
-        jdbc.update("UPDATE person SET held = ? WHERE id = ?", held, id);
+    /** Add a hold to the person's holds. */
+    public void hold(long id, Hold hold) {
+        jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
+                Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()));
     }
 }

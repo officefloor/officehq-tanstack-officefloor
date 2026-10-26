@@ -96,9 +96,13 @@ public class Rollup {
         return person == null ? claim.settledDue() : figure(claim, person, sheets.today(claim.sheetId()));
     }
 
-    /** Whether the (OPEN, PENDING or SETTLED) claim counts: a held person's open claims count in no live total. */
-    private static boolean counts(Claim claim, Person person) {
-        return !(person.held() && claim.status().isOpen());
+    /**
+     * Whether the (OPEN, PENDING or SETTLED) claim counts: a person's open claims dated within one of their holds
+     * count in no live total, unless a statement bound them.
+     */
+    public static boolean counts(Claim claim, Person person) {
+        boolean bound = claim.stated() && claim.status() != ClaimStatus.PENDING;
+        return !(claim.status().isOpen() && !bound && person.heldOn(claim.date()));
     }
 
     /**
