@@ -1,8 +1,11 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -47,6 +50,7 @@ public class AddPastedClaims {
         List<Person> persons = new ArrayList<>();
         List<Claim> matched = new ArrayList<>();
         Set<Long> taken = new HashSet<>();
+        Map<String, BigDecimal> pending = new HashMap<>();
         int n = 0;
         for (PasteLine line : pasted.lines()) {
             n++;
@@ -69,7 +73,12 @@ public class AddPastedClaims {
                     }
                 }
                 if (match == null) {
-                    RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), claims);
+                    String target = person.getId() + ":" + input.corrects();
+                    RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), -1,
+                            input.corrects() == null ? BigDecimal.ZERO : pending.getOrDefault(target, BigDecimal.ZERO), claims);
+                    if (input.corrects() != null) {
+                        pending.merge(target, input.amount(), BigDecimal::add);
+                    }
                     RefuseUsedRef.refuse(sheet.id(), input.ref(), -1, claims);
                     RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
                     RefuseRetiredDate.refuse(person, date);

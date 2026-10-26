@@ -10,7 +10,7 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** The sheet's rates, then its parents' (see {@link RateRepository#chain}). Viewed as of a date, the sheet's own are
- *  as they stood then; a view holds only the sheet's own rows, so its parents' are read as they stand. */
+ *  as they stood then, and each parent's as it stood then on that parent. */
 public class RespondWithRates {
     public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history, JdbcTemplate jdbc,
             ObjectResponse<List<RateResponse>> response) {
@@ -18,7 +18,8 @@ public class RespondWithRates {
         List<String> ancestry = new RateRepository(jdbc).ancestry(sheet.id());
         for (int level = 1; level < ancestry.size(); level++) {
             int at = level;
-            new RateRepository(jdbc).list(ancestry.get(level)).forEach(r -> found.add(r.at(at)));
+            String parent = ancestry.get(level);
+            history.view(parent, asOf.on(), view -> new RateRepository(view).list(parent)).forEach(r -> found.add(r.at(at)));
         }
         response.send(found.stream().map(RateResponse::from).toList());
     }

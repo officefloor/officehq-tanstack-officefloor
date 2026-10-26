@@ -13,6 +13,7 @@ import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, typ
 
 // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+const CLOSED = "That claim's date is in a closed period";
 
 // `release`: a steward's review of a REVIEW claim, opening it (it takes its number then).
 type Change = { status: ClaimStatus; review?: boolean; release?: boolean; reason?: string; voidReason?: string };
@@ -72,7 +73,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   // An edit the screen can already tell is refused shows its refusal at once, before any request: the claim form must
   // not be taken for its editor. The server refuses the same edits (and any it alone can tell).
   const [refused, setRefused] = useState<string>();
-  // A viewer's edit is refused too, but its editor opens (to be cancelled), as for a lock another user holds.
+  // A viewer's edit, and one of a claim in a closed period, is refused too, but its editor opens (to be cancelled), as
+  // for a lock another user holds; its save is refused in turn.
   // One a steward's delegation holds on the sheet's today acts as a steward, as the server decides.
   const viewer = () => {
     const assigned = roles.data ?? [];
@@ -85,7 +87,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const refusal = (): string | undefined => {
     if (viewer()) return 'A viewer may not change anything on this sheet';
     if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';
-    if (periodOn(periods.data ?? [], claim.dueBy)?.closed) return "That claim's date is in a closed period";
+    if (periodOn(periods.data ?? [], claim.dueBy)?.closed) return CLOSED;
     return undefined;
   };
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/claims`;
@@ -489,7 +491,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           if (why === undefined) lock.mutate();
           else {
             setRefused(why);
-            if (viewer()) openEditor();
+            if (viewer() || why === CLOSED) openEditor();
           }
         }}
       >

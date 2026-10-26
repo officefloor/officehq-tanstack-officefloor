@@ -108,6 +108,19 @@ public class ClaimRepository {
                 Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
     }
 
+    /**
+     * What remains of the person's SETTLED claim numbered {@code number}: its amount less the amounts of the corrections
+     * made against it, VOID or DELETED ones and the claim {@code exceptId} left out.
+     */
+    public BigDecimal correctableRemaining(String sheetId, long personId, String number, long exceptId) {
+        BigDecimal target = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND claim_number = ? AND status = ?", BigDecimal.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
+        BigDecimal corrected = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND corrects = ? AND status NOT IN (?, ?) AND id <> ?", BigDecimal.class, sheetId, personId, number,
+                ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(), exceptId);
+        return target.add(corrected);
+    }
+
     public Claim find(String sheetId, long id) {
         return due(jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))
                 .stream().findFirst().orElse(null);
