@@ -11,12 +11,12 @@ import type { DatedValue } from './dated';
 
 /** `clerkLimit` has two decimals ("1.50"), or is "" when there is no limit; `floor` has two decimals;
  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
- *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none; `graceDays` is a whole number of days (not dated), or "" when closing periods by today is off.
+ *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none; `graceDays` is a whole number of days (not dated), or "" when closing periods by today is off; `entryDate` is yyyy-mm-dd, or "" when it is off (a new claim left undated takes the sheet's today).
  *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
  *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, note-threshold; a blank clerk limit, cap, proof threshold or note threshold is none).
  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
  *  by clerk and steward; reassign and reopen by steward). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
 
 /** The actions the permission matrix decides; each is kept (not dated) under perm-<action>. */
 export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
@@ -32,6 +32,7 @@ export type SettingsChange = {
   latePct?: string;
   policyDate?: string;
   periodNumberingFrom?: string;
+  entryDate?: string;
   gradeTerms?: Partial<Record<Grade, string>>;
   cap?: string;
   proofThreshold?: string;

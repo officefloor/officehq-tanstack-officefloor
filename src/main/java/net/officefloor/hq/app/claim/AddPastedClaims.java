@@ -19,7 +19,7 @@ public class AddPastedClaims {
             Person person = line.person();
             ClaimInput input = line.input();
             LocalDate today = sheets.today(person.sheetId());
-            LocalDate date = input.date() != null ? input.date() : today;
+            LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.sheetId());
             LocalDate dueBy = date.plusDays(person.termsOn(date, settings));
             Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), null, dueBy);
             claims.log(claim, user.trim(), today, rollup.figure(claim));

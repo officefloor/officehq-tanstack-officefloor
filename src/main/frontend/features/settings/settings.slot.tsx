@@ -25,9 +25,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today). A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated).
+ *  today). A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated). While the entry date is set it is the date a new claim left undated is given (blank: off, the sheet's today; not dated).
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
- *  date, the cap, the proof threshold, the note threshold and the grace days was last worked in (the clerk limit unless it was one of the others).
+ *  date, the cap, the proof threshold, the note threshold and the grace days and the entry date was last worked in (the clerk limit unless it was one of the others).
  *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
  *  (blank: the sheet's today), keeping the values recorded from other dates; what is shown in force is the value on the sheet's today.
  *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles allowed to do it as a comma
@@ -46,8 +46,9 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [threshold, setThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
   const [grace, setGrace] = useState('');
+  const [entryDate, setEntryDate] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | 'entryDate' | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -73,6 +74,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setThreshold('');
       setNoteThreshold('');
       setGrace('');
+      setEntryDate('');
       setPerms({});
       setFrom({});
     },
@@ -142,6 +144,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The grace days must be a whole number of days, 0 or more.');
       return;
     }
+    const ed = entryDate.trim();
+    if (ed !== '' && !isDate(ed)) {
+      setError('The entry date must be a date (yyyy-mm-dd).');
+      return;
+    }
     const pm: Partial<Record<PermAction, string>> = {};
     for (const action of PERM_ACTIONS) {
       const roles = (perms[action] ?? '').trim();
@@ -163,7 +170,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       froms[key] = d;
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && Object.keys(pm).length === 0;
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -171,6 +178,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (pt !== '' || (none && blank === 'proofThreshold')) body.proofThreshold = pt;
     if (nt !== '' || (none && blank === 'noteThreshold')) body.noteThreshold = nt;
     if (gd !== '' || (none && blank === 'graceDays')) body.graceDays = gd;
+    if (ed !== '' || (none && blank === 'entryDate')) body.entryDate = ed;
     for (const action of PERM_ACTIONS) {
       if (pm[action] !== undefined || (none && blank === action)) body.perms = { ...body.perms, [action]: pm[action] ?? '' };
     }
@@ -425,6 +433,19 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Entry date{' '}
+          <input
+            data-testid="setting-entry-date"
+            placeholder="off"
+            value={entryDate}
+            onFocus={() => setBlank('entryDate')}
+            onChange={(e) => {
+              setEntryDate(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         {PERM_ACTIONS.map((action) => (
           <span key={action}>
             <label>
@@ -484,6 +505,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</span>
+      </p>
+      <p>
+        Entry date: <span data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</span>
       </p>
       {PERM_ACTIONS.map((action) => (
         <p key={action}>

@@ -7,17 +7,17 @@ import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
-import net.officefloor.hq.app.sheet.Sheets;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePaste {
     // Every line is checked before any is added: name,amount,date,note — the name a person on the sheet (ignoring
-    // case and surrounding spaces), the rest by the claim form's rules (a blank date is the sheet's today, the note
+    // case and surrounding spaces), the rest by the claim form's rules (a blank date is the entry date, else the sheet's today, the note
     // may hold commas or be absent). Blank lines are skipped; a paste with no line is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest body, People people,
-            Sheets sheets, Periods periods, Out<PastedLines> out)
+            Settings settings, Periods periods, Out<PastedLines> out)
             throws InvalidClaimException, ClaimInClosedPeriodException, ClaimAfterRetirementException {
         String sheet = sheetId.trim();
         String text = body == null || body.text() == null ? "" : body.text();
@@ -44,7 +44,7 @@ public class ValidatePaste {
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + n + ": " + e.getMessage());
             }
-            LocalDate date = input.date() != null ? input.date() : sheets.today(sheet);
+            LocalDate date = input.date() != null ? input.date() : settings.entryDate(sheet);
             Period closed = periods.closedOn(sheet, date);
             if (closed != null) {
                 throw new ClaimInClosedPeriodException("Line " + n + ": the period " + closed.name()

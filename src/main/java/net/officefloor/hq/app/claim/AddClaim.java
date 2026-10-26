@@ -16,7 +16,7 @@ public class AddClaim {
     // Its status log starts with its DRAFT line, at its due as shown now.
     public void add(@Val ClaimInput input, @Val Person person, Claims claims, Sheets sheets, Settings settings,
             Rollup rollup, ServerHttpConnection connection, Out<Claim> claimOut) {
-        LocalDate date = input.date() != null ? input.date() : sheets.today(person.sheetId());
+        LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.sheetId());
         LocalDate dueBy = date.plusDays(person.termsOn(date, settings));
         Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), input.corrects(),
                 dueBy);

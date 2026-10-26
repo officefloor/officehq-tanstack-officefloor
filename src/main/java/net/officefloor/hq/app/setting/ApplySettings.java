@@ -39,6 +39,9 @@ public class ApplySettings {
         if (settings.graceDays() != null) {
             store.set(settings.sheetId(), Settings.GRACE_DAYS, settings.graceDays());
         }
+        if (settings.entryDate() != null) {
+            store.set(settings.sheetId(), Settings.ENTRY_DATE, settings.entryDate());
+        }
         settings.perms().forEach((action, roles) -> store.set(settings.sheetId(), Settings.permKey(action), roles));
     }
 

@@ -28,6 +28,8 @@ public class Settings {
     public static final String LATE_PCT_DEFAULT = "0.00";
     public static final String POLICY_DATE = "policy-date";
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+    /** The default date of a new claim in place of the sheet's today (undated); blank is off. */
+    public static final String ENTRY_DATE = "entry-date";
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
     public static final String NOTE_THRESHOLD = "note-threshold";
@@ -167,6 +169,12 @@ public class Settings {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = get(sheetId, PERIOD_NUMBERING_FROM);
         return value.isEmpty() ? null : LocalDate.parse(value);
+    }
+
+    /** The date a new claim left undated is given: the entry date when one is set, else the sheet's today. */
+    public LocalDate entryDate(String sheetId) {
+        String value = get(sheetId, ENTRY_DATE);
+        return value.isEmpty() ? sheets.today(sheetId) : LocalDate.parse(value);
     }
 
     /** The grace days: how many days after its to-date an open period is closed when the sheet's today is changed; null when it is off. */
