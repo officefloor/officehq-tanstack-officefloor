@@ -21,6 +21,12 @@ public class ValidatePerson {
     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> person,
             Out<ChangedBy> changedBy) throws BadRequestException {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
+        person.set(parse(request, by));
+        changedBy.set(by);
+    }
+
+    /** The person form's fields checked and normalised, as the form's add or edit publishes them. */
+    static PersonRequest parse(PersonRequest request, ChangedBy by) throws BadRequestException {
         String name = PersonName.of(request == null ? null : request.name());
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         if (!GRADES.contains(grade)) {
@@ -39,8 +45,7 @@ public class ValidatePerson {
             throw new BadRequestException("Terms are a whole number of days, or blank for none");
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(Locale.ROOT);
-        person.set(new PersonRequest(name, grade, by.name(), request.version(), gradeFrom,
-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact));
-        changedBy.set(by);
+        return new PersonRequest(name, grade, by.name(), request.version(), gradeFrom,
+                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact);
     }
 }
