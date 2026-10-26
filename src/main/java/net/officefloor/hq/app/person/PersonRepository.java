@@ -357,6 +357,8 @@ public class PersonRepository {
                 + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
         carryStatements(f, sheetId, t);
+        jdbc.update("DELETE FROM person_snapshot m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM person_snapshot o"
+                + " WHERE o.person_id = ? AND o.left_on = m.left_on)", f, t);
         jdbc.update("UPDATE person_snapshot SET person_id = ? WHERE person_id = ?", t, f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
