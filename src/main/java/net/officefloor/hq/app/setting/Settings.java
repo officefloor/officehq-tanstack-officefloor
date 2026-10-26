@@ -239,7 +239,7 @@ public class Settings {
      * to the floor in force on the claim's date ({@link #floored}). An open (OPEN or PENDING) claim whose due-by (fixed when it was made) plus
      * its grade's grace ({@link #overdueFrom}) is before {@code today} gains, for every full 30 days it is overdue, the late percent in force on
      * that boundary date (the due-by plus the grace plus 30, 60, 90 ... days)
-     * of the figure, each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
+     * of the figure plus the charges of the boundaries before it (compounding), each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge and no floor, and a deferred claim no late charge (it is not overdue until the sheet's today reaches its date).
      */
@@ -262,7 +262,7 @@ public class Settings {
         for (long n = 1; n <= periods; n++) {
             BigDecimal pct = latePct(claim.sheetId(), dueBy.plusDays(30 * n));
             if (pct.signum() != 0) {
-                total = total.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
+                total = total.add(total.multiply(pct).movePointLeft(2).setScale(2, rounding));
             }
         }
         return total;
