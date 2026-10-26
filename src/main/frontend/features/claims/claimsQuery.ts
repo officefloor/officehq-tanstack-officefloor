@@ -21,7 +21,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `lockedBy` is the user whose open editor locks it for everyone else (null when not locked);
  * `lateEntry` is whether it was added while the period its due-by falls in was soft-closed;
  * `remindedOn` (yyyy-mm-dd) is the last sheet's today a reminder was written for it (null when never reminded);
- * `ref` is its external reference, unique on the sheet without regard to case (null when it has none).
+ * `ref` is its external reference, unique on the sheet without regard to case (null when it has none);
+ * `tags` are its tags, trimmed, lower-cased, without repeats and sorted (empty for none).
  */
 export type Claim = {
   id: number;
@@ -45,6 +46,7 @@ export type Claim = {
   lateEntry: boolean;
   remindedOn: string | null;
   ref: string | null;
+  tags: string[];
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */
@@ -94,6 +96,15 @@ export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] a
 export const claimsQuery = (sheetId: string) => ({
   queryKey: claimsKey(sheetId),
   queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`),
+});
+
+/** Under the claims' key, so whatever re-reads the claims re-reads the tags too. */
+export const tagsKey = (sheetId: string) => [...claimsKey(sheetId), 'tags'] as const;
+
+/** Every tag ever carried by a claim of the sheet, sorted (kept once used, even when no claim carries it now). */
+export const tagsQuery = (sheetId: string) => ({
+  queryKey: tagsKey(sheetId),
+  queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/tags`),
 });
 
 /** Amounts are added up in whole cents, so the sum shows exactly with two decimals. */

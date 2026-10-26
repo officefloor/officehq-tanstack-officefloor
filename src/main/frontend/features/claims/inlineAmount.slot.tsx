@@ -24,7 +24,7 @@ function ClaimInlineAmount({ sheetId, claim }: { sheetId: string; claim: Claim }
     mutationFn: (next: string) =>
       putJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}`,
-        { amount: next, date: claim.date, note: claim.note, corrects: claim.corrects ?? '', ref: claim.ref ?? '' },
+        { amount: next, date: claim.date, note: claim.note, corrects: claim.corrects ?? '', ref: claim.ref ?? '', tags: claim.tags.join(',') },
         user,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),

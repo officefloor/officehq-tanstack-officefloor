@@ -5,6 +5,9 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -55,6 +58,15 @@ public class ValidateClaim {
             }
         }
         return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects,
-                ref.isEmpty() ? null : ref);
+                ref.isEmpty() ? null : ref, tags(body == null ? null : body.tags()));
+    }
+
+    /** Comma separated tags as a claim keeps them: each trimmed and lower-cased, blanks and repeats dropped, sorted. */
+    static List<String> tags(String typed) {
+        if (typed == null) {
+            return List.of();
+        }
+        return Arrays.stream(typed.split(",")).map(t -> t.trim().toLowerCase(Locale.ROOT)).filter(t -> !t.isEmpty())
+                .distinct().sorted().toList();
     }
 }

@@ -21,7 +21,7 @@ public class AddClaim {
         LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.sheetId());
         LocalDate dueBy = holidays.dueBy(person.sheetId(), date, person.termsOn(date, settings));
         Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), input.corrects(),
-                dueBy, input.ref());
+                dueBy, input.ref(), input.tags());
         claims.log(claim, Audit.user(connection).trim(), sheets.today(person.sheetId()), rollup.figure(claim));
         claimOut.set(claim);
     }

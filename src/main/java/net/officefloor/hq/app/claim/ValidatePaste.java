@@ -53,7 +53,7 @@ public class ValidatePaste {
             }
             ClaimInput input;
             try {
-                input = ValidateClaim.parse(new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "", note, "", ref));
+                input = ValidateClaim.parse(new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "", note, "", ref, ""));
                 if (input.ref() != null && !refs.add(input.ref().toLowerCase(Locale.ROOT))) {
                     throw new InvalidClaimException("The reference " + input.ref() + " is given twice in the paste.");
                 }

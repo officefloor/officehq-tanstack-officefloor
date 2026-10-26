@@ -25,7 +25,7 @@ public class Claims {
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
             rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"),
             rs.getString("split_from"), rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class),
-            rs.getString("ref"));
+            rs.getString("ref"), tags(rs.getString("tags")));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -68,14 +68,34 @@ public class Claims {
         return ref == null ? null : ref.toLowerCase(java.util.Locale.ROOT);
     }
 
+    /** Tags as the store keeps them, comma separated (null for none), and back. */
+    private static String tagsColumn(List<String> tags) {
+        return tags.isEmpty() ? null : String.join(",", tags);
+    }
+
+    private static List<String> tags(String column) {
+        return column == null || column.isEmpty() ? List.of() : List.of(column.split(","));
+    }
+
+    /**
+     * Every tag ever carried by a claim of the sheet (as of the date the store is read as of), sorted: a tag stays
+     * once used, even when no claim carries it now.
+     */
+    public List<String> tagsUsed(String sheetId) {
+        LocalDate on = AsOf.date();
+        List<String> columns = jdbc.queryForList("SELECT DISTINCT tags FROM claim_history WHERE sheet_id = ? AND tags IS NOT NULL"
+                + (on == null ? "" : " AND history_on <= DATE '" + on + "'"), String.class, sheetId);
+        return columns.stream().flatMap(c -> tags(c).stream()).distinct().sorted().toList();
+    }
+
     /** Adds a draft claim, due by {@code dueBy} for good; a late entry when its due-by is in a soft-closed period. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            LocalDate dueBy, String ref) {
+            LocalDate dueBy, String ref, List<String> tags) {
         boolean late = lateEntry(sheetId, dueBy);
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref, ref_key, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref, ref_key, tags, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
@@ -88,11 +108,12 @@ public class Claims {
             ps.setBoolean(8, late);
             ps.setString(9, ref);
             ps.setString(10, refKey(ref));
-            ps.setString(11, sheetId);
+            ps.setString(11, tagsColumn(tags));
+            ps.setString(12, sheetId);
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0, null, late, null, ref);
+                false, null, corrects, dueBy, null, 0, null, late, null, ref, tags);
     }
 
     /** Whether a claim made now, due by {@code dueBy}, is a late entry: its due-by is in a soft-closed period. */
@@ -103,9 +124,9 @@ public class Claims {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ? WHERE id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ? WHERE id = ?",
                 claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), refKey(claim.ref()),
-                claim.id());
+                tagsColumn(claim.tags()), claim.id());
     }
 
     /**
@@ -149,7 +170,7 @@ public class Claims {
     /**
      * Splits {@code amount} off the claim if it is still OPEN at the amount it was loaded with, and returns the new
      * claim; null when it has since changed. The claim keeps the rest of its amount and is unbound from any statement;
-     * the new claim is OPEN with the same person, date and note, numbered next in {@code scope} (as
+     * the new claim is OPEN with the same person, date, note and tags, numbered next in {@code scope} (as
      * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy}, split from the claim's number, a late entry
      * when its due-by is in a soft-closed period, and listed as the newest claim on the sheet.
      */
@@ -165,8 +186,8 @@ public class Claims {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, late_entry, listed) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, late_entry, tags, listed) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -179,11 +200,12 @@ public class Claims {
             ps.setDate(9, Date.valueOf(dueBy));
             ps.setString(10, claim.number());
             ps.setBoolean(11, late);
-            ps.setString(12, claim.sheetId());
+            ps.setString(12, tagsColumn(claim.tags()));
+            ps.setString(13, claim.sheetId());
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null, null);
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null, null, claim.tags());
     }
 
     /**
