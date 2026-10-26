@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.rate;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -28,7 +29,7 @@ public class Rates {
 
     /** The sheet's rates, by grade, then by from-date (one with none first). */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT * FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+        return jdbc.query("SELECT * FROM " + AsOf.table("rate") + " WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
     /** Sets the rate, replacing any the grade already has for the same from-date. */

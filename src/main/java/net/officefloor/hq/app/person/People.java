@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.sql.PreparedStatement;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -30,24 +31,24 @@ public class People {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return withDated(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
+        return withDated(sheetId, jdbc.query("SELECT * FROM " + AsOf.table("person") + " WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+        List<Person> found = jdbc.query("SELECT * FROM " + AsOf.table("person") + " WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
         return found.isEmpty() ? null : withDated(sheetId, found).get(0);
     }
 
     /** The people with the grades they were given from a date on, read from the store. */
     private List<Person> withDated(String sheetId, List<Person> found) {
         Map<Long, List<DatedGrade>> dated = new HashMap<>();
-        jdbc.query("SELECT g.* FROM person_grade g JOIN person p ON p.id = g.person_id WHERE p.sheet_id = ? "
+        jdbc.query("SELECT g.* FROM " + AsOf.table("person_grade", "g") + " JOIN " + AsOf.table("person", "p") + " ON p.id = g.person_id WHERE p.sheet_id = ? "
                 + "ORDER BY g.from_date", rs -> {
                     dated.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
                             new DatedGrade(rs.getObject("from_date", LocalDate.class), rs.getString("grade")));
                 }, sheetId);
         Map<Long, List<Hold>> holds = new HashMap<>();
-        jdbc.query("SELECT h.* FROM person_hold h JOIN person p ON p.id = h.person_id WHERE p.sheet_id = ? "
+        jdbc.query("SELECT h.* FROM " + AsOf.table("person_hold", "h") + " JOIN " + AsOf.table("person", "p") + " ON p.id = h.person_id WHERE p.sheet_id = ? "
                 + "ORDER BY h.from_date, h.id", rs -> {
                     holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
                             new Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));

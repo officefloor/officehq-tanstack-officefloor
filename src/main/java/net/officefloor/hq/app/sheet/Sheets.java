@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.sheet;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,7 +24,8 @@ public class Sheets {
 
     /** The sheet's today: use this, never the real clock, for anything that depends on the date. */
     public LocalDate today(String id) {
-        return find(id).today();
+        // While the store is read as of a date, that date stands in for the sheet's today.
+        return AsOf.date() != null ? AsOf.date() : find(id).today();
     }
 
     /** Whether the sheet is archived, and so refuses every change. */

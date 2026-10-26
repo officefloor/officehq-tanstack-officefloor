@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.setting;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -57,7 +58,7 @@ public class Settings {
 
     /** The setting's value; "" when it was never set. */
     public String get(String sheetId, String key) {
-        List<String> values = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = ?",
+        List<String> values = jdbc.queryForList("SELECT setting_value FROM " + AsOf.table("setting") + " WHERE sheet_id = ? AND setting_key = ?",
                 String.class, sheetId, key);
         return values.isEmpty() ? "" : values.get(0);
     }
@@ -75,7 +76,7 @@ public class Settings {
 
     /** A dated setting's value in force on the date: the one with the latest from-date on or before it; "" when there is none. */
     public String on(String sheetId, String key, LocalDate date) {
-        List<String> values = jdbc.queryForList("SELECT setting_value FROM setting_from WHERE sheet_id = ? AND setting_key = ?"
+        List<String> values = jdbc.queryForList("SELECT setting_value FROM " + AsOf.table("setting_from") + " WHERE sheet_id = ? AND setting_key = ?"
                 + " AND from_date <= ? ORDER BY from_date DESC LIMIT 1", String.class, sheetId, key, java.sql.Date.valueOf(date));
         return values.isEmpty() ? "" : values.get(0);
     }

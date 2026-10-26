@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -36,7 +37,7 @@ public class Claims {
 
     /** The sheet's claims, newest first (a reassigned claim as new as when it was moved). */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC", ROW, sheetId);
+        return jdbc.query("SELECT * FROM " + AsOf.table("claim") + " WHERE sheet_id = ? ORDER BY listed DESC, id DESC", ROW, sheetId);
     }
 
     public Claim find(String sheetId, long id) {
@@ -46,7 +47,7 @@ public class Claims {
 
     /** The person's claim with the number, or null when they have none. */
     public Claim findByNumber(String sheetId, long personId, String number) {
-        List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
+        List<Claim> found = jdbc.query("SELECT * FROM " + AsOf.table("claim") + " WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
                 ROW, sheetId, personId, number);
         return found.isEmpty() ? null : found.get(0);
     }
