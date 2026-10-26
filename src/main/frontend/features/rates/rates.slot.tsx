@@ -14,7 +14,7 @@ import { useCapCents, useFloorCents, useLate } from '../access/useAccess';
 
 const GRADES = ['A', 'B', 'C'] as const;
 const RATE = /^\d{1,3}(\.\d{1,2})?$/;
-const NA = 'n/a';
+export const NA = 'n/a';
 
 /** The rate (in hundredths of a percent) in force on the sheet's today for each grade that has one. */
 function useRateByGrade(sheetId: string): Map<string, bigint> {
