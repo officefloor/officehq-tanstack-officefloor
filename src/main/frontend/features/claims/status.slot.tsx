@@ -39,7 +39,7 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // A claim not SETTLED or VOID takes a proof of a kind, receipt or photo (a receipt when none is chosen), raising its proofs
 // count by one and its count of that kind; while the sheet has proof kinds, one above the threshold needs a proof of each; one whose due is above the proof threshold
 // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
-// An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
+// An OPEN claim (not deferred, not in a closed period) can be split by a user who may open a claim: an amount above 0.00 and below its own goes to a new
 // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
 // An OPEN claim can be part-settled: the amount is split off as a split does and the new claim settled at once as a settle
 // does (PENDING under the clerk limit), with the four-eyes and proof rules judged on the original; either refusal refuses all.

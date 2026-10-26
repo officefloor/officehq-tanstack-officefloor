@@ -212,6 +212,9 @@ type SettingField = { key: string; label: string; placeholder: string; blank: bo
 const SETTINGS: readonly SettingField[] = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A clerk limit is an amount with up to two decimals, or blank for no limit' },
+  ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `clerk-limit-${grade}`,
+    label: `Clerk limit for grade ${grade}`, placeholder: 'sheet\'s limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A grade\'s clerk limit is an amount with up to two decimals, or blank for the sheet\'s' })),
   { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A floor is an amount with up to two decimals' },
   { key: 'terms', label: 'Terms (days)', placeholder: TERMS_DEFAULT, blank: false, valid: DAYS, inputMode: 'numeric',

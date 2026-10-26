@@ -68,6 +68,12 @@ public record DatedSettings(List<DatedValue> values) {
         return value == null ? null : new BigDecimal(value);
     }
 
+    /** The clerk limit in force on the date for a claim of the grade: the grade's own (setting clerk-limit-<grade>) when set, else the sheet's; null when there is none. */
+    public BigDecimal clerkLimit(String grade, LocalDate date) {
+        String value = grade == null ? null : on(Setting.CLERK_LIMIT_OF_GRADE + grade, date);
+        return value == null ? clerkLimit(date) : new BigDecimal(value);
+    }
+
     /** The proof threshold in force on the date; null when there is none. */
     public BigDecimal proofThreshold(LocalDate date) {
         String value = on(Setting.PROOF_THRESHOLD, date);

@@ -26,6 +26,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** The most a clerk may settle a claim's due for; blank means no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** A grade's own clerk limit (the key is this plus the grade, clerk-limit-A); blank means the sheet's. */
+    public static final String CLERK_LIMIT_OF_GRADE = "clerk-limit-";
+
     /** The due above which a claim needs a proof before it is settled or approved; blank means none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
@@ -71,7 +74,7 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** A grade's grace (the key is this plus the grade, grace-A): the days past its due-by a claim of that grade on its date goes overdue and counts its late charge from; blank means none. */
     public static final String GRACE_OF_GRADE = "grace-";
 
-    /** The grades that may have their own terms, grace and proof threshold. */
+    /** The grades that may have their own terms, grace, clerk limit and proof threshold. */
     public static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
 
     /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue, the one in force on each 30-day boundary date; two decimals. */

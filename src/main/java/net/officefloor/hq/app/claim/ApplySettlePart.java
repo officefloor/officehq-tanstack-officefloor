@@ -45,7 +45,7 @@ public class ApplySettlePart {
             kept = repository.keepOnly(() -> {
                 try {
                     RollupSnapshot before = rollup.snapshot(sheetId);
-                    new ApplySplit().apply(claim, amount, by, repository, people, settings, sheets, periods,
+                    new ApplySplit().apply(claim, amount, by, repository, people, roles, settings, sheets, periods,
                             value -> made[0] = value);
                     new RecordClaimSplit().record(claim, made[0], by, people, audit, log);
                     rollup.record(sheetId, before, by);

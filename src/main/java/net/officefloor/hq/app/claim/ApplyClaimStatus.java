@@ -159,7 +159,8 @@ public class ApplyClaimStatus {
         }
         ClaimStatus to = status;
         if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
-            BigDecimal limit = late.settings().clerkLimit(late.today());
+            Person owner = people.find(claim.getSheetId(), claim.getPersonId());
+            BigDecimal limit = late.settings().clerkLimit(owner == null ? null : owner.gradeOn(late.today()), late.today());
             if (limit != null && due.compareTo(limit) > 0) {
                 to = ClaimStatus.PENDING; // awaits a steward's approval
             }
