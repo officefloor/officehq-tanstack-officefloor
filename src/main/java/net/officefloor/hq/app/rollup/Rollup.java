@@ -83,25 +83,29 @@ public class Rollup {
         return claim.status().isOpen() && claim.dueBy() != null && today != null && claim.dueBy().isBefore(today);
     }
 
-    /** The figures of the sheet's counting claims dated from {@code from} to {@code to} inclusive, those without one skipped. */
-    public BigDecimal dueTotal(String sheetId, LocalDate from, LocalDate to) {
+    /**
+     * Each person's due-total for the dates {@code from} to {@code to} inclusive, by person id in sheet order: the
+     * figures of their counting claims dated then, those without one skipped.
+     */
+    public Map<Long, BigDecimal> personDueTotals(String sheetId, LocalDate from, LocalDate to) {
         LocalDate today = sheets.today(sheetId);
-        BigDecimal total = ZERO;
-        for (Claim claim : claims.list(sheetId)) {
-            if (!claim.status().counts()
-                    || claim.date().isBefore(from) || claim.date().isAfter(to)) {
-                continue;
+        List<Claim> dated = claims.list(sheetId).stream().filter(c -> c.status().counts()
+                && !c.date().isBefore(from) && !c.date().isAfter(to)).toList();
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        for (Person person : people.list(sheetId)) {
+            BigDecimal total = ZERO;
+            for (Claim claim : dated) {
+                if (claim.personId() != person.id() || !counts(claim, person)) {
+                    continue;
+                }
+                BigDecimal figure = figure(claim, person, today);
+                if (figure != null) {
+                    total = total.add(figure);
+                }
             }
-            Person person = people.find(sheetId, claim.personId());
-            if (person != null && !counts(claim, person)) {
-                continue;
-            }
-            BigDecimal figure = person == null ? claim.settledDue() : figure(claim, person, today);
-            if (figure != null) {
-                total = total.add(figure);
-            }
+            totals.put(person.id(), total);
         }
-        return total;
+        return totals;
     }
 
     /** The claim's figure as the screen shows it on the sheet's today (null: n/a), whatever its status. */

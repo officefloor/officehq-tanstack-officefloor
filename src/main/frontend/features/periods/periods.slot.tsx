@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { ClaimCells } from '../../slots/defs/claimColumns';
+import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
@@ -11,7 +12,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import { ratesQuery } from '../rates/ratesQuery';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
-import { periodDue, periodOf, periodsKey, periodsQuery } from './periodsQuery';
+import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodDue } from './periodsQuery';
 import type { Period } from './periodsQuery';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -19,6 +20,39 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
   return <td data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</td>;
+}
+
+/** A column per period on the sheet, headed by its name. */
+function PersonPeriodHeaders({ sheetId }: { sheetId: string }) {
+  const periods = useQuery(periodsQuery(sheetId)).data ?? [];
+  return (
+    <>
+      {periods.map((p) => (
+        <th key={p.name}>{p.name}</th>
+      ))}
+    </>
+  );
+}
+
+/** The person's due-total for each period on the sheet: live while it is open, fixed while it is closed. */
+function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const periods = useQuery(periodsQuery(sheetId)).data ?? [];
+  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+  const people = useQuery(peopleQuery(sheetId)).data ?? [];
+  const rates = useQuery(ratesQuery(sheetId)).data ?? [];
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const person = people.find((p) => p.id === personId);
+  if (!person) return null;
+  return (
+    <>
+      {periods.map((p) => (
+        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
+          {personPeriodDue(p, person, claims, people, rates, floor, late)}
+        </td>
+      ))}
+    </>
+  );
 }
 
 /** A period's closed flag and the buttons that close and reopen it (reopening is a steward's). A refusal
@@ -195,5 +229,7 @@ function Periods({ sheetId }: { sheetId: string }) {
 // Keyed by sheet, so a typed period or an error never carries over to another sheet.
 export const contributions = [
   ClaimCells.fill({ order: 15, Component: ClaimPeriod }),
+  PersonHeaders.fill({ order: 15.5, Component: PersonPeriodHeaders }),
+  PersonCells.fill({ order: 15.5, Component: PersonPeriodDues }),
   SheetPanel.fill({ order: 7, Component: ({ sheetId }) => <Periods key={sheetId} sheetId={sheetId} /> }),
 ];
