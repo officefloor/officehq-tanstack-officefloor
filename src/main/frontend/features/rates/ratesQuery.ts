@@ -33,9 +33,12 @@ function show(cents: bigint): string {
   return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
 }
 
-/** Cents of `amount` times `rate` percent, rounded half up (away from zero; both are 0 or more). */
+/** Cents of `amount` times `rate` percent, rounded half to even (both are 0 or more). */
 export function dueCents(amount: string, rate: string): bigint {
-  return (hundredths(amount) * hundredths(rate) + 5000n) / 10000n;
+  const product = hundredths(amount) * hundredths(rate);
+  const cents = product / 10000n;
+  const rest = product % 10000n;
+  return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
 }
 
 /** `amount` times `rate` percent with two decimals, or n/a when there is no rate. */
@@ -43,7 +46,7 @@ export function due(amount: string, rate: string | undefined): string {
   return rate === undefined ? 'n/a' : show(dueCents(amount, rate));
 }
 
-/** Due-totals added up, skipping n/a. */
+/** Due figures added up, skipping n/a. */
 export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
 }

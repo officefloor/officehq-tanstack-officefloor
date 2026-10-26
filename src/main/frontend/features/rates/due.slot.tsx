@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery, counts, sumAmounts } from '../claims/claimsQuery';
+import { claimsQuery, counts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -10,10 +10,19 @@ import type { Person } from '../people/peopleQuery';
 import { due, rateFor, ratesQuery, sumDue } from './ratesQuery';
 import type { Rate } from './ratesQuery';
 
-/** A person's due-total: their claimed times their grade's rate in force on the sheet's today, or n/a when none is. */
+/**
+ * A person's due-total: the sum of their counting claims' rounded figures — a settled claim's frozen
+ * figure, otherwise its amount times their grade's rate in force on the sheet's today. With no rate
+ * today it is n/a, unless a settled claim keeps a figure: then it is the sum of the figures there are.
+ */
 function personDue(person: Person | undefined, claims: Claim[], rates: Rate[], today: string): string {
   if (!person) return 'n/a';
-  return due(sumAmounts(claims.filter((c) => c.personId === person.id && counts(c))), rateFor(rates, person.grade, today));
+  const rate = rateFor(rates, person.grade, today);
+  const figures = claims
+    .filter((c) => c.personId === person.id && counts(c))
+    .map((c) => c.settledDue ?? due(c.amount, rate))
+    .filter((d) => d !== 'n/a');
+  return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }
 
 function useSheetData(sheetId: string) {
