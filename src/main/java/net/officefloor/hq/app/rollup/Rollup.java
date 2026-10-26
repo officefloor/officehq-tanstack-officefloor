@@ -130,14 +130,15 @@ public class Rollup {
 
     /**
      * Whether the (OPEN, PENDING or SETTLED) claim counts: a person's open claims dated within one of their holds
-     * count in no live total, unless a statement bound them; nor does an OPEN claim deferred on {@code today}.
+     * count in no live total, unless a statement bound them, nor do they once {@code today} reaches their retirement date;
+     * nor does an OPEN claim deferred on {@code today}.
      */
     public static boolean counts(Claim claim, Person person, LocalDate today) {
         if (claim.deferredOn(today)) {
             return false;
         }
         boolean bound = claim.stated() && claim.status() != ClaimStatus.PENDING;
-        return !(claim.status().isOpen() && !bound && person.heldOn(claim.date()));
+        return !(claim.status().isOpen() && !bound && (person.heldOn(claim.date()) || person.retiredOn(today)));
     }
 
     /**

@@ -55,14 +55,18 @@ export const isDeferred = (c: Claim, today: string) =>
 
 /**
  * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts and voided
- * ones do not, nor do a person's open claims dated within one of their holds, unless a statement bound them,
- * nor an OPEN claim deferred on the sheet's `today`.
+ * ones do not, nor do a person's open claims dated within one of their holds, or once the sheet's `today` reaches
+ * their retirement date, unless a statement bound them, nor an OPEN claim deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, people: Person[], today: string) =>
   !isDeferred(c, today) &&
   (c.status === 'SETTLED' ||
   (isOpen(c) &&
-    ((c.stated && c.status !== 'PENDING') || !heldOn(people.find((p) => p.id === c.personId), c.date))));
+    ((c.stated && c.status !== 'PENDING') || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
+
+/** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
+const leftOut = (person: Person | undefined, date: string, today: string) =>
+  heldOn(person, date) || (!!person?.retiredFrom && !!today && person.retiredFrom <= today);
 
 /** The first day (yyyy-mm-dd) of the 30 days up to and including the sheet's `today`. */
 const activeFrom = (today: string) => new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);

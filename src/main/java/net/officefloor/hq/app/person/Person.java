@@ -46,6 +46,11 @@ public record Person(long id, String sheetId, String name, String grade, long ve
         return holds.stream().anyMatch(h -> h.covers(date));
     }
 
+    /** Whether the person's retirement date is reached on the date (it is on or after it). */
+    public boolean retiredOn(LocalDate date) {
+        return retiredFrom != null && date != null && !date.isBefore(retiredFrom);
+    }
+
     public boolean retired() {
         return retiredFrom != null;
     }
