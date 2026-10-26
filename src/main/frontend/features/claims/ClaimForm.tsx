@@ -11,11 +11,12 @@ const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 const NUMBER = /^(\d+|.+-\d+)$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-type Body = { amount: string; date: string; note: string; corrects: string };
+type Body = { amount: string; date: string; note: string; corrects: string; ref: string };
 
 /**
  * The one form a person's claims are added and edited through. Opening a claim's editor fills it. A negative amount is a
  * correction: it names the number of the settled claim of the same person it corrects (the server checks that it is one).
+ * A reference (trimmed; blank for none) is refused by the server when another claim of the sheet already carries it.
  * While an editor is being opened or closed (`held`) the form takes no input.
  */
 export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
@@ -30,6 +31,7 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
+  const [ref, setRef] = useState('');
   const [error, setError] = useState('');
 
   // Opening an editor (or closing it) refills the form. A blank date is the sheet's today.
@@ -38,6 +40,7 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
     setDate(editing?.date ?? '');
     setNote(editing?.note ?? '');
     setCorrects(editing?.corrects == null ? '' : String(editing.corrects));
+    setRef(editing?.ref ?? '');
     setError('');
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -57,6 +60,7 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
         setDate('');
         setNote('');
         setCorrects('');
+        setRef('');
       }
     },
     onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be saved.'),
@@ -88,7 +92,7 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
       setError('The date must be yyyy-mm-dd.');
       return;
     }
-    once(() => save.mutateAsync({ amount: a, date: d, note: note.trim(), corrects: c }));
+    once(() => save.mutateAsync({ amount: a, date: d, note: note.trim(), corrects: c, ref: ref.trim() }));
   };
 
   const edit = <T,>(set: (v: T) => void) => (v: T) => {
@@ -125,6 +129,13 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
         placeholder="Corrects no."
         value={corrects}
         onChange={(e) => edit(setCorrects)(e.target.value)}
+      />{' '}
+      <input
+        data-testid="claim-form-ref"
+        disabled={held}
+        placeholder="Reference"
+        value={ref}
+        onChange={(e) => edit(setRef)(e.target.value)}
       />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={held || save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}

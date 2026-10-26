@@ -9,8 +9,11 @@ public class AuditClaimAdded {
     public void audit(@Val Claim claim, @Val Person person,
             ServerHttpConnection connection, Audit audit) {
         ClaimResponse shown = ClaimResponse.from(claim);
-        audit.record(Audit.line("CLAIM_ADDED", claim.sheetId(), Audit.user(connection), "person=" + person.name(),
-                "amount=" + shown.amount(), "date=" + shown.date()));
+        audit.record(claim.ref() == null
+                ? Audit.line("CLAIM_ADDED", claim.sheetId(), Audit.user(connection), "person=" + person.name(),
+                        "amount=" + shown.amount(), "date=" + shown.date())
+                : Audit.line("CLAIM_ADDED", claim.sheetId(), Audit.user(connection), "person=" + person.name(),
+                        "amount=" + shown.amount(), "date=" + shown.date(), "ref=" + claim.ref()));
         if (claim.lateEntry()) {
             audit.record(Audit.line("LATE_ENTRY", claim.sheetId(), Audit.user(connection), "person=" + person.name(),
                     "amount=" + shown.amount(), "date=" + shown.date()));

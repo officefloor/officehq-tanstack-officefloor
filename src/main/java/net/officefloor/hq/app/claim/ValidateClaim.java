@@ -21,6 +21,7 @@ public class ValidateClaim {
     // The amount is required; a blank date takes the sheet's today (filled in when stored); the note may be empty.
     // A negative amount is a correction and must name the number it corrects; no other claim may name one.
     // Whether that number is a SETTLED claim of the same person is checked once the person is loaded.
+    // The external reference is kept without surrounding spaces; whether the sheet already uses it is checked once loaded.
     public void validate(@RequestBody ClaimRequest body, Out<ClaimInput> input) throws InvalidClaimException {
         input.set(parse(body));
     }
@@ -31,6 +32,7 @@ public class ValidateClaim {
         String date = body == null || body.date() == null ? "" : body.date().trim();
         String note = body == null || body.note() == null ? "" : body.note().trim();
         String corrects = body == null || body.corrects() == null ? "" : body.corrects().trim();
+        String ref = body == null || body.ref() == null ? "" : body.ref().trim();
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidClaimException("The amount must be a number with up to two decimals.");
         }
@@ -52,6 +54,7 @@ public class ValidateClaim {
                 throw new InvalidClaimException("Not a date (yyyy-mm-dd): " + date);
             }
         }
-        return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects);
+        return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects,
+                ref.isEmpty() ? null : ref);
     }
 }

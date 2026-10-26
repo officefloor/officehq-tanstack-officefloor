@@ -20,7 +20,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `splitFrom` is the number of the claim it was split off (null for any other claim);
  * `lockedBy` is the user whose open editor locks it for everyone else (null when not locked);
  * `lateEntry` is whether it was added while the period its due-by falls in was soft-closed;
- * `remindedOn` (yyyy-mm-dd) is the last sheet's today a reminder was written for it (null when never reminded).
+ * `remindedOn` (yyyy-mm-dd) is the last sheet's today a reminder was written for it (null when never reminded);
+ * `ref` is its external reference, unique on the sheet without regard to case (null when it has none).
  */
 export type Claim = {
   id: number;
@@ -43,6 +44,7 @@ export type Claim = {
   lockedBy: string | null;
   lateEntry: boolean;
   remindedOn: string | null;
+  ref: string | null;
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */

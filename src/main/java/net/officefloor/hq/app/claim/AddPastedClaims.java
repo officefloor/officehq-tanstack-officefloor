@@ -22,11 +22,14 @@ public class AddPastedClaims {
             LocalDate today = sheets.today(person.sheetId());
             LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.sheetId());
             LocalDate dueBy = holidays.dueBy(person.sheetId(), date, person.termsOn(date, settings));
-            Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), null, dueBy);
+            Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), null, dueBy, input.ref());
             claims.log(claim, user.trim(), today, rollup.figure(claim));
             ClaimResponse shown = ClaimResponse.from(claim);
-            audit.record(Audit.line("CLAIM_ADDED", claim.sheetId(), user, "person=" + person.name(),
-                    "amount=" + shown.amount(), "date=" + shown.date()));
+            audit.record(claim.ref() == null
+                    ? Audit.line("CLAIM_ADDED", claim.sheetId(), user, "person=" + person.name(),
+                            "amount=" + shown.amount(), "date=" + shown.date())
+                    : Audit.line("CLAIM_ADDED", claim.sheetId(), user, "person=" + person.name(),
+                            "amount=" + shown.amount(), "date=" + shown.date(), "ref=" + claim.ref()));
             if (claim.lateEntry()) {
                 audit.record(Audit.line("LATE_ENTRY", claim.sheetId(), user, "person=" + person.name(),
                         "amount=" + shown.amount(), "date=" + shown.date()));

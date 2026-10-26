@@ -10,7 +10,7 @@ import { useClaimError } from './useClaimError';
 
 /**
  * The entry and button with which a draft's amount is changed in its row, beside its edit button. It saves through the
- * claim form's edit, keeping the claim's date, note and the number it corrects, so the server refuses it by the same
+ * claim form's edit, keeping the claim's date, note, the number it corrects and its reference, so the server refuses it by the same
  * rules (the amount's form, a claim that is not a draft, one another user has locked, a closed period, a viewer) and
  * writes CLAIM_EDITED; the refusal shows on the claim until its next action.
  */
@@ -24,7 +24,7 @@ function ClaimInlineAmount({ sheetId, claim }: { sheetId: string; claim: Claim }
     mutationFn: (next: string) =>
       putJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}`,
-        { amount: next, date: claim.date, note: claim.note, corrects: claim.corrects ?? '' },
+        { amount: next, date: claim.date, note: claim.note, corrects: claim.corrects ?? '', ref: claim.ref ?? '' },
         user,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),

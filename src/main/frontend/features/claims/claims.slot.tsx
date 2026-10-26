@@ -110,6 +110,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
+              <td data-testid="claim-ref">{c.ref ?? ''}</td>
               <ClaimCells.Slot sheetId={sheetId} claim={c} />
               <ClaimEditCell
                 sheetId={sheetId}
