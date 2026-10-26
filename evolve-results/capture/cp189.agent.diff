@@ -1,0 +1,230 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 7b8c089f..8c302e70 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -196,13 +196,14 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
+ // of the policy date, and the policy date (blank: the sheet's today), before which a
+ // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
+ // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
+-// the entry date (blank: off), the default date of a new claim in place of the sheet's today, the fiscal start month
++// the entry date (blank: off), the default date of a new claim in place of the sheet's today, the default grade (blank: A), the grade
++// a person added by the quick-add bar or an import line with a blank grade takes, the fiscal start month
+ // (1 to 12, 1 until it is set), the month the sheet's fiscal year starts in,
+ // the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most
+ // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
+ // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
+ // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
+-// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent, the proof kinds (blank: none; a comma separated list of receipt and photo: a claim above the proof threshold needs a proof of each before it is settled or approved) and the permissions is dated: saving it records
++// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent, the default grade, the proof kinds (blank: none; a comma separated list of receipt and photo: a claim above the proof threshold needs a proof of each before it is settled or approved) and the permissions is dated: saving it records
+ // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
+ // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
+ type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
+@@ -237,6 +238,8 @@ const SETTINGS: readonly SettingField[] = [
+     invalid: 'An escalation gap is a whole number of days, or blank for off', dated: false },
+   { key: 'review-sla', label: 'Review SLA (days)', placeholder: 'none', blank: true, valid: DAYS, inputMode: 'numeric',
+     invalid: 'A review SLA is a whole number of days, or blank for none', dated: false },
++  { key: 'default-grade', label: 'Default grade', placeholder: 'A', blank: true, valid: /^[ABC]$/, inputMode: 'text',
++    invalid: 'A default grade is A, B or C, or blank for A', dated: false },
+   { key: 'fiscal-start-month', label: 'Fiscal year start month', placeholder: '1', blank: false, valid: /^(0?[1-9]|1[0-2])$/,
+     inputMode: 'numeric', invalid: 'A fiscal start month is a month from 1 to 12', dated: false, starting: '1' },
+   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 904dbdfc..6f8a86c2 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
+ /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
+ public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
+ 
+-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the escalation gap, the review SLA, the fiscal start month, the pot, the alert threshold, the parent, the proof kinds and the permissions). */
++    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the escalation gap, the review SLA, the fiscal start month, the pot, the alert threshold, the parent, the proof kinds, the default grade and the permissions). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !isPermission(key);
++        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key) && !isPermission(key);
+     }
+ 
+     /** Whether the key is one of the permission matrix's (perm-<action>). */
+@@ -107,6 +107,12 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The review SLA: the days after its review day (the sheet's today when it went to REVIEW) a REVIEW claim may wait before the sheet's today makes it late; a whole number, blank for none. Not dated. */
+     public static final String REVIEW_SLA = "review-sla";
+ 
++    /** The grade a person added by the quick-add bar or an import line with a blank grade takes: one of the grades, blank for A. Not dated. */
++    public static final String DEFAULT_GRADE = "default-grade";
++
++    /** The default grade a sheet starts with, until it is set. */
++    public static final String DEFAULT_GRADE_DEFAULT = "A";
++
+     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
+     public static final String FISCAL_START_MONTH = "fiscal-start-month";
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+index 7b5c0100..24d0bf1a 100644
+--- a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -104,6 +104,12 @@ public class SettingRepository {
+         return value == null ? java.util.List.of() : java.util.List.of(value.split(","));
+     }
+ 
++    /** The grade a person added by the quick-add bar or an import line with a blank grade takes; A until it is set. */
++    public String defaultGrade(String sheetId) {
++        String value = find(sheetId, Setting.DEFAULT_GRADE);
++        return value == null ? Setting.DEFAULT_GRADE_DEFAULT : value;
++    }
++
+     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
+     public int fiscalStartMonth(String sheetId) {
+         String value = find(sheetId, Setting.FISCAL_START_MONTH);
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index 9f7d7789..5646f9d8 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The escalation gap is a whole number of days, or blank for off. The review SLA is a whole number of days, or blank for none. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. The proof kinds are a comma separated list of receipt and photo, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The escalation gap is a whole number of days, or blank for off. The review SLA is a whole number of days, or blank for none. The default grade is one of the grades, or blank for A. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. The proof kinds are a comma separated list of receipt and photo, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -159,6 +159,14 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.DEFAULT_GRADE.equals(key)) {
++            if (!text.isEmpty() && !Setting.GRADES.contains(text)) {
++                throw new BadRequestException("A default grade is A, B or C, or blank for A");
++            }
++            setting.set(new SettingInput(key, text.isEmpty() ? null : text, from));
++            changedBy.set(by);
++            return;
++        }
+         if (Setting.FISCAL_START_MONTH.equals(key)) {
+             if (!MONTH.matcher(text).matches() || Integer.parseInt(text) < 1 || Integer.parseInt(text) > 12) {
+                 throw new BadRequestException("A fiscal start month is a month from 1 to 12");
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+index 4e3c790e..0de4e568 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+@@ -9,6 +9,7 @@ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.ConflictException;
++import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupSnapshot;
+ import net.officefloor.hq.app.session.ChangedBy;
+@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Imports the lines, in order. A line whose name is a person's name or alias on the sheet (as names are compared)
++ * Imports the lines, in order, a line with a blank grade taking the sheet's default grade. A line whose name is a person's name or alias on the sheet (as names are compared)
+  * updates that person; any other line adds one. Every line is first checked as the person form checks it — an add as
+  * a new person (name or alias in use on the sheet or its tree, contact another person's), an update as an edit keeping
+  * the person's name (two lines naming the same person refuse it too); one refusal refuses them all before anything is
+@@ -29,12 +30,16 @@ import net.officefloor.plugin.variable.Val;
+ public class AddImportedPeople {
+ 
+     public void add(@Val SheetResponse sheet, @Val ImportedPeople imported, @Val ChangedBy by,
+-            PersonRepository repository, SheetRepository sheets, Rollup rollup, Audit audit,
++            PersonRepository repository, SheetRepository sheets, SettingRepository settings, Rollup rollup, Audit audit,
+             Out<ImportPeopleResponse> response) throws BadRequestException, ConflictException {
++        String defaultGrade = settings.defaultGrade(sheet.id());
++        List<PersonRequest> requests = imported.people().stream().map(r -> r.grade() != null ? r
++                : new PersonRequest(r.name(), defaultGrade, r.by(), r.version(), r.gradeFrom(), r.terms(), r.contact(),
++                        r.tags(), r.termsFrom())).toList();
+         List<Person> matched = new ArrayList<>();
+         Set<Long> seen = new HashSet<>();
+         int n = 0;
+-        for (PersonRequest request : imported.people()) {
++        for (PersonRequest request : requests) {
+             n++;
+             Person person = repository.findByName(sheet.id(), request.name());
+             if (person == null) {
+@@ -59,8 +64,8 @@ public class AddImportedPeople {
+         LocalDate today = sheets.today(sheet.id());
+         int added = 0;
+         int updated = 0;
+-        for (int i = 0; i < imported.people().size(); i++) {
+-            PersonRequest request = imported.people().get(i);
++        for (int i = 0; i < requests.size(); i++) {
++            PersonRequest request = requests.get(i);
+             Person person = matched.get(i);
+             RollupSnapshot before = rollup.snapshot(sheet.id());
+             if (person == null) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java b/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
+index dc82d93c..864db9c8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
+@@ -11,8 +11,8 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+- * The import box's lines of name,grade,terms,contact (terms and contact may be absent or blank; blank lines are
+- * skipped). Each line's fields are checked with the person form's rules; a name (ignoring case) or contact repeated
++ * The import box's lines of name,grade,terms,contact (terms and contact may be absent or blank; a blank grade is
++ * published as null, for the sheet's default grade; blank lines are skipped). Each line's fields are checked with the person form's rules; a name (ignoring case) or contact repeated
+  * within the import refuses it. A refusal names the line. Publishes them parsed, in order, with the user making the
+  * change.
+  */
+@@ -37,8 +37,14 @@ public class ValidateImportPeople {
+                 throw new BadRequestException("Line " + (i + 1) + ": enter name,grade,terms,contact");
+             }
+             try {
+-                PersonRequest person = ValidatePerson.parse(new PersonRequest(fields[0], fields[1], by.name(), null,
+-                        "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "", ""), by);
++                boolean blankGrade = fields[1].trim().isEmpty();
++                PersonRequest person = ValidatePerson.parse(new PersonRequest(fields[0], blankGrade ? "A" : fields[1],
++                        by.name(), null, "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "",
++                        ""), by);
++                if (blankGrade) {
++                    person = new PersonRequest(person.name(), null, person.by(), person.version(), person.gradeFrom(),
++                            person.terms(), person.contact(), person.tags(), person.termsFrom());
++                }
+                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
+                     throw new BadRequestException(person.name() + " is repeated in the import");
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ResolvePerson.java b/src/main/java/net/officefloor/hq/app/quickadd/ResolvePerson.java
+index 2f1f40c6..2f82440c 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/ResolvePerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ResolvePerson.java
+@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * The person on the sheet with the typed name (case and surrounding spaces ignored), else a new one (refused when
+- * another sheet of its tree uses the name). A new one is
++ * another sheet of its tree uses the name), of the sheet's default grade. A new one is
+  * added only once its claim's date is known not to fall in a closed period, so a refusal leaves no person behind.
+  */
+ public class ResolvePerson {
+@@ -31,10 +31,11 @@ public class ResolvePerson {
+             if (repository.usedInTree(sheet.id(), request.name(), null)) {
+                 throw new BadRequestException(PersonRepository.NAME_TAKEN);
+             }
+-            Person proposed = new Person(0, sheet.id(), request.name(), request.grade(), 0);
+-            proposed.setGrades(List.of(new GradeFrom(request.grade(), null)));
++            String grade = settings.defaultGrade(sheet.id());
++            Person proposed = new Person(0, sheet.id(), request.name(), grade, 0);
++            proposed.setGrades(List.of(new GradeFrom(grade, null)));
+             new RefuseClosedNewDate().check(proposed, input, sheets, settings, periods, holidays);
+-            found = repository.insert(sheet.id(), request.name(), request.grade());
++            found = repository.insert(sheet.id(), request.name(), grade);
+         }
+         person.set(found);
+         resolved.set(new QuickAddPerson(found, added));
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+index d4da70b8..73c6e19a 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+@@ -10,8 +10,8 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+- * The quick-add bar's fields, under the person and claim forms' rules. Publishes the person it names (grade A, should
+- * they be new) and a claim of the amount dated the sheet's today with an empty note, with the user making the change.
++ * The quick-add bar's fields, under the person and claim forms' rules. Publishes the person it names (the sheet's default grade, should
++ * they be new, given when they are resolved) and a claim of the amount dated the sheet's today with an empty note, with the user making the change.
+  */
+ public class ValidateQuickAdd {
+ 
