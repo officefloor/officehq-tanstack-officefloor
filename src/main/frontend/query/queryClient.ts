@@ -13,7 +13,7 @@ export const queryClient = new QueryClient({
 });
 
 // The client for figures that always show the sheet as it stands now, even while the screen shows it as of a date
-// (the consolidated figures): each of its reads goes without the as-of date. Nothing is kept once no one reads it.
+// (a search's results): each of its reads goes without the as-of date. Nothing is kept once no one reads it.
 export const liveQueryClient = new QueryClient({
   defaultOptions: {
     queries: {

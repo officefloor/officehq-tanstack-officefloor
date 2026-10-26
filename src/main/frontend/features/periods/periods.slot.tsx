@@ -19,10 +19,11 @@ const NO_HOLDS = new Map();
  *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
  *  then, by person id (empty while open; a person added later has none); and whether it is soft-closed: its
  *  figures fixed as a close fixes them, but claims dated inside it can still change; and the cap on each person's
- *  OPEN or PENDING claims in it (null: none). */
+ *  OPEN or PENDING claims in it (null: none); and each person's carried figure for it fixed when it was closed or
+ *  soft-closed, by person id (empty while open). */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>; soft: boolean; cap?: number | null;
+  personTotals: Record<string, string>; soft: boolean; cap?: number | null; personCarried?: Record<string, string>;
 };
 
 /** The key every feature reads the sheet's periods under. */
@@ -129,6 +130,13 @@ export function showPeriodDueTotal(p: Period, live: bigint): string {
  *  added since); while open, the live figure. */
 export function showPersonPeriodDueTotal(p: Period, personId: number, live: bigint): string {
   return p.closed || p.soft ? (p.personTotals?.[String(personId)] ?? '0.00') : showHundredths(live);
+}
+
+/** A person's carried figure for a period as shown: the one fixed when it was closed or soft-closed (0.00 for a
+ *  person added since); while open — or closed before carried figures were fixed — the live figure. */
+export function showPersonPeriodCarried(p: Period, personId: number, live: bigint): string {
+  const fixed = p.personCarried ?? {};
+  return (p.closed || p.soft) && Object.keys(fixed).length > 0 ? (fixed[String(personId)] ?? '0.00') : showHundredths(live);
 }
 
 // The period form: adds a period with a name unique on the sheet, a from and to date and an optional cap on each
@@ -417,7 +425,8 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
   );
 }
 
-// Two columns per period on the people table: the person's due-total for it, and what they carried into it.
+// Two columns per period on the people table: the person's due-total for it, and what they carried into it (both
+// fixed while it is closed or soft-closed).
 function PersonPeriodHeads({ sheetId }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   return (
@@ -443,7 +452,9 @@ function PersonPeriodCells({ sheetId, personId }: { sheetId: string; user: strin
           <td data-testid={`person-period-${p.name}-due-total`}>
             {showPersonPeriodDueTotal(p, personId, dueTotal(p, personId))}
           </td>
-          <td data-testid={`person-period-${p.name}-carried`}>{showHundredths(carried(p, personId))}</td>
+          <td data-testid={`person-period-${p.name}-carried`}>
+            {showPersonPeriodCarried(p, personId, carried(p, personId))}
+          </td>
         </Fragment>
       ))}
     </>

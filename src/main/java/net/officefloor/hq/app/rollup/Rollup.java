@@ -155,6 +155,43 @@ public class Rollup {
         return totals;
     }
 
+    /**
+     * Each person's carried figure for the period from..to, by person id, every person on the sheet included (0.00 when
+     * none): the figures (as shown now, with late charge) of their claims that belong to a period ending before
+     * {@code from} ({@code periodEndOf} gives the last day of the period holding a due-by, null when none does) and that
+     * were still OPEN or PENDING by their log at the end of {@code to}, counted (held or deferred left out) as the
+     * period due-totals count them.
+     */
+    public Map<Long, BigDecimal> carriedByPerson(String sheetId, LocalDate from, LocalDate to,
+            java.util.function.Function<LocalDate, LocalDate> periodEndOf) {
+        List<Rate> sheetRates = rates.chain(sheetId);
+        LocalDate today = sheets.today(sheetId);
+        LateCharge late = settings.lateCharge(sheetId, today);
+        Map<Long, Person> byId = new LinkedHashMap<>();
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        for (Person p : people.list(sheetId)) {
+            byId.put(p.getId(), p);
+            totals.put(p.getId(), ZERO);
+        }
+        Map<Long, ClaimStatus> asOf = log.statusesAsOf(sheetId, to);
+        for (Claim c : claims.list(sheetId)) {
+            Person p = byId.get(c.getPersonId());
+            ClaimStatus then = asOf.get(c.getId());
+            if (p == null || then == null || !then.isOpen() || !countsAs(c, then, p, today)) {
+                continue;
+            }
+            LocalDate ownEnd = periodEndOf.apply(c.getDueBy());
+            if (ownEnd == null || !ownEnd.isBefore(from)) {
+                continue;
+            }
+            BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, late));
+            if (figure != null) {
+                totals.merge(p.getId(), figure, BigDecimal::add);
+            }
+        }
+        return totals;
+    }
+
     /** The claim's due as the screen shows it now: its figure with its late charge on top; null (n/a) without one. */
     public BigDecimal dueOf(Claim claim) {
         String sheetId = claim.getSheetId();

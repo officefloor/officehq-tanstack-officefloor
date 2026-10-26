@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { liveQueryClient } from '../../query/queryClient';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useClaims } from '../claims/useClaims';
 import { useOverdue } from '../overdue/overdue.slot';
 import { usePeople } from '../people/people.slot';
@@ -38,10 +36,10 @@ function SheetFigures({ sheetId, report }: { sheetId: string; report: (id: strin
 }
 
 // The consolidated figures over the sheet and all its descendants: the people on each, and each sheet's
-// due-total and overdue-total as that sheet shows them, added up. A sheet with no children shows its own. They are
-// always the figures as the sheets stand now: while the screen shows the sheet as of a date, they are read live.
+// due-total and overdue-total as that sheet shows them, added up. A sheet with no children shows its own. While the
+// screen shows the sheet as of a date, so are they: every sheet of the tree as it stood at the end of that date, the
+// date standing in for its today (each read carries the screen's as-of date).
 function Consolidated({ sheetId }: { sheetId: string; user: string }) {
-  const [asOf] = useSearchParam('asof', asString);
   const descendants = useDescendants(sheetId);
   const [figures, setFigures] = useState<Map<string, Figures>>(new Map());
   const [report] = useState(() => (id: string, f: Figures | null) =>
@@ -60,15 +58,9 @@ function Consolidated({ sheetId }: { sheetId: string; user: string }) {
   const overdue = shown.reduce((n, f) => n + f.overdue, 0n);
   return (
     <section data-testid="consolidated">
-      {asOf === '' ? (
-        sheets.map((s) => <SheetFigures key={s} sheetId={s} report={report} />)
-      ) : (
-        <QueryClientProvider client={liveQueryClient}>
-          {sheets.map((s) => (
-            <SheetFigures key={s} sheetId={s} report={report} />
-          ))}
-        </QueryClientProvider>
-      )}
+      {sheets.map((s) => (
+        <SheetFigures key={s} sheetId={s} report={report} />
+      ))}
       <p>
         Consolidated people: <strong data-testid="consolidated-people-count">{all ? people : ''}</strong>{' '}
         Consolidated due total: <strong data-testid="consolidated-due-total">{all ? showHundredths(due) : ''}</strong>{' '}

@@ -6,7 +6,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 
 // The as-of date of this user's screen: while it is set, every panel shows the sheet as it stood at the end of that
 // date (the date standing in for the sheet's today) and every change is refused. Setting or clearing it re-reads the
-// whole sheet. It lives in the URL (search param `asof`), so it outlives loading another sheet; other users' screens
+// whole sheet, and every other sheet read for it. It lives in the URL (search param `asof`), so it outlives loading another sheet; other users' screens
 // are not affected.
 function AsOfPanel({ sheetId }: { sheetId: string; user: string }) {
   const [asOf, setAsOf] = useSearchParam('asof', asString);
@@ -17,7 +17,8 @@ function AsOfPanel({ sheetId }: { sheetId: string; user: string }) {
   const show = async (date: string) => {
     setViewAsOf(date);
     setAsOf(date);
-    await queryClient.resetQueries({ queryKey: ['sheet', sheetId] });
+    // Every sheet read, the tree's other sheets (the consolidated figures) among them.
+    await queryClient.resetQueries({ queryKey: ['sheet'] });
   };
 
   return (
