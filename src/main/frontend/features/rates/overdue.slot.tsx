@@ -7,19 +7,8 @@ import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { useFloor, useTerms } from '../settings/settingsQuery';
-import { figure, ratesQuery, sumDue } from './ratesQuery';
-
-/** The claim's due-by (yyyy-mm-dd): its date plus the sheet's terms in days. */
-function dueBy(claim: Claim, terms: number): string {
-  const d = new Date(`${claim.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
-}
-
-/** An OPEN claim whose due-by is before the sheet's today. */
-const isOverdue = (claim: Claim, terms: number, today: string) =>
-  claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+import { useFloor, useLate, useTerms } from '../settings/settingsQuery';
+import { dueBy, figure, isOverdue, ratesQuery, sumDue } from './ratesQuery';
 
 function useOverdueData(sheetId: string) {
   return {
@@ -29,17 +18,18 @@ function useOverdueData(sheetId: string) {
     today: useSheetToday(sheetId),
     floor: useFloor(sheetId),
     terms: useTerms(sheetId),
+    late: useLate(sheetId),
   };
 }
 
 type OverdueData = ReturnType<typeof useOverdueData>;
 
-/** The overdue claims that count (a held person's OPEN claims do not), of one person or of the sheet, with their figures. */
-function overdue({ people, claims, rates, today, floor, terms }: OverdueData, person?: Person) {
+/** The overdue claims that count (a held person's OPEN claims do not), of one person or of the sheet, with their figures, late charges included. */
+function overdue({ people, claims, rates, today, floor, terms, late }: OverdueData, person?: Person) {
   const overdueClaims = claims.filter(
     (c) => (!person || c.personId === person.id) && counts(c, people) && isOverdue(c, terms, today),
   );
-  const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade, floor));
+  const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade, floor, late));
   return { count: overdueClaims.length, total: sumDue(figures) };
 }
 

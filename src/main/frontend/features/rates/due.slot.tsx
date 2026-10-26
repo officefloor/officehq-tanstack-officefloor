@@ -6,20 +6,20 @@ import { claimsQuery, counts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { useFloor } from '../settings/settingsQuery';
+import { useFloor, useLate } from '../settings/settingsQuery';
 import type { Person } from '../people/peopleQuery';
 import { figure, rateFor, ratesQuery, sumDue } from './ratesQuery';
-import type { Rate } from './ratesQuery';
+import type { Late, Rate } from './ratesQuery';
 
 /**
  * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
-function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string): string {
+function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, person.grade, today);
   const figures = claims
     .filter((c) => c.personId === person.id && counts(c, people))
-    .map((c) => figure(c, rates, person.grade, floor))
+    .map((c) => figure(c, rates, person.grade, floor, late))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }
@@ -31,25 +31,26 @@ function useSheetData(sheetId: string) {
     rates: useQuery(ratesQuery(sheetId)).data ?? [],
     today: useSheetToday(sheetId),
     floor: useFloor(sheetId),
+    late: useLate(sheetId),
   };
 }
 
 function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
-  const { people, rates, floor } = useSheetData(sheetId);
+  const { people, rates, floor, late } = useSheetData(sheetId);
   const person = people.find((p) => p.id === claim.personId);
-  return <td data-testid="claim-due">{figure(claim, rates, person?.grade, floor)}</td>;
+  return <td data-testid="claim-due">{figure(claim, rates, person?.grade, floor, late)}</td>;
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const { people, claims, rates, today, floor } = useSheetData(sheetId);
-  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor)}</td>;
+  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
+  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late)}</td>;
 }
 
 function DueTotal({ sheetId }: { sheetId: string }) {
-  const { people, claims, rates, today, floor } = useSheetData(sheetId);
+  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
   return (
     <p data-testid="rollup-due">
-      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor)))}</strong>
+      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late)))}</strong>
     </p>
   );
 }

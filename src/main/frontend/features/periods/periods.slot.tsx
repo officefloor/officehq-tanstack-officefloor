@@ -9,7 +9,7 @@ import { claimsQuery, counts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import { figure, ratesQuery, sumDue } from '../rates/ratesQuery';
-import { useFloor } from '../settings/settingsQuery';
+import { useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
 import { periodOf, periodsKey, periodsQuery } from './periodsQuery';
 import type { Period } from './periodsQuery';
@@ -66,6 +66,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const rates = useQuery(ratesQuery(sheetId)).data ?? [];
   const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -121,7 +122,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     sumDue(
       claims
         .filter((c) => counts(c, people) && period.from <= c.date && c.date <= period.to)
-        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade, floor)),
+        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade, floor, late)),
     );
 
   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {

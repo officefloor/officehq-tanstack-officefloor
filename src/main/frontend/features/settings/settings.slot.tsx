@@ -12,15 +12,16 @@ const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
 
 /** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
- *  claim's live due is at least, and the terms (days after its date a claim is due by) — and the form
- *  they are saved through. A blank floor or terms is left as it is, and so is a blank clerk limit saved
- *  with either. */
+ *  claim's live due is at least, and the terms (days after its date a claim is due by) and the late percent (what an overdue claim gains per full 30 days) — and the form
+ *  they are saved through. A blank floor, terms or late percent is left as it is, and so is a blank clerk
+ *  limit saved with any of them. */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [latePct, setLatePct] = useState('');
   const [error, setError] = useState('');
 
   const [user] = useUser();
@@ -33,6 +34,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setLimit('');
       setFloor('');
       setTerms('');
+      setLatePct('');
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -55,10 +57,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The terms must be a whole number of days, 0 or more.');
       return;
     }
+    const p = latePct.trim();
+    if (p !== '' && !AMOUNT.test(p)) {
+      setError('The late percent must be a percent of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const body: SettingsChange = {};
-    if (l !== '' || (f === '' && t === '')) body.clerkLimit = l;
+    if (l !== '' || (f === '' && t === '' && p === '')) body.clerkLimit = l;
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
+    if (p !== '') body.latePct = p;
     once(() => save.mutateAsync(body));
   };
 
@@ -102,6 +110,18 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Late percent{' '}
+          <input
+            data-testid="setting-late-pct"
+            placeholder="unchanged"
+            value={latePct}
+            onChange={(e) => {
+              setLatePct(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -116,6 +136,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Terms in force: <span data-testid="setting-terms-current">{settings.data?.terms ?? ''}</span>
+      </p>
+      <p>
+        Late percent in force: <span data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</span>
       </p>
     </section>
   );

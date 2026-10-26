@@ -13,9 +13,10 @@ public class ValidateSettings {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?");
 
     // The amounts are kept with two decimals. A blank floor leaves the floor as it is; a blank clerk limit is
-    // no limit, unless a floor or terms are saved with it, when the clerk limit is left as it is (and null
+    // no limit, unless a floor, terms or late percent are saved with it, when the clerk limit is left as it is (and null
     // leaves it as it is too). Anything else that is not an amount of 0.00 or more with up to two decimals is
     // refused. Blank terms are left as they are; otherwise they must be a whole number of days, 0 or more.
+    // A blank late percent is left as it is; otherwise it must be a percent of 0.00 or more, with up to two decimals.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
             Out<SheetSettings> settingsOut) throws InvalidSettingException {
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
@@ -30,14 +31,19 @@ public class ValidateSettings {
         if (!terms.isEmpty() && !DAYS.matcher(terms).matches()) {
             throw new InvalidSettingException("The terms must be a whole number of days, 0 or more.");
         }
-        boolean others = !floor.isEmpty() || !terms.isEmpty();
+        String latePct = body == null || body.latePct() == null ? "" : body.latePct().trim();
+        if (!latePct.isEmpty() && !AMOUNT.matcher(latePct).matches()) {
+            throw new InvalidSettingException("The late percent must be a percent of 0.00 or more, with up to two decimals.");
+        }
+        boolean others = !floor.isEmpty() || !terms.isEmpty() || !latePct.isEmpty();
         if (typed == null && !others) {
             typed = "";
         }
         String limit = typed == null || (typed.isEmpty() && others) ? null
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
-                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms))));
+                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
+                latePct.isEmpty() ? null : twoDecimals(latePct)));
     }
 
     private static String twoDecimals(String amount) {

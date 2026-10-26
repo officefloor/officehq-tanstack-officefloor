@@ -7,6 +7,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ApplyClaimStatus {
     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
     public void apply(@PathVariable("status") String status, @Val Claim claim, Claims claims,
-            People people, Rates rates, Settings settings, ServerHttpConnection connection,
+            People people, Rates rates, Settings settings, Sheets sheets, ServerHttpConnection connection,
             Out<ClaimResponse> responseOut) throws ClaimStatusRefusedException, ClaimOverLimitException {
         ClaimStatus next;
         try {
@@ -31,7 +32,8 @@ public class ApplyClaimStatus {
         if (!claim.status().allows(next)) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
-        BigDecimal due = due(claim, people, rates, settings);
+        // Settling freezes the late charge on the sheet's today into the due.
+        BigDecimal due = settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
         // A clerk settles only a claim whose due is at or below the clerk limit; a due of n/a is within
         // any limit, and a steward settles anything.
         if (next == ClaimStatus.SETTLED && due != null) {
@@ -51,7 +53,7 @@ public class ApplyClaimStatus {
     }
 
     /**
-     * The claim's due now: the figure its person's last statement bound it to, otherwise its amount times its
+     * The claim's due now, before its late charge: the figure its person's last statement bound it to, otherwise its amount times its
      * person's grade's rate on the claim's date, half to even, raised to the floor; null when none applies.
      */
     private static BigDecimal due(Claim claim, People people, Rates rates, Settings settings) {

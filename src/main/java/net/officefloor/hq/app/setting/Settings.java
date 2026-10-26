@@ -1,7 +1,12 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -14,6 +19,8 @@ public class Settings {
     public static final String FLOOR_DEFAULT = "1.00";
     public static final String TERMS = "terms";
     public static final String TERMS_DEFAULT = "14";
+    public static final String LATE_PCT = "late-pct";
+    public static final String LATE_PCT_DEFAULT = "0.00";
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
@@ -51,6 +58,31 @@ public class Settings {
     public int terms(String sheetId) {
         String value = get(sheetId, TERMS);
         return Integer.parseInt(value.isEmpty() ? TERMS_DEFAULT : value);
+    }
+
+    /** The late percent, with two decimals: what an overdue claim gains per full 30 days; 0.00 when never set. */
+    public BigDecimal latePct(String sheetId) {
+        String value = get(sheetId, LATE_PCT);
+        return new BigDecimal(value.isEmpty() ? LATE_PCT_DEFAULT : value);
+    }
+
+    /**
+     * A claim's figure with its late charge added on top: an OPEN claim whose due-by (its date plus the terms) is
+     * before {@code today} gains the late percent of the figure for every full 30 days it is overdue, half to even.
+     * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
+     */
+    public BigDecimal withLate(Claim claim, BigDecimal figure, LocalDate today) {
+        if (figure == null || claim.status() != ClaimStatus.OPEN) {
+            return figure;
+        }
+        LocalDate dueBy = claim.date().plusDays(terms(claim.sheetId()));
+        if (!dueBy.isBefore(today)) {
+            return figure;
+        }
+        long periods = ChronoUnit.DAYS.between(dueBy, today) / 30;
+        BigDecimal charge = figure.multiply(latePct(claim.sheetId())).multiply(BigDecimal.valueOf(periods))
+                .movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        return figure.add(charge);
     }
 
     /** A live due raised to the sheet's floor; null (no due) stays null. */

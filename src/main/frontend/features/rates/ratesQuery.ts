@@ -52,14 +52,42 @@ export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
 }
 
+/** What a claim's late charge depends on: the sheet's today (yyyy-mm-dd), its terms in days and its late percent (two decimals). */
+export type Late = { today: string; terms: number; pct: string };
+
+/** The claim's due-by (yyyy-mm-dd): its date plus the sheet's terms in days. */
+export function dueBy(claim: Claim, terms: number): string {
+  const d = new Date(`${claim.date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + terms);
+  return d.toISOString().slice(0, 10);
+}
+
+/** An OPEN claim whose due-by is before the sheet's today. */
+export const isOverdue = (claim: Claim, terms: number, today: string) =>
+  claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+
+/** The full 30 days the claim has been overdue on the sheet's today (0 when it is not overdue). */
+function lateMonths(claim: Claim, { today, terms }: Late): bigint {
+  if (!isOverdue(claim, terms, today)) return 0n;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueBy(claim, terms)}T00:00:00Z`)) / 86_400_000;
+  return BigInt(Math.floor(days / 30));
+}
+
 /**
- * A claim's figure: a settled claim's frozen due, otherwise the figure its person's last statement bound
- * it to, otherwise its amount times its person's grade's rate on the claim's date, raised to the sheet's
- * `floor` (two decimals).
+ * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
+ * person's last statement bound it to, otherwise its amount times its person's grade's rate on the
+ * claim's date, raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
+ * percent of that figure for every full 30 days overdue, half to even — is added on top: a statement
+ * never binds it, so it follows the sheet's today.
  */
-export function figure(claim: Claim, rates: Rate[], grade: Grade | undefined, floor: string): string {
+export function figure(claim: Claim, rates: Rate[], grade: Grade | undefined, floor: string, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
-  if (claim.stated) return claim.statedDue ?? 'n/a';
-  const live = due(claim.amount, rateFor(rates, grade, claim.date));
+  const bound = claim.stated ? (claim.statedDue ?? 'n/a') : floored(due(claim.amount, rateFor(rates, grade, claim.date)), floor);
+  const months = lateMonths(claim, late);
+  if (bound === 'n/a' || months === 0n) return bound;
+  return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct));
+}
+
+function floored(live: string, floor: string): string {
   return live === 'n/a' || hundredths(live) >= hundredths(floor) ? live : show(hundredths(floor));
 }

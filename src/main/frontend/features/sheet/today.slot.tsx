@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
+import { useUser } from '../session/useUser';
 import { sheetKey } from './sheetQuery';
 import type { Sheet } from './sheetQuery';
 import { useSheetToday } from './useSheetToday';
@@ -14,11 +15,12 @@ function SheetToday({ sheetId }: { sheetId: string }) {
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
 
+  const [user] = useUser();
   const once = useSubmitOnce();
 
   const save = useMutation({
     mutationFn: (date: string) =>
-      putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date }),
+      putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date }, user),
     onSuccess: (sheet) => queryClient.setQueryData(sheetKey(sheetId), sheet),
     onError: () => setError('That is not a date (yyyy-mm-dd).'),
   });

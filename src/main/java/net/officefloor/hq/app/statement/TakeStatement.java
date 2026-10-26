@@ -17,21 +17,26 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 public class TakeStatement {
-    // Records the person's due-total now and binds each of their counting claims to its figure now;
-    // the rest of their claims are left unbound.
+    // Records the person's due-total now and binds each of their counting claims (a held person's OPEN claims do not count) to its figure now;
+    // the rest of their claims are left unbound. The late charge is never bound: the due-total includes it,
+    // but each claim is bound to the figure under it.
     public void take(@Val Person person, Claims claims, Rates rates, Settings settings, Sheets sheets, Statements statements,
             Out<Statement> statementOut) {
         statements.lock(person.id());
         LocalDate today = sheets.today(person.sheetId());
         Map<Long, BigDecimal> figures = new LinkedHashMap<>();
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : claims.list(person.sheetId())) {
             if (claim.personId() == person.id()
-                    && (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.SETTLED)) {
-                figures.put(claim.id(), figure(claim, person, rates, settings));
+                    && (claim.status() == ClaimStatus.SETTLED || (claim.status() == ClaimStatus.OPEN && !person.held()))) {
+                BigDecimal figure = figure(claim, person, rates, settings);
+                figures.put(claim.id(), figure);
+                BigDecimal due = claim.settledDue() != null ? figure : settings.withLate(claim, figure, today);
+                if (due != null) {
+                    total = total.add(due);
+                }
             }
         }
-        BigDecimal total = figures.values().stream().filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         // With no rate today and no figure, the due-total is n/a.
         boolean none = rates.on(person.sheetId(), person.grade(), today) == null
                 && figures.values().stream().allMatch(Objects::isNull);

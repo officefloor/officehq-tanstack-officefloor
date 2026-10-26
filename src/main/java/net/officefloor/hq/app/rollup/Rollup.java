@@ -52,7 +52,7 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(claim.amount());
-                BigDecimal figure = figure(claim, person);
+                BigDecimal figure = figure(claim, person, today);
                 if (figure != null) {
                     due = due.add(figure);
                     anyFigure = true;
@@ -72,6 +72,7 @@ public class Rollup {
 
     /** The figures of the sheet's counting claims dated from {@code from} to {@code to} inclusive, those without one skipped. */
     public BigDecimal dueTotal(String sheetId, LocalDate from, LocalDate to) {
+        LocalDate today = sheets.today(sheetId);
         BigDecimal total = ZERO;
         for (Claim claim : claims.list(sheetId)) {
             if ((claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.SETTLED)
@@ -82,7 +83,7 @@ public class Rollup {
             if (person != null && !counts(claim, person)) {
                 continue;
             }
-            BigDecimal figure = person == null ? claim.settledDue() : figure(claim, person);
+            BigDecimal figure = person == null ? claim.settledDue() : figure(claim, person, today);
             if (figure != null) {
                 total = total.add(figure);
             }
@@ -97,12 +98,18 @@ public class Rollup {
 
     /**
      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the figure its person's
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even, raised to the floor.
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even, raised to the floor;
+     * an overdue claim's late charge on {@code today} added on top of the last two.
      */
-    private BigDecimal figure(Claim claim, Person person) {
+    private BigDecimal figure(Claim claim, Person person, LocalDate today) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
+        return settings.withLate(claim, bound(claim, person), today);
+    }
+
+    /** The claim's figure before any late charge: the one its person's last statement bound, else its floored live figure. */
+    private BigDecimal bound(Claim claim, Person person) {
         if (claim.stated()) {
             return claim.statedDue();
         }
