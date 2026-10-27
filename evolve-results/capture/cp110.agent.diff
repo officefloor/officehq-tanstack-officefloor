@@ -1,0 +1,114 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 00000000..0e41525c
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,38 @@
++import { useQuery } from '@tanstack/react-query';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { peopleQuery } from '../people/peopleQuery';
++import { useSheetDueTotal } from '../rates/due.slot';
++import { useSheetOverdue } from '../rates/overdue.slot';
++import { sumDue } from '../rates/ratesQuery';
++import { descendantsQuery } from './consolidatedQuery';
++
++type Figures = { people: number; due: string; overdue: string };
++
++/**
++ * Adds the figures of the first sheet in `sheetIds` — as that sheet shows them in its header — to `sum`, then hands on
++ * to the rest; the last shows the consolidated figures. One component per sheet keeps each sheet's hooks fixed.
++ */
++function Accumulate({ sheetIds, sum }: { sheetIds: string[]; sum: Figures }) {
++  const [sheetId, ...rest] = sheetIds;
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const due = useSheetDueTotal(sheetId);
++  const { total: overdue } = useSheetOverdue(sheetId);
++  const next = { people: sum.people + people.length, due: sumDue([sum.due, due]), overdue: sumDue([sum.overdue, overdue]) };
++  if (rest.length > 0) return <Accumulate key={rest[0]} sheetIds={rest} sum={next} />;
++  return (
++    <p data-testid="consolidated">
++      Consolidated: people <strong data-testid="consolidated-people-count">{next.people}</strong>
++      {' '}· Due <strong data-testid="consolidated-due-total">{next.due}</strong>
++      {' '}· Overdue <strong data-testid="consolidated-overdue-total">{next.overdue}</strong>
++    </p>
++  );
++}
++
++/** The sheet's figures added up with those of all its descendants: people, due-total and overdue-total. A sheet with no children shows its own. */
++function Consolidated({ sheetId }: { sheetId: string }) {
++  const descendants = useQuery(descendantsQuery(sheetId)).data ?? [];
++  const sheetIds = [sheetId, ...descendants];
++  return <Accumulate key={sheetIds.join('\n')} sheetIds={sheetIds} sum={{ people: 0, due: '0.00', overdue: '0.00' }} />;
++}
++
++export const contribution = SheetPanel.fill({ order: -9, Component: Consolidated });
+diff --git a/src/main/frontend/features/consolidated/consolidatedQuery.ts b/src/main/frontend/features/consolidated/consolidatedQuery.ts
+new file mode 100644
+index 00000000..ceacb91f
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidatedQuery.ts
+@@ -0,0 +1,10 @@
++import { getJson } from '../../api/http';
++import { sheetKey } from '../sheet/sheetQuery';
++
++/** The ids of the sheet's descendants: the sheets naming it as their parent, their children and so on (the sheet itself is not among them). */
++export const descendantsKey = (sheetId: string) => [...sheetKey(sheetId), 'descendants'] as const;
++
++export const descendantsQuery = (sheetId: string) => ({
++  queryKey: descendantsKey(sheetId),
++  queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`),
++});
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+new file mode 100644
+index 00000000..386d5797
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithDescendants {
++    // The ids of the sheet's descendants (see Settings#descendants); the sheet itself is not among them.
++    public void respond(@PathVariable("sheetId") String sheetId, Settings settings, ObjectResponse<List<String>> response) {
++        response.send(settings.descendants(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 57f28dca..cb373ce7 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -82,6 +82,21 @@ public class Settings {
+         return values.isEmpty() ? "" : values.get(0);
+     }
+ 
++    /** The sheet's children (the sheets naming it as their parent), their children and so on, each once, by id. Not dated, like the parent. */
++    public List<String> descendants(String sheetId) {
++        java.util.Set<String> seen = new java.util.TreeSet<>();
++        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
++        while (!todo.isEmpty()) {
++            for (String child : jdbc.queryForList("SELECT sheet_id FROM setting WHERE setting_key = ? AND setting_value = ?",
++                    String.class, PARENT, todo.pop())) {
++                if (!child.equals(sheetId) && seen.add(child)) {
++                    todo.add(child);
++                }
++            }
++        }
++        return List.copyOf(seen);
++    }
++
+     public void set(String sheetId, String key, String value) {
+         jdbc.update("MERGE INTO setting (sheet_id, setting_key, setting_value) KEY (sheet_id, setting_key) VALUES (?, ?, ?)",
+                 sheetId, key, value);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 00000000..813d9a26
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/descendants — the ids of the sheets naming it as their parent, their children and so on: ["s-c1","s-c2"].
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithDescendants
++  govern: [ readonly-transaction ]
