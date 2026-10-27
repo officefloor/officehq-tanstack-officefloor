@@ -146,16 +146,24 @@ public class Claims {
 
     /**
      * Moves the claim to another person if it still has its loaded person and status, and returns it as moved; null
-     * when it has since changed. It keeps its number and date, is unbound from any statement (live again until its
-     * new person's next statement) and lists as the newest claim on the sheet.
+     * when it has since changed. It keeps its date, is renumbered next in {@code scope} (as {@link #changeStatus};
+     * a draft, having no number, gets none; its old number is never reused), is unbound from any statement (live
+     * again until its new person's next statement) and lists as the newest claim on the sheet.
      */
-    public Claim reassign(Claim claim, long personId) {
+    public Claim reassign(Claim claim, long personId, String scope) {
         if (jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = " + NEXT_LISTED
                 + " WHERE id = ? AND person_id = ? AND status = ?", personId, claim.sheetId(), claim.id(),
                 claim.personId(), claim.status().name()) != 1) {
             return null;
         }
-        return claim.withPerson(personId);
+        Claim moved = claim.withPerson(personId);
+        if (claim.number() == null) {
+            return moved;
+        }
+        String number = scope == null ? Long.toString(nextNumber(claim.sheetId()))
+                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+        jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
+        return moved.withStatus(moved.status(), number, moved.settledDue(), moved.openedBy());
     }
 
     /**

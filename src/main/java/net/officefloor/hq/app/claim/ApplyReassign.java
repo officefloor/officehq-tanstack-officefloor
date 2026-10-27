@@ -1,9 +1,13 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -14,7 +18,7 @@ public class ApplyReassign {
     // retired by its date (its own person too: it then lists first under them again, as when a bulk move takes it there). A correction stays with the person whose settled claim it corrects. Stored only if the
     // claim still has the person and status it was loaded with.
     public void apply(@RequestBody(required = false) ReassignRequest body, @Val Claim claim, Claims claims,
-            People people, Settings settings, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+            People people, Settings settings, Sheets sheets, Periods periods, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
             Out<Person> toOut) throws ClaimReassignRefusedException, ClaimAfterRetirementException {
         String user = Audit.user(connection).trim();
         if (!settings.permits(claim.sheetId(), "reassign", user)) {
@@ -31,7 +35,14 @@ public class ApplyReassign {
             throw new ClaimReassignRefusedException("Choose a person on this sheet to move the claim to.");
         }
         RefuseRetiredInput.check(to, claim.date());
-        Claim moved = claims.reassign(claim, to.id());
+        // A numbered claim takes the next number of the sequence it would be opened in (as ApplyClaimStatus).
+        String scope = null;
+        LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
+        if (numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
+            Period period = periods.on(claim.sheetId(), claim.dueBy());
+            scope = period == null ? "" : period.name();
+        }
+        Claim moved = claims.reassign(claim, to.id(), scope);
         if (moved == null) {
             throw new ClaimReassignRefusedException("The claim has changed since it was loaded.");
         }
