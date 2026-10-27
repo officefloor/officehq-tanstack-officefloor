@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from '../people/peopleQuery';
@@ -11,10 +11,10 @@ import { useSelectedClaims } from './useSelectedClaims';
 type Result = { settled: number; refused: number };
 
 /**
- * Settles every ticked claim as the signed-in user, one at a time in list order (people in their list
+ * Settles every ticked claim as the signed-in user, all or nothing, in list order (people in their list
  * order, newest claim first within a person), by the same rules as settling one claim. A claim that
- * goes to PENDING counts as settled; a claim the server refuses to settle is left as it is and counted
- * as refused. A bulk settle that settled at least one claim is recorded as the sheet's next settle batch, whose number
+ * goes to PENDING counts as settled. If the server would refuse any one of them, none is settled and every
+ * one counts as refused. A bulk settle that went through is recorded as the sheet's next settle batch, whose number
  * its claims show; the number of the last batch shows beside the button (blank when there has been none).
  */
 function BulkSettle({ user, sheetId }: { user: string; sheetId: string }) {
@@ -30,19 +30,16 @@ function BulkSettle({ user, sheetId }: { user: string; sheetId: string }) {
 
   const settle = useMutation({
     mutationFn: async (targets: Claim[]): Promise<Result> => {
-      const settled: number[] = [];
-      for (const c of targets) {
-        try {
-          await putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status/SETTLED`, {}, user);
-          settled.push(c.id);
-        } catch {
-          // refused: left as it is
-        }
+      try {
+        const r = await postJson<Result>(
+          `/api/sheets/${encodeURIComponent(sheetId)}/bulk-settle`,
+          { claimIds: targets.map((c) => c.id) },
+          user,
+        );
+        return { settled: r.settled, refused: r.refused };
+      } catch {
+        return { settled: 0, refused: targets.length };
       }
-      if (settled.length > 0) {
-        await postJson(`/api/sheets/${encodeURIComponent(sheetId)}/settle-batches`, { claimIds: settled }, user);
-      }
-      return { settled: settled.length, refused: targets.length - settled.length };
     },
     onSuccess: async (r) => {
       setSelected([]);
