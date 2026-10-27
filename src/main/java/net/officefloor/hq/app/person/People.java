@@ -148,4 +148,59 @@ public class People {
         jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
                 Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()));
     }
+
+    /**
+     * Merge the person {@code from} into {@code into}: from's claims move to into (numbers and dates kept, unbound from
+     * any statement, listed after into's claims in the order they were added); from's name and aliases become into's
+     * aliases; from's patrons are added to into's and anyone naming from names into instead (never themselves, no
+     * repeats); from's pool memberships and closed-period figures move to into (added to into's own where into has
+     * one). from's statements, holds, watchers, grades and contact are dropped, and from leaves the sheet.
+     */
+    public void merge(String sheetId, long from, long into) {
+        for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
+            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = "
+                    + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) WHERE id = ?", into, sheetId, claim);
+        }
+        String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ?", String.class, from);
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ?", into, from);
+        for (Long patron : jdbc.queryForList("SELECT patron_id FROM person_patron WHERE person_id = ?", Long.class, from)) {
+            linkPatron(into, patron);
+        }
+        for (Long person : jdbc.queryForList("SELECT person_id FROM person_patron WHERE patron_id = ?", Long.class, from)) {
+            linkPatron(person, into);
+        }
+        jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", from, from);
+        for (Map<String, Object> m : jdbc.queryForList("SELECT pool_name, share FROM pool_member WHERE sheet_id = ? AND person_id = ?",
+                sheetId, from)) {
+            if (jdbc.update("UPDATE pool_member SET share = share + ? WHERE sheet_id = ? AND pool_name = ? AND person_id = ?",
+                    m.get("share"), sheetId, m.get("pool_name"), into) == 0) {
+                jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND pool_name = ? AND person_id = ?",
+                        into, sheetId, m.get("pool_name"), from);
+            }
+        }
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, from);
+        for (Map<String, Object> m : jdbc.queryForList("SELECT period_name, total FROM period_person_total WHERE sheet_id = ? AND person_id = ?",
+                sheetId, from)) {
+            if (jdbc.update("UPDATE period_person_total SET total = total + ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                    m.get("total"), sheetId, m.get("period_name"), into) == 0) {
+                jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                        into, sheetId, m.get("period_name"), from);
+            }
+        }
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, from);
+        jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person WHERE id = ?", from);
+        alias(sheetId, into, name);
+    }
+
+    /** Have the person name the patron, unless it is themselves or already named. */
+    private void linkPatron(long person, long patron) {
+        if (person != patron) {
+            jdbc.update("MERGE INTO person_patron (person_id, patron_id) KEY (person_id, patron_id) VALUES (?, ?)",
+                    person, patron);
+        }
+    }
 }
