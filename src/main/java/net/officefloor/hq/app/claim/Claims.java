@@ -5,7 +5,11 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import net.officefloor.hq.app.holiday.Holidays;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -88,14 +92,17 @@ public class Claims {
         return columns.stream().flatMap(c -> tags(c).stream()).distinct().sorted().toList();
     }
 
-    /** Adds a draft claim, due by {@code dueBy} for good; a late entry when its due-by is in a soft-closed period. */
+    /**
+     * Adds a draft claim, due by {@code dueBy}, fixed with {@code terms} (kept until a holiday is added, see
+     * {@link #refixDueBys}); a late entry when its due-by is in a soft-closed period.
+     */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            LocalDate dueBy, String ref, List<String> tags) {
+            LocalDate dueBy, int terms, String ref, List<String> tags) {
         boolean late = lateEntry(sheetId, dueBy);
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref, ref_key, tags, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref, ref_key, tags, due_terms, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
@@ -109,7 +116,8 @@ public class Claims {
             ps.setString(9, ref);
             ps.setString(10, refKey(ref));
             ps.setString(11, tagsColumn(tags));
-            ps.setString(12, sheetId);
+            ps.setInt(12, terms);
+            ps.setString(13, sheetId);
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
@@ -178,10 +186,10 @@ public class Claims {
      * Splits {@code amount} off the claim if it is still OPEN at the amount it was loaded with, and returns the new
      * claim; null when it has since changed. The claim keeps the rest of its amount and is unbound from any statement;
      * the new claim is OPEN with the same person, date, note and tags, numbered next in {@code scope} (as
-     * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy}, split from the claim's number, a late entry
+     * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy} (fixed with {@code terms}), split from the claim's number, a late entry
      * when its due-by is in a soft-closed period, and listed as the newest claim on the sheet.
      */
-    public Claim split(Claim claim, BigDecimal amount, String user, String scope, LocalDate dueBy) {
+    public Claim split(Claim claim, BigDecimal amount, String user, String scope, LocalDate dueBy, int terms) {
         BigDecimal rest = claim.amount().subtract(amount);
         if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE id = ? AND status = ? AND amount = ?",
                 rest, claim.id(), ClaimStatus.OPEN.name(), claim.amount()) != 1) {
@@ -193,8 +201,8 @@ public class Claims {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, late_entry, tags, listed) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, late_entry, tags, due_terms, listed) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -208,11 +216,29 @@ public class Claims {
             ps.setString(10, claim.number());
             ps.setBoolean(11, late);
             ps.setString(12, tagsColumn(claim.tags()));
-            ps.setString(13, claim.sheetId());
+            ps.setInt(13, terms);
+            ps.setString(14, claim.sheetId());
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
                 ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null, null, claim.tags());
+    }
+
+    /**
+     * Works out again the due-by of every claim on the sheet that is not SETTLED or VOID and is due on or after
+     * {@code from}: the terms-th business day after its date, with the terms it was fixed with, over {@code holidays}.
+     * Only a due-by that moves is written.
+     */
+    public void refixDueBys(String sheetId, LocalDate from, Set<LocalDate> holidays) {
+        Map<Long, LocalDate> moved = new LinkedHashMap<>();
+        jdbc.query("SELECT id, claim_date, due_by, due_terms FROM claim WHERE sheet_id = ? AND status NOT IN (?, ?) AND due_by >= ? "
+                + "AND due_terms IS NOT NULL ORDER BY id", rs -> {
+                    LocalDate refixed = Holidays.businessDays(rs.getObject(2, LocalDate.class), rs.getInt(4), holidays);
+                    if (!refixed.equals(rs.getObject(3, LocalDate.class))) {
+                        moved.put(rs.getLong(1), refixed);
+                    }
+                }, sheetId, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(), Date.valueOf(from));
+        moved.forEach((id, dueBy) -> jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(dueBy), id));
     }
 
     /**

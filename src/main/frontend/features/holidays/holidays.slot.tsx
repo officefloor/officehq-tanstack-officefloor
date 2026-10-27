@@ -5,12 +5,14 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
-import { holidaysKey, holidaysQuery } from './holidaysQuery';
+import { sheetKey } from '../sheet/sheetQuery';
+import { holidaysQuery } from './holidaysQuery';
 import type { Holiday } from './holidaysQuery';
 
 /** The sheet's holidays, and the entry a date is added through. A claim's due-by, fixed when it is made, that falls on
- *  a holiday then on the list is the next day that is not one; a holiday added later leaves due-bys as they are. A date
- *  already on the list is refused. */
+ *  a holiday then on the list is the next day that is not one. A holiday added later re-fixes the due-by of every claim
+ *  not SETTLED or VOID that is due on or after it, so the whole sheet is re-read. A date already on the list is
+ *  refused. */
 function Holidays({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const holidays = useQuery(holidaysQuery(sheetId));
@@ -23,7 +25,7 @@ function Holidays({ sheetId }: { sheetId: string }) {
     mutationFn: (body: Holiday) =>
       postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, body, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) });
+      await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
       setDate('');
     },
     onError: (e: Error) => setError(e.message || 'The holiday could not be added.'),

@@ -10,7 +10,7 @@ import java.time.LocalDate;
  * {@code openedBy} is the user who opened it (null when never opened). {@code stated} is whether its person's
  * last statement bound it, at {@code statedDue} (null when it had no figure then). A claim with a negative amount is a
  * correction: {@code corrects} is the number of the SETTLED claim of the same person it corrects (null for any other claim).
- * {@code dueBy} is fixed when the claim is made, the terms-th business day after its date (see {@code Holidays#dueBy}), and kept when its terms or its date change later.
+ * {@code dueBy} is fixed when the claim is made, the terms-th business day after its date (see {@code Holidays#dueBy}), and kept when its terms or its date change later; a holiday added later on or before it works it out again from its date with the terms it was fixed with (see {@code Claims#refixDueBys}).
  * {@code deferredUntil} is the date an OPEN claim was deferred to (null when never deferred).
  * {@code proofs} is how many proofs it has been given (0 for none).
  * {@code splitFrom} is the number of the claim it was split off (null for any other claim).

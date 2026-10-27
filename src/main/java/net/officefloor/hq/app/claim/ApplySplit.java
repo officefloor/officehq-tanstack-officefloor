@@ -49,15 +49,15 @@ public class ApplySplit {
                     + claim.amount().toPlainString() + ".");
         }
         Person person = people.find(claim.sheetId(), claim.personId());
-        LocalDate dueBy = holidays.dueBy(claim.sheetId(), claim.date(), person == null
-                ? settings.terms(claim.sheetId(), claim.date()) : person.termsOn(claim.date(), settings));
+        int terms = person == null ? settings.terms(claim.sheetId(), claim.date()) : person.termsOn(claim.date(), settings);
+        LocalDate dueBy = holidays.dueBy(claim.sheetId(), claim.date(), terms);
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (numberingFrom != null && !today.isBefore(numberingFrom)) {
             Period period = periods.on(claim.sheetId(), dueBy);
             scope = period == null ? "" : period.name();
         }
-        Claim created = claims.split(claim, amount, user, scope, dueBy);
+        Claim created = claims.split(claim, amount, user, scope, dueBy, terms);
         if (created == null) {
             throw new ClaimSplitRefusedException("The claim has changed since it was loaded.");
         }

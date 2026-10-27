@@ -1,11 +1,17 @@
 # POST /api/sheets/{sheetId}/holidays — adds a holiday to the sheet. Body {"date":"yyyy-mm-dd"}. A date that is not
-# real, or one already on the list, is refused with 422 and nothing is stored or recorded.
+# real, or one already on the list, is refused with 422 and nothing is stored or recorded. Every claim not SETTLED or
+# VOID due on or after the new holiday is due again by the terms-th business day after its date, with the terms it was
+# fixed with, over the holidays now on the sheet; HOLIDAY_ADDED is followed by the rollup lines when any figure moved.
 viewer:
   class: net.officefloor.hq.app.setting.RefuseViewer
   next: archived
   govern: [ transaction ]
 archived:
   class: net.officefloor.hq.app.sheet.RefuseArchived
+  next: snapshot
+  govern: [ transaction ]
+snapshot:
+  class: net.officefloor.hq.app.rollup.SnapshotRollup
   next: validate
   govern: [ transaction ]
 validate:
@@ -14,10 +20,18 @@ validate:
   govern: [ transaction ]
 add:
   class: net.officefloor.hq.app.holiday.AddHoliday
+  next: refix
+  govern: [ transaction ]
+refix:
+  class: net.officefloor.hq.app.holiday.RefixDueBys
   next: audit
   govern: [ transaction ]
 audit:
   class: net.officefloor.hq.app.holiday.AuditHolidayAdded
+  next: rollup
+  govern: [ transaction ]
+rollup:
+  class: net.officefloor.hq.app.rollup.AuditRollup
   next: respond
   govern: [ transaction ]
 respond:
