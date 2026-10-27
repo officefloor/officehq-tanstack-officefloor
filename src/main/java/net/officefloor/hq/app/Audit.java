@@ -8,7 +8,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import net.officefloor.server.http.HttpHeader;
 import net.officefloor.server.http.ServerHttpConnection;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.officefloor.hq.app.setting.Settings;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,6 +98,42 @@ public class Audit {
         }
         return line.toString();
     }
+
+    /**
+     * The sheet's lines exactly as the file holds them, newest first. With a name (not blank), only the lines about that
+     * person: those carrying name=<the name> or person=<the name>, compared as names are (case and surrounding spaces ignored).
+     */
+    public synchronized List<String> lines(String sheetId, String name) {
+        String wanted = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> all;
+        try {
+            all = Files.exists(file) ? Files.readAllLines(file, StandardCharsets.UTF_8) : List.of();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : all) {
+            String[] parts = line.split(" ", 3);
+            if (parts.length >= 2 && parts[1].equals("sheet=" + sheetId)
+                    && (wanted.isEmpty() || names(line).contains(wanted))) {
+                lines.add(line);
+            }
+        }
+        Collections.reverse(lines);
+        return lines;
+    }
+
+    /** The values of a line's name= and person= fields, trimmed and lower-cased; a value runs up to the next field. */
+    private static List<String> names(String line) {
+        List<String> names = new ArrayList<>();
+        Matcher m = NAME_FIELD.matcher(line);
+        while (m.find()) {
+            names.add(m.group(1).trim().toLowerCase(Locale.ROOT));
+        }
+        return names;
+    }
+
+    private static final Pattern NAME_FIELD = Pattern.compile(" (?:name|person)=(.*?)(?= [A-Za-z][\\w-]*=|$)");
 
     /** Remove the audit file. */
     public synchronized void clear() {
