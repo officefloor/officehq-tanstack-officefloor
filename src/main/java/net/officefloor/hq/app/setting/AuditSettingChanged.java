@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 
 public class AuditSettingChanged {
-    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order. A dated setting saved with a from-date ends with from=<date>.
+    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then each grade's proof threshold by grade, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order. A dated setting saved with a from-date ends with from=<date>.
     public void audit(@Val SheetSettings settings, ServerHttpConnection connection, Audit audit) {
         if (settings.clerkLimit() != null) {
             audit.record(dated(settings, connection,
@@ -41,6 +41,8 @@ public class AuditSettingChanged {
             audit.record(dated(settings, connection, "key=" + Settings.PROOF_THRESHOLD, "value=" + settings.proofThreshold(),
                     from(settings, Settings.PROOF_THRESHOLD)));
         }
+        settings.gradeProof().forEach((grade, amount) -> audit.record(dated(settings, connection,
+                "key=" + Settings.gradeProofKey(grade), "value=" + amount, from(settings, Settings.gradeProofKey(grade)))));
         if (settings.noteThreshold() != null) {
             audit.record(dated(settings, connection, "key=" + Settings.NOTE_THRESHOLD, "value=" + settings.noteThreshold(),
                     from(settings, Settings.NOTE_THRESHOLD)));

@@ -33,6 +33,7 @@ public class ApplySettings {
         if (settings.proofThreshold() != null) {
             dated(settings, store, today, Settings.PROOF_THRESHOLD, settings.proofThreshold());
         }
+        settings.gradeProof().forEach((grade, amount) -> dated(settings, store, today, Settings.gradeProofKey(grade), amount));
         if (settings.noteThreshold() != null) {
             dated(settings, store, today, Settings.NOTE_THRESHOLD, settings.noteThreshold());
         }

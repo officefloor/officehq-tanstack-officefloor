@@ -116,10 +116,10 @@ public class ApplyClaimStatus {
         }
         // Settling (or approving) freezes the late charge on the sheet's today into the due.
         BigDecimal due = settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
-        // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has a
+        // A claim whose due is above the proof threshold in force on its date (its person's grade's, else the sheet's) is settled or approved only once it has a
         // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
         if (next == ClaimStatus.SETTLED && claim.proofs() == 0 && due != null) {
-            BigDecimal threshold = settings.proofThreshold(claim.sheetId(), claim.date());
+            BigDecimal threshold = settings.proofThreshold(claim);
             if (threshold != null && due.compareTo(threshold) > 0) {
                 throw new ClaimProofNeededException("The claim's due is above the proof threshold (" + threshold.toPlainString()
                         + "): add a proof before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));

@@ -39,7 +39,8 @@ public class Settings {
     public static final String GRACE_DAYS = "grace-days";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
-            gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"));
+            gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
+            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"));
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
@@ -120,6 +121,23 @@ public class Settings {
     public BigDecimal proofThreshold(String sheetId, LocalDate date) {
         String value = on(sheetId, PROOF_THRESHOLD, date);
         return value.isEmpty() ? null : new BigDecimal(value);
+    }
+
+    /** The key a grade's own proof threshold is kept under: proof-threshold-<grade>. */
+    public static String gradeProofKey(String grade) {
+        return PROOF_THRESHOLD + "-" + grade;
+    }
+
+    /** The proof threshold of the grade in force on the date: its own when one is in force (blank is none), else the sheet's; null when there is none. */
+    public BigDecimal proofThreshold(String sheetId, String grade, LocalDate date) {
+        String value = grade == null ? "" : on(sheetId, gradeProofKey(grade), date);
+        return value.isEmpty() ? proofThreshold(sheetId, date) : new BigDecimal(value);
+    }
+
+    /** The proof threshold in force for the claim: that of the grade its person had on its date (see {@link #proofThreshold(String, String, LocalDate)}). */
+    public BigDecimal proofThreshold(Claim claim) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        return proofThreshold(claim.sheetId(), person == null ? null : person.gradeOn(claim.date()), claim.date());
     }
 
     /** The note threshold in force on the date: a claim dated then whose due is above it is opened only with a note; null when there is none. */
