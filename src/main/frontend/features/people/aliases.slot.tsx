@@ -10,7 +10,7 @@ import type { Person } from './peopleQuery';
 
 /**
  * The person's aliases, sorted as names are compared, and the control that adds one. An alias shares the names'
- * uniqueness on the sheet: one equal (ignoring case) to any name or alias there is refused, as is a blank one.
+ * uniqueness across the sheet's tree: one equal (ignoring case) to any name or alias there is refused, as is a blank one.
  */
 function PersonAliases({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();

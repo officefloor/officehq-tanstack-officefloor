@@ -68,11 +68,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     mutationFn: (body: SettingsChange) =>
       putJson<SheetSettings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
-      // A pool's cuts are figured from the pot.
-      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
-      // Where the sheet has no rate in force, its parent's is used.
-      await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+      // The form is cleared before the re-reads, so nothing typed while they run is cleared after them.
       setLimit('');
       setFloor('');
       setTerms('');
@@ -91,6 +87,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setParent('');
       setPerms({});
       setFrom({});
+      await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
+      // A pool's cuts are figured from the pot.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+      // Where the sheet has no rate in force, its parent's is used.
+      await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
     onError: () => setError('The settings could not be saved.'),
   });

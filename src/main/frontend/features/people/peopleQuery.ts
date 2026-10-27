@@ -11,9 +11,11 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
  * statement, count in no live total. `terms` are their own terms in days, which come before those of their grade
  * and of the sheet; null for none. `contact` is their contact, trimmed and lower-cased, unique on the sheet; null
  * for none. `aliases` are their aliases, sorted as names are compared (ignoring case); the quick-add bar and the
- * paste box find a person by one as well as by the name.
+ * paste box find a person by one as well as by the name. A name or alias is unique across the sheet's tree (its
+ * ancestors and descendants); `clashing` is whether the person's name or an alias is used by someone else there all
+ * the same (they were on the sheet before), which refuses every edit of them until a rename frees them.
  */
-export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[] };
+export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean };
 
 /** A hold from `from` to `to` inclusive (yyyy-mm-dd); `to` is null when it has no end. */
 export type Held = { from: string; to: string | null };

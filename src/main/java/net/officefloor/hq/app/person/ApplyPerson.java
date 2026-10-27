@@ -13,6 +13,7 @@ public class ApplyPerson {
     // refused when the version its form loaded is not the stored one: someone else saved it since.
     // The form's grade is given from its from-date (the sheet's today when blank), keeping the grades
     // already given; a save leaving the grade in force today as it is, with no from-date, gives none.
+    // The name is refused when anyone else on the sheet's tree uses it as a name or alias.
     public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets,
             Out<PersonResponse> responseOut) throws InvalidPersonException, PersonConflictException {
         if (request.version() != null && request.version() != person.version()) {
@@ -20,6 +21,10 @@ public class ApplyPerson {
         }
         if (people.nameTaken(person.sheetId(), request.name(), person.id())) {
             throw new InvalidPersonException("The name is already in use.");
+        }
+        // A person whose alias clashes across the sheet's tree is refused every edit (only a rename frees the name).
+        if (people.aliasClashes(person)) {
+            throw new InvalidPersonException("An alias of theirs is already in use on the sheet's tree.");
         }
         if (request.contact() != null && people.contactTaken(person.sheetId(), request.contact(), person.id())) {
             throw new InvalidPersonException("The contact is already in use.");

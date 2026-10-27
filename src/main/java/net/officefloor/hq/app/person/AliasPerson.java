@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 
 public class AliasPerson {
     // An alias shares the names' uniqueness: it is refused when it equals (ignoring case) any name or alias on the
-    // sheet, the person's own included. Person is a record, so the aliased person is published as the response.
+    // sheet's tree (see People#tree), the person's own included. Person is a record, so the aliased person is published as the response.
     public void alias(@Val Alias alias, @Val Person person, People people, Sheets sheets,
             Out<PersonResponse> responseOut) throws InvalidPersonException {
         if (people.nameOrAliasTaken(person.sheetId(), alias.alias())) {

@@ -4,11 +4,17 @@ import net.officefloor.hq.app.history.AsOf;
 import java.sql.PreparedStatement;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -75,11 +81,55 @@ public class People {
         return found.isEmpty() ? null : withDated(sheetId, found).get(0);
     }
 
-    /** Whether another person on the sheet (not {@code exceptId}) has this name, or anyone has it as an alias, ignoring case. */
+    /**
+     * The sheets of the sheet's tree: the sheet itself, its ancestors (its parent, their parent and so on) and its
+     * descendants (the sheets naming it as their parent, their children and so on), each once. Not dated, like the parent.
+     */
+    public Set<String> tree(String sheetId) {
+        Set<String> tree = new LinkedHashSet<>(List.of(sheetId));
+        String at = sheetId;
+        while (true) {
+            List<String> parent = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = 'parent'",
+                    String.class, at);
+            if (parent.isEmpty() || parent.get(0).isBlank() || !tree.add(parent.get(0).trim())) {
+                break;
+            }
+            at = parent.get(0).trim();
+        }
+        Deque<String> todo = new ArrayDeque<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM setting WHERE setting_key = 'parent' AND setting_value = ?",
+                    String.class, todo.pop())) {
+                if (tree.add(child)) {
+                    todo.add(child);
+                }
+            }
+        }
+        return tree;
+    }
+
+    /** The lower-cased names and aliases of everyone on the sheet's tree but the person {@code exceptId}. */
+    private Set<String> namesInTree(String sheetId, long exceptId) {
+        Set<String> names = new HashSet<>();
+        for (String sheet : tree(sheetId)) {
+            names.addAll(jdbc.queryForList("SELECT LOWER(name) FROM " + AsOf.table("person") + " WHERE sheet_id = ? AND id <> ?",
+                    String.class, sheet, exceptId));
+            names.addAll(jdbc.queryForList("SELECT LOWER(alias) FROM " + AsOf.table("person_alias") + " WHERE sheet_id = ? AND person_id <> ?",
+                    String.class, sheet, exceptId));
+        }
+        return names;
+    }
+
+    private static String key(String name) {
+        return name.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Whether another person on any sheet of the sheet's tree (not {@code exceptId}) has this name or alias, or anyone on the
+     * sheet has it as an alias (the person themselves included), ignoring case.
+     */
     public boolean nameTaken(String sheetId, String name, long exceptId) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + AsOf.table("person") + " WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
-                Integer.class, sheetId, name.trim(), exceptId);
-        return n != null && n > 0 || aliasTaken(sheetId, name);
+        return namesInTree(sheetId, exceptId).contains(key(name)) || aliasTaken(sheetId, name);
     }
 
     /** Whether anyone on the sheet has this alias, ignoring case. */
@@ -89,9 +139,33 @@ public class People {
         return n != null && n > 0;
     }
 
-    /** Whether anyone on the sheet, the person themselves included, has this as a name or an alias, ignoring case. */
+    /** Whether anyone on any sheet of the sheet's tree, the person themselves included, has this as a name or an alias, ignoring case. */
     public boolean nameOrAliasTaken(String sheetId, String alias) {
         return nameTaken(sheetId, alias, -1);
+    }
+
+    /** Whether any of the person's aliases is a name or alias of someone else on the sheet's tree, ignoring case. */
+    public boolean aliasClashes(Person person) {
+        Set<String> others = namesInTree(person.sheetId(), person.id());
+        return person.aliases().stream().anyMatch(a -> others.contains(key(a)));
+    }
+
+    /**
+     * The ids of the sheet's people who clash: whose name or any alias is a name or alias of someone else on the sheet's
+     * tree, ignoring case (people who were on the sheet before a name was refused across its tree).
+     */
+    public Set<Long> clashing(String sheetId) {
+        Map<String, Set<Long>> users = new HashMap<>();
+        for (String sheet : tree(sheetId)) {
+            jdbc.query("SELECT id, LOWER(name) FROM " + AsOf.table("person") + " WHERE sheet_id = ?",
+                    rs -> { users.computeIfAbsent(rs.getString(2), k -> new HashSet<>()).add(rs.getLong(1)); }, sheet);
+            jdbc.query("SELECT person_id, LOWER(alias) FROM " + AsOf.table("person_alias") + " WHERE sheet_id = ?",
+                    rs -> { users.computeIfAbsent(rs.getString(2), k -> new HashSet<>()).add(rs.getLong(1)); }, sheet);
+        }
+        Set<Long> own = new HashSet<>(jdbc.queryForList("SELECT id FROM " + AsOf.table("person") + " WHERE sheet_id = ?", Long.class, sheetId));
+        Set<Long> clashing = new HashSet<>();
+        users.values().stream().filter(ids -> ids.size() > 1).forEach(ids -> ids.stream().filter(own::contains).forEach(clashing::add));
+        return clashing;
     }
 
     /** Give the person the alias (kept without surrounding spaces). */

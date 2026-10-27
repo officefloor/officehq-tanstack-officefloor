@@ -44,8 +44,8 @@ public class TransferPerson {
         if (sheets.isArchived(to)) {
             throw new PersonTransferRefusedException("The sheet " + to + " is archived.");
         }
-        if (people.nameOrAliasTaken(to, person.name())
-                || person.aliases().stream().anyMatch(a -> people.nameOrAliasTaken(to, a))) {
+        if (people.nameTaken(to, person.name(), person.id())
+                || person.aliases().stream().anyMatch(a -> people.nameTaken(to, a, person.id()))) {
             throw new PersonTransferRefusedException("A name or alias of theirs is already on the sheet " + to + ".");
         }
         if (person.contact() != null && people.contactTaken(to, person.contact(), -1)) {
