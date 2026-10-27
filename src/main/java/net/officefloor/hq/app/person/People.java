@@ -196,6 +196,76 @@ public class People {
         alias(sheetId, into, name);
     }
 
+    /**
+     * Transfer the person to the sheet {@code to}, returning their id there. They arrive with their first grade and every
+     * grade given since (with its from-date), their terms, contact and aliases, and their claims (listed in the order
+     * they were, as the newest on that sheet) with their status, dates, notes, frozen figures, comments and logs; a
+     * claim in {@code numbers} takes the number given there. The figures a statement bound and the references are not
+     * carried. They leave their sheet entirely: their claims, statements, holds, watches, patron links, pool memberships
+     * and closed-period figures are dropped with them.
+     */
+    public long transfer(Person person, String to, Map<Long, String> numbers) {
+        long from = person.id();
+        KeyHolder key = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+            ps.setString(1, to);
+            ps.setString(2, person.name());
+            ps.setString(3, person.grade());
+            ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
+            ps.setString(5, person.contact());
+            return ps;
+        }, key);
+        long arrived = key.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
+                + "WHERE person_id = ? ORDER BY from_date", arrived, from);
+        jdbc.update("INSERT INTO person_alias (person_id, sheet_id, alias) SELECT ?, ?, alias FROM person_alias "
+                + "WHERE person_id = ? ORDER BY id", arrived, to, from);
+        List<Long> claims = jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from);
+        for (Long claim : claims) {
+            KeyHolder claimKey = new GeneratedKeyHolder();
+            jdbc.update(con -> {
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, "
+                                + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, tags, "
+                                + "void_reason, edited_by, due_terms, listed) "
+                                + "SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, corrects, due_by, "
+                                + "deferred_until, proofs, split_from, late_entry, reminded_on, tags, void_reason, edited_by, due_terms, "
+                                + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) FROM claim WHERE id = ?",
+                        new String[] { "id" });
+                ps.setString(1, to);
+                ps.setLong(2, arrived);
+                ps.setString(3, numbers.get(claim));
+                ps.setString(4, to);
+                ps.setLong(5, claim);
+                return ps;
+            }, claimKey);
+            long moved = claimKey.getKey().longValue();
+            jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) "
+                    + "SELECT ?, ?, status, by_user, logged_on, due FROM claim_log WHERE claim_id = ? ORDER BY id", to, moved, claim);
+            jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, commented_on, text) "
+                    + "SELECT ?, ?, by_user, commented_on, text FROM claim_comment WHERE claim_id = ? ORDER BY id", to, moved, claim);
+        }
+        for (Long claim : claims) {
+            jdbc.update("DELETE FROM claim_log WHERE claim_id = ?", claim);
+            jdbc.update("DELETE FROM claim_comment WHERE claim_id = ?", claim);
+            jdbc.update("DELETE FROM claim_lock WHERE claim_id = ?", claim);
+            jdbc.update("DELETE FROM claim_batch WHERE claim_id = ?", claim);
+            jdbc.update("DELETE FROM claim WHERE id = ?", claim);
+        }
+        jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", from, from);
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
+        jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_alias WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person WHERE id = ?", from);
+        return arrived;
+    }
+
     /** Have the person name the patron, unless it is themselves or already named. */
     private void linkPatron(long person, long patron) {
         if (person != patron) {

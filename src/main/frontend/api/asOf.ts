@@ -13,9 +13,22 @@ function subscribe(listener: () => void) {
   };
 }
 
-/** The as-of date the requests name now ('' for none). */
+/** The as-of date the requests name now ('' for none, and while `withoutAsOf` runs). */
 export function currentAsOf(): string {
-  return asOf;
+  return ignoring > 0 ? '' : asOf;
+}
+
+// While above 0, requests made name no as-of date: they read the sheet as it is now.
+let ignoring = 0;
+
+/** Runs the work with the requests it makes (synchronously) reading the sheet as it is now, whatever the as-of date. */
+export function withoutAsOf<T>(work: () => T): T {
+  ignoring++;
+  try {
+    return work();
+  } finally {
+    ignoring--;
+  }
 }
 
 export function setAsOf(date: string): void {
@@ -26,5 +39,5 @@ export function setAsOf(date: string): void {
 
 /** The as-of date shown on this screen ('' for none). */
 export function useAsOf(): string {
-  return useSyncExternalStore(subscribe, currentAsOf);
+  return useSyncExternalStore(subscribe, () => asOf);
 }

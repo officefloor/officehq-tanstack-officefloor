@@ -1,4 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { useAsOf } from '../../api/asOf';
+import { nowQueryClient } from '../../query/nowQueryClient';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from '../people/peopleQuery';
 import { useSheetDueTotal } from '../rates/due.slot';
@@ -29,10 +32,25 @@ function Accumulate({ sheetIds, sum }: { sheetIds: string[]; sum: Figures }) {
 }
 
 /** The sheet's figures added up with those of all its descendants: people, due-total and overdue-total. A sheet with no children shows its own. */
-function Consolidated({ sheetId }: { sheetId: string }) {
+function ConsolidatedFigures({ sheetId }: { sheetId: string }) {
   const descendants = useQuery(descendantsQuery(sheetId)).data ?? [];
   const sheetIds = [sheetId, ...descendants];
   return <Accumulate key={sheetIds.join('\n')} sheetIds={sheetIds} sum={{ people: 0, due: '0.00', overdue: '0.00' }} />;
+}
+
+/**
+ * The consolidated figures are always those of the sheets as they are now: while the screen is shown as of a date they
+ * are read by a query client of their own that ignores it (a fresh one for each date, so nothing read before is shown).
+ */
+function Consolidated({ sheetId }: { sheetId: string }) {
+  const asOf = useAsOf();
+  const now = useMemo(() => (asOf ? nowQueryClient() : null), [asOf, sheetId]);
+  if (!now) return <ConsolidatedFigures sheetId={sheetId} />;
+  return (
+    <QueryClientProvider client={now}>
+      <ConsolidatedFigures sheetId={sheetId} />
+    </QueryClientProvider>
+  );
 }
 
 export const contribution = SheetPanel.fill({ order: -9, Component: Consolidated });

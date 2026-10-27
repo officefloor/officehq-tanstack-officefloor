@@ -378,6 +378,25 @@ public class Claims {
     }
 
     /**
+     * The sheet's today on which each claim of the sheet was first logged OPEN, by claim id; a claim never logged OPEN
+     * is not in the map.
+     */
+    public Map<Long, LocalDate> openedOn(String sheetId) {
+        Map<Long, LocalDate> opened = new java.util.HashMap<>();
+        jdbc.query("SELECT claim_id, logged_on FROM claim_log WHERE sheet_id = ? AND status = ? ORDER BY id",
+                rs -> {
+                    opened.putIfAbsent(rs.getLong(1), rs.getObject(2, LocalDate.class));
+                }, sheetId, ClaimStatus.OPEN.name());
+        return opened;
+    }
+
+    /** The next number of {@code scope} on the sheet, as {@link #changeStatus} numbers an opened claim (null: sheet-wide). */
+    public String number(String sheetId, String scope) {
+        return scope == null ? Long.toString(nextNumber(sheetId))
+                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(sheetId, scope);
+    }
+
+    /**
      * The sheet's next claim number. The counter row is locked by the increment until the transaction
      * commits, so two claims opened at once get different numbers.
      */
