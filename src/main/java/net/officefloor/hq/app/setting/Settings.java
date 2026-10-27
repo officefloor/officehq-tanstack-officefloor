@@ -82,6 +82,21 @@ public class Settings {
         return values.isEmpty() ? "" : values.get(0);
     }
 
+    /** The sheet's children (the sheets naming it as their parent), their children and so on, each once, by id. Not dated, like the parent. */
+    public List<String> descendants(String sheetId) {
+        java.util.Set<String> seen = new java.util.TreeSet<>();
+        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM setting WHERE setting_key = ? AND setting_value = ?",
+                    String.class, PARENT, todo.pop())) {
+                if (!child.equals(sheetId) && seen.add(child)) {
+                    todo.add(child);
+                }
+            }
+        }
+        return List.copyOf(seen);
+    }
+
     public void set(String sheetId, String key, String value) {
         jdbc.update("MERGE INTO setting (sheet_id, setting_key, setting_value) KEY (sheet_id, setting_key) VALUES (?, ?, ?)",
                 sheetId, key, value);
