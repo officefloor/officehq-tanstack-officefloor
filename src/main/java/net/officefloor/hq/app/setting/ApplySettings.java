@@ -48,6 +48,9 @@ public class ApplySettings {
         if (settings.pot() != null) {
             store.set(settings.sheetId(), Settings.POT, settings.pot());
         }
+        if (settings.parent() != null) {
+            store.set(settings.sheetId(), Settings.PARENT, settings.parent());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

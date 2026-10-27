@@ -10,9 +10,10 @@ import type { DatedValue } from '../settings/dated';
 /**
  * `rate` is a percent with two decimals ("12.50"), in force from `from` (yyyy-mm-dd; null: from the
  * beginning of time) through `to` (yyyy-mm-dd; null: with no end). A grade may have several, one per
- * from-date; a grade with no rate has no entry.
+ * from-date; a grade with no rate has no entry. `level` is the sheet it is the rate of: 0 the sheet's own,
+ * 1 its parent's, 2 its parent's parent, up to 3.
  */
-export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null };
+export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null; level: number };
 
 /** Under the sheet's key, so re-loading the sheet re-reads its rates. */
 export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as const;
@@ -24,9 +25,20 @@ export const ratesQuery = (sheetId: string) => ({
 
 /**
  * The grade's rate on the date (yyyy-mm-dd): the one with the latest from-date on or before it, or undefined when none
- * applies or that one's to-date is before the date (an earlier rate does not take over again).
+ * applies or that one's to-date is before the date (an earlier rate does not take over again). When the sheet's own
+ * rates give none, its parent's are used, then its parent's parent's, and so on (by `level`).
  */
 export function rateFor(rates: Rate[], grade: Grade | undefined, date: string): string | undefined {
+  const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
+  for (const level of levels) {
+    const rate = rateOn(rates.filter((r) => (r.level ?? 0) === level), grade, date);
+    if (rate !== undefined) return rate;
+  }
+  return undefined;
+}
+
+/** The grade's rate on the date among rates of one sheet (see `rateFor`). */
+function rateOn(rates: Rate[], grade: Grade | undefined, date: string): string | undefined {
   // No from-date sorts as '', before every date.
   const applying = rates.filter((r) => r.grade === grade && (r.from ?? '') <= date);
   const latest = applying.reduce<Rate | undefined>((best, r) => (!best || (r.from ?? '') > (best.from ?? '') ? r : best), undefined);
@@ -232,7 +244,7 @@ export function settledAndOpen(person: Person | undefined, people: Person[], cla
  * figures minus the current ones (two decimals; n/a counts as 0.00). A claim a statement bound keeps its figure.
  */
 export function ratePreview(grade: Grade, pct: string, people: Person[], claims: Claim[], rates: Rate[], floor: DatedValue[], late: Late): { count: number; diff: string } {
-  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate: pct, from: null, to: null }];
+  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade || r.level !== 0), { grade, rate: pct, from: null, to: null, level: 0 }];
   const cents = (d: string) => (d === 'n/a' ? 0n : hundredths(d));
   let count = 0;
   let diff = 0n;

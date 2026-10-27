@@ -39,6 +39,8 @@ public class Settings {
     public static final String GRACE_DAYS = "grace-days";
     /** The amount a balanced pool's members cut by their shares (undated), with two decimals; blank is none. */
     public static final String POT = "pot";
+    /** The id of the sheet whose rates are used where this sheet has none (undated); blank is none. */
+    public static final String PARENT = "parent";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
@@ -70,6 +72,13 @@ public class Settings {
     public String get(String sheetId, String key) {
         List<String> values = jdbc.queryForList("SELECT setting_value FROM " + AsOf.table("setting") + " WHERE sheet_id = ? AND setting_key = ?",
                 String.class, sheetId, key);
+        return values.isEmpty() ? "" : values.get(0);
+    }
+
+    /** The parent sheet's id, "" when there is none: not dated, so the one named now, even while the store is read as of a date. */
+    public String parent(String sheetId) {
+        List<String> values = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = ?",
+                String.class, sheetId, PARENT);
         return values.isEmpty() ? "" : values.get(0);
     }
 

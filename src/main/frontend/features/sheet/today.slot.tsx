@@ -9,10 +9,12 @@ import { sheetKey, sheetQuery } from './sheetQuery';
 import { periodsKey } from '../periods/periodsQuery';
 import type { Sheet } from './sheetQuery';
 import { useSheetToday } from './useSheetToday';
+import { settingsQuery } from '../settings/settingsQuery';
 
 function SheetToday({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const archived = useQuery(sheetQuery(sheetId)).data?.archived;
+  const parent = useQuery(settingsQuery(sheetId)).data?.parent ?? '';
   const queryClient = useQueryClient();
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
@@ -62,6 +64,7 @@ function SheetToday({ sheetId }: { sheetId: string }) {
         Set today
       </button>{' '}
       Archived <strong data-testid="sheet-archived">{archived ? 'yes' : 'no'}</strong>{' '}
+      Parent <strong data-testid="sheet-parent">{parent}</strong>{' '}
       <button
         type="button"
         data-testid="sheet-archive"

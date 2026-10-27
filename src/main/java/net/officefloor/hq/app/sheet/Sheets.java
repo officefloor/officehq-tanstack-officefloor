@@ -34,6 +34,18 @@ public class Sheets {
         return find(id).archived();
     }
 
+    /** Keeps the id as a sheet that has been loaded. */
+    public void markLoaded(String id) {
+        jdbc.update("MERGE INTO sheet_loaded (id) KEY (id) VALUES (?)", id);
+    }
+
+    /** Whether the sheet has been loaded (or changed) before. */
+    public boolean exists(String id) {
+        Integer n = jdbc.queryForObject("SELECT (SELECT COUNT(*) FROM sheet_loaded WHERE id = ?) + (SELECT COUNT(*) FROM sheet WHERE id = ?)",
+                Integer.class, id, id);
+        return n != null && n > 0;
+    }
+
     public void save(Sheet sheet) {
         jdbc.update("MERGE INTO sheet (id, today_date, archived) KEY (id) VALUES (?, ?, ?)", sheet.id(), sheet.today(),
                 sheet.archived());

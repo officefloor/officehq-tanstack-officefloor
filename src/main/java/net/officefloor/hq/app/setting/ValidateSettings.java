@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,10 +35,12 @@ public class ValidateSettings {
     // The grace days are missing: left as they are, blank: off, otherwise a whole number of days, 0 or more (not dated).
     // The entry date is like the period numbering from-date: missing is left as it is, blank is off (the sheet's today), otherwise a yyyy-MM-dd date.
     // The pot is like the cap, but not dated: missing is left as it is, blank is none.
+    // The parent is a sheet id, not dated: missing is left as it is, blank is none. It may not be the sheet itself, nor a
+    // sheet that has this one as an ancestor, and it must be a sheet that has been loaded.
     // An action's permitted roles are missing: left as they are, blank: the standing rule, otherwise clerk or steward, separated by commas.
     // A from-date, given by setting key, is blank (the sheet's today) or a yyyy-MM-dd date, and only a dated setting has one.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
-            Out<SheetSettings> settingsOut) throws InvalidSettingException {
+            Sheets sheets, Settings store, Out<SheetSettings> settingsOut) throws InvalidSettingException {
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
         if (!floor.isEmpty() && !AMOUNT.matcher(floor).matches()) {
             throw new InvalidSettingException("The floor must be an amount of 0.00 or more, with up to two decimals.");
@@ -164,6 +167,22 @@ public class ValidateSettings {
             }
             pot = twoDecimals(pot);
         }
+        String parent = body == null || body.parent() == null ? null : body.parent().trim();
+        if (parent != null && !parent.isEmpty()) {
+            String sheet = sheetId.trim();
+            if (parent.equals(sheet)) {
+                throw new InvalidSettingException("A sheet cannot be its own parent.");
+            }
+            if (!sheets.exists(parent)) {
+                throw new InvalidSettingException("The parent must be a sheet that exists.");
+            }
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (String at = parent; !at.isEmpty() && seen.add(at); at = store.parent(at)) {
+                if (at.equals(sheet)) {
+                    throw new InvalidSettingException("The parent cannot be a sheet that has this sheet as an ancestor.");
+                }
+            }
+        }
         Map<String, LocalDate> from = new java.util.HashMap<>();
         if (body != null && body.from() != null) {
             for (Map.Entry<String, String> entry : body.from().entrySet()) {
@@ -210,7 +229,7 @@ public class ValidateSettings {
             }
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
-                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null;
+                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -218,7 +237,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent));
     }
 
     private static String twoDecimals(String amount) {
