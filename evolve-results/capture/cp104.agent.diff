@@ -1,0 +1,100 @@
+diff --git a/src/main/frontend/features/people/bulkGrade.slot.tsx b/src/main/frontend/features/people/bulkGrade.slot.tsx
+index 360973a8..3b7896ae 100644
+--- a/src/main/frontend/features/people/bulkGrade.slot.tsx
++++ b/src/main/frontend/features/people/bulkGrade.slot.tsx
+@@ -33,7 +33,7 @@ function BulkGrade({ user, sheetId }: { user: string; sheetId: string }) {
+         try {
+           await putJson<Person>(
+             `/api/sheets/${encodeURIComponent(sheetId)}/people/${p.id}`,
+-            { name: p.name, grade, gradeFrom: from.trim(), terms: p.terms == null ? '' : String(p.terms) },
++            { name: p.name, grade, gradeFrom: from.trim(), terms: p.terms == null ? '' : String(p.terms), contact: p.contact ?? '' },
+             user,
+           );
+           changed++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index f678da9d..ff619bf6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -1,9 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -14,7 +18,7 @@ public class ApplyReassign {
+     // retired by its date (its own person too: it then lists first under them again, as when a bulk move takes it there). A correction stays with the person whose settled claim it corrects. Stored only if the
+     // claim still has the person and status it was loaded with.
+     public void apply(@RequestBody(required = false) ReassignRequest body, @Val Claim claim, Claims claims,
+-            People people, Settings settings, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
++            People people, Settings settings, Sheets sheets, Periods periods, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+             Out<Person> toOut) throws ClaimReassignRefusedException, ClaimAfterRetirementException {
+         String user = Audit.user(connection).trim();
+         if (!settings.permits(claim.sheetId(), "reassign", user)) {
+@@ -31,7 +35,14 @@ public class ApplyReassign {
+             throw new ClaimReassignRefusedException("Choose a person on this sheet to move the claim to.");
+         }
+         RefuseRetiredInput.check(to, claim.date());
+-        Claim moved = claims.reassign(claim, to.id());
++        // A numbered claim takes the next number of the sequence it would be opened in (as ApplyClaimStatus).
++        String scope = null;
++        LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
++        if (numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
++            Period period = periods.on(claim.sheetId(), claim.dueBy());
++            scope = period == null ? "" : period.name();
++        }
++        Claim moved = claims.reassign(claim, to.id(), scope);
+         if (moved == null) {
+             throw new ClaimReassignRefusedException("The claim has changed since it was loaded.");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 9f59c5fb..025ca403 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -146,16 +146,24 @@ public class Claims {
+ 
+     /**
+      * Moves the claim to another person if it still has its loaded person and status, and returns it as moved; null
+-     * when it has since changed. It keeps its number and date, is unbound from any statement (live again until its
+-     * new person's next statement) and lists as the newest claim on the sheet.
++     * when it has since changed. It keeps its date, is renumbered next in {@code scope} (as {@link #changeStatus};
++     * a draft, having no number, gets none; its old number is never reused), is unbound from any statement (live
++     * again until its new person's next statement) and lists as the newest claim on the sheet.
+      */
+-    public Claim reassign(Claim claim, long personId) {
++    public Claim reassign(Claim claim, long personId, String scope) {
+         if (jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = " + NEXT_LISTED
+                 + " WHERE id = ? AND person_id = ? AND status = ?", personId, claim.sheetId(), claim.id(),
+                 claim.personId(), claim.status().name()) != 1) {
+             return null;
+         }
+-        return claim.withPerson(personId);
++        Claim moved = claim.withPerson(personId);
++        if (claim.number() == null) {
++            return moved;
++        }
++        String number = scope == null ? Long.toString(nextNumber(claim.sheetId()))
++                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
++        jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
++        return moved.withStatus(moved.status(), number, moved.settledDue(), moved.openedBy());
+     }
+ 
+     /**
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index f058a5bb..092533f9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -1,5 +1,5 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/person — a steward moves a DRAFT, OPEN or PENDING claim to another person
+-# on the sheet (body: {"personId": n}). It keeps its number and date, loses any figure a statement bound it to, and
++# on the sheet (body: {"personId": n}). It keeps its date, takes the next number of its sequence (a draft none), loses any figure a statement bound it to, and
+ # lists as its new person's newest claim. 422 for anything refused (not a steward, a settled or voided claim, a
+ # correction, no such person, a date after their retirement, or a claim dated inside a closed period);
+ # 404 for a claim not on the sheet.
