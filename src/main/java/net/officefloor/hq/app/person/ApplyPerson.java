@@ -36,7 +36,7 @@ public class ApplyPerson {
             dated.add(new DatedGrade(from, request.grade()));
             dated.sort(Comparator.comparing(DatedGrade::from));
             edited = new Person(edited.id(), edited.sheetId(), edited.name(), edited.grade(), edited.version(),
-                    edited.retiredFrom(), edited.holds(), List.copyOf(dated), edited.terms(), edited.contact());
+                    edited.retiredFrom(), edited.holds(), List.copyOf(dated), edited.terms(), edited.contact(), edited.aliases());
         }
         responseOut.set(PersonResponse.from(edited, today));
     }

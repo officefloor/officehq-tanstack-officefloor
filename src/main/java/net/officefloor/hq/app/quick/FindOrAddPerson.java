@@ -13,7 +13,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class FindOrAddPerson {
-    // The person on the sheet with the name (ignoring case), or a new one of grade A, recorded as an add of
+    // The person on the sheet with the name or alias (ignoring case), or a new one of grade A, recorded as an add of
     // a person would be. Publishes the figures after this step, for the claim's own rollup.
     public void find(@PathVariable("sheetId") String sheetId, @Val QuickName name, @Val Figures before,
             People people, Rollup rollup, ServerHttpConnection connection, Audit audit, Out<Person> personOut,

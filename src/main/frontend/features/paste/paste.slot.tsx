@@ -10,7 +10,7 @@ import { useUser } from '../session/useUser';
 
 /**
  * The paste box: lines of name,amount,date,note each add a DRAFT claim, in order, for the person of
- * that name on the sheet (ignoring case). The server checks every line by the claim form's rules first
+ * that name or alias on the sheet (ignoring case). The server checks every line by the claim form's rules first
  * and adds nothing when any is refused. Shows how many were added.
  */
 function PasteClaims({ sheetId }: { sheetId: string }) {

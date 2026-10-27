@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePaste {
-    // Every line is checked before any is added: name,amount,date,note — the name a person on the sheet (ignoring
+    // Every line is checked before any is added: name,amount,date,note — the name a person's name or alias on the sheet (ignoring
     // case and surrounding spaces), the rest by the claim form's rules (a blank date is the entry date, else the sheet's today, the note
     // may hold commas or be absent). A note ending in " #<reference>" gives the claim that reference (that part is not
     // the note), refused when the sheet or an earlier line already uses it (ignoring case). Blank lines are skipped; a
