@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.batch.SettleBatches;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
@@ -25,7 +26,7 @@ public class ApplyClaimStatus {
     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
-            Periods periods, Rollup rollup, VoidReasons voidReasons, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+            Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
             Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException,
             ClaimVoidReasonNeededException {
         ClaimStatus next;
@@ -154,6 +155,10 @@ public class ApplyClaimStatus {
         Claim changed = claims.changeStatus(claim, next, due, user, scope);
         if (changed == null) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
+        }
+        // Settled one at a time, the claim leaves any batch that settled it before (a bulk settle records its batch after).
+        if (!decision && (next == ClaimStatus.SETTLED || next == ClaimStatus.PENDING)) {
+            batches.remove(changed.id());
         }
         if (next == ClaimStatus.VOID && !voidReason.isEmpty()) {
             voidReasons.voided(changed.id(), voidReason);

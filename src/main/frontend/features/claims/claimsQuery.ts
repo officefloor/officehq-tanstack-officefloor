@@ -23,7 +23,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `remindedOn` (yyyy-mm-dd) is the last sheet's today a reminder was written for it (null when never reminded);
  * `ref` is its external reference, unique on the sheet without regard to case (null when it has none);
  * `tags` are its tags, trimmed, lower-cased, without repeats and sorted (empty for none);
- * `comments` are its comments, oldest first, each "<user> on <date>: <text>" with the sheet's today when written.
+ * `comments` are its comments, oldest first, each "<user> on <date>: <text>" with the sheet's today when written;
+ * `batch` is the number of the settle batch (a bulk settle) that settled it (null when none, or settled one at a time).
  */
 export type Claim = {
   id: number;
@@ -49,6 +50,7 @@ export type Claim = {
   ref: string | null;
   tags: string[];
   comments: string[];
+  batch: number | null;
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */
@@ -93,6 +95,15 @@ export function isActive(personId: number, claims: Claim[], people: Person[], to
 
 /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;
+
+/** Under the claims' key, so whatever re-reads the claims re-reads the last settle batch too. */
+export const settleBatchKey = (sheetId: string) => [...claimsKey(sheetId), 'settle-batch'] as const;
+
+/** The number of the sheet's last settle batch (`last` null when it has had none). */
+export const settleBatchQuery = (sheetId: string) => ({
+  queryKey: settleBatchKey(sheetId),
+  queryFn: () => getJson<{ last: number | null }>(`/api/sheets/${encodeURIComponent(sheetId)}/settle-batches`),
+});
 
 /** Every claim on the sheet, newest first. */
 export const claimsQuery = (sheetId: string) => ({

@@ -326,8 +326,13 @@ public class Settings {
 
     /** The steward who delegated the steward role to the user for the sheet's today; null when none did. */
     public String delegator(String sheetId, String user) {
+        return delegator(sheetId, user, sheets.today(sheetId));
+    }
+
+    /** The steward who delegated the steward role to the user for {@code on}; null when none did. */
+    public String delegator(String sheetId, String user, java.time.LocalDate on) {
         String name = user == null ? "" : user.trim();
-        return name.isEmpty() ? null : delegations.delegator(sheetId, name, sheets.today(sheetId));
+        return name.isEmpty() ? null : delegations.delegator(sheetId, name, on);
     }
 
     /** The role the sheet gave the user: clerk unless it gave them another (a delegation aside). */

@@ -41,8 +41,16 @@ public class Audit {
      * Append one audit record. Tests assert the exact line(s) in the file. A change made by a user the steward role is
      * delegated to (for the sheet's today) ends with for=<the steward who delegated>, unless the line only reports figures.
      */
-    public synchronized void record(String entry) {
-        String delegator = delegator(entry);
+    public void record(String entry) {
+        record(entry, null);
+    }
+
+    /**
+     * Append one audit record about the sheet as it stood on {@code on} (null: the sheet's today): a line by a user the
+     * steward role was delegated to for that date ends with for=<the steward who delegated>, as {@link #record(String)}.
+     */
+    public synchronized void record(String entry, java.time.LocalDate on) {
+        String delegator = delegator(entry, on);
         if (delegator != null) {
             entry = entry + " for=" + delegator;
         }
@@ -59,12 +67,14 @@ public class Audit {
     }
 
     /** The steward who delegated to the user the line is by, on the line's sheet; null when none did or the line only reports figures. */
-    private String delegator(String entry) {
+    private String delegator(String entry, java.time.LocalDate on) {
         String[] parts = entry.split(" ", 4);
         if (parts.length < 3 || FIGURES.contains(parts[0]) || !parts[1].startsWith("sheet=") || !parts[2].startsWith("by=")) {
             return null;
         }
-        return settings.getObject().delegator(parts[1].substring("sheet=".length()), parts[2].substring("by=".length()));
+        String sheetId = parts[1].substring("sheet=".length());
+        String user = parts[2].substring("by=".length());
+        return on == null ? settings.getObject().delegator(sheetId, user) : settings.getObject().delegator(sheetId, user, on);
     }
 
     /** The signed-in user a write names in its X-User header ("" when it names none). */
