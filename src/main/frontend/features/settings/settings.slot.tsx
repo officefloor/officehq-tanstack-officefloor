@@ -11,6 +11,7 @@ import { useSheetToday } from '../sheet/useSheetToday';
 import type { PermAction, Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
 import { GRADES } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
+import { poolsKey } from '../pools/poolsQuery';
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
@@ -49,8 +50,9 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [noteThreshold, setNoteThreshold] = useState('');
   const [grace, setGrace] = useState('');
   const [entryDate, setEntryDate] = useState('');
+  const [pot, setPot] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | 'entryDate' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | 'entryDate' | 'pot' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -65,6 +67,8 @@ function Settings({ sheetId }: { sheetId: string }) {
       putJson<SheetSettings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
+      // A pool's cuts are figured from the pot.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setLimit('');
       setFloor('');
       setTerms('');
@@ -79,6 +83,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setNoteThreshold('');
       setGrace('');
       setEntryDate('');
+      setPot('');
       setPerms({});
       setFrom({});
     },
@@ -171,6 +176,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The entry date must be a date (yyyy-mm-dd).');
       return;
     }
+    const pt2 = pot.trim();
+    if (pt2 !== '' && !AMOUNT.test(pt2)) {
+      setError('The pot must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const pm: Partial<Record<PermAction, string>> = {};
     for (const action of PERM_ACTIONS) {
       const roles = (perms[action] ?? '').trim();
@@ -200,7 +210,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       if (gp[grade] === undefined && (froms[`proof-threshold-${grade}`] ?? '') !== '') gp[grade] = '';
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && Object.keys(pm).length === 0;
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -209,6 +219,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (nt !== '' || (none && blank === 'noteThreshold')) body.noteThreshold = nt;
     if (gd !== '' || (none && blank === 'graceDays')) body.graceDays = gd;
     if (ed !== '' || (none && blank === 'entryDate')) body.entryDate = ed;
+    if (pt2 !== '' || (none && blank === 'pot')) body.pot = pt2;
     for (const grade of GRADES) {
       if (none && blank === `grace-${grade}`) gg[grade] = '';
     }
@@ -542,6 +553,19 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Pot{' '}
+          <input
+            data-testid="setting-pot"
+            placeholder="none"
+            value={pot}
+            onFocus={() => setBlank('pot')}
+            onChange={(e) => {
+              setPot(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         {PERM_ACTIONS.map((action) => (
           <span key={action}>
             <label>
@@ -615,6 +639,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       ))}
       <p>
         Entry date: <span data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</span>
+      </p>
+      <p>
+        Pot: <span data-testid="setting-pot-current">{settings.data?.pot ?? ''}</span>
       </p>
       {PERM_ACTIONS.map((action) => (
         <p key={action}>

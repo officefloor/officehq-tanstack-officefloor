@@ -50,6 +50,7 @@ function PoolRow({ sheetId, pool, people }: { sheetId: string; pool: Pool; peopl
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
             <span data-testid="pool-member-name">{m.name}</span> <span data-testid="pool-share">{m.share}</span>
+            {' '}cut <span data-testid="pool-cut">{m.cut}</span>
             {m.retired && ' (retired)'}
           </li>
         ))}

@@ -45,6 +45,9 @@ public class ApplySettings {
             store.set(settings.sheetId(), Settings.ENTRY_DATE, settings.entryDate());
         }
         settings.perms().forEach((action, roles) -> store.set(settings.sheetId(), Settings.permKey(action), roles));
+        if (settings.pot() != null) {
+            store.set(settings.sheetId(), Settings.POT, settings.pot());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

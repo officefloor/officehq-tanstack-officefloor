@@ -37,6 +37,8 @@ public class Settings {
     public static final String NOTE_THRESHOLD = "note-threshold";
     /** Days after a period's to-date it stays open once the sheet's today passes it (undated); blank is off. */
     public static final String GRACE_DAYS = "grace-days";
+    /** The amount a balanced pool's members cut by their shares (undated), with two decimals; blank is none. */
+    public static final String POT = "pot";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
@@ -230,6 +232,12 @@ public class Settings {
     public Integer graceDays(String sheetId) {
         String value = get(sheetId, GRACE_DAYS);
         return value.isEmpty() ? null : Integer.valueOf(value);
+    }
+
+    /** The pot, with two decimals; null when there is none. */
+    public BigDecimal pot(String sheetId) {
+        String value = get(sheetId, POT);
+        return value.isEmpty() ? null : new BigDecimal(value).setScale(2);
     }
 
     /**

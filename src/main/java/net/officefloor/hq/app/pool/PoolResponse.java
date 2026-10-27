@@ -8,7 +8,10 @@ import java.util.List;
  */
 public record PoolResponse(String name, List<Member> members, String totalShare, boolean balanced) {
 
-    /** A member: the person's id and name, their share with two decimals, and whether they are retired. */
-    public record Member(long personId, String name, String share, boolean retired) {
+    /**
+     * A member: the person's id and name, their share with two decimals, whether they are retired, and their cut of the
+     * pot with two decimals ("" when the pool is not balanced or there is no pot).
+     */
+    public record Member(long personId, String name, String share, boolean retired, String cut) {
     }
 }

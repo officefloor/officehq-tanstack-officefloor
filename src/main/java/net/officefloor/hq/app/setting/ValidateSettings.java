@@ -33,6 +33,7 @@ public class ValidateSettings {
     // The note threshold is like the cap too.
     // The grace days are missing: left as they are, blank: off, otherwise a whole number of days, 0 or more (not dated).
     // The entry date is like the period numbering from-date: missing is left as it is, blank is off (the sheet's today), otherwise a yyyy-MM-dd date.
+    // The pot is like the cap, but not dated: missing is left as it is, blank is none.
     // An action's permitted roles are missing: left as they are, blank: the standing rule, otherwise clerk or steward, separated by commas.
     // A from-date, given by setting key, is blank (the sheet's today) or a yyyy-MM-dd date, and only a dated setting has one.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
@@ -156,6 +157,13 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The entry date must be a date (yyyy-mm-dd).");
             }
         }
+        String pot = body == null || body.pot() == null ? null : body.pot().trim();
+        if (pot != null && !pot.isEmpty()) {
+            if (!AMOUNT.matcher(pot).matches()) {
+                throw new InvalidSettingException("The pot must be an amount of 0.00 or more, with up to two decimals.");
+            }
+            pot = twoDecimals(pot);
+        }
         Map<String, LocalDate> from = new java.util.HashMap<>();
         if (body != null && body.from() != null) {
             for (Map.Entry<String, String> entry : body.from().entrySet()) {
@@ -202,7 +210,7 @@ public class ValidateSettings {
             }
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
-                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty();
+                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -210,7 +218,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot));
     }
 
     private static String twoDecimals(String amount) {

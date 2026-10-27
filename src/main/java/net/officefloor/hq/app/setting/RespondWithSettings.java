@@ -18,7 +18,8 @@ public class RespondWithSettings {
                 settings.latePct(sheet, today).setScale(2).toPlainString(), settings.get(sheet, Settings.POLICY_DATE),
                 settings.get(sheet, Settings.PERIOD_NUMBERING_FROM), gradeTerms(settings, sheet, today),
                 settings.current(sheet, Settings.CAP), dated(settings, sheet), perms(settings, sheet),
-                settings.get(sheet, Settings.GRACE_DAYS), settings.get(sheet, Settings.ENTRY_DATE)));
+                settings.get(sheet, Settings.GRACE_DAYS), settings.get(sheet, Settings.ENTRY_DATE),
+                settings.get(sheet, Settings.POT)));
     }
 
     private static Map<String, String> gradeTerms(Settings settings, String sheet, LocalDate today) {
