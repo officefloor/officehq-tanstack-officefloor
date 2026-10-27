@@ -1,0 +1,137 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 9d14b7c4..82e39f4f 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -8,7 +8,10 @@ import { useUser } from '../session/useUser';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { GRADES } from '../people/peopleQuery';
+ import type { Grade } from '../people/peopleQuery';
+-import { rateFor, ratesKey, ratesQuery } from './ratesQuery';
++import { claimsQuery } from '../claims/claimsQuery';
++import { peopleQuery } from '../people/peopleQuery';
++import { useFloor, useLate } from '../settings/settingsQuery';
++import { rateFor, ratePreview, ratesKey, ratesQuery } from './ratesQuery';
+ import type { Rate } from './ratesQuery';
+ 
+ const PERCENT = /^\d{1,7}(\.\d{1,2})?$/;
+@@ -132,6 +135,7 @@ function Rates({ sheetId }: { sheetId: string }) {
+         </button>
+         {error && <p data-testid="rate-form-error">{error}</p>}
+       </form>
++      <RatePreview sheetId={sheetId} />
+       {rates.isError && <p data-testid="rates-load-error">Could not load the rates.</p>}
+       <table data-testid="rates-current">
+         <tbody>
+@@ -167,6 +171,81 @@ function Rates({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++/** A preview of a candidate rate for a grade on every date: how many OPEN and PENDING claims of people on the grade
++ *  would show a different figure, and by how much in all. Nothing is saved. */
++function RatePreview({ sheetId }: { sheetId: string }) {
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const rates = useQuery(ratesQuery(sheetId)).data ?? [];
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const [grade, setGrade] = useState<Grade>('A');
++  const [pct, setPct] = useState('');
++  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
++  const [error, setError] = useState('');
++
++  const changed = () => {
++    setResult(null);
++    setError('');
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    changed();
++    const p = pct.trim();
++    if (!PERCENT.test(p)) {
++      setError('The rate must be a percent of 0.00 or more, with up to two decimals.');
++      return;
++    }
++    setResult(ratePreview(grade, p, people, claims, rates, floor, late));
++  };
++
++  return (
++    <form data-testid="rate-preview-form" onSubmit={submit}>
++      <label>
++        Preview grade{' '}
++        <select
++          data-testid="rate-preview-grade"
++          value={grade}
++          onChange={(e) => {
++            setGrade(e.target.value as Grade);
++            changed();
++          }}
++        >
++          {GRADES.map((g) => (
++            <option key={g} value={g}>
++              {g}
++            </option>
++          ))}
++        </select>
++      </label>{' '}
++      <label>
++        Rate %{' '}
++        <input
++          data-testid="rate-preview-pct"
++          placeholder="0.00"
++          value={pct}
++          onChange={(e) => {
++            setPct(e.target.value);
++            changed();
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="rate-preview">
++        Preview
++      </button>
++      {result && (
++        <span>
++          {' '}
++          Claims changed <strong data-testid="rate-preview-count">{result.count}</strong>
++          {' '}· Difference <strong data-testid="rate-preview-diff">{result.diff}</strong>
++        </span>
++      )}
++      {error && <p data-testid="rate-preview-error">{error}</p>}
++    </form>
++  );
++}
++
+ // Keyed by sheet, so a typed rate or an error never carries over to another sheet.
+ export const contribution = SheetPanel.fill({
+   order: 5,
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 82e1ea44..4f9c9f42 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -215,3 +215,26 @@ export function settledAndOpen(person: Person | undefined, people: Person[], cla
+   }
+   return [sumDue(settled), sumDue(open)];
+ }
++
++/**
++ * What setting the grade's rate to `pct` on every date would change: of the OPEN and PENDING claims of people on the
++ * grade (the grade they had on the claim's date), how many would show a different figure, and the sum of the new
++ * figures minus the current ones (two decimals; n/a counts as 0.00). A claim a statement bound keeps its figure.
++ */
++export function ratePreview(grade: Grade, pct: string, people: Person[], claims: Claim[], rates: Rate[], floor: DatedValue[], late: Late): { count: number; diff: string } {
++  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate: pct, from: null, to: null }];
++  const cents = (d: string) => (d === 'n/a' ? 0n : hundredths(d));
++  let count = 0;
++  let diff = 0n;
++  for (const c of claims) {
++    if (!isOpen(c)) continue;
++    const person = people.find((p) => p.id === c.personId);
++    if (!person || gradeOn(person, c.date) !== grade) continue;
++    const now = figure(c, rates, person, floor, late);
++    const then = figure(c, candidate, person, floor, late);
++    if (now === then) continue;
++    count++;
++    diff += cents(then) - cents(now);
++  }
++  return { count, diff: show(diff) };
++}
