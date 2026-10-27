@@ -1,0 +1,163 @@
+diff --git a/src/main/frontend/features/auditView/auditView.slot.tsx b/src/main/frontend/features/auditView/auditView.slot.tsx
+new file mode 100644
+index 00000000..f4e130d9
+--- /dev/null
++++ b/src/main/frontend/features/auditView/auditView.slot.tsx
+@@ -0,0 +1,65 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++
++/** The audit viewer: the sheet's audit lines exactly as the audit file holds them, newest first. With a name in the
++ *  filter, only the lines about that person (name=<it> or person=<it>, case and surrounding spaces ignored). */
++function AuditView({ sheetId }: { sheetId: string }) {
++  const [filter, setFilter] = useState('');
++  const [lines, setLines] = useState<string[]>([]);
++  const [error, setError] = useState('');
++
++  const show = useMutation({
++    mutationFn: (name: string) =>
++      getJson<string[]>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/audit?name=${encodeURIComponent(name)}`,
++      ),
++    onSuccess: (found) => setLines(found),
++    onError: (e: Error) => setError(e.message || 'The audit lines could not be read.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    setLines([]);
++    show.mutate(filter.trim());
++  };
++
++  return (
++    <section data-testid="audit-view">
++      <h3>Audit</h3>
++      <form onSubmit={submit}>
++        <label>
++          Person{' '}
++          <input
++            data-testid="audit-filter"
++            value={filter}
++            onChange={(e) => {
++              setFilter(e.target.value);
++              setError('');
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="audit-show" disabled={show.isPending}>
++          Show
++        </button>
++        {error && <p data-testid="audit-error">{error}</p>}
++      </form>
++      <ol data-testid="audit-lines">
++        {lines.map((line, i) => (
++          <li key={i} data-testid="audit-line">
++            {line}
++          </li>
++        ))}
++      </ol>
++    </section>
++  );
++}
++
++// Keyed by sheet, so a filter or the lines shown never carry over to another sheet.
++export const contribution = SheetPanel.fill({
++  order: 40,
++  Component: ({ sheetId }) => <AuditView key={`audit-view-${sheetId}`} sheetId={sheetId} />,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index c61e8e4a..f96c52e9 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -8,7 +8,13 @@ import java.nio.file.Path;
+ import java.nio.file.StandardOpenOption;
+ import net.officefloor.server.http.HttpHeader;
+ import net.officefloor.server.http.ServerHttpConnection;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Locale;
+ import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
+ import net.officefloor.hq.app.setting.Settings;
+ import org.springframework.beans.factory.ObjectProvider;
+ import org.springframework.beans.factory.annotation.Value;
+@@ -93,6 +99,42 @@ public class Audit {
+         return line.toString();
+     }
+ 
++    /**
++     * The sheet's lines exactly as the file holds them, newest first. With a name (not blank), only the lines about that
++     * person: those carrying name=<the name> or person=<the name>, compared as names are (case and surrounding spaces ignored).
++     */
++    public synchronized List<String> lines(String sheetId, String name) {
++        String wanted = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
++        List<String> all;
++        try {
++            all = Files.exists(file) ? Files.readAllLines(file, StandardCharsets.UTF_8) : List.of();
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++        List<String> lines = new ArrayList<>();
++        for (String line : all) {
++            String[] parts = line.split(" ", 3);
++            if (parts.length >= 2 && parts[1].equals("sheet=" + sheetId)
++                    && (wanted.isEmpty() || names(line).contains(wanted))) {
++                lines.add(line);
++            }
++        }
++        Collections.reverse(lines);
++        return lines;
++    }
++
++    /** The values of a line's name= and person= fields, trimmed and lower-cased; a value runs up to the next field. */
++    private static List<String> names(String line) {
++        List<String> names = new ArrayList<>();
++        Matcher m = NAME_FIELD.matcher(line);
++        while (m.find()) {
++            names.add(m.group(1).trim().toLowerCase(Locale.ROOT));
++        }
++        return names;
++    }
++
++    private static final Pattern NAME_FIELD = Pattern.compile(" (?:name|person)=(.*?)(?= [A-Za-z][\\w-]*=|$)");
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
+new file mode 100644
+index 00000000..ad0ea311
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.auditview;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class RespondWithAuditLines {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "name", required = false) String name, Audit audit,
++            ObjectResponse<List<String>> response) {
++        response.send(audit.lines(sheetId.trim(), name));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+new file mode 100644
+index 00000000..b382ba68
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/audit?name= — the sheet's audit lines exactly as the audit file holds them, newest first;
++# with a name, only the lines carrying name=<it> or person=<it> (case and surrounding spaces ignored).
++respond:
++  class: net.officefloor.hq.app.auditview.RespondWithAuditLines
