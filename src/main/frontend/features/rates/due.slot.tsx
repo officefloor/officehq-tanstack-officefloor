@@ -5,10 +5,10 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
-import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
+import { patronSharesOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useCap, useFloor, useLate } from '../settings/settingsQuery';
-import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, settledAndOpen, sumDue, trimmedSum } from './ratesQuery';
+import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, settledAndOpen, sumDue, sumOfShares, trimmedSum } from './ratesQuery';
 
 function useSheetData(sheetId: string) {
   return {
@@ -52,12 +52,17 @@ function PersonAged({ sheetId, personId }: { sheetId: string; personId: number }
   );
 }
 
-/** A person's backing: their patrons' recent settled figures (see `recentSettled`) added up; 0.00 with no patrons. */
+/**
+ * A person's backing: each patron's recent settled figure (see `recentSettled`) times their share (see `patronSharesOf`)
+ * percent, added up and rounded half to even; 0.00 with no patrons.
+ */
 function PersonBacking({ sheetId, personId }: { sheetId: string; personId: number }) {
   const { people, claims, today } = useSheetData(sheetId);
-  const ids = patronIdsOf(useQuery(patronsQuery(sheetId)).data ?? [], personId);
-  const sums = people.filter((p) => ids.includes(p.id)).map((p) => recentSettled(p.id, claims, today));
-  return <td data-testid="person-backing">{sumDue(sums)}</td>;
+  const shares = patronSharesOf(useQuery(patronsQuery(sheetId)).data ?? [], personId);
+  const parts = shares
+    .filter((s) => people.some((p) => p.id === s.patronId))
+    .map((s): [string, string] => [recentSettled(s.patronId, claims, today), s.share]);
+  return <td data-testid="person-backing">{sumOfShares(parts)}</td>;
 }
 
 /** A person's settled-total and open-total: their counting SETTLED, and OPEN and PENDING, claims' figures added up (not capped). */

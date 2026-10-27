@@ -5,11 +5,11 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { peopleQuery } from '../people/peopleQuery';
 import { useUser } from '../session/useUser';
-import { patronIdsOf, patronsKey, patronsQuery } from './patronsQuery';
+import { patronSharesOf, patronsKey, patronsQuery } from './patronsQuery';
 import type { PatronLink } from './patronsQuery';
 
 /**
- * The person's patrons (names, sorted, comma separated) and the control that names one more: any other
+ * The person's patrons (each as name and share, sorted by name, comma separated) and the control that names one more: any other
  * person on the sheet, each at most once.
  */
 function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: number }) {
@@ -20,11 +20,13 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
   const once = useSubmitOnce();
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const links = useQuery(patronsQuery(sheetId)).data ?? [];
-  const ids = patronIdsOf(links, personId);
-  const names = people
-    .filter((p) => ids.includes(p.id))
-    .map((p) => p.name)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const names = patronSharesOf(links, personId)
+    .flatMap((s) => {
+      const patron = people.find((p) => p.id === s.patronId);
+      return patron ? [{ name: patron.name, share: s.share }] : [];
+    })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((s) => `${s.name} ${s.share}`);
   const add = useMutation({
     mutationFn: (id: number) =>
       postJson<PatronLink>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/patrons`, { patronId: id }, user),

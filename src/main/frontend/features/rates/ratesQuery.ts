@@ -62,6 +62,16 @@ export function due(amount: string, rate: string | undefined, halfUp = false): s
   return rate === undefined ? 'n/a' : show(dueCents(amount, rate, halfUp));
 }
 
+/** Each figure times its percent added up exactly, then rounded half to even to two decimals (n/a figures skipped). */
+export function sumOfShares(parts: [figure: string, pct: string][]): string {
+  const product = parts.filter(([f]) => f !== 'n/a').reduce((total, [f, pct]) => total + hundredths(f) * hundredths(pct), 0n);
+  const abs = product < 0n ? -product : product;
+  const cents = abs / 10000n;
+  const rest = abs % 10000n;
+  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  return show(product < 0n ? -rounded : rounded);
+}
+
 /** Due figures added up, skipping n/a. */
 export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));

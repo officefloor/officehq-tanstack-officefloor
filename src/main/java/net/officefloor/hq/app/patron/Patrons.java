@@ -15,10 +15,10 @@ public class Patrons {
         this.jdbc = jdbc;
     }
 
-    /** Every person-to-patron link on the sheet. */
+    /** Every person-to-patron link on the sheet, each person's in the order they named them. */
     public List<PatronResponse> list(String sheetId) {
         return jdbc.query("SELECT pp.person_id, pp.patron_id FROM " + AsOf.table("person_patron", "pp")
-                + " JOIN " + AsOf.table("person", "p") + " ON p.id = pp.person_id WHERE p.sheet_id = ? ORDER BY pp.person_id, pp.patron_id",
+                + " JOIN " + AsOf.table("person", "p") + " ON p.id = pp.person_id WHERE p.sheet_id = ? ORDER BY pp.person_id, pp.named, pp.patron_id",
                 (rs, n) -> new PatronResponse(rs.getLong("person_id"), rs.getLong("patron_id")), sheetId);
     }
 

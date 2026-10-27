@@ -58,7 +58,7 @@ public class People {
                             new Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
                 }, sheetId);
         Map<Long, List<String>> aliases = new HashMap<>();
-        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ?", rs -> {
+        jdbc.query("SELECT person_id, alias FROM " + AsOf.table("person_alias") + " WHERE sheet_id = ?", rs -> {
             aliases.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getString("alias"));
         }, sheetId);
         aliases.values().forEach(a -> a.sort(BY_NAME));
@@ -163,7 +163,7 @@ public class People {
         }
         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ?", String.class, from);
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ?", into, from);
-        for (Long patron : jdbc.queryForList("SELECT patron_id FROM person_patron WHERE person_id = ?", Long.class, from)) {
+        for (Long patron : jdbc.queryForList("SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY named", Long.class, from)) {
             linkPatron(into, patron);
         }
         for (Long person : jdbc.queryForList("SELECT person_id FROM person_patron WHERE patron_id = ?", Long.class, from)) {
