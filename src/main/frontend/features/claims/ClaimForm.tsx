@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
+import { templatesQuery } from '../templates/templatesQuery';
 import { claimsKey } from './claimsQuery';
 import type { Claim } from './claimsQuery';
 
@@ -18,6 +19,8 @@ type Body = { amount: string; date: string; note: string; corrects: string; ref:
  * correction: it names the number of the settled claim of the same person it corrects (the server checks that it is one).
  * A reference (trimmed; blank for none) is refused by the server when another claim of the sheet already carries it.
  * Tags are typed comma separated; the server keeps each trimmed and lower-cased, without repeats.
+ * A template chosen in the form's template select adds a DRAFT claim with the template's amount and note as they are now,
+ * with no date, by every rule of the form; its refusal shows as the form's.
  * While an editor is being opened or closed (`held`) the form takes no input.
  */
 export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
@@ -34,7 +37,9 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
   const [corrects, setCorrects] = useState('');
   const [ref, setRef] = useState('');
   const [tags, setTags] = useState('');
+  const [template, setTemplate] = useState('');
   const [error, setError] = useState('');
+  const templates = useQuery(templatesQuery(sheetId));
 
   // Opening an editor (or closing it) refills the form. A blank date is the sheet's today.
   useEffect(() => {
@@ -69,6 +74,22 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
     },
     onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be saved.'),
   });
+
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/template-claims`, { template: name }, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be added from the template.'),
+  });
+
+  const addFromTemplate = () => {
+    setError('');
+    if (template === '') {
+      setError('Choose a template.');
+      return;
+    }
+    once(() => fromTemplate.mutateAsync(template));
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -150,6 +171,17 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
       />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={held || save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
+      </button>
+      <select data-testid="claim-template-select" disabled={held} value={template} onChange={(e) => edit(setTemplate)(e.target.value)}>
+        <option value="">Template…</option>
+        {(templates.data ?? []).map((t) => (
+          <option key={t.name} value={t.name}>
+            {t.name}
+          </option>
+        ))}
+      </select>{' '}
+      <button type="button" data-testid="claim-template-add" disabled={held || fromTemplate.isPending} onClick={addFromTemplate}>
+        Add from template
       </button>
       {error && <p data-testid="claim-form-error">{error}</p>}
     </form>
