@@ -10,6 +10,9 @@ public class AddPerson {
         if (people.nameTaken(sheetId.trim(), request.name(), -1)) {
             throw new InvalidPersonException("The name is already in use.");
         }
+        if (request.contact() != null && people.contactTaken(sheetId.trim(), request.contact(), -1)) {
+            throw new InvalidPersonException("The contact is already in use.");
+        }
         personOut.set(people.add(sheetId.trim(), request));
     }
 }

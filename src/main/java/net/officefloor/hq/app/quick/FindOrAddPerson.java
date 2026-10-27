@@ -22,7 +22,7 @@ public class FindOrAddPerson {
         Person person = people.findByName(sheet, name.name());
         Figures now = before;
         if (person == null) {
-            person = people.add(sheet, new PersonRequest(name.name(), "A", null, null, null));
+            person = people.add(sheet, new PersonRequest(name.name(), "A", null, null, null, null));
             String user = Audit.user(connection);
             audit.record(Audit.line("PERSON_ADDED", sheet, user, "name=" + person.name(), "grade=" + person.grade()));
             now = RollupLines.record(sheet, user, before, rollup, audit);

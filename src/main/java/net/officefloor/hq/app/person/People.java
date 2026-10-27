@@ -21,7 +21,7 @@ public class People {
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
             rs.getObject("retired_from", LocalDate.class), List.of(), List.of(),
-            rs.getObject("terms", Integer.class));
+            rs.getObject("terms", Integer.class), rs.getString("contact"));
 
     private final JdbcTemplate jdbc;
 
@@ -54,7 +54,7 @@ public class People {
                             new Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
                 }, sheetId);
         return found.stream().map(p -> new Person(p.id(), p.sheetId(), p.name(), p.grade(), p.version(),
-                p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()), p.terms())).toList();
+                p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()), p.terms(), p.contact())).toList();
     }
 
     /** The person on the sheet with this name, ignoring case and surrounding spaces; null when none. */
@@ -71,19 +71,27 @@ public class People {
         return n != null && n > 0;
     }
 
+    /** Whether another person on the sheet (not {@code exceptId}) has this contact. */
+    public boolean contactTaken(String sheetId, String contact, long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + AsOf.table("person") + " WHERE sheet_id = ? AND contact = ? AND id <> ?",
+                Integer.class, sheetId, contact, exceptId);
+        return n != null && n > 0;
+    }
+
     public Person add(String sheetId, PersonRequest request) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, request.name());
             ps.setString(3, request.grade());
             ps.setObject(4, request.terms() == null ? null : Integer.valueOf(request.terms()), java.sql.Types.INTEGER);
+            ps.setString(5, request.contact());
             return ps;
         }, key);
         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
-                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()));
+                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact());
     }
 
     /**
@@ -91,8 +99,8 @@ public class People {
      * nothing, when the person has been saved since it was loaded.
      */
     public boolean save(Person person) {
-        return jdbc.update("UPDATE person SET name = ?, terms = ?, version = ? WHERE id = ? AND version = ?",
-                person.name(), person.terms(), person.version(), person.id(), person.version() - 1) == 1;
+        return jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, version = ? WHERE id = ? AND version = ?",
+                person.name(), person.terms(), person.contact(), person.version(), person.id(), person.version() - 1) == 1;
     }
 
     /** Give the person the grade from the date on, replacing any grade they were given from that same date. */

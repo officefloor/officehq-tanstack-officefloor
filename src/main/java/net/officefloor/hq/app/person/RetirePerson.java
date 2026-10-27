@@ -9,7 +9,7 @@ public class RetirePerson {
     public void retire(@Val RetireFrom from, @Val Person person, People people, Sheets sheets,
             Out<PersonResponse> responseOut) {
         Person retired = new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(),
-                from.date() != null ? from.date() : sheets.today(person.sheetId()), person.holds(), person.dated(), person.terms());
+                from.date() != null ? from.date() : sheets.today(person.sheetId()), person.holds(), person.dated(), person.terms(), person.contact());
         people.retire(retired.id(), retired.retiredFrom());
         responseOut.set(PersonResponse.from(retired, sheets.today(person.sheetId())));
     }

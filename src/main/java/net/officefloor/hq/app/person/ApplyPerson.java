@@ -21,6 +21,9 @@ public class ApplyPerson {
         if (people.nameTaken(person.sheetId(), request.name(), person.id())) {
             throw new InvalidPersonException("The name is already in use.");
         }
+        if (request.contact() != null && people.contactTaken(person.sheetId(), request.contact(), person.id())) {
+            throw new InvalidPersonException("The contact is already in use.");
+        }
         LocalDate today = sheets.today(person.sheetId());
         Person edited = person.with(request);
         if (!people.save(edited)) {
@@ -33,7 +36,7 @@ public class ApplyPerson {
             dated.add(new DatedGrade(from, request.grade()));
             dated.sort(Comparator.comparing(DatedGrade::from));
             edited = new Person(edited.id(), edited.sheetId(), edited.name(), edited.grade(), edited.version(),
-                    edited.retiredFrom(), edited.holds(), List.copyOf(dated), edited.terms());
+                    edited.retiredFrom(), edited.holds(), List.copyOf(dated), edited.terms(), edited.contact());
         }
         responseOut.set(PersonResponse.from(edited, today));
     }

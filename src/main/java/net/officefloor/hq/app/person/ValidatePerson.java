@@ -41,7 +41,9 @@ public class ValidatePerson {
         if (!terms.isEmpty() && !DAYS.matcher(terms).matches()) {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more.");
         }
+        // The contact is kept trimmed and lower-cased; a blank one is none.
+        String contact = body.contact() == null ? "" : body.contact().trim().toLowerCase(java.util.Locale.ROOT);
         request.set(new PersonRequest(name, grade, body.version(), from.isEmpty() ? null : from,
-                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms))));
+                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)), contact.isEmpty() ? null : contact));
     }
 }

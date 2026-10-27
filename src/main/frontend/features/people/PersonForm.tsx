@@ -21,6 +21,8 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [gradeFrom, setGradeFrom] = useState('');
   // The person's own terms in days; blank for none.
   const [terms, setTerms] = useState('');
+  // The person's contact; blank for none.
+  const [contact, setContact] = useState('');
   const today = useSheetToday(sheetId);
   const [error, setError] = useState('');
   // The version of the person the editor loaded; a save is refused once someone else has saved since.
@@ -31,6 +33,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
     setGrade(p?.grade ?? 'A');
     setGradeFrom('');
     setTerms(p?.terms == null ? '' : String(p.terms));
+    setContact(p?.contact ?? '');
     setVersion(p?.version);
   };
 
@@ -47,7 +50,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [user] = useUser();
   const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string }) =>
+    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string; contact: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
@@ -59,6 +62,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setContact('');
       }
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
@@ -92,7 +96,8 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
       setError('That name is already in use.');
       return;
     }
-    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim() } : { name: trimmed, grade, terms: terms.trim() }));
+    // Contacts are unique on the sheet; the server refuses one in use (after its version check, so a stale editor is refreshed).
+    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim() } : { name: trimmed, grade, terms: terms.trim(), contact: contact.trim() }));
   };
 
   return (
@@ -146,6 +151,17 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
           inputMode="numeric"
           onChange={(e) => {
             setTerms(e.target.value);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <label>
+        Contact{' '}
+        <input
+          data-testid="person-form-contact"
+          value={contact}
+          onChange={(e) => {
+            setContact(e.target.value);
             setError('');
           }}
         />
