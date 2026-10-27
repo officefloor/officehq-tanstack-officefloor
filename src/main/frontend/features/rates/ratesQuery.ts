@@ -215,3 +215,26 @@ export function settledAndOpen(person: Person | undefined, people: Person[], cla
   }
   return [sumDue(settled), sumDue(open)];
 }
+
+/**
+ * What setting the grade's rate to `pct` on every date would change: of the OPEN and PENDING claims of people on the
+ * grade (the grade they had on the claim's date), how many would show a different figure, and the sum of the new
+ * figures minus the current ones (two decimals; n/a counts as 0.00). A claim a statement bound keeps its figure.
+ */
+export function ratePreview(grade: Grade, pct: string, people: Person[], claims: Claim[], rates: Rate[], floor: DatedValue[], late: Late): { count: number; diff: string } {
+  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate: pct, from: null, to: null }];
+  const cents = (d: string) => (d === 'n/a' ? 0n : hundredths(d));
+  let count = 0;
+  let diff = 0n;
+  for (const c of claims) {
+    if (!isOpen(c)) continue;
+    const person = people.find((p) => p.id === c.personId);
+    if (!person || gradeOn(person, c.date) !== grade) continue;
+    const now = figure(c, rates, person, floor, late);
+    const then = figure(c, candidate, person, floor, late);
+    if (now === then) continue;
+    count++;
+    diff += cents(then) - cents(now);
+  }
+  return { count, diff: show(diff) };
+}
