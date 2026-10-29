@@ -18,7 +18,7 @@ public class SheetClones {
 
     /** The tables kept per sheet (by sheet_id) whose rows show a sheet has been used. */
     private static final List<String> SHEET_TABLES = List.of("person", "claim", "setting", "setting_from", "rate",
-            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool");
+            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool", "crew");
 
     private final JdbcTemplate jdbc;
 
@@ -39,7 +39,7 @@ public class SheetClones {
 
     /**
      * Copy the sheet {@code from} to the empty sheet {@code to}, which takes {@code today}: its settings, roles, rates,
-     * holidays, void reasons, templates, people (grades, terms, contacts, tags, aliases, holds, retirements, patrons), pools,
+     * holidays, void reasons, templates, people (grades, terms, contacts, tags, aliases, holds, retirements, patrons), pools, crews,
      * periods (all open) and claims (status, frozen figures, dates, notes, tags, references, logs; unnumbered and unbound by
      * any statement, listed in the order they were). Returns each copied claim's id here by its id on {@code from}, in the
      * order they were added to the clone.
@@ -117,6 +117,22 @@ public class SheetClones {
         jdbc.update("INSERT INTO pool_nested (sheet_id, pool_name, member_pool, share, listed, from_date, to_date) "
                 + "SELECT ?, pool_name, member_pool, share, listed, from_date, to_date FROM pool_nested WHERE sheet_id = ?",
                 to, from);
+
+        // Crews whose lead came across, and their members who did.
+        for (Map<String, Object> c : jdbc.queryForList("SELECT * FROM crew WHERE sheet_id = ? ORDER BY listed", from)) {
+            Long lead = people.get(((Number) c.get("lead_id")).longValue());
+            if (lead != null) {
+                jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, listed) VALUES (?, ?, ?, ?)", to, c.get("name"), lead,
+                        c.get("listed"));
+            }
+        }
+        for (Map<String, Object> m : jdbc.queryForList("SELECT * FROM crew_member WHERE sheet_id = ? ORDER BY listed", from)) {
+            Long person = people.get(((Number) m.get("person_id")).longValue());
+            if (person != null) {
+                jdbc.update("INSERT INTO crew_member (sheet_id, crew_name, person_id, listed) SELECT ?, ?, ?, ? FROM crew "
+                        + "WHERE sheet_id = ? AND name = ?", to, m.get("crew_name"), person, m.get("listed"), to, m.get("crew_name"));
+            }
+        }
 
         // Claims, person by person in list order, each person's in the order they are listed, with their logs and lines.
         Map<Long, Long> claims = new LinkedHashMap<>();
