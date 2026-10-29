@@ -45,19 +45,29 @@ public class Rates {
     /** How many sheets up from a sheet its rates are looked for when it has none in force: parent, grandparent, great-grandparent. */
     public static final int PARENT_LEVELS = 3;
 
-    /** The sheet, then its parent, its parent's parent and so on, up to {@link #PARENT_LEVELS} levels up. */
+    /**
+     * The sheet, then its parent, its parent's parent and so on, up to {@link #PARENT_LEVELS} levels up; then, for a
+     * sheet that was cloned, the lineage of the sheet it was cloned from (its parents and its own source in turn).
+     */
     public List<String> lineage(String sheetId) {
-        List<String> lineage = new java.util.ArrayList<>(List.of(sheetId));
-        String at = sheetId;
-        for (int level = 0; level < PARENT_LEVELS; level++) {
-            // The parent is not dated: it is the one named now, even while the store is read as of a date.
-            List<String> parent = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = ?",
-                    String.class, at, Settings.PARENT);
-            if (parent.isEmpty() || parent.get(0) == null || parent.get(0).isEmpty() || lineage.contains(parent.get(0))) {
-                break;
+        List<String> lineage = new java.util.ArrayList<>();
+        String from = sheetId;
+        while (from != null && !lineage.contains(from)) {
+            lineage.add(from);
+            String at = from;
+            for (int level = 0; level < PARENT_LEVELS; level++) {
+                // The parent is not dated: it is the one named now, even while the store is read as of a date.
+                List<String> parent = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = ?",
+                        String.class, at, Settings.PARENT);
+                if (parent.isEmpty() || parent.get(0) == null || parent.get(0).isEmpty() || lineage.contains(parent.get(0))) {
+                    break;
+                }
+                at = parent.get(0);
+                lineage.add(at);
             }
-            at = parent.get(0);
-            lineage.add(at);
+            // The source is not dated either.
+            List<String> source = jdbc.queryForList("SELECT source_id FROM sheet_source WHERE id = ?", String.class, from);
+            from = source.isEmpty() ? null : source.get(0);
         }
         return lineage;
     }
@@ -92,7 +102,8 @@ public class Rates {
     /**
      * The grade's rate on the date: the one with the latest from-date on or before it; null when none applies, or when
      * that one's to-date is before the date (an earlier rate does not take over again). When the sheet has none, its
-     * parent's rate for the grade and date is used, then the parent's parent, up to {@link #PARENT_LEVELS} levels up.
+     * parent's rate for the grade and date is used, then the parent's parent, up to {@link #PARENT_LEVELS} levels up,
+     * then the rate of the sheet it was cloned from (see {@link #lineage}).
      */
     public BigDecimal on(String sheetId, String grade, LocalDate date) {
         return on(sheetId, grade, date, null);

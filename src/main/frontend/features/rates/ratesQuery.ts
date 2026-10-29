@@ -11,7 +11,8 @@ import type { DatedValue } from '../settings/dated';
  * `rate` is a percent with two decimals ("12.50"), in force from `from` (yyyy-mm-dd; null: from the
  * beginning of time) through `to` (yyyy-mm-dd; null: with no end). A grade may have several, one per
  * from-date; a grade with no rate has no entry. `level` is the sheet it is the rate of: 0 the sheet's own,
- * 1 its parent's, 2 its parent's parent, up to 3. `version` is how many versions the grade and from-date's rate has
+ * 1 its parent's, 2 its parent's parent, up to 3; for a cloned sheet the sheets of its source's lineage follow (the
+ * source, its parents and its own source in turn). `version` is how many versions the grade and from-date's rate has
  * had: setting it again keeps the replaced value as an older version, and the one here is always the newest.
  * `claimsAfter` is set on a forward-only rate (saved with a from-date on or after the sheet's today): it applies only to
  * claims with a higher id, those added after it was saved; null (or absent) applies to every claim.
@@ -29,7 +30,8 @@ export const ratesQuery = (sheetId: string) => ({
 /**
  * The grade's rate on the date (yyyy-mm-dd): the one with the latest from-date on or before it, or undefined when none
  * applies or that one's to-date is before the date (an earlier rate does not take over again). When the sheet's own
- * rates give none, its parent's are used, then its parent's parent's, and so on (by `level`). Given a claim's id, the
+ * rates give none, its parent's are used, then its parent's parent's, and so on, then
+ * those of the sheet it was cloned from (by `level`). Given a claim's id, the
  * rate is the claim's: forward-only rates saved after the claim was added are passed over; without one it is the rate
  * in force, regardless.
  */

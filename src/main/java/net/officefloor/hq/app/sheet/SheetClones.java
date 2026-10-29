@@ -48,6 +48,7 @@ public class SheetClones {
         // The sheet's own row first, so every copied row's history is dated by the clone's today.
         jdbc.update("INSERT INTO sheet (id, today_date, archived) VALUES (?, ?, FALSE)", to, today);
         jdbc.update("MERGE INTO sheet_loaded (id) KEY (id) VALUES (?)", to);
+        jdbc.update("INSERT INTO sheet_source (id, source_id) VALUES (?, ?)", to, from);
 
         jdbc.update("INSERT INTO setting (sheet_id, setting_key, setting_value) SELECT ?, setting_key, setting_value "
                 + "FROM setting WHERE sheet_id = ?", to, from);
