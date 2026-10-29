@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { putJson, RefusedError } from '../../api/http';
+import { postJson, putJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
@@ -18,6 +18,8 @@ function SheetToday({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
+  const [cloneTo, setCloneTo] = useState('');
+  const [clonedTo, setClonedTo] = useState('');
 
   const [user] = useUser();
   const once = useSubmitOnce();
@@ -37,6 +39,13 @@ function SheetToday({ sheetId }: { sheetId: string }) {
     mutationFn: () => putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, {}, user),
     onSuccess: (sheet) => queryClient.setQueryData(sheetKey(sheetId), sheet),
     onError: (e) => setError(e instanceof RefusedError ? e.message : 'The sheet could not be archived.'),
+  });
+
+  const clone = useMutation({
+    mutationFn: (to: string) =>
+      postJson<{ toSheetId: string }>(`/api/sheets/${encodeURIComponent(sheetId)}/clone`, { toSheetId: to }, user),
+    onSuccess: (cloned) => setClonedTo(cloned.toSheetId),
+    onError: (e) => setError(e instanceof RefusedError ? e.message : 'The sheet could not be cloned.'),
   });
 
   const submit = (e: FormEvent) => {
@@ -74,7 +83,31 @@ function SheetToday({ sheetId }: { sheetId: string }) {
         }}
       >
         Archive sheet
-      </button>
+      </button>{' '}
+      <label>
+        Clone to{' '}
+        <input
+          data-testid="sheet-clone-to"
+          value={cloneTo}
+          onChange={(e) => {
+            setCloneTo(e.target.value);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <button
+        type="button"
+        data-testid="sheet-clone"
+        onClick={() => {
+          setError('');
+          // The last clone made is cleared while the next runs, so two clones to one id are told apart.
+          setClonedTo('');
+          once(() => clone.mutateAsync(cloneTo.trim()));
+        }}
+      >
+        Clone sheet
+      </button>{' '}
+      Cloned to <strong data-testid="sheet-cloned-to">{clonedTo}</strong>
       {error && <p data-testid="sheet-error">{error}</p>}
     </form>
   );
