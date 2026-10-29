@@ -1,0 +1,680 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+new file mode 100644
+index 00000000..2bba0766
+--- /dev/null
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -0,0 +1,157 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { postJson, RefusedError } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { useUser } from '../session/useUser';
++import { peopleQuery } from '../people/peopleQuery';
++import type { Person } from '../people/peopleQuery';
++import { sumDue } from '../rates/ratesQuery';
++import { usePeopleDueTotals } from '../rates/due.slot';
++import { crewsKey, crewsQuery } from './crewsQuery';
++import type { Crew } from './crewsQuery';
++
++/** One crew's row: its lead, its due-total (the lead's and the members' due-totals added up, n/a skipped), its members,
++ *  and the form a member is added through. The lead, or a person already in the crew, is refused with an error on the crew. */
++function CrewRow({ sheetId, crew, people, dues }: { sheetId: string; crew: Crew; people: Person[]; dues: Map<number, string> }) {
++  const queryClient = useQueryClient();
++  const [personId, setPersonId] = useState('');
++  const [error, setError] = useState('');
++
++  const [user] = useUser();
++  const once = useSubmitOnce();
++  const add = useMutation({
++    mutationFn: (body: { crew: string; personId: number | null }) =>
++      postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crew-members`, body, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
++      setPersonId('');
++    },
++    onError: (e: Error) => setError(e instanceof RefusedError ? e.message : 'The member could not be added.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    once(() => add.mutateAsync({ crew: crew.name, personId: personId === '' ? null : Number(personId) }));
++  };
++
++  const nameOf = (id: number) => people.find((p) => p.id === id)?.name;
++  const ids = [crew.leadId, ...crew.memberIds].filter((id) => dues.has(id));
++
++  return (
++    <li data-testid={`crew-row-${crew.name}`}>
++      <strong data-testid="crew-name">{crew.name}</strong> — lead <span data-testid="crew-lead">{nameOf(crew.leadId) ?? ''}</span>,
++      due <span data-testid="crew-due-total">{sumDue(ids.map((id) => dues.get(id) ?? 'n/a'))}</span>
++      <ul>
++        {crew.memberIds
++          .filter((id) => nameOf(id) !== undefined)
++          .map((id) => (
++            <li key={id} data-testid="crew-member-line">
++              <span data-testid="crew-member-name">{nameOf(id)}</span>
++            </li>
++          ))}
++      </ul>
++      <form onSubmit={submit}>
++        <select
++          data-testid="crew-member-select"
++          value={personId}
++          onChange={(e) => {
++            setPersonId(e.target.value);
++            setError('');
++          }}
++        >
++          <option value="">Choose a person</option>
++          {people.map((p) => (
++            <option key={p.id} value={String(p.id)}>
++              {p.name}
++            </option>
++          ))}
++        </select>{' '}
++        <button type="submit" data-testid="crew-member-add" disabled={add.isPending}>
++          Add member
++        </button>
++        {error && <p data-testid="crew-error">{error}</p>}
++      </form>
++    </li>
++  );
++}
++
++/** The sheet's crews, and the form a crew is added through: a name and a lead. A blank name, or one already a crew, is refused. */
++function Crews({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const crews = useQuery(crewsQuery(sheetId));
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const dues = usePeopleDueTotals(sheetId);
++  const [name, setName] = useState('');
++  const [leadId, setLeadId] = useState('');
++  const [error, setError] = useState('');
++
++  const [user] = useUser();
++  const once = useSubmitOnce();
++  const add = useMutation({
++    mutationFn: (body: { name: string; leadId: number | null }) =>
++      postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crews`, body, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
++      setName('');
++      setLeadId('');
++    },
++    onError: (e: Error) => setError(e instanceof RefusedError ? e.message : 'The crew could not be added.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    once(() => add.mutateAsync({ name: name.trim(), leadId: leadId === '' ? null : Number(leadId) }));
++  };
++
++  return (
++    <section data-testid="crews">
++      <h3>Crews</h3>
++      <form onSubmit={submit}>
++        <input
++          data-testid="crew-form-name"
++          placeholder="Crew name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            setError('');
++          }}
++        />{' '}
++        <select
++          data-testid="crew-form-lead"
++          value={leadId}
++          onChange={(e) => {
++            setLeadId(e.target.value);
++            setError('');
++          }}
++        >
++          <option value="">Choose the lead</option>
++          {people.map((p) => (
++            <option key={p.id} value={String(p.id)}>
++              {p.name}
++            </option>
++          ))}
++        </select>{' '}
++        <button type="submit" data-testid="crew-form-submit" disabled={add.isPending}>
++          Add crew
++        </button>
++        {error && <p data-testid="crew-form-error">{error}</p>}
++      </form>
++      {crews.isError && <p data-testid="crews-load-error">Could not load the crews.</p>}
++      <ul>
++        {(crews.data ?? []).map((c) => (
++          <CrewRow key={c.name} sheetId={sheetId} crew={c} people={people} dues={dues} />
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++// Keyed by sheet, so a typed value or an error never carries over to another sheet.
++export const contribution = SheetPanel.fill({
++  order: 6.9,
++  Component: ({ sheetId }) => <Crews key={`crews-${sheetId}`} sheetId={sheetId} />,
++});
+diff --git a/src/main/frontend/features/crews/crewsQuery.ts b/src/main/frontend/features/crews/crewsQuery.ts
+new file mode 100644
+index 00000000..1a8787f2
+--- /dev/null
++++ b/src/main/frontend/features/crews/crewsQuery.ts
+@@ -0,0 +1,13 @@
++import { getJson } from '../../api/http';
++import { peopleKey } from '../people/peopleQuery';
++
++/** A crew of the sheet: its name, its lead's person id, and its members' person ids in the order added. */
++export type Crew = { name: string; leadId: number; memberIds: number[] };
++
++/** Under the people's key, so re-loading the sheet, or any change to its people, re-reads the crews. */
++export const crewsKey = (sheetId: string) => [...peopleKey(sheetId), 'crews'] as const;
++
++export const crewsQuery = (sheetId: string) => ({
++  queryKey: crewsKey(sheetId),
++  queryFn: () => getJson<Crew[]>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`),
++});
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AddCrew.java b/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
+new file mode 100644
+index 00000000..981b2d91
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.plugin.variable.Val;
++
++public class AddCrew {
++    public void add(@Val Crew crew, Crews crews) {
++        crews.add(crew);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java b/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java
+new file mode 100644
+index 00000000..f6b27b01
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.plugin.variable.Val;
++
++public class AddCrewMember {
++    public void add(@Val CrewMember member, Crews crews) {
++        crews.addMember(member);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AuditCrewAdded.java b/src/main/java/net/officefloor/hq/app/crew/AuditCrewAdded.java
+new file mode 100644
+index 00000000..93d66f95
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/AuditCrewAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditCrewAdded {
++    public void audit(@Val Crew crew, ServerHttpConnection connection, Audit audit) {
++        audit.record(Audit.line("CREW_ADDED", crew.sheetId(), Audit.user(connection), "name=" + crew.name(),
++                "lead=" + crew.lead()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AuditCrewMemberAdded.java b/src/main/java/net/officefloor/hq/app/crew/AuditCrewMemberAdded.java
+new file mode 100644
+index 00000000..005aa2fe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/AuditCrewMemberAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditCrewMemberAdded {
++    public void audit(@Val CrewMember member, ServerHttpConnection connection, Audit audit) {
++        audit.record(Audit.line("CREW_MEMBER_ADDED", member.sheetId(), Audit.user(connection), "crew=" + member.crew(),
++                "name=" + member.name()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crew.java b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+new file mode 100644
+index 00000000..52061211
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.crew;
++
++/** A crew of the sheet: its name, and its lead's id and name. */
++public record Crew(String sheetId, String name, long leadId, String lead) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewMember.java b/src/main/java/net/officefloor/hq/app/crew/CrewMember.java
+new file mode 100644
+index 00000000..00ca14fe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewMember.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.crew;
++
++/** A member of a crew: the crew's name, and the person's id and name. */
++public record CrewMember(String sheetId, String crew, long personId, String name) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewMemberRequest.java b/src/main/java/net/officefloor/hq/app/crew/CrewMemberRequest.java
+new file mode 100644
+index 00000000..fbd9bd94
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewMemberRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.crew;
++
++/** The body of adding a member to a crew: the crew's name and the person's id. */
++public record CrewMemberRequest(String crew, Long personId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewRefusedException.java b/src/main/java/net/officefloor/hq/app/crew/CrewRefusedException.java
+new file mode 100644
+index 00000000..e0a14d65
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewRefusedException.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.crew;
++
++/** A crew or crew member that may not be added: a blank or taken name, a lead not of the sheet, or a member who is the
++ * crew's lead or already in it. */
++public class CrewRefusedException extends Exception {
++
++    public CrewRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewRequest.java b/src/main/java/net/officefloor/hq/app/crew/CrewRequest.java
+new file mode 100644
+index 00000000..b0a8acae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.crew;
++
++/** The body of adding a crew, as typed: its name and its lead's id. */
++public record CrewRequest(String name, Long leadId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java b/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java
+new file mode 100644
+index 00000000..c58e6ac8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.crew;
++
++import java.util.List;
++
++/** A crew as listed: its name, its lead's id, and its members' ids in the order added. */
++public record CrewResponse(String name, long leadId, List<Long> memberIds) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crews.java b/src/main/java/net/officefloor/hq/app/crew/Crews.java
+new file mode 100644
+index 00000000..98fdcb89
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/Crews.java
+@@ -0,0 +1,65 @@
++package net.officefloor.hq.app.crew;
++
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
++import org.springframework.stereotype.Repository;
++
++/** The store of the sheet's crews and their members. */
++@Repository
++public class Crews {
++
++    private final JdbcTemplate jdbc;
++
++    public Crews(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's crews, in the order they were added, each with its members' ids in the order they were added. */
++    public List<CrewResponse> list(String sheetId) {
++        Map<String, Long> leads = new LinkedHashMap<>();
++        jdbc.query("SELECT name, lead_id FROM crew WHERE sheet_id = ? ORDER BY listed",
++                (RowCallbackHandler) rs -> leads.put(rs.getString("name"), rs.getLong("lead_id")), sheetId);
++        Map<String, List<Long>> members = new LinkedHashMap<>();
++        jdbc.query("SELECT crew_name, person_id FROM crew_member WHERE sheet_id = ? ORDER BY listed",
++                (RowCallbackHandler) rs -> members.computeIfAbsent(rs.getString("crew_name"), k -> new ArrayList<>())
++                        .add(rs.getLong("person_id")),
++                sheetId);
++        List<CrewResponse> out = new ArrayList<>();
++        leads.forEach((name, lead) -> out.add(new CrewResponse(name, lead, members.getOrDefault(name, List.of()))));
++        return out;
++    }
++
++    /** The crew's lead's id, null when the sheet has no such crew. */
++    public Long lead(String sheetId, String name) {
++        List<Long> found = jdbc.queryForList("SELECT lead_id FROM crew WHERE sheet_id = ? AND name = ?", Long.class,
++                sheetId, name);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    public boolean has(String sheetId, String name) {
++        return lead(sheetId, name) != null;
++    }
++
++    public void add(Crew crew) {
++        jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, listed) VALUES (?, ?, ?, "
++                + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM crew WHERE sheet_id = ?))",
++                crew.sheetId(), crew.name(), crew.leadId(), crew.sheetId());
++    }
++
++    public boolean isMember(String sheetId, String crew, long personId) {
++        Integer n = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM crew_member WHERE sheet_id = ? AND crew_name = ? AND person_id = ?", Integer.class,
++                sheetId, crew, personId);
++        return n != null && n > 0;
++    }
++
++    public void addMember(CrewMember member) {
++        jdbc.update("INSERT INTO crew_member (sheet_id, crew_name, person_id, listed) VALUES (?, ?, ?, "
++                + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM crew_member WHERE sheet_id = ?))",
++                member.sheetId(), member.crew(), member.personId(), member.sheetId());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/HandleCrewRefused.java b/src/main/java/net/officefloor/hq/app/crew/HandleCrewRefused.java
+new file mode 100644
+index 00000000..d28c9457
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/HandleCrewRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleCrewRefused {
++    public void handle(@Parameter CrewRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/RespondWithCrew.java b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrew.java
+new file mode 100644
+index 00000000..435a2d3e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrew.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithCrew {
++    public void respond(@Val Crew crew, ObjectResponse<Crew> response) {
++        response.send(crew);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/RespondWithCrewMember.java b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrewMember.java
+new file mode 100644
+index 00000000..86fa6ddc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrewMember.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithCrewMember {
++    public void respond(@Val CrewMember member, ObjectResponse<CrewMember> response) {
++        response.send(member);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java
+new file mode 100644
+index 00000000..b7a191c5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.crew;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithCrews {
++    public void respond(@PathVariable("sheetId") String sheetId, Crews crews, ObjectResponse<List<CrewResponse>> response) {
++        response.send(crews.list(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java b/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
+new file mode 100644
+index 00000000..25766787
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateCrew {
++
++    // The name, trimmed, must not be blank, nor already a crew of the sheet; the lead must be a person of the sheet.
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CrewRequest body, Crews crews,
++            People people, Out<Crew> crew) throws CrewRefusedException {
++        String sheet = sheetId.trim();
++        String name = body == null || body.name() == null ? "" : body.name().trim();
++        if (name.isEmpty()) {
++            throw new CrewRefusedException("Give the crew a name.");
++        }
++        if (crews.has(sheet, name)) {
++            throw new CrewRefusedException("\"" + name + "\" is already a crew.");
++        }
++        Person lead = body.leadId() == null ? null : people.find(sheet, body.leadId());
++        if (lead == null) {
++            throw new CrewRefusedException("Choose the crew's lead.");
++        }
++        crew.set(new Crew(sheet, name, lead.id(), lead.name()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMember.java b/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMember.java
+new file mode 100644
+index 00000000..9774e7bb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/crew/ValidateCrewMember.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.crew;
++
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateCrewMember {
++
++    // The crew and the person must be of the sheet; the person is not the crew's lead, nor already in the crew.
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CrewMemberRequest body, Crews crews,
++            People people, Out<CrewMember> member) throws CrewRefusedException {
++        String sheet = sheetId.trim();
++        String crew = body == null || body.crew() == null ? "" : body.crew().trim();
++        Long lead = crews.lead(sheet, crew);
++        if (lead == null) {
++            throw new CrewRefusedException("Choose a crew.");
++        }
++        Person person = body.personId() == null ? null : people.find(sheet, body.personId());
++        if (person == null) {
++            throw new CrewRefusedException("Choose a person.");
++        }
++        if (person.id() == lead) {
++            throw new CrewRefusedException(person.name() + " leads the crew.");
++        }
++        if (crews.isMember(sheet, crew, person.id())) {
++            throw new CrewRefusedException(person.name() + " is already in the crew.");
++        }
++        member.set(new CrewMember(sheet, crew, person.id(), person.name()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java b/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
+index 19efcd5b..799677c9 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
+@@ -18,7 +18,7 @@ public class SheetClones {
+ 
+     /** The tables kept per sheet (by sheet_id) whose rows show a sheet has been used. */
+     private static final List<String> SHEET_TABLES = List.of("person", "claim", "setting", "setting_from", "rate",
+-            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool");
++            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool", "crew");
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -39,7 +39,7 @@ public class SheetClones {
+ 
+     /**
+      * Copy the sheet {@code from} to the empty sheet {@code to}, which takes {@code today}: its settings, roles, rates,
+-     * holidays, void reasons, templates, people (grades, terms, contacts, tags, aliases, holds, retirements, patrons), pools,
++     * holidays, void reasons, templates, people (grades, terms, contacts, tags, aliases, holds, retirements, patrons), pools, crews,
+      * periods (all open) and claims (status, frozen figures, dates, notes, tags, references, logs; unnumbered and unbound by
+      * any statement, listed in the order they were). Returns each copied claim's id here by its id on {@code from}, in the
+      * order they were added to the clone.
+@@ -118,6 +118,22 @@ public class SheetClones {
+                 + "SELECT ?, pool_name, member_pool, share, listed, from_date, to_date FROM pool_nested WHERE sheet_id = ?",
+                 to, from);
+ 
++        // Crews whose lead came across, and their members who did.
++        for (Map<String, Object> c : jdbc.queryForList("SELECT * FROM crew WHERE sheet_id = ? ORDER BY listed", from)) {
++            Long lead = people.get(((Number) c.get("lead_id")).longValue());
++            if (lead != null) {
++                jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, listed) VALUES (?, ?, ?, ?)", to, c.get("name"), lead,
++                        c.get("listed"));
++            }
++        }
++        for (Map<String, Object> m : jdbc.queryForList("SELECT * FROM crew_member WHERE sheet_id = ? ORDER BY listed", from)) {
++            Long person = people.get(((Number) m.get("person_id")).longValue());
++            if (person != null) {
++                jdbc.update("INSERT INTO crew_member (sheet_id, crew_name, person_id, listed) SELECT ?, ?, ?, ? FROM crew "
++                        + "WHERE sheet_id = ? AND name = ?", to, m.get("crew_name"), person, m.get("listed"), to, m.get("crew_name"));
++            }
++        }
++
+         // Claims, person by person in list order, each person's in the order they are listed, with their logs and lines.
+         Map<Long, Long> claims = new LinkedHashMap<>();
+         for (Map.Entry<Long, Long> person : people.entrySet()) {
+diff --git a/src/main/resources/db/migration/V76__crew.sql b/src/main/resources/db/migration/V76__crew.sql
+new file mode 100644
+index 00000000..aa8da7e7
+--- /dev/null
++++ b/src/main/resources/db/migration/V76__crew.sql
+@@ -0,0 +1,17 @@
++-- The sheet's crews: a name (trimmed, at most once per sheet) and a lead, a person of the sheet; listed in the order added.
++CREATE TABLE crew (
++    sheet_id VARCHAR(255) NOT NULL,
++    name VARCHAR(255) NOT NULL,
++    lead_id BIGINT NOT NULL,
++    listed BIGINT NOT NULL,
++    PRIMARY KEY (sheet_id, name)
++);
++-- A crew's members: people of the sheet, at most once per crew and never its lead, in the order added. A person can be in
++-- several crews.
++CREATE TABLE crew_member (
++    sheet_id VARCHAR(255) NOT NULL,
++    crew_name VARCHAR(255) NOT NULL,
++    person_id BIGINT NOT NULL,
++    listed BIGINT NOT NULL,
++    PRIMARY KEY (sheet_id, crew_name, person_id)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.crew.CrewRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.crew.CrewRefusedException.yml
+new file mode 100644
+index 00000000..3a39b0a4
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.crew.CrewRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.crew.HandleCrewRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crew-members.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crew-members.POST.yml
+new file mode 100644
+index 00000000..af5c8483
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crew-members.POST.yml
+@@ -0,0 +1,25 @@
++# POST /api/sheets/{sheetId}/crew-members — adds a person to a crew. Body {"crew":"...","personId":1}. The crew's lead, or
++# a person already in the crew, is refused with 422 and nothing is stored or recorded.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: validate
++  govern: [ transaction ]
++validate:
++  class: net.officefloor.hq.app.crew.ValidateCrewMember
++  next: add
++  govern: [ transaction ]
++add:
++  class: net.officefloor.hq.app.crew.AddCrewMember
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.crew.AuditCrewMemberAdded
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.crew.RespondWithCrewMember
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml
+new file mode 100644
+index 00000000..a6988c79
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/crews — the sheet's crews, in the order added, each with its lead's id and its members' ids (in
++# the order added).
++respond:
++  class: net.officefloor.hq.app.crew.RespondWithCrews
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.POST.yml
+new file mode 100644
+index 00000000..3796c173
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.POST.yml
+@@ -0,0 +1,25 @@
++# POST /api/sheets/{sheetId}/crews — adds a crew. Body {"name":"...","leadId":1}, the name trimmed. A blank name, one
++# already a crew of the sheet, or a lead not a person of the sheet, is refused with 422 and nothing is stored or recorded.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: validate
++  govern: [ transaction ]
++validate:
++  class: net.officefloor.hq.app.crew.ValidateCrew
++  next: add
++  govern: [ transaction ]
++add:
++  class: net.officefloor.hq.app.crew.AddCrew
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.crew.AuditCrewAdded
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.crew.RespondWithCrew
++  govern: [ transaction ]
