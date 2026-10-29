@@ -58,7 +58,10 @@ public class Rollup {
                 if (claim.personId() != person.id() || !counts(claim, person, today)) {
                     continue;
                 }
-                claimed = claimed.add(claim.amount());
+                // A claim that corrects another is left out of claimed; its due still counts.
+                if (claim.corrects() == null) {
+                    claimed = claimed.add(claim.amount());
+                }
                 BigDecimal figure = figure(claim, person, today);
                 if (figure != null) {
                     due = due.add(figure);
