@@ -80,7 +80,7 @@ public class TransferPerson {
                 Period period = periods.on(to, claim.dueBy());
                 scope = period == null ? "" : period.name();
             }
-            numbers.put(claim.id(), claims.number(to, scope));
+            numbers.put(claim.id(), claims.number(to, scope, claim.dueBy() == null ? claim.date() : claim.dueBy()));
         }
 
         long arrived = people.transfer(person, to, numbers, into == null ? null : into.id());

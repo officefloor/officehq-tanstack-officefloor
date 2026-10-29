@@ -57,7 +57,7 @@ public class CloneSheet {
                 Period period = periods.on(to, claim.dueBy());
                 scope = period == null ? "" : period.name();
             }
-            String number = claims.number(to, scope);
+            String number = claims.number(to, scope, claim.dueBy() == null ? claim.date() : claim.dueBy());
             numbers.put(copied.get(id), number);
             renumbered.put(claim.number(), number);
         }

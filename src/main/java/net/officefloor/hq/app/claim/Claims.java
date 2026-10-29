@@ -167,8 +167,7 @@ public class Claims {
         if (claim.number() == null) {
             return moved;
         }
-        String number = scope == null ? Long.toString(nextNumber(claim.sheetId()))
-                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+        String number = number(claim.sheetId(), scope, claim.dueBy() == null ? claim.date() : claim.dueBy());
         jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
         return moved.withStatus(moved.status(), number, moved.settledDue(), moved.openedBy());
     }
@@ -186,8 +185,8 @@ public class Claims {
             return null;
         }
         String number = switch (next) {
-            case OPEN -> claim.status() != ClaimStatus.DRAFT ? claim.number() : scope == null ? Long.toString(nextNumber(claim.sheetId()))
-                    : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+            case OPEN -> claim.status() != ClaimStatus.DRAFT ? claim.number()
+                    : number(claim.sheetId(), scope, claim.dueBy() == null ? claim.date() : claim.dueBy());
             default -> claim.number();
         };
         BigDecimal settledDue = next == ClaimStatus.SETTLED ? due : claim.settledDue();
@@ -210,8 +209,7 @@ public class Claims {
                 rest, claim.id(), ClaimStatus.OPEN.name(), claim.amount()) != 1) {
             return null;
         }
-        String number = scope == null ? Long.toString(nextNumber(claim.sheetId()))
-                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+        String number = number(claim.sheetId(), scope, dueBy);
         boolean late = lateEntry(claim.sheetId(), dueBy);
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -428,39 +426,61 @@ public class Claims {
         return opened;
     }
 
-    /** The next number of {@code scope} on the sheet, as {@link #changeStatus} numbers an opened claim (null: sheet-wide). */
-    public String number(String sheetId, String scope) {
-        return scope == null ? Long.toString(nextNumber(sheetId))
-                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(sheetId, scope);
+    /**
+     * The next number of {@code scope} on the sheet, as {@link #changeStatus} numbers an opened claim due by
+     * {@code dueBy} (null: sheet-wide, FY<yyyy>-<n> in the fiscal year {@code dueBy} falls in).
+     */
+    public String number(String sheetId, String scope, LocalDate dueBy) {
+        if (scope == null) {
+            String fiscalYear = fiscalYear(sheetId, dueBy);
+            return fiscalYear + "-" + nextNumber(sheetId, fiscalYear);
+        }
+        return (scope.isEmpty() ? "X" : scope) + "-" + nextPeriodNumber(sheetId, scope);
     }
 
     /**
-     * The sheet's next claim number: one after the last number given anywhere in the sheet's tree, which share one
-     * sequence. The tree's counter rows are locked (in sheet order) by the increment until the transaction commits,
-     * so two claims opened at once anywhere in the tree get different numbers.
+     * The fiscal year (FY<yyyy>) the date falls in on the sheet: FY<yyyy> starts on the first of the sheet's fiscal
+     * start month (January when it has none) in yyyy.
      */
-    private long nextNumber(String sheetId) {
+    private String fiscalYear(String sheetId, LocalDate date) {
+        List<String> values = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet_id = ? AND setting_key = ?",
+                String.class, sheetId, "fiscal-start-month");
+        String value = values.isEmpty() || values.get(0) == null ? "" : values.get(0).trim();
+        int start = value.isEmpty() ? 1 : Integer.parseInt(value);
+        return "FY" + (date.getMonthValue() >= start ? date.getYear() : date.getYear() - 1);
+    }
+
+    /**
+     * The sheet's next claim number in the fiscal year: one after the last number given in that fiscal year anywhere
+     * in the sheet's tree, which share one sequence. The tree's counter rows are locked (in sheet order) by the
+     * increment until the transaction commits, so two claims opened at once anywhere in the tree get different numbers.
+     */
+    private long nextNumber(String sheetId, String fiscalYear) {
         Set<String> tree = new TreeSet<>(people.tree(sheetId));
         for (String sheet : tree) {
             try {
-                jdbc.update("INSERT INTO claim_number_seq (sheet_id, last_number) SELECT ?, 0 "
-                        + "WHERE NOT EXISTS (SELECT 1 FROM claim_number_seq WHERE sheet_id = ?)", sheet, sheet);
+                jdbc.update("INSERT INTO claim_fiscal_number_seq (sheet_id, fiscal_year, last_number) SELECT ?, ?, 0 "
+                        + "WHERE NOT EXISTS (SELECT 1 FROM claim_fiscal_number_seq WHERE sheet_id = ? AND fiscal_year = ?)",
+                        sheet, fiscalYear, sheet, fiscalYear);
             } catch (DuplicateKeyException e) {
                 // Another user started the sheet's counter at the same moment.
             }
         }
         long last = 0;
         for (String sheet : tree) {
-            jdbc.update("UPDATE claim_number_seq SET last_number = last_number WHERE sheet_id = ?", sheet);
-            last = Math.max(last, jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?",
-                    Long.class, sheet));
+            jdbc.update("UPDATE claim_fiscal_number_seq SET last_number = last_number WHERE sheet_id = ? AND fiscal_year = ?",
+                    sheet, fiscalYear);
+            last = Math.max(last, jdbc.queryForObject(
+                    "SELECT last_number FROM claim_fiscal_number_seq WHERE sheet_id = ? AND fiscal_year = ?",
+                    Long.class, sheet, fiscalYear));
         }
-        jdbc.update("UPDATE claim_number_seq SET last_number = ? WHERE sheet_id = ?", last + 1, sheetId);
+        jdbc.update("UPDATE claim_fiscal_number_seq SET last_number = ? WHERE sheet_id = ? AND fiscal_year = ?",
+                last + 1, sheetId, fiscalYear);
         return last + 1;
     }
 
-    /** The next number of the sheet's sequence for the period ("" for no period); locked like {@link #nextNumber(String)}. */
-    private long nextNumber(String sheetId, String scope) {
+    /** The next number of the sheet's sequence for the period ("" for no period); locked like {@link #nextNumber}. */
+    private long nextPeriodNumber(String sheetId, String scope) {
         try {
             jdbc.update("INSERT INTO claim_period_number_seq (sheet_id, scope, last_number) SELECT ?, ?, 0 "
                     + "WHERE NOT EXISTS (SELECT 1 FROM claim_period_number_seq WHERE sheet_id = ? AND scope = ?)",
