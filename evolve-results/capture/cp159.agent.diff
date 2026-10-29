@@ -1,0 +1,100 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 9f1de90f..42896777 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -1,4 +1,4 @@
+-import { useState } from 'react';
++import { Fragment, useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
+@@ -13,7 +13,7 @@ import { ratesQuery } from '../rates/ratesQuery';
+ import { fiscalYear, useFiscalStartMonth, useFloor, useLate } from '../settings/settingsQuery';
+ import { useUser } from '../session/useUser';
+ import { useSheetToday } from '../sheet/useSheetToday';
+-import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodDue } from './periodsQuery';
++import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodCarried, personPeriodDue } from './periodsQuery';
+ import type { Period } from './periodsQuery';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+@@ -25,19 +25,23 @@ function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+   return <td data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</td>;
+ }
+ 
+-/** A column per period on the sheet, headed by its name. */
++/** Two columns per period on the sheet: its due-total, headed by its name, and its carried figure. */
+ function PersonPeriodHeaders({ sheetId }: { sheetId: string }) {
+   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
+   return (
+     <>
+       {periods.map((p) => (
+-        <th key={p.name}>{p.name}</th>
++        <Fragment key={p.name}>
++          <th>{p.name}</th>
++          <th>{p.name} carried</th>
++        </Fragment>
+       ))}
+     </>
+   );
+ }
+ 
+-/** The person's due-total for each period on the sheet: live while it is open, fixed while it is closed or soft-closed. */
++/** The person's due-total for each period on the sheet (live while it is open, fixed while it is closed or soft-closed), and
++ *  their carried figure for it: the due of their earlier periods' claims still OPEN or PENDING at its end. */
+ function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
+   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+@@ -50,9 +54,12 @@ function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: nu
+   return (
+     <>
+       {periods.map((p) => (
+-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
+-          {personPeriodDue(p, person, claims, people, rates, floor, late)}
+-        </td>
++        <Fragment key={p.name}>
++          <td data-testid={`person-period-${p.name}-due-total`}>{personPeriodDue(p, person, claims, people, rates, floor, late)}</td>
++          <td data-testid={`person-period-${p.name}-carried`}>
++            {personPeriodCarried(p, periods, person, claims, people, rates, floor, late)}
++          </td>
++        </Fragment>
+       ))}
+     </>
+   );
+diff --git a/src/main/frontend/features/periods/periodsQuery.ts b/src/main/frontend/features/periods/periodsQuery.ts
+index f3588e71..1222e69e 100644
+--- a/src/main/frontend/features/periods/periodsQuery.ts
++++ b/src/main/frontend/features/periods/periodsQuery.ts
+@@ -85,6 +85,33 @@ export function personPeriodDue(
+   );
+ }
+ 
++/**
++ * A person's carried figure for a period: the figures (as shown now) of their claims that count which belong (by due-by)
++ * to a period ending before this one starts and were still OPEN or PENDING at the end of its last day, by their log.
++ */
++export function personPeriodCarried(
++  period: Period,
++  periods: Period[],
++  person: Person,
++  claims: Claim[],
++  people: Person[],
++  rates: Rate[],
++  floor: DatedValue[],
++  late: Late,
++): string {
++  return sumDue(
++    claims
++      .filter((c) => {
++        if (c.personId !== person.id) return false;
++        const own = periodOf(periods, c.dueBy);
++        if (!own || own.to >= period.from) return false;
++        const status = statusOn(c, period.to);
++        return (status === 'OPEN' || status === 'PENDING') && counts({ ...c, status }, isOpen(c) ? people : [], late.today);
++      })
++      .map((c) => figure(c, rates, person, floor, late)),
++  );
++}
++
+ /** A period's due-total: its people's due-totals for it added up. */
+ export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
+   return sumDue(people.map((p) => personPeriodDue(period, p, claims, people, rates, floor, late)));
