@@ -1,0 +1,294 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 2a69f292..68511d13 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -61,6 +61,12 @@ function PoolRow({ sheetId, pool, people, poolNames }: { sheetId: string; pool:
+           >
+             <span data-testid="pool-member-name">{m.name}</span> <span data-testid="pool-share">{m.share}</span>
+             {' '}cut <span data-testid="pool-cut">{m.cut}</span>
++            {m.periodCuts.map((pc) => (
++              <span key={pc.period}>
++                {' '}
++                {pc.period} <span data-testid={`pool-cut-${pc.period}`}>{pc.cut}</span>
++              </span>
++            ))}
+             {m.retired && ' (retired)'}
+           </li>
+         ))}
+diff --git a/src/main/frontend/features/pools/poolsQuery.ts b/src/main/frontend/features/pools/poolsQuery.ts
+index fc268488..fe1c8349 100644
+--- a/src/main/frontend/features/pools/poolsQuery.ts
++++ b/src/main/frontend/features/pools/poolsQuery.ts
+@@ -4,8 +4,17 @@ import { peopleKey } from '../people/peopleQuery';
+ /** A member of a pool: the person's id and name, their share percent with two decimals, whether they are retired, and their
+  *  cut of the pool's pot with two decimals ("" when the pool is not balanced, there is no pot, every member is retired, or the member's dates do
+  *  not include the sheet's today). A member that is
+- *  another pool has its name as pool (null for a person) and personId 0; its cut is that pool's pot. */
+-export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string; pool: string | null };
++ *  another pool has its name as pool (null for a person) and personId 0; its cut is that pool's pot. periodCuts are its cut
++ *  as it stood at the end of each period whose to-date is on or before the sheet's today ("" when it had none). */
++export type PoolMember = {
++  personId: number;
++  name: string;
++  share: string;
++  retired: boolean;
++  cut: string;
++  pool: string | null;
++  periodCuts: { period: string; cut: string }[];
++};
+ 
+ /** A pool of the sheet: its name, its members, its total share (a retired member's counting as given) with two decimals,
+  *  and whether that total is exactly 100.00. */
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crews.java b/src/main/java/net/officefloor/hq/app/crew/Crews.java
+index 98fdcb89..4a93233d 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/Crews.java
++++ b/src/main/java/net/officefloor/hq/app/crew/Crews.java
+@@ -4,6 +4,7 @@ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.AsOf;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+@@ -21,10 +22,10 @@ public class Crews {
+     /** The sheet's crews, in the order they were added, each with its members' ids in the order they were added. */
+     public List<CrewResponse> list(String sheetId) {
+         Map<String, Long> leads = new LinkedHashMap<>();
+-        jdbc.query("SELECT name, lead_id FROM crew WHERE sheet_id = ? ORDER BY listed",
++        jdbc.query("SELECT name, lead_id FROM " + AsOf.table("crew") + " WHERE sheet_id = ? ORDER BY listed",
+                 (RowCallbackHandler) rs -> leads.put(rs.getString("name"), rs.getLong("lead_id")), sheetId);
+         Map<String, List<Long>> members = new LinkedHashMap<>();
+-        jdbc.query("SELECT crew_name, person_id FROM crew_member WHERE sheet_id = ? ORDER BY listed",
++        jdbc.query("SELECT crew_name, person_id FROM " + AsOf.table("crew_member") + " WHERE sheet_id = ? ORDER BY listed",
+                 (RowCallbackHandler) rs -> members.computeIfAbsent(rs.getString("crew_name"), k -> new ArrayList<>())
+                         .add(rs.getLong("person_id")),
+                 sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index b614a84a..2a38c037 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -41,7 +41,12 @@ public final class AsOf {
+             Map.entry("holiday", List.of("sheet_id", "holiday_date")),
+             Map.entry("void_reason", List.of("sheet_id", "reason")),
+             Map.entry("settle_batch", List.of("sheet_id", "batch_number")),
+-            Map.entry("claim_batch", List.of("claim_id")));
++            Map.entry("claim_batch", List.of("claim_id")),
++            Map.entry("pool", List.of("sheet_id", "name")),
++            Map.entry("pool_member", List.of("sheet_id", "pool_name", "person_id")),
++            Map.entry("pool_nested", List.of("sheet_id", "member_pool")),
++            Map.entry("crew", List.of("sheet_id", "name")),
++            Map.entry("crew_member", List.of("sheet_id", "crew_name", "person_id")));
+ 
+     private static final ThreadLocal<LocalDate> DATE = new ThreadLocal<>();
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 485b6085..71a390cd 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -11,8 +11,18 @@ public record PoolResponse(String name, List<Member> members, String totalShare,
+     /**
+      * A member: the person's id and name, their share with two decimals, whether they are retired, and their cut of the
+      * pot with two decimals ("" when the pool is not balanced or there is no pot). A member that is another pool has
+-     * personId 0, its name as name and as pool, and is never retired; pool is null for a person.
++     * personId 0, its name as name and as pool, and is never retired; pool is null for a person. periodCuts are its cut
++     * at the end of each period whose to-date is on or before the sheet's today, in period order ("" when it had none).
+      */
+-    public record Member(long personId, String name, String share, boolean retired, String cut, String pool) {
++    public record Member(long personId, String name, String share, boolean retired, String cut, String pool,
++            List<PeriodCut> periodCuts) {
++
++        public Member withPeriodCuts(List<PeriodCut> periodCuts) {
++            return new Member(personId, name, share, retired, cut, pool, periodCuts);
++        }
++    }
++
++    /** A member's cut at the end of the named period, with two decimals ("" when it had none). */
++    public record PeriodCut(String period, String cut) {
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 13c03f64..ef061aab 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.AsOf;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+@@ -37,7 +38,7 @@ public class Pools {
+ 
+     /** The sheet's pool names, in the order they were added. */
+     public List<String> names(String sheetId) {
+-        return jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY listed", String.class, sheetId);
++        return jdbc.queryForList("SELECT name FROM " + AsOf.table("pool") + " WHERE sheet_id = ? ORDER BY listed", String.class, sheetId);
+     }
+ 
+     public boolean has(String sheetId, String name) {
+@@ -53,8 +54,8 @@ public class Pools {
+     /** The sheet's pool members, people and pools, in the order they were added. */
+     public List<Membership> members(String sheetId) {
+         return jdbc.query("SELECT pool_name, person_id, share, CAST(NULL AS VARCHAR(255)) AS member_pool, from_date, "
+-                + "to_date, listed FROM pool_member WHERE sheet_id = ? UNION ALL SELECT pool_name, 0, share, member_pool, "
+-                + "from_date, to_date, listed FROM pool_nested WHERE sheet_id = ? ORDER BY listed",
++                + "to_date, listed FROM " + AsOf.table("pool_member") + " WHERE sheet_id = ? UNION ALL SELECT pool_name, 0, share, member_pool, "
++                + "from_date, to_date, listed FROM " + AsOf.table("pool_nested") + " WHERE sheet_id = ? ORDER BY listed",
+                 (rs, n) -> new Membership(rs.getString("pool_name"), rs.getLong("person_id"),
+                         rs.getBigDecimal("share").setScale(2), rs.getString("member_pool"),
+                         rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)),
+@@ -64,7 +65,7 @@ public class Pools {
+     /** Each pool that is a member of another, to the pool it is a member of. */
+     public Map<String, String> parents(String sheetId) {
+         Map<String, String> out = new HashMap<>();
+-        jdbc.query("SELECT pool_name, member_pool FROM pool_nested WHERE sheet_id = ?",
++        jdbc.query("SELECT pool_name, member_pool FROM " + AsOf.table("pool_nested") + " WHERE sheet_id = ?",
+                 (RowCallbackHandler) rs -> out.put(rs.getString("member_pool"), rs.getString("pool_name")), sheetId);
+         return out;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 8372af53..958a45cd 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -5,12 +5,16 @@ import java.math.RoundingMode;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import net.officefloor.hq.app.crew.CrewResponse;
+ import net.officefloor.hq.app.crew.Crews;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
+@@ -33,9 +37,37 @@ public class RespondWithPools {
+     // (whose dates include the sheet's today) is retired has no cuts. A pool that is a member of none has the sheet's pot; a pool that is a member of another has its cut
+     // there as its pot (none when the pool above has no cuts). A member whose dates do not include the sheet's today is
+     // left out entirely: listed with its share, but not in the total share or the balance, and with no cut ("").
++    // For every period whose to-date is on or before the sheet's today, each member also shows its cut as it stood at the
++    // end of that period: figured as above from the store as of the to-date (the pools, their members, the pot and the
++    // holds as they were then, with that day as the sheet's today); "" when it had none, or was not a member then.
+     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
+-            Crews crews, ObjectResponse<List<PoolResponse>> response) {
++            Crews crews, Periods periods, ObjectResponse<List<PoolResponse>> response) {
+         String sheet = sheetId.trim();
++        LocalDate today = sheets.today(sheet);
++        List<Period> ended = periods.list(sheet).stream().filter(p -> !p.to().isAfter(today)).toList();
++        Map<String, Map<String, String>> cutsThen = new LinkedHashMap<>();
++        for (Period period : ended) {
++            Map<String, String> byMember = new HashMap<>();
++            for (PoolResponse pool : AsOf.on(period.to(), () -> figure(sheet, pools, people, settings, sheets, crews,
++                    Map.of(), List.of()))) {
++                for (PoolResponse.Member m : pool.members()) {
++                    byMember.put(key(pool.name(), m), m.cut());
++                }
++            }
++            cutsThen.put(period.name(), byMember);
++        }
++        response.send(figure(sheet, pools, people, settings, sheets, crews, cutsThen,
++                ended.stream().map(Period::name).toList()));
++    }
++
++    /** Names a member of a pool the same way at every date. */
++    private static String key(String pool, PoolResponse.Member m) {
++        return pool + "\n" + (m.pool() != null ? "pool:" + m.pool() : String.valueOf(m.personId()));
++    }
++
++    /** The sheet's pools as the store is read now; each member with its cut at the end of each named period. */
++    private static List<PoolResponse> figure(String sheet, Pools pools, People people, Settings settings, Sheets sheets,
++            Crews crews, Map<String, Map<String, String>> cutsThen, List<String> ended) {
+         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
+         List<Pools.Membership> members = new ArrayList<>(pools.members(sheet));
+         Map<String, String> parents = pools.parents(sheet);
+@@ -89,19 +121,26 @@ public class RespondWithPools {
+             for (int i = 0; i < in.size(); i++) {
+                 Pools.Membership m = in.get(i);
+                 String cut = cuts == null || !m.on(today) ? "" : cuts.get(i).toPlainString();
++                PoolResponse.Member member;
+                 if (m.memberPool() != null) {
+-                    shown.add(new PoolResponse.Member(0, m.memberPool(), m.share().toPlainString(), false, cut,
+-                            m.memberPool()));
++                    member = new PoolResponse.Member(0, m.memberPool(), m.share().toPlainString(), false, cut,
++                            m.memberPool(), List.of());
+                 } else {
+                     Person person = byId.get(m.personId());
+-                    shown.add(new PoolResponse.Member(person.id(), person.name(), m.share().toPlainString(),
+-                            person.retiredFrom() != null, cut, null));
++                    member = new PoolResponse.Member(person.id(), person.name(), m.share().toPlainString(),
++                            person.retiredFrom() != null, cut, null, List.of());
+                 }
++                List<PoolResponse.PeriodCut> then = new ArrayList<>();
++                for (String period : ended) {
++                    then.add(new PoolResponse.PeriodCut(period,
++                            cutsThen.getOrDefault(period, Map.of()).getOrDefault(key(name, member), "")));
++                }
++                shown.add(member.withPeriodCuts(then));
+             }
+             BigDecimal total = totals.get(name);
+             out.add(new PoolResponse(name, shown, total.toPlainString(), total.compareTo(HUNDRED) == 0));
+         }
+-        response.send(out);
++        return out;
+     }
+ 
+     /** The crew as a pool's members: its lead then its members (people of the sheet), at equal shares of 100.00. */
+diff --git a/src/main/resources/db/migration/V86__pool_history.sql b/src/main/resources/db/migration/V86__pool_history.sql
+new file mode 100644
+index 00000000..37350646
+--- /dev/null
++++ b/src/main/resources/db/migration/V86__pool_history.sql
+@@ -0,0 +1,32 @@
++-- Pools and crews (a crew is also a pool) kept in history too (see V39 and V40), so a pool member's cut can be
++-- figured as it stood at the end of a period: the pool, its members and the pot as they were then.
++CREATE TABLE pool_history AS SELECT * FROM pool;
++ALTER TABLE pool_history ADD COLUMN history_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++ALTER TABLE pool_history ADD COLUMN history_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE pool_history ADD COLUMN history_seq BIGINT GENERATED BY DEFAULT AS IDENTITY;
++CREATE TABLE pool_member_history AS SELECT * FROM pool_member;
++ALTER TABLE pool_member_history ADD COLUMN history_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++ALTER TABLE pool_member_history ADD COLUMN history_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE pool_member_history ADD COLUMN history_seq BIGINT GENERATED BY DEFAULT AS IDENTITY;
++CREATE TABLE pool_nested_history AS SELECT * FROM pool_nested;
++ALTER TABLE pool_nested_history ADD COLUMN history_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++ALTER TABLE pool_nested_history ADD COLUMN history_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE pool_nested_history ADD COLUMN history_seq BIGINT GENERATED BY DEFAULT AS IDENTITY;
++CREATE TABLE crew_history AS SELECT * FROM crew;
++ALTER TABLE crew_history ADD COLUMN history_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++ALTER TABLE crew_history ADD COLUMN history_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE crew_history ADD COLUMN history_seq BIGINT GENERATED BY DEFAULT AS IDENTITY;
++CREATE TABLE crew_member_history AS SELECT * FROM crew_member;
++ALTER TABLE crew_member_history ADD COLUMN history_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++ALTER TABLE crew_member_history ADD COLUMN history_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE crew_member_history ADD COLUMN history_seq BIGINT GENERATED BY DEFAULT AS IDENTITY;
++CREATE INDEX pool_history_key ON pool_history (sheet_id, name);
++CREATE INDEX pool_member_history_key ON pool_member_history (sheet_id, pool_name, person_id);
++CREATE INDEX pool_nested_history_key ON pool_nested_history (sheet_id, member_pool);
++CREATE INDEX crew_history_key ON crew_history (sheet_id, name);
++CREATE INDEX crew_member_history_key ON crew_member_history (sheet_id, crew_name, person_id);
++CREATE TRIGGER pool_journal AFTER INSERT, UPDATE, DELETE ON pool FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
++CREATE TRIGGER pool_member_journal AFTER INSERT, UPDATE, DELETE ON pool_member FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
++CREATE TRIGGER pool_nested_journal AFTER INSERT, UPDATE, DELETE ON pool_nested FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
++CREATE TRIGGER crew_journal AFTER INSERT, UPDATE, DELETE ON crew FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
++CREATE TRIGGER crew_member_journal AFTER INSERT, UPDATE, DELETE ON crew_member FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+index 641898c5..560b318a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+@@ -1,7 +1,8 @@
+ # GET /api/sheets/{sheetId}/pools — the sheet's pools, in the order added, each with its members (in the order added),
+ # its total share (a retired member's share counting 0.00) and whether it is balanced (the total is exactly 100.00),
+ # and each member's cut of the sheet's pot when the pool is balanced and there is a pot (a member held on the sheet's
+-# today has none, their share spread over the members with a cut).
++# today has none, their share spread over the members with a cut), and its cut as it stood at the end of each period
++# whose to-date is on or before the sheet's today (read from the store as of that to-date).
+ respond:
+   class: net.officefloor.hq.app.pool.RespondWithPools
+   govern: [ readonly-transaction ]
