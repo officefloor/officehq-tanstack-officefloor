@@ -19,7 +19,8 @@ public class Periods {
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), Map.of(),
-            rs.getBoolean("soft"), rs.getObject("claim_cap", Integer.class));
+            rs.getBoolean("soft"), rs.getObject("claim_cap", Integer.class),
+            rs.getBoolean("locked"));
 
     private final JdbcTemplate jdbc;
 
@@ -121,12 +122,18 @@ public class Periods {
 
     /** Reopens the (soft-)closed period, dropping its fixed total and its people's fixed figures; false when it was not closed (someone else reopened it). */
     public boolean reopen(Period period) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft) AND NOT locked",
                 period.sheetId(), period.name()) != 1) {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", period.sheetId(),
                 period.name());
         return true;
+    }
+
+    /** Locks or unlocks the period; false when it already was so (someone else changed it). */
+    public boolean lock(Period period, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ? AND locked = ?", locked,
+                period.sheetId(), period.name(), !locked) == 1;
     }
 }

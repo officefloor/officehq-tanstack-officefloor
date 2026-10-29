@@ -27,6 +27,8 @@ export type Period = {
   /** How many OPEN or PENDING claims each person may have in the period; null for no cap. */
   cap: number | null;
   personOpenings: Record<string, string>;
+  /** A locked period cannot be reopened; only a steward locks and unlocks it. */
+  locked: boolean;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */

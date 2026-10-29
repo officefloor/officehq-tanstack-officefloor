@@ -67,10 +67,19 @@ function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: nu
 
 /** A period's closed flag (yes, soft or no) and the buttons that close, soft-close and reopen it (each for the roles the settings' permission matrix allows: by default closing and soft-closing are a clerk's or a steward's, reopening a steward's). A refusal
  *  shows on the period until its next action. */
-function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) {
+function PeriodClosed({
+  sheetId,
+  period,
+  error,
+  setError,
+}: {
+  sheetId: string;
+  period: Period;
+  error: string;
+  setError: (error: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [user] = useUser();
-  const [error, setError] = useState('');
   const once = useSubmitOnce();
   const close = useMutation({
     mutationFn: () =>
@@ -143,6 +152,72 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
       </button>
       {error && <span data-testid="period-error">{error}</span>}
     </td>
+  );
+}
+
+/** A period's locked flag (yes or no) and the buttons that lock and unlock it (a steward's only; a locked period cannot
+ *  be reopened). A refusal shows on the period (in its closed cell) until its next action. */
+function PeriodLocked({
+  sheetId,
+  period,
+  setError,
+}: {
+  sheetId: string;
+  period: Period;
+  setError: (error: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [user] = useUser();
+  const once = useSubmitOnce();
+  const lock = useMutation({
+    mutationFn: (action: 'lock' | 'unlock') =>
+      putJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/${action}`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+    onError: (_e, action) =>
+      setError(`The period ${period.name} could not be ${action}ed: it already is, or only a steward may ${action} it.`),
+  });
+
+  return (
+    <td>
+      <span data-testid="period-locked">{period.locked ? 'yes' : 'no'}</span>{' '}
+      <button
+        type="button"
+        data-testid="period-lock"
+        disabled={lock.isPending}
+        onClick={() => {
+          setError('');
+          once(() => lock.mutateAsync('lock'));
+        }}
+      >
+        Lock
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="period-unlock"
+        disabled={lock.isPending}
+        onClick={() => {
+          setError('');
+          once(() => lock.mutateAsync('unlock'));
+        }}
+      >
+        Unlock
+      </button>
+    </td>
+  );
+}
+
+/** A period's closed and locked cells, sharing the one error the row shows: any action on the period clears it. */
+function PeriodState({ sheetId, period }: { sheetId: string; period: Period }) {
+  const [error, setError] = useState('');
+  return (
+    <>
+      <PeriodClosed sheetId={sheetId} period={period} error={error} setError={setError} />
+      <PeriodLocked sheetId={sheetId} period={period} setError={setError} />
+    </>
   );
 }
 
@@ -254,6 +329,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Due</th>
             <th>Claim cap</th>
             <th>Closed</th>
+            <th>Locked</th>
           </tr>
         </thead>
         <tbody>
@@ -265,7 +341,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-fy">{fiscalYear(p.from, fiscalStart)}</td>
               <td data-testid="period-due-total">{dueTotal(p)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
-              <PeriodClosed sheetId={sheetId} period={p} />
+              <PeriodState sheetId={sheetId} period={p} />
             </tr>
           ))}
         </tbody>

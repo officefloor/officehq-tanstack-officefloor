@@ -17,6 +17,9 @@ public class ReopenPeriod {
         if (!settings.permits(period.sheetId(), "reopen", Audit.user(connection).trim())) {
             throw new PeriodRefusedException("Your role is not allowed to reopen a period.");
         }
+        if (period.locked()) {
+            throw new PeriodRefusedException("The period " + period.name() + " is locked.");
+        }
         if (!(period.closed() || period.soft()) || !periods.reopen(period)) {
             throw new PeriodRefusedException("The period " + period.name() + " is not closed.");
         }
