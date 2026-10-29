@@ -1,0 +1,101 @@
+diff --git a/src/main/frontend/features/claims/claimsQuery.ts b/src/main/frontend/features/claims/claimsQuery.ts
+index 9c02fdbc..9e223e60 100644
+--- a/src/main/frontend/features/claims/claimsQuery.ts
++++ b/src/main/frontend/features/claims/claimsQuery.ts
+@@ -12,7 +12,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
+  * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening and kept when voided (null for a draft);
+  * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date);
+  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
+- * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim is not bound while PENDING;
++ * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim too;
+  * a negative `amount` is a correction, and `corrects` is the number of the settled claim it corrects (null for any other claim);
+  * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from its person's own terms, else the terms of their grade on its date, counted in business days after its date (skipping Saturdays, Sundays and the sheet's holidays as they then were), and kept when they or its date change;
+  * `log` is its status log, oldest first, one line per status it has had: "<STATUS> by <user> on <date> due=<due>";
+@@ -85,7 +85,7 @@ export const counts = (c: Claim, people: Person[], today: string) =>
+   !isDeferred(c, today) &&
+   (c.status === 'SETTLED' ||
+   (isOpen(c) &&
+-    ((c.stated && c.status !== 'PENDING') || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
++    (c.stated || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
+ 
+ /** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
+ const leftOut = (person: Person | undefined, date: string, today: string) =>
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index fe0ef91c..902b50d7 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -153,7 +153,7 @@ function addDays(date: string, days: number): string {
+ 
+ /**
+  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise its rate figure — the one its
+- * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
++ * person's last statement bound it to, otherwise its amount times the rate, on the claim's date, of
+  * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`). An overdue claim's late charge — for every full 30 days overdue, the late
+  * percent in force on that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of that rate figure plus the charges of the boundaries before it (compounding), each rounded like the claim, added up — is added on top: a statement
+  * never binds it, so it follows the sheet's today. Last, the sum is raised to the sheet's `floor` in force on the claim's date (two decimals).
+@@ -162,7 +162,7 @@ function addDays(date: string, days: number): string {
+ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: DatedValue[], late: Late): string {
+   if (claim.settledDue !== null) return claim.settledDue;
+   const halfUp = roundsHalfUp(claim, late);
+-  const bound = claim.stated && claim.status !== 'PENDING'
++  const bound = claim.stated
+     ? (claim.statedDue ?? 'n/a')
+     : due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date, claim.id), halfUp);
+   if (isCorrection(claim) || bound === 'n/a') return bound;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 25d5db51..43a4deb5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -212,11 +212,11 @@ public class ApplyClaimStatus {
+ 
+     /**
+      * The claim's due now, before its late charge: the figure its person's last statement bound it to (a PENDING
+-     * claim is not bound: its figure is live), otherwise its amount times its
++     * claim too), otherwise its amount times its
+      * person's grade's rate on the claim's date, rounded by the policy date (not yet floored); null when none applies.
+      */
+     private static BigDecimal due(Claim claim, People people, Rates rates, Settings settings) {
+-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
++        if (claim.stated()) {
+             return claim.statedDue();
+         }
+         Person person = people.find(claim.sheetId(), claim.personId());
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 669b8dae..a3736ee9 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -172,7 +172,7 @@ public class Rollup {
+         if (claim.deferredOn(today)) {
+             return false;
+         }
+-        boolean bound = claim.stated() && claim.status() != ClaimStatus.PENDING;
++        boolean bound = claim.stated();
+         return !(claim.status().isOpen() && !bound && (person.heldOn(claim.date()) || person.retiredOn(today)));
+     }
+ 
+@@ -190,10 +190,10 @@ public class Rollup {
+ 
+     /**
+      * The claim's figure before any late charge: the one its person's last statement bound, else its live rate figure (not floored).
+-     * A PENDING claim is not bound: it shows its live figure until approved or rejected.
++     * A PENDING claim is bound like any other claim that counts.
+      */
+     private BigDecimal bound(Claim claim, Person person) {
+-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
++        if (claim.stated()) {
+             return claim.statedDue();
+         }
+         BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 6af9b6a2..e55ef15f 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -89,7 +89,7 @@ public class TakeStatement {
+         if (claim.settledDue() != null) {
+             return claim.settledDue();
+         }
+-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
++        if (claim.stated()) {
+             return claim.statedDue();
+         }
+         BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));
