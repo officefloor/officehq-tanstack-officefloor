@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
@@ -13,7 +13,7 @@ import { ratesQuery } from '../rates/ratesQuery';
 import { fiscalYear, useFiscalStartMonth, useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodDue } from './periodsQuery';
+import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodCarried, personPeriodDue } from './periodsQuery';
 import type { Period } from './periodsQuery';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -25,19 +25,23 @@ function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   return <td data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</td>;
 }
 
-/** A column per period on the sheet, headed by its name. */
+/** Two columns per period on the sheet: its due-total, headed by its name, and its carried figure. */
 function PersonPeriodHeaders({ sheetId }: { sheetId: string }) {
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
   return (
     <>
       {periods.map((p) => (
-        <th key={p.name}>{p.name}</th>
+        <Fragment key={p.name}>
+          <th>{p.name}</th>
+          <th>{p.name} carried</th>
+        </Fragment>
       ))}
     </>
   );
 }
 
-/** The person's due-total for each period on the sheet: live while it is open, fixed while it is closed or soft-closed. */
+/** The person's due-total for each period on the sheet (live while it is open, fixed while it is closed or soft-closed), and
+ *  their carried figure for it: the due of their earlier periods' claims still OPEN or PENDING at its end. */
 function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: number }) {
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
@@ -50,9 +54,12 @@ function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: nu
   return (
     <>
       {periods.map((p) => (
-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {personPeriodDue(p, person, claims, people, rates, floor, late)}
-        </td>
+        <Fragment key={p.name}>
+          <td data-testid={`person-period-${p.name}-due-total`}>{personPeriodDue(p, person, claims, people, rates, floor, late)}</td>
+          <td data-testid={`person-period-${p.name}-carried`}>
+            {personPeriodCarried(p, periods, person, claims, people, rates, floor, late)}
+          </td>
+        </Fragment>
       ))}
     </>
   );

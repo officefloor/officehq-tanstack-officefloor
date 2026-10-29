@@ -85,6 +85,33 @@ export function personPeriodDue(
   );
 }
 
+/**
+ * A person's carried figure for a period: the figures (as shown now) of their claims that count which belong (by due-by)
+ * to a period ending before this one starts and were still OPEN or PENDING at the end of its last day, by their log.
+ */
+export function personPeriodCarried(
+  period: Period,
+  periods: Period[],
+  person: Person,
+  claims: Claim[],
+  people: Person[],
+  rates: Rate[],
+  floor: DatedValue[],
+  late: Late,
+): string {
+  return sumDue(
+    claims
+      .filter((c) => {
+        if (c.personId !== person.id) return false;
+        const own = periodOf(periods, c.dueBy);
+        if (!own || own.to >= period.from) return false;
+        const status = statusOn(c, period.to);
+        return (status === 'OPEN' || status === 'PENDING') && counts({ ...c, status }, isOpen(c) ? people : [], late.today);
+      })
+      .map((c) => figure(c, rates, person, floor, late)),
+  );
+}
+
 /** A period's due-total: its people's due-totals for it added up. */
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
   return sumDue(people.map((p) => personPeriodDue(period, p, claims, people, rates, floor, late)));
