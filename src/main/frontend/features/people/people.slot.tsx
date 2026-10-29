@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { peopleQuery } from './peopleQuery';
+import { peopleQuery, shownName } from './peopleQuery';
 import type { Person } from './peopleQuery';
 import { PersonForm } from './PersonForm';
 import { useEditingPerson } from './useEditingPerson';
@@ -10,6 +10,7 @@ import { compareDue, compareNames, SORT_KEYS, useSortBy } from './useSortBy';
 import type { SortKey } from './useSortBy';
 import { usePeopleDueTotals } from '../rates/due.slot';
 import { ColumnChooser, ColumnShown } from './useColumns';
+import { useSheetToday } from '../sheet/useSheetToday';
 
 function People({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId));
@@ -18,6 +19,7 @@ function People({ sheetId }: { sheetId: string }) {
   // Retired people have no row at all unless "show retired" is on; their claims still count in every total.
   const [sortBy, setSortBy] = useSortBy();
   const dues = usePeopleDueTotals(sheetId);
+  const today = useSheetToday(sheetId);
   // Sorting changes only the order shown; equal keys keep list order (the sort is stable).
   const byKey: Record<SortKey, ((a: Person, b: Person) => number) | null> = {
     added: null,
@@ -69,7 +71,7 @@ function People({ sheetId }: { sheetId: string }) {
         <tbody>
           {listed.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{shownName(p, today)}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <ColumnShown column="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></ColumnShown>
               <ColumnShown column="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></ColumnShown>

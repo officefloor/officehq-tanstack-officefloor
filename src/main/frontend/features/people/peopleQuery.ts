@@ -51,6 +51,11 @@ export function gradeOn(person: Person | undefined, date: string): Grade | undef
     ?.grade ?? person.grade;
 }
 
+/** The person's name as the screen shows it: `<name> (<grade in force on the date>)`. */
+export function shownName(person: Person, date: string): string {
+  return `${person.name} (${gradeOn(person, date)})`;
+}
+
 /** Under the sheet's key, so re-loading the sheet re-reads its people. */
 export const peopleKey = (sheetId: string) => [...sheetKey(sheetId), 'people'] as const;
 

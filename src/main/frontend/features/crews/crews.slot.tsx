@@ -5,7 +5,8 @@ import { postJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
-import { peopleQuery } from '../people/peopleQuery';
+import { peopleQuery, shownName } from '../people/peopleQuery';
+import { useSheetToday } from '../sheet/useSheetToday';
 import type { Person } from '../people/peopleQuery';
 import { sumDue } from '../rates/ratesQuery';
 import { usePeopleDueTotals } from '../rates/due.slot';
@@ -49,10 +50,12 @@ function CrewRow({ sheetId, crew, people, dues }: { sheetId: string; crew: Crew;
   };
 
   const nameOf = (id: number) => people.find((p) => p.id === id)?.name;
+  const today = useSheetToday(sheetId);
+  const lead = people.find((p) => p.id === crew.leadId);
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <strong data-testid="crew-name">{crew.name}</strong> — lead <span data-testid="crew-lead">{nameOf(crew.leadId) ?? ''}</span>,
+      <strong data-testid="crew-name">{crew.name}</strong> — lead <span data-testid="crew-lead">{lead ? shownName(lead, today) : ''}</span>,
       due <span data-testid="crew-due-total">{crewDue(crew, dues)}</span>
       <ul>
         {crew.memberIds

@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
-import { peopleQuery } from '../people/peopleQuery';
+import { peopleQuery, shownName } from '../people/peopleQuery';
+import { useSheetToday } from '../sheet/useSheetToday';
 import { useUser } from '../session/useUser';
 import { patronSharesOf, patronsKey, patronsQuery } from './patronsQuery';
 import type { PatronLink } from './patronsQuery';
@@ -21,13 +22,14 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
   const once = useSubmitOnce();
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const links = useQuery(patronsQuery(sheetId)).data ?? [];
+  const today = useSheetToday(sheetId);
   const names = patronSharesOf(links, personId)
     .flatMap((s) => {
       const patron = people.find((p) => p.id === s.patronId);
-      return patron ? [{ name: patron.name, share: s.share }] : [];
+      return patron ? [{ name: patron.name, shown: shownName(patron, today), share: s.share }] : [];
     })
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map((s) => `${s.name} ${s.share}`);
+    .map((s) => `${s.shown} ${s.share}`);
   const add = useMutation({
     mutationFn: (id: number) =>
       postJson<PatronLink>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/patrons`, { patronId: id }, user),
