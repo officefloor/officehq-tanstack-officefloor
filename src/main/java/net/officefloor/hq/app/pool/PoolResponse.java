@@ -3,7 +3,7 @@ package net.officefloor.hq.app.pool;
 import java.util.List;
 
 /**
- * A pool as the screen sees it: its name, its members, the total of their shares (a retired member's counting 0.00)
+ * A pool as the screen sees it: its name, its members, the total of their shares (a retired member's counting as given)
  * with two decimals, and whether that total is exactly 100.00.
  */
 public record PoolResponse(String name, List<Member> members, String totalShare, boolean balanced) {

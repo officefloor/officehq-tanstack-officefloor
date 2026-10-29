@@ -20,12 +20,12 @@ public class RespondWithPools {
 
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
-    // A member with a retirement date set, whatever the date, counts 0.00 toward the pool's total.
-    // Each member of a balanced pool cuts the pool's pot times their share / 100, half to even to two decimals (a retired
-    // member 0.00); the remainder goes to the member with the largest share, the earliest added on a tie, so the cuts
-    // total the pot. A member held on the sheet's today (a retired member too) has no cut: the pot is spread over the
+    // A member with a retirement date set, whatever the date, counts their share as given toward the pool's total.
+    // Each member of a balanced pool cuts the pool's pot times their share / 100, half to even to two decimals; the remainder goes to the member with the largest share, the earliest added on a tie, so the cuts
+    // total the pot. A member held on the sheet's today, or retired, has a cut of 0.00: the pot is spread over the
     // members with a cut, each the pot times their share / the shares of the members with a cut added up (all 0.00 when
-    // none has a cut); the total share and balance are unchanged by a hold. A pool that is a member of none has the sheet's pot; a pool that is a member of another has its cut
+    // none has a cut); the total share and balance are unchanged by a hold or a retirement. A pool whose every member
+    // (whose dates include the sheet's today) is retired has no cuts. A pool that is a member of none has the sheet's pot; a pool that is a member of another has its cut
     // there as its pot (none when the pool above has no cuts). A member whose dates do not include the sheet's today is
     // left out entirely: listed with its share, but not in the total share or the balance, and with no cut ("").
     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
@@ -56,9 +56,7 @@ public class RespondWithPools {
                     if (person == null) {
                         continue;
                     }
-                    if (person.retiredFrom() == null) {
-                        total = total.add(m.share());
-                    }
+                    total = total.add(m.share());
                 } else {
                     total = total.add(m.share());
                 }
@@ -118,9 +116,25 @@ public class RespondWithPools {
             }
         }
         boolean balanced = totals.get(name).compareTo(HUNDRED) == 0;
-        List<BigDecimal> cuts = balanced && pot != null ? cuts(pot, inByPool.get(name), byId, today) : null;
+        List<BigDecimal> cuts = balanced && pot != null && !allRetired(inByPool.get(name), byId, today)
+                ? cuts(pot, inByPool.get(name), byId, today) : null;
         cutsByPool.put(name, cuts);
         return cuts;
+    }
+
+    /** Whether every member whose dates include the sheet's today is a retired person. */
+    private static boolean allRetired(List<Pools.Membership> in, Map<Long, Person> byId, LocalDate today) {
+        boolean any = false;
+        for (Pools.Membership m : in) {
+            if (!m.on(today)) {
+                continue;
+            }
+            if (m.memberPool() != null || byId.get(m.personId()).retiredFrom() == null) {
+                return false;
+            }
+            any = true;
+        }
+        return any;
     }
 
     /**
