@@ -194,4 +194,30 @@ public class Audit {
             throw new UncheckedIOException(e);
         }
     }
+
+    /**
+     * Records held back until {@link #flush()}: for a change made of several steps, any of which may be refused, so that
+     * a refused change records nothing.
+     */
+    public static class Buffer extends Audit {
+
+        private final Audit target;
+        private final List<Object[]> held = new ArrayList<>();
+
+        public Buffer(Audit target) {
+            super(target.file.toString(), target.settings);
+            this.target = target;
+        }
+
+        @Override
+        public synchronized void record(String entry, java.time.LocalDate on) {
+            held.add(new Object[] { entry, on });
+        }
+
+        /** Append the records held, in the order they were made. */
+        public synchronized void flush() {
+            held.forEach(r -> target.record((String) r[0], (java.time.LocalDate) r[1]));
+            held.clear();
+        }
+    }
 }
