@@ -17,7 +17,7 @@ import type { DatedValue } from './dated';
  *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
  *  by clerk and steward; reassign and reopen by steward). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
 
 /** The actions the permission matrix decides; each is kept (not dated) under perm-<action>. */
 export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
@@ -57,6 +57,8 @@ export type SettingsChange = {
   reviewSla?: string;
   /** The proof kinds, comma separated, a claim above the proof threshold needs one proof of each of (not dated): left out is left as it is, blank is none. */
   proofKinds?: string;
+  /** The grade a person quick-added or imported with a blank grade is given (not dated): left out is left as it is, blank is none (so A). */
+  defaultGrade?: string;
   /** The id of the parent sheet (not dated): left out is left as it is, blank is none. */
   parent?: string;
   /** The month (1 to 12) the fiscal year starts on (not dated): left out or blank is left as it is. */

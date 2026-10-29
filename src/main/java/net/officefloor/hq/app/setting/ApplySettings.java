@@ -72,6 +72,9 @@ public class ApplySettings {
         if (settings.proofKinds() != null) {
             store.set(settings.sheetId(), Settings.PROOF_KINDS, settings.proofKinds());
         }
+        if (settings.defaultGrade() != null) {
+            store.set(settings.sheetId(), Settings.DEFAULT_GRADE, settings.defaultGrade());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

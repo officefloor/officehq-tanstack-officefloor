@@ -39,6 +39,7 @@ public class ValidateSettings {
     // The alert threshold is like the pot: missing is left as it is, blank is off.
     // The escalation gap is like the grace days: missing is left as it is, blank is off, otherwise a whole number of days, 0 or more (not dated).
     // The proof kinds are not dated: missing is left as they are, blank is none, otherwise receipt or photo, separated by commas.
+    // The default grade is not dated: missing is left as it is, blank is none (so A), otherwise a grade, A, B or C.
     // The parent is a sheet id, not dated: missing is left as it is, blank is none. It may not be the sheet itself, nor a
     // sheet that has this one as an ancestor, and it must be a sheet that has been loaded.
     // The rounding mode is dated: missing is left as it is, blank is none (the policy date decides), otherwise half-up or half-even.
@@ -243,6 +244,10 @@ public class ValidateSettings {
             }
             proofKinds = String.join(",", kinds);
         }
+        String defaultGrade = body == null || body.defaultGrade() == null ? null : body.defaultGrade().trim();
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !Settings.GRADES.contains(defaultGrade)) {
+            throw new InvalidSettingException("The default grade must be A, B or C.");
+        }
         Map<String, LocalDate> from = new java.util.HashMap<>();
         if (body != null && body.from() != null) {
             for (Map.Entry<String, String> entry : body.from().entrySet()) {
@@ -290,7 +295,7 @@ public class ValidateSettings {
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
-                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null;
+                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -298,7 +303,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade));
     }
 
     private static String twoDecimals(String amount) {

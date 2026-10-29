@@ -298,7 +298,7 @@ public class People {
      * into's (into's last statement stays their last; having none, from's last becomes it); from's name and aliases
      * become into's aliases; from's patrons are added to into's and anyone naming from names into instead (never
      * themselves, no repeats); from's pool memberships and closed-period figures move to into (added to into's own where
-     * into has one), and so do from's opening balances and plans. from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
+     * into has one), and so do from's opening balances, plans and crews (a crew from leads is led by into). from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
      */
     public void merge(String sheetId, long from, long into) {
         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
@@ -323,6 +323,16 @@ public class People {
             }
         }
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, from);
+        // from's crews become into's: the crews from leads are led by into (into no longer a member of them), and
+        // from's crew memberships move to into where into is neither in nor leading that crew.
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ? AND crew_name IN"
+                + " (SELECT name FROM crew WHERE sheet_id = ? AND lead_id = ?)", sheetId, into, sheetId, from);
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet_id = ? AND lead_id = ?", into, sheetId, from);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?"
+                + " AND crew_name NOT IN (SELECT crew_name FROM crew_member WHERE sheet_id = ? AND person_id = ?)"
+                + " AND crew_name NOT IN (SELECT name FROM crew WHERE sheet_id = ? AND lead_id = ?)",
+                into, sheetId, from, sheetId, into, sheetId, into);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ?", sheetId, from);
         for (Map<String, Object> m : jdbc.queryForList("SELECT period_name, total, carried FROM period_person_total WHERE sheet_id = ? AND person_id = ?",
                 sheetId, from)) {
             if (jdbc.update("UPDATE period_person_total SET total = total + ?, carried = carried + ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",

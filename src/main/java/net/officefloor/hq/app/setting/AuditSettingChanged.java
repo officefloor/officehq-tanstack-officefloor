@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 
 public class AuditSettingChanged {
-    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then each grade's proof threshold by grade, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order, then the pot, then the parent, then the fiscal year start month, then the alert threshold, then the rounding mode, then the review threshold, then the escalation gap, then the review SLA, then the proof kinds. A dated setting saved with a from-date ends with from=<date>.
+    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then each grade's proof threshold by grade, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order, then the pot, then the parent, then the fiscal year start month, then the alert threshold, then the rounding mode, then the review threshold, then the escalation gap, then the review SLA, then the proof kinds, then the default grade. A dated setting saved with a from-date ends with from=<date>.
     public void audit(@Val SheetSettings settings, ServerHttpConnection connection, Audit audit) {
         if (settings.clerkLimit() != null) {
             audit.record(dated(settings, connection,
@@ -94,6 +94,10 @@ public class AuditSettingChanged {
         if (settings.proofKinds() != null) {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.PROOF_KINDS, "value=" + settings.proofKinds()));
+        }
+        if (settings.defaultGrade() != null) {
+            audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
+                    "key=" + Settings.DEFAULT_GRADE, "value=" + settings.defaultGrade()));
         }
     }
 

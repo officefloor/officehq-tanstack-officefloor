@@ -11,18 +11,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateImport {
     // Every line is checked before any is stored, by the person form's rules: name,grade,terms,contact (the last two may be
-    // absent or blank). A line whose name matches a person on the sheet (by name or alias, as names are compared) updates
+    // absent or blank; a blank grade is the sheet's default grade). A line whose name matches a person on the sheet (by name or alias, as names are compared) updates
     // them, checked as their edit form would be; any other line adds, and is refused when its name is used on the sheet's
     // tree as a name or alias. A contact already used by someone else on the sheet is refused, as is a name, contact or
     // matched person repeated in the import (ignoring case). Blank lines are skipped; an import with no line is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRequest body, People people,
-            Out<ImportedPeople> out) throws InvalidPersonException {
+            net.officefloor.hq.app.setting.Settings settings, Out<ImportedPeople> out) throws InvalidPersonException {
         String sheet = sheetId.trim();
         String text = body == null || body.text() == null ? "" : body.text();
         List<ImportedPeople.Line> lines = new ArrayList<>();
         Set<String> names = new HashSet<>();
         Set<String> contacts = new HashSet<>();
         Set<Long> matched = new HashSet<>();
+        String defaultGrade = settings.defaultGrade(sheet);
         int n = 0;
         for (String line : text.split("\\r?\\n")) {
             n++;
@@ -34,7 +35,7 @@ public class ValidateImport {
                 throw new InvalidPersonException("Line " + n + ": type name,grade,terms,contact.");
             }
             try {
-                PersonRequest request = PersonRules.parse(new PersonRequest(fields[0], fields[1], null, null,
+                PersonRequest request = PersonRules.parse(new PersonRequest(fields[0], fields[1].isBlank() ? defaultGrade : fields[1], null, null,
                         fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null, null));
                 if (!names.add(request.name().toLowerCase(Locale.ROOT))) {
                     throw new InvalidPersonException("The name " + request.name() + " is given twice in the import.");

@@ -28,7 +28,7 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today), unless a rounding mode (half-up or half-even, dated like the floor; blank: none) is in force on the claim's date. A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) — its person's grade's own when one is in force then (dated like the floor; blank: none, so the sheet's) — is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). Each grade may have grace days (blank: none), dated like the floor: a claim whose person's grade on its date has a grace in force on that date is overdue only once its due-by plus the grace is before the sheet's today, and its late charge counts from there; a blank grade's grace is saved as none when its from-date is given or it was the last field worked in. When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated). While the entry date is set it is the date a new claim left undated is given (blank: off, the sheet's today; not dated). Reminding a claim whose previous reminder was at least the escalation gap's days before the sheet's today escalates it, once per claim (blank: off; not dated). A REVIEW claim whose review day (the sheet's today when it went to REVIEW) plus the review SLA's days is before the sheet's today is review-late (blank: none; not dated).
+ *  today), unless a rounding mode (half-up or half-even, dated like the floor; blank: none) is in force on the claim's date. A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) — its person's grade's own when one is in force then (dated like the floor; blank: none, so the sheet's) — is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). Each grade may have grace days (blank: none), dated like the floor: a claim whose person's grade on its date has a grace in force on that date is overdue only once its due-by plus the grace is before the sheet's today, and its late charge counts from there; a blank grade's grace is saved as none when its from-date is given or it was the last field worked in. When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated). While the entry date is set it is the date a new claim left undated is given (blank: off, the sheet's today; not dated). Reminding a claim whose previous reminder was at least the escalation gap's days before the sheet's today escalates it, once per claim (blank: off; not dated). A REVIEW claim whose review day (the sheet's today when it went to REVIEW) plus the review SLA's days is before the sheet's today is review-late (blank: none; not dated). A person quick-added, or imported on a line with a blank grade, is given the default grade (blank: A; not dated); changing it changes no one.
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
  *  date, the cap, the proof threshold, the note threshold and the grace days and the entry date was last worked in (the clerk limit unless it was one of the others).
  *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
@@ -59,10 +59,11 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
   const [proofKinds, setProofKinds] = useState('');
+  const [defaultGrade, setDefaultGrade] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -98,6 +99,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setEscalateAfter('');
       setReviewSla('');
       setProofKinds('');
+      setDefaultGrade('');
       setParent('');
       setFiscalStartMonth('');
       setPerms({});
@@ -232,6 +234,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The proof kinds must be receipt or photo, separated by commas.');
       return;
     }
+    const dg = defaultGrade.trim();
+    if (dg !== '' && !(GRADES as readonly string[]).includes(dg)) {
+      setError('The default grade must be A, B or C.');
+      return;
+    }
     const pa = parent.trim();
     if (pa === sheetId.trim()) {
       setError('A sheet cannot be its own parent.');
@@ -275,7 +282,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     // A blank review threshold is none likewise.
     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -291,6 +298,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (ea !== '' || (none && blank === 'escalateAfter')) body.escalateAfter = ea;
     if (rs !== '' || (none && blank === 'reviewSla')) body.reviewSla = rs;
     if (pk !== '' || (none && blank === 'proofKinds')) body.proofKinds = pk;
+    if (dg !== '' || (none && blank === 'defaultGrade')) body.defaultGrade = dg;
     if (pa !== '' || (none && blank === 'parent')) body.parent = pa;
     if (fm !== '') body.fiscalStartMonth = fm;
     for (const grade of GRADES) {
@@ -742,6 +750,19 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Default grade{' '}
+          <input
+            data-testid="setting-default-grade"
+            placeholder="A"
+            value={defaultGrade}
+            onFocus={() => setBlank('defaultGrade')}
+            onChange={(e) => {
+              setDefaultGrade(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Parent sheet{' '}
           <input
             data-testid="setting-parent"
@@ -860,6 +881,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</span>
+      </p>
+      <p>
+        Default grade: <span data-testid="setting-default-grade-current">{settings.data?.defaultGrade ?? ''}</span>
       </p>
       <p>
         Parent sheet: <span data-testid="setting-parent-current">{settings.data?.parent ?? ''}</span>

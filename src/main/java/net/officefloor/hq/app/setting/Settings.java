@@ -54,6 +54,8 @@ public class Settings {
     public static final String REVIEW_SLA = "review-sla";
     /** The proof kinds a claim above the proof threshold needs one proof of each of (not dated; blank: none), comma separated. */
     public static final String PROOF_KINDS = "proof-kinds";
+    /** The grade a person quick-added or imported with a blank grade is given (not dated); "" is grade A. */
+    public static final String DEFAULT_GRADE = "default-grade";
     /** How a claim's live figures round (dated): half-up or half-even; blank is none, so the policy date decides. */
     public static final String ROUNDING = "rounding";
     public static final List<String> ROUNDING_MODES = List.of("half-up", "half-even");
@@ -313,6 +315,12 @@ public class Settings {
     }
 
     /** The proof kinds a claim above the proof threshold needs at least one proof of each of; empty when none are set. */
+    /** The sheet's default grade: the one set, else A. */
+    public String defaultGrade(String sheetId) {
+        String value = get(sheetId, DEFAULT_GRADE);
+        return value.isEmpty() ? "A" : value;
+    }
+
     public List<String> proofKinds(String sheetId) {
         String value = get(sheetId, PROOF_KINDS);
         return value.isEmpty() ? List.of() : List.of(value.split(","));

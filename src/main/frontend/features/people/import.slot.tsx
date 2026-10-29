@@ -8,7 +8,7 @@ import { peopleKey } from './peopleQuery';
 import { useUser } from '../session/useUser';
 
 /**
- * The import box: lines of name,grade,terms,contact, in order. A line naming a person on the sheet (by name or alias)
+ * The import box: lines of name,grade,terms,contact, in order; a blank grade is the sheet's default grade. A line naming a person on the sheet (by name or alias)
  * updates them as their edit form would; any other line adds a person as the person form adds one. The server checks
  * every line by the form's rules first (a name or contact repeated in the import is refused too) and stores nothing
  * when any is refused. Shows how many were added and how many updated.

@@ -11,7 +11,7 @@ import { useUser } from '../session/useUser';
 
 /**
  * The quick-add bar: a name and an amount make a DRAFT claim dated the sheet's today, for the person
- * of that name or alias (ignoring case), who is added with grade A when not on the sheet. The server applies
+ * of that name or alias (ignoring case), who is added with the sheet's default grade (A when none is set) when not on the sheet. The server applies
  * the person and claim forms' rules and stores nothing when it refuses.
  */
 function QuickAdd({ sheetId }: { sheetId: string }) {
