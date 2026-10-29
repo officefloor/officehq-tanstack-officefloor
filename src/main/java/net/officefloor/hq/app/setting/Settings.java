@@ -41,6 +41,9 @@ public class Settings {
     public static final String POT = "pot";
     /** The id of the sheet whose rates are used where this sheet has none (undated); blank is none. */
     public static final String PARENT = "parent";
+    /** The month (1 to 12) a fiscal year starts on (undated); blank is the default, January. */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+    public static final String FISCAL_START_MONTH_DEFAULT = "1";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
@@ -250,6 +253,12 @@ public class Settings {
     public LocalDate entryDate(String sheetId) {
         String value = get(sheetId, ENTRY_DATE);
         return value.isEmpty() ? sheets.today(sheetId) : LocalDate.parse(value);
+    }
+
+    /** The month (1 to 12) the sheet's fiscal year starts on. */
+    public int fiscalStartMonth(String sheetId) {
+        String value = get(sheetId, FISCAL_START_MONTH);
+        return Integer.parseInt(value.isEmpty() ? FISCAL_START_MONTH_DEFAULT : value);
     }
 
     /** The grace days: how many days after its to-date an open period is closed when the sheet's today is changed; null when it is off. */

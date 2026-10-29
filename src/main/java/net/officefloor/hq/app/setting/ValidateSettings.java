@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+    private static final Pattern MONTH = Pattern.compile("\\d{1,2}");
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?");
 
     // The amounts are kept with two decimals. A blank floor leaves the floor as it is; a blank clerk limit is
@@ -37,6 +38,7 @@ public class ValidateSettings {
     // The pot is like the cap, but not dated: missing is left as it is, blank is none.
     // The parent is a sheet id, not dated: missing is left as it is, blank is none. It may not be the sheet itself, nor a
     // sheet that has this one as an ancestor, and it must be a sheet that has been loaded.
+    // The fiscal year start month is not dated: missing or blank is left as it is, otherwise a whole month, 1 to 12.
     // An action's permitted roles are missing: left as they are, blank: the standing rule, otherwise clerk or steward, separated by commas.
     // A from-date, given by setting key, is blank (the sheet's today) or a yyyy-MM-dd date, and only a dated setting has one.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
@@ -183,6 +185,14 @@ public class ValidateSettings {
                 }
             }
         }
+        String fiscalStartMonth = body == null || body.fiscalStartMonth() == null || body.fiscalStartMonth().isBlank() ? null
+                : body.fiscalStartMonth().trim();
+        if (fiscalStartMonth != null) {
+            if (!MONTH.matcher(fiscalStartMonth).matches() || Integer.parseInt(fiscalStartMonth) < 1 || Integer.parseInt(fiscalStartMonth) > 12) {
+                throw new InvalidSettingException("The fiscal year start month must be a month, 1 to 12.");
+            }
+            fiscalStartMonth = Integer.toString(Integer.parseInt(fiscalStartMonth));
+        }
         Map<String, LocalDate> from = new java.util.HashMap<>();
         if (body != null && body.from() != null) {
             for (Map.Entry<String, String> entry : body.from().entrySet()) {
@@ -229,7 +239,8 @@ public class ValidateSettings {
             }
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
-                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null;
+                || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
+                || fiscalStartMonth != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -237,7 +248,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth));
     }
 
     private static String twoDecimals(String amount) {

@@ -5,8 +5,6 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
-import java.util.ArrayList;
-import java.util.List;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,16 +24,7 @@ public class ValidateGeneratePeriods {
             throw new InvalidPeriodException("The to-date must be on or after the from-date.");
         }
         String sheet = sheetId.trim();
-        List<Period> existing = periods.list(sheet);
-        List<Period> made = new ArrayList<>();
-        for (YearMonth m = YearMonth.from(from); !m.isAfter(YearMonth.from(to)); m = m.plusMonths(1)) {
-            Period month = new Period(sheet, m.toString(), m.atDay(1), m.atEndOfMonth());
-            boolean clash = existing.stream().anyMatch(p -> p.name().equals(month.name()) || p.overlaps(month));
-            if (!clash) {
-                made.add(month);
-            }
-        }
-        generatedOut.set(new GeneratedPeriods(made));
+        generatedOut.set(GeneratedPeriods.months(sheet, periods.list(sheet), YearMonth.from(from), YearMonth.from(to)));
     }
 
     private static LocalDate date(String typed, String which) throws InvalidPeriodException {

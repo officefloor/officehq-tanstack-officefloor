@@ -10,13 +10,14 @@ import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import { ratesQuery } from '../rates/ratesQuery';
-import { useFloor, useLate } from '../settings/settingsQuery';
+import { fiscalYear, useFiscalStartMonth, useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodDue } from './periodsQuery';
 import type { Period } from './periodsQuery';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const YEAR = /^\d{4}$/;
 
 function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
@@ -147,6 +148,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const rates = useQuery(ratesQuery(sheetId)).data ?? [];
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const fiscalStart = useFiscalStartMonth(sheetId);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -230,6 +232,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Period</th>
             <th>From</th>
             <th>To</th>
+            <th>Fiscal year</th>
             <th>Due</th>
             <th>Closed</th>
           </tr>
@@ -240,6 +243,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
+              <td data-testid="period-fy">{fiscalYear(p.from, fiscalStart)}</td>
               <td data-testid="period-due-total">{dueTotal(p)}</td>
               <PeriodClosed sheetId={sheetId} period={p} />
             </tr>
@@ -250,7 +254,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   );
 }
 
-/** Makes a period per calendar month from the from-date's month to the to-date's month (a blank date is the
+/** Makes a period per calendar month — or per month of the fiscal year typed — from the from-date's month to the to-date's month (a blank date is the
  *  sheet's today), leaving out a month whose name is taken or whose days overlap a period, and shows how many
  *  were made. A to-date before the from-date is refused. */
 function GeneratePeriods({ sheetId }: { sheetId: string }) {
@@ -259,6 +263,7 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [year, setYear] = useState('');
   const [error, setError] = useState('');
   const [made, setMade] = useState<number | undefined>();
   const once = useSubmitOnce();
@@ -271,6 +276,28 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
     },
     onError: () => setError('The periods could not be generated: the dates must be dates and the to-date on or after the from-date.'),
   });
+  const generateFy = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-fy`, body, user),
+    onSuccess: async (r) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      setMade(r.made);
+    },
+    onError: () => setError('The fiscal year could not be generated: the year must be a year (yyyy).'),
+  });
+
+  // The fiscal year FY<yyyy> starts on the first of the sheet's fiscal start month in that year; its twelve
+  // months are made as the generator makes them.
+  const submitFy = () => {
+    setError('');
+    setMade(undefined);
+    const y = year.trim();
+    if (!YEAR.test(y)) {
+      setError('The fiscal year must be a year (yyyy).');
+      return;
+    }
+    once(() => generateFy.mutateAsync({ year: y }));
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -304,6 +331,12 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
       </label>{' '}
       <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
         Generate monthly periods
+      </button>{' '}
+      <label>
+        Fiscal year <input data-testid="period-generate-fy-year" placeholder="yyyy" value={year} onChange={edit(setYear)} />
+      </label>{' '}
+      <button type="button" data-testid="period-generate-fy" disabled={generateFy.isPending} onClick={submitFy}>
+        Generate fiscal year
       </button>
       {made !== undefined && (
         <>
