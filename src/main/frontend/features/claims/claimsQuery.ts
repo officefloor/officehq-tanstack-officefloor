@@ -2,7 +2,7 @@ import { getJson } from '../../api/http';
 import { heldOn, type Person } from '../people/peopleQuery';
 import { sheetKey } from '../sheet/sheetQuery';
 
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
 /** An open claim: OPEN, or PENDING (settled by a clerk above the clerk limit, awaiting a steward), handled like OPEN in every total. */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
@@ -64,8 +64,8 @@ export const isDeferred = (c: Claim, today: string) =>
   c.status === 'OPEN' && c.deferredUntil !== null && (today === '' || today < c.deferredUntil);
 
 /**
- * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts and voided
- * ones do not, nor do a person's open claims dated within one of their holds, or once the sheet's `today` reaches
+ * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts, voided and
+ * deleted ones do not, nor do a person's open claims dated within one of their holds, or once the sheet's `today` reaches
  * their retirement date, unless a statement bound them, nor an OPEN claim deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, people: Person[], today: string) =>

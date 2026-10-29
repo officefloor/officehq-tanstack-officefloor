@@ -233,19 +233,19 @@ public class Claims {
     }
 
     /**
-     * Works out again the due-by of every claim on the sheet that is not SETTLED or VOID and is due on or after
+     * Works out again the due-by of every claim on the sheet that is not SETTLED, VOID or DELETED and is due on or after
      * {@code from}: the terms-th business day after its date, with the terms it was fixed with, over {@code holidays}.
      * Only a due-by that moves is written.
      */
     public void refixDueBys(String sheetId, LocalDate from, Set<LocalDate> holidays) {
         Map<Long, LocalDate> moved = new LinkedHashMap<>();
-        jdbc.query("SELECT id, claim_date, due_by, due_terms FROM claim WHERE sheet_id = ? AND status NOT IN (?, ?) AND due_by >= ? "
+        jdbc.query("SELECT id, claim_date, due_by, due_terms FROM claim WHERE sheet_id = ? AND status NOT IN (?, ?, ?) AND due_by >= ? "
                 + "AND due_terms IS NOT NULL ORDER BY id", rs -> {
                     LocalDate refixed = Holidays.businessDays(rs.getObject(2, LocalDate.class), rs.getInt(4), holidays);
                     if (!refixed.equals(rs.getObject(3, LocalDate.class))) {
                         moved.put(rs.getLong(1), refixed);
                     }
-                }, sheetId, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(), Date.valueOf(from));
+                }, sheetId, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(), Date.valueOf(from));
         moved.forEach((id, dueBy) -> jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(dueBy), id));
     }
 
@@ -335,6 +335,14 @@ public class Claims {
         List<LocalDate> on = jdbc.query(
                 "SELECT logged_on FROM " + AsOf.table("claim_log") + " WHERE claim_id = ? AND status = ? ORDER BY id DESC",
                 (rs, n) -> rs.getObject("logged_on", LocalDate.class), claim.id(), ClaimStatus.SETTLED.name());
+        return on.isEmpty() ? null : on.get(0);
+    }
+
+    /** The sheet's today on which the claim was last logged DELETED; null when its log records no deletion. */
+    public LocalDate deletedOn(Claim claim) {
+        List<LocalDate> on = jdbc.query(
+                "SELECT logged_on FROM " + AsOf.table("claim_log") + " WHERE claim_id = ? AND status = ? ORDER BY id DESC",
+                (rs, n) -> rs.getObject("logged_on", LocalDate.class), claim.id(), ClaimStatus.DELETED.name());
         return on.isEmpty() ? null : on.get(0);
     }
 

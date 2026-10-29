@@ -84,6 +84,13 @@ public class ApplyClaimStatus {
         if (!claim.status().allows(next)) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
+        // A DELETED claim is restored to DRAFT only on the sheet's today it was deleted.
+        if (claim.status() == ClaimStatus.DELETED && next == ClaimStatus.DRAFT) {
+            LocalDate deletedOn = claims.deletedOn(claim);
+            if (deletedOn == null || !deletedOn.equals(sheets.today(claim.sheetId()))) {
+                throw new ClaimStatusRefusedException("A DELETED claim can be restored only on the day it was deleted.");
+            }
+        }
         // A SETTLED claim is voided only by a steward, and only within a week of its settlement (the status log's
         // SETTLED date) by the sheet's today.
         if (claim.status() == ClaimStatus.SETTLED && next == ClaimStatus.VOID) {

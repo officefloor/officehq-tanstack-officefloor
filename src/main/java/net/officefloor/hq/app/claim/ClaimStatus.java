@@ -4,10 +4,11 @@ package net.officefloor.hq.app.claim;
  * Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT, OPEN or PENDING claim can be VOID, and a
  * SETTLED one too, by a steward within {@link #VOID_SETTLED_DAYS} days of its settlement. A clerk's
  * settle of a claim whose due is above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED)
- * or rejects it (back to OPEN).
+ * or rejects it (back to OPEN). A DRAFT claim can be DELETED, counting nowhere, and restored to DRAFT on the same
+ * sheet's today it was deleted.
  */
 public enum ClaimStatus {
-    DRAFT, OPEN, PENDING, SETTLED, VOID;
+    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
 
     /** How many days after its settlement (by the sheet's today) a steward may still void a SETTLED claim. */
     public static final int VOID_SETTLED_DAYS = 7;
@@ -19,7 +20,8 @@ public enum ClaimStatus {
             case PENDING -> this == OPEN;
             case SETTLED -> this == OPEN || this == PENDING;
             case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
-            case DRAFT -> false;
+            case DRAFT -> this == DELETED;
+            case DELETED -> this == DRAFT;
         };
     }
 
@@ -35,6 +37,9 @@ public enum ClaimStatus {
 
     /** The audit event of a change from {@code from} to this status. */
     public String event(ClaimStatus from) {
+        if (from == DELETED && this == DRAFT) {
+            return "CLAIM_RESTORED";
+        }
         if (from == PENDING) {
             return this == SETTLED ? "CLAIM_APPROVED" : this == OPEN ? "CLAIM_REJECTED" : event();
         }
@@ -49,6 +54,7 @@ public enum ClaimStatus {
             case SETTLED -> "CLAIM_SETTLED";
             case VOID -> "CLAIM_VOIDED";
             case DRAFT -> "CLAIM_DRAFTED";
+            case DELETED -> "CLAIM_DELETED";
         };
     }
 }

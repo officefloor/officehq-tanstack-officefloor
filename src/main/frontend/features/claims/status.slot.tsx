@@ -16,6 +16,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
   { action: 'settle', to: 'SETTLED', label: 'Settle' },
   { action: 'void', to: 'VOID', label: 'Void' },
   { action: 'approve', to: 'SETTLED', label: 'Approve', decision: 'approve' },
+  { action: 'delete', to: 'DELETED', label: 'Delete' },
+  { action: 'restore', to: 'DRAFT', label: 'Restore' },
 ];
 
 /**
@@ -27,6 +29,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
  * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.
  * A steward can also void a SETTLED claim within 7 days of its settlement; the server refuses anyone else or a later day.
  * While the sheet has void reasons, a void needs one chosen from them; the server refuses a void without one.
+ * A DRAFT claim can be deleted (DELETED counts nowhere and cannot be edited, opened or voided), and restored to DRAFT
+ * on the sheet's today it was deleted; the server refuses a restore on a later day.
  */
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const queryClient = useQueryClient();
