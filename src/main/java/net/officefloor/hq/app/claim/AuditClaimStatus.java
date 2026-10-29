@@ -36,6 +36,13 @@ public class AuditClaimStatus {
         if (status == ClaimStatus.VOID && request.voidReason() != null && !request.voidReason().isEmpty()) {
             fields.add("reason=" + request.voidReason());
         }
+        // A reviewed claim is recorded as reviewed (as it was, unnumbered), then as opened with its number.
+        if (loaded.status() == ClaimStatus.REVIEW && status == ClaimStatus.OPEN) {
+            audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(), Audit.user(connection),
+                    fields.stream().filter(f -> !f.startsWith("number=")).toArray(String[]::new)));
+            audit.record(Audit.line(status.event(), loaded.sheetId(), Audit.user(connection), fields.toArray(String[]::new)));
+            return;
+        }
         audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(),
                 Audit.user(connection), fields.toArray(String[]::new)));
     }

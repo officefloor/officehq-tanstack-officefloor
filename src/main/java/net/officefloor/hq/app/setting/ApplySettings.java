@@ -60,6 +60,9 @@ public class ApplySettings {
         if (settings.rounding() != null) {
             dated(settings, store, today, Settings.ROUNDING, settings.rounding());
         }
+        if (settings.reviewThreshold() != null) {
+            dated(settings, store, today, Settings.REVIEW_THRESHOLD, settings.reviewThreshold());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

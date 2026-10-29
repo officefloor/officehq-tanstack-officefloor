@@ -24,6 +24,7 @@ public class ApplyClaimStatus {
     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
     // A PENDING claim moves only by a steward's decision: "approve" (to SETTLED) or "reject" (to OPEN, with a reason);
     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
+    // A REVIEW claim moves only by a steward's "review" (to OPEN, numbered then), or is voided.
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
             Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
@@ -39,7 +40,17 @@ public class ApplyClaimStatus {
         String action = body == null || body.action() == null ? "" : body.action().trim();
         String reason = body == null || body.reason() == null ? "" : body.reason().trim();
         String voidReason = body == null || body.voidReason() == null ? "" : body.voidReason().trim();
-        boolean decision = !action.isEmpty();
+        boolean review = action.equals("review");
+        if (review && next != ClaimStatus.OPEN) {
+            throw new ClaimStatusRefusedException("A review makes a claim OPEN.");
+        }
+        if (review && claim.status() != ClaimStatus.REVIEW) {
+            throw new ClaimStatusRefusedException("Only a REVIEW claim is reviewed.");
+        }
+        if (!review && claim.status() == ClaimStatus.REVIEW && next != ClaimStatus.VOID) {
+            throw new ClaimStatusRefusedException("A REVIEW claim is opened by a steward's review, or voided.");
+        }
+        boolean decision = !action.isEmpty() && !review;
         if (decision && !(action.equals("approve") && next == ClaimStatus.SETTLED)
                 && !(action.equals("reject") && next == ClaimStatus.OPEN)) {
             throw new ClaimStatusRefusedException("Not a decision on a pending claim: " + action);
@@ -53,7 +64,10 @@ public class ApplyClaimStatus {
         boolean steward = Settings.STEWARD.equals(settings.role(claim.sheetId(), user));
         // Opening, settling and voiding are for the roles the sheet's permission matrix allows (approving and
         // rejecting stay with stewards, below).
-        String permitted = decision ? null : switch (next) {
+        if (review && !steward) {
+            throw new ClaimStatusRefusedException("Only a steward can review a claim.");
+        }
+        String permitted = decision || review ? null : switch (next) {
             case OPEN -> "open";
             case SETTLED -> "settle";
             case VOID -> "void";
@@ -61,6 +75,9 @@ public class ApplyClaimStatus {
         };
         if (permitted != null && !settings.permits(claim.sheetId(), permitted, user)) {
             throw new ClaimStatusRefusedException("Your role is not allowed to " + permitted + " a claim.");
+        }
+        if (next == ClaimStatus.REVIEW) {
+            throw new ClaimStatusRefusedException("A claim goes to REVIEW only when it is opened above the review threshold.");
         }
         if (next == ClaimStatus.PENDING) {
             throw new ClaimStatusRefusedException("A claim becomes PENDING only when a clerk settles it above the clerk limit.");
@@ -159,6 +176,14 @@ public class ApplyClaimStatus {
                     && claims.openInPeriod(claim.sheetId(), claim.personId(), capped) >= capped.cap()) {
                 throw new ClaimStatusRefusedException("The person already has " + capped.cap()
                         + " open or pending claims in the period " + capped.name() + ", its cap.");
+            }
+        }
+        // A DRAFT claim whose due is above the review threshold in force on its date goes to REVIEW instead of OPEN
+        // (a due of n/a is within any threshold): it is numbered only when a steward's review makes it OPEN.
+        if (next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT && due != null) {
+            BigDecimal threshold = settings.reviewThreshold(claim.sheetId(), claim.date());
+            if (threshold != null && due.compareTo(threshold) > 0) {
+                next = ClaimStatus.REVIEW;
             }
         }
         // While the sheet numbers by period (its today on or after the from-date), an opened claim is numbered

@@ -9,7 +9,7 @@ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
 
-export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
 
 /** How many of the sheet's claims have the status. */
 export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filter((c) => c.status === status).length;

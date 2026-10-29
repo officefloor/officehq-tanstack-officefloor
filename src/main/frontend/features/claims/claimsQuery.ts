@@ -2,7 +2,8 @@ import { getJson } from '../../api/http';
 import { heldOn, type Person } from '../people/peopleQuery';
 import { sheetKey } from '../sheet/sheetQuery';
 
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+/** REVIEW: opened with a due above the review threshold in force on its date; unnumbered and counting in no total until a steward's review makes it OPEN. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** An open claim: OPEN, or PENDING (settled by a clerk above the clerk limit, awaiting a steward), handled like OPEN in every total. */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';

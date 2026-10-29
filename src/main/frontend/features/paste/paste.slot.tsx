@@ -4,8 +4,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsKey } from '../claims/claimsQuery';
-import { peopleKey } from '../people/peopleQuery';
+import { claimsKey, claimsQuery } from '../claims/claimsQuery';
+import { peopleKey, peopleQuery } from '../people/peopleQuery';
 import { useUser } from '../session/useUser';
 
 /**
@@ -25,12 +25,16 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
     mutationFn: (body: { text: string }) =>
       postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user),
     onSuccess: async (res) => {
+      // Both lists are re-read first and shown together with the count, so the new rows never show before it.
+      const [people, claims] = await Promise.all([peopleQuery(sheetId).queryFn(), claimsQuery(sheetId).queryFn()]);
+      queryClient.setQueryData(peopleKey(sheetId), people);
+      queryClient.setQueryData(claimsKey(sheetId), claims);
+      setText('');
+      setAdded(String(res.added));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
       ]);
-      setText('');
-      setAdded(String(res.added));
     },
     onError: (e) =>
       setError(e instanceof RefusedError ? e.message : 'The lines could not be pasted: check every name, amount and date.'),

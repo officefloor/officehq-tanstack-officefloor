@@ -5,10 +5,11 @@ package net.officefloor.hq.app.claim;
  * SETTLED one too, by a steward within {@link #VOID_SETTLED_DAYS} days of its settlement. A clerk's
  * settle of a claim whose due is above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED)
  * or rejects it (back to OPEN). A DRAFT claim can be DELETED, counting nowhere, and restored to DRAFT on the same
- * sheet's today it was deleted.
+ * sheet's today it was deleted. Opening a DRAFT claim whose due is above the review threshold in force on its date makes it
+ * REVIEW instead (no number yet), counting in no total, until a steward's review makes it OPEN; a REVIEW claim can be VOID.
  */
 public enum ClaimStatus {
-    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED, REVIEW;
 
     /** How many days after its settlement (by the sheet's today) a steward may still void a SETTLED claim. */
     public static final int VOID_SETTLED_DAYS = 7;
@@ -16,10 +17,11 @@ public enum ClaimStatus {
     /** Whether a claim in this status may move to {@code next}. */
     public boolean allows(ClaimStatus next) {
         return switch (next) {
-            case OPEN -> this == DRAFT || this == PENDING;
+            case OPEN -> this == DRAFT || this == PENDING || this == REVIEW;
             case PENDING -> this == OPEN;
             case SETTLED -> this == OPEN || this == PENDING;
-            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
+            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED || this == REVIEW;
+            case REVIEW -> this == DRAFT;
             case DRAFT -> this == DELETED;
             case DELETED -> this == DRAFT;
         };
@@ -40,6 +42,9 @@ public enum ClaimStatus {
         if (from == DELETED && this == DRAFT) {
             return "CLAIM_RESTORED";
         }
+        if (from == REVIEW && this == OPEN) {
+            return "CLAIM_REVIEWED";
+        }
         if (from == PENDING) {
             return this == SETTLED ? "CLAIM_APPROVED" : this == OPEN ? "CLAIM_REJECTED" : event();
         }
@@ -55,6 +60,7 @@ public enum ClaimStatus {
             case VOID -> "CLAIM_VOIDED";
             case DRAFT -> "CLAIM_DRAFTED";
             case DELETED -> "CLAIM_DELETED";
+            case REVIEW -> "CLAIM_REVIEW";
         };
     }
 }

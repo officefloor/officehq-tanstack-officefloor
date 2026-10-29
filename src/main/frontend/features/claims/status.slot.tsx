@@ -9,13 +9,14 @@ import { claimsKey } from './claimsQuery';
 import { useClaimError } from './useClaimError';
 import type { Claim, ClaimStatus } from './claimsQuery';
 
-type Decision = 'approve' | 'reject';
+type Decision = 'approve' | 'reject' | 'review';
 
 const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?: Decision }> = [
   { action: 'open', to: 'OPEN', label: 'Open' },
   { action: 'settle', to: 'SETTLED', label: 'Settle' },
   { action: 'void', to: 'VOID', label: 'Void' },
   { action: 'approve', to: 'SETTLED', label: 'Approve', decision: 'approve' },
+  { action: 'review', to: 'OPEN', label: 'Review', decision: 'review' },
   { action: 'delete', to: 'DELETED', label: 'Delete' },
   { action: 'restore', to: 'DRAFT', label: 'Restore' },
 ];
@@ -31,6 +32,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
  * While the sheet has void reasons, a void needs one chosen from them; the server refuses a void without one.
  * A DRAFT claim can be deleted (DELETED counts nowhere and cannot be edited, opened or voided), and restored to DRAFT
  * on the sheet's today it was deleted; the server refuses a restore on a later day.
+ * Opening a claim whose due is above the review threshold makes it REVIEW (unnumbered, in no total): a steward's review
+ * makes it OPEN (numbered then); the server refuses anyone else. A REVIEW claim can otherwise only be voided.
  */
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const queryClient = useQueryClient();
@@ -52,6 +55,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
       setError(
         e instanceof RefusedError
           ? e.message
+          : decision === 'review'
+            ? claim.status === 'REVIEW' ? 'Only a steward can review a claim.' : 'Only a REVIEW claim is reviewed.'
           : (decision !== undefined) !== (claim.status === 'PENDING') && to !== 'VOID'
             ? decision !== undefined
               ? `Only a PENDING claim can be ${decision === 'approve' ? 'approved' : 'rejected'}.`

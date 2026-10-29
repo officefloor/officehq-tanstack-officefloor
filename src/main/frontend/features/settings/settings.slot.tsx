@@ -50,6 +50,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [cap, setCap] = useState('');
   const [threshold, setThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
+  const [reviewThreshold, setReviewThreshold] = useState('');
   const [rounding, setRounding] = useState('');
   const [grace, setGrace] = useState('');
   const [entryDate, setEntryDate] = useState('');
@@ -58,7 +59,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -85,6 +86,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setCap('');
       setThreshold('');
       setNoteThreshold('');
+      setReviewThreshold('');
       setRounding('');
       setGrace('');
       setEntryDate('');
@@ -179,6 +181,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The note threshold must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const rt = reviewThreshold.trim();
+    if (rt !== '' && !AMOUNT.test(rt)) {
+      setError('The review threshold must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const rm = rounding.trim();
     if (rm !== '' && !ROUNDING_MODES.includes(rm)) {
       setError('The rounding mode must be half-up or half-even.');
@@ -244,8 +251,10 @@ function Settings({ sheetId }: { sheetId: string }) {
     }
     // A blank rounding mode is none likewise: saved when its from-date is given, or when it was the last field worked in.
     const roundingSaved = rm !== '' || (froms['rounding'] ?? '') !== '';
+    // A blank review threshold is none likewise.
+    const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -253,6 +262,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (pt !== '' || (none && blank === 'proofThreshold')) body.proofThreshold = pt;
     if (nt !== '' || (none && blank === 'noteThreshold')) body.noteThreshold = nt;
     if (roundingSaved || (none && blank === 'rounding')) body.rounding = rm;
+    if (reviewSaved || (none && blank === 'reviewThreshold')) body.reviewThreshold = rt;
     if (gd !== '' || (none && blank === 'graceDays')) body.graceDays = gd;
     if (ed !== '' || (none && blank === 'entryDate')) body.entryDate = ed;
     if (pt2 !== '' || (none && blank === 'pot')) body.pot = pt2;
@@ -538,6 +548,31 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Review threshold{' '}
+          <input
+            data-testid="setting-review-threshold"
+            placeholder="none"
+            value={reviewThreshold}
+            onFocus={() => setBlank('reviewThreshold')}
+            onChange={(e) => {
+              setReviewThreshold(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid={`setting-review-threshold-from`}
+            placeholder="sheet's today"
+            value={from['review-threshold'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['review-threshold']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Rounding{' '}
           <input
             data-testid="setting-rounding"
@@ -730,6 +765,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       ))}
       <p>
         Note threshold in force: <span data-testid="setting-note-threshold-current">{current('note-threshold')}</span>
+      </p>
+      <p>
+        Review threshold in force: <span data-testid="setting-review-threshold-current">{current('review-threshold')}</span>
       </p>
       <p>
         Rounding in force: <span data-testid="setting-rounding-current">{current('rounding')}</span>
