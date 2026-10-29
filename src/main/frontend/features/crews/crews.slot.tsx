@@ -12,6 +12,12 @@ import { usePeopleDueTotals } from '../rates/due.slot';
 import { crewsKey, crewsQuery } from './crewsQuery';
 import type { Crew } from './crewsQuery';
 
+/** A crew's due-total: the lead's and the members' due-totals added up, n/a skipped. */
+export function crewDue(crew: Crew, dues: Map<number, string>): string {
+  const ids = [crew.leadId, ...crew.memberIds].filter((id) => dues.has(id));
+  return sumDue(ids.map((id) => dues.get(id) ?? 'n/a'));
+}
+
 /** One crew's row: its lead, its due-total (the lead's and the members' due-totals added up, n/a skipped), its members,
  *  and the form a member is added through. The lead, or a person already in the crew, is refused with an error on the crew. */
 function CrewRow({ sheetId, crew, people, dues }: { sheetId: string; crew: Crew; people: Person[]; dues: Map<number, string> }) {
@@ -38,12 +44,11 @@ function CrewRow({ sheetId, crew, people, dues }: { sheetId: string; crew: Crew;
   };
 
   const nameOf = (id: number) => people.find((p) => p.id === id)?.name;
-  const ids = [crew.leadId, ...crew.memberIds].filter((id) => dues.has(id));
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
       <strong data-testid="crew-name">{crew.name}</strong> — lead <span data-testid="crew-lead">{nameOf(crew.leadId) ?? ''}</span>,
-      due <span data-testid="crew-due-total">{sumDue(ids.map((id) => dues.get(id) ?? 'n/a'))}</span>
+      due <span data-testid="crew-due-total">{crewDue(crew, dues)}</span>
       <ul>
         {crew.memberIds
           .filter((id) => nameOf(id) !== undefined)
