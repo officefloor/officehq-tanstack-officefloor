@@ -1,0 +1,204 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
+index e4c9a92f..8b399a87 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
+@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ 
+ public class AuditPersonTransferred {
+-    // Each sheet records the transfer, then the ROLLUP and TOTALS lines for what moved on it.
++    // Each sheet records the transfer (the other sheet then the merge, when they were merged into someone there), then the ROLLUP and TOTALS lines for what moved on it.
+     public void audit(@Val TransferredPerson transferred, @Val Figures before, Rollup rollup,
+             ServerHttpConnection connection, Audit audit) {
+         String user = Audit.user(connection);
+@@ -18,6 +18,9 @@ public class AuditPersonTransferred {
+         audit.record(Audit.line("PERSON_TRANSFERRED", from, user, "name=" + name, "to=" + to));
+         RollupLines.record(from, user, before, rollup, audit);
+         audit.record(Audit.line("PERSON_TRANSFERRED", to, user, "name=" + name, "from=" + from));
++        if (transferred.into() != null) {
++            audit.record(Audit.line("PERSON_MERGED", to, user, "from=" + name, "into=" + transferred.into().name()));
++        }
+         RollupLines.record(to, user, transferred.toBefore(), rollup, audit);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index f287ab0e..80f5d978 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -311,25 +311,18 @@ public class People {
+      * and closed-period figures are dropped with them.
+      */
+     public long transfer(Person person, String to, Map<Long, String> numbers) {
++        return transfer(person, to, numbers, null);
++    }
++
++    /**
++     * Transfer the person to the sheet {@code to} as {@link #transfer(Person, String, Map)} does, merged on arrival
++     * into the person {@code into} there when given (as {@link #merge(String, long, long)} does): their claims go to
++     * {@code into} (listed after theirs), their name and aliases become {@code into}'s aliases, and their grades and
++     * contact are dropped. Returns the id of the person they arrived as.
++     */
++    public long transfer(Person person, String to, Map<Long, String> numbers, Long into) {
+         long from = person.id();
+-        KeyHolder key = new GeneratedKeyHolder();
+-        jdbc.update(con -> {
+-            PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, "
+-                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
+-            ps.setString(1, to);
+-            ps.setString(2, person.name());
+-            ps.setString(3, person.grade());
+-            ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
+-            ps.setString(5, person.contact());
+-            ps.setString(6, person.sheetId());
+-            ps.setString(7, person.name());
+-            ps.setString(8, to);
+-            return ps;
+-        }, key);
+-        long arrived = key.getKey().longValue();
+-        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
+-                + "WHERE person_id = ? ORDER BY from_date", arrived, from);
++        long arrived = into != null ? into : arrive(person, to);
+         jdbc.update("INSERT INTO person_alias (person_id, sheet_id, alias) SELECT ?, ?, alias FROM person_alias "
+                 + "WHERE person_id = ? ORDER BY id", arrived, to, from);
+         List<Long> claims = jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from);
+@@ -374,6 +367,32 @@ public class People {
+         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person_alias WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person WHERE id = ?", from);
++        if (into != null) {
++            alias(to, into, person.name());
++        }
++        return arrived;
++    }
++
++    /** Add the person, arriving on the sheet {@code to}, with their grades; returning their id there. */
++    private long arrive(Person person, String to) {
++        KeyHolder key = new GeneratedKeyHolder();
++        jdbc.update(con -> {
++            PreparedStatement ps = con.prepareStatement(
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, "
++                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
++            ps.setString(1, to);
++            ps.setString(2, person.name());
++            ps.setString(3, person.grade());
++            ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
++            ps.setString(5, person.contact());
++            ps.setString(6, person.sheetId());
++            ps.setString(7, person.name());
++            ps.setString(8, to);
++            return ps;
++        }, key);
++        long arrived = key.getKey().longValue();
++        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
++                + "WHERE person_id = ? ORDER BY from_date", arrived, person.id());
+         return arrived;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index 85585769..2e7b7497 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -6,6 +6,7 @@ import java.util.Comparator;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Objects;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.Claims;
+@@ -22,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class TransferPerson {
+     // Only a steward (a delegation included) transfers a person who is not retired, to another sheet that is not archived
+-    // and has none of their name, aliases or contact. Each numbered claim takes the next number of the other sheet, in
++    // and has none of their name, aliases or contact, unless one person there has their name or an alias of theirs:
++    // they are then merged into that person (who must not be retired), as a merge does. Each numbered claim takes the next number of the other sheet, in
+     // the order the claims were opened (the sheet's today when each was first opened, then the order they were added).
+     public void transfer(@RequestBody(required = false) TransferRequest body, @Val Person person, People people,
+             Claims claims, Settings settings, Sheets sheets, Periods periods, Rollup rollup,
+@@ -44,11 +46,21 @@ public class TransferPerson {
+         if (sheets.isArchived(to)) {
+             throw new PersonTransferRefusedException("The sheet " + to + " is archived.");
+         }
+-        if (people.nameTaken(to, person.name(), person.id())
+-                || person.aliases().stream().anyMatch(a -> people.nameTaken(to, a, person.id()))) {
+-            throw new PersonTransferRefusedException("A name or alias of theirs is already on the sheet " + to + ".");
++        // A person on the other sheet with their name or an alias of theirs is merged into, as a merge does.
++        List<String> names = new ArrayList<>();
++        names.add(person.name());
++        names.addAll(person.aliases());
++        Person into = names.stream().map(n -> people.findByName(to, n)).filter(Objects::nonNull).findFirst().orElse(null);
++        for (String name : names) {
++            Person holder = people.findByName(to, name);
++            if (holder == null ? people.nameTaken(to, name, person.id()) : holder.id() != into.id()) {
++                throw new PersonTransferRefusedException("A name or alias of theirs is already on the sheet " + to + ".");
++            }
++        }
++        if (into != null && into.retired()) {
++            throw new PersonTransferRefusedException("A retired person cannot be merged.");
+         }
+-        if (person.contact() != null && people.contactTaken(to, person.contact(), -1)) {
++        if (into == null && person.contact() != null && people.contactTaken(to, person.contact(), -1)) {
+             throw new PersonTransferRefusedException("Their contact is already on the sheet " + to + ".");
+         }
+         Figures before = rollup.figures(to);
+@@ -71,9 +83,9 @@ public class TransferPerson {
+             numbers.put(claim.id(), claims.number(to, scope));
+         }
+ 
+-        long arrived = people.transfer(person, to, numbers);
++        long arrived = people.transfer(person, to, numbers, into == null ? null : into.id());
+         sheets.markLoaded(to);
+-        transferredOut.set(new TransferredPerson(person, to, before));
++        transferredOut.set(new TransferredPerson(person, to, before, into));
+         responseOut.set(PersonResponse.from(people.find(to, arrived), sheets.today(to)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferredPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferredPerson.java
+index b97d0525..17a1239d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferredPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferredPerson.java
+@@ -4,7 +4,8 @@ import net.officefloor.hq.app.rollup.Figures;
+ 
+ /**
+  * A transfer done: the person transferred ({@code from}, now gone from their sheet), the sheet they went to, and that
+- * sheet's figures before they arrived (for its ROLLUP and TOTALS lines).
++ * sheet's figures before they arrived (for its ROLLUP and TOTALS lines), and the person there they were merged into
++ * ({@code null} when they arrived as themselves).
+  */
+-public record TransferredPerson(Person from, String toSheetId, Figures toBefore) {
++public record TransferredPerson(Person from, String toSheetId, Figures toBefore, Person into) {
+ }
+diff --git a/src/main/resources/db/migration/V63__person_alias_joined.sql b/src/main/resources/db/migration/V63__person_alias_joined.sql
+new file mode 100644
+index 00000000..02fd511b
+--- /dev/null
++++ b/src/main/resources/db/migration/V63__person_alias_joined.sql
+@@ -0,0 +1,5 @@
++-- A transfer merged into a person on the other sheet joins their aliases (as a merge does), so an alias may come twice
++-- on a sheet in differing case (Addie and addie): alias_key is no longer unique, only indexed. The app still refuses
++-- an alias that is taken when one is added.
++ALTER TABLE person_alias DROP CONSTRAINT person_alias_sheet_key;
++CREATE INDEX person_alias_sheet_key ON person_alias (sheet_id, alias_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+index 7811b2cf..ba247685 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+@@ -4,9 +4,13 @@
+ # numbered claim takes the next number of the other sheet, in the order the claims were opened (by the sheet's today
+ # when each was opened, then the order they were added). Figures a statement bound are lost (no statements go with
+ # them) and references are not carried. They leave this sheet entirely: patron links, pool memberships, holds,
+-# watches and closed-period figures are dropped. 422, storing nothing, for anyone but a steward, a retired person, no
+-# sheet id or this sheet's own, an archived sheet, or a name, alias or contact of theirs already on the other sheet;
+-# 404 for a person not on the sheet. Responds with the person as they arrived.
++# watches and closed-period figures are dropped. When a person on the other sheet has their name or an alias of
++# theirs (as names are compared), they are merged into that person there, as a merge does: their claims are listed
++# after that person's, their name and aliases become that person's aliases, and their grades and contact are dropped;
++# the other sheet records PERSON_TRANSFERRED then PERSON_MERGED. 422, storing nothing, for anyone but a steward, a
++# retired person, no sheet id or this sheet's own, an archived sheet, a name or alias of theirs held by someone else
++# there (or a second person, or a retired one), or a contact of theirs already there when not merged; 404 for a person
++# not on the sheet. Responds with the person as they arrived (the person merged into, when merged).
+ viewer:
+   class: net.officefloor.hq.app.setting.RefuseViewer
+   next: archived
