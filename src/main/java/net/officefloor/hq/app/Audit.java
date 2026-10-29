@@ -123,6 +123,41 @@ public class Audit {
         return lines;
     }
 
+    /**
+     * The sheet's lines about one claim, exactly as the file holds them, newest first: with a number, those carrying
+     * number=<it>; without one, those carrying no number (a numbered line is about the numbered claim it names) whose
+     * person= (compared as names are), amount= and date= are all the claim's.
+     */
+    public synchronized List<String> claimLines(String sheetId, String number, String person, String amount, String date) {
+        String wanted = person == null ? "" : person.trim().toLowerCase(Locale.ROOT);
+        List<String> lines = new ArrayList<>();
+        for (String line : lines(sheetId, null)) {
+            java.util.Map<String, List<String>> fields = fields(line);
+            boolean about = number != null && !number.isBlank()
+                    ? fields.getOrDefault("number", List.of()).contains(number)
+                    : !fields.containsKey("number") && fields.getOrDefault("person", List.of()).stream()
+                            .anyMatch(n -> n.trim().toLowerCase(Locale.ROOT).equals(wanted))
+                            && fields.getOrDefault("amount", List.of()).contains(amount)
+                            && fields.getOrDefault("date", List.of()).contains(date);
+            if (about) {
+                lines.add(line);
+            }
+        }
+        return lines;
+    }
+
+    /** A line's fields after its event, by key; a value runs up to the next field. */
+    private static java.util.Map<String, List<String>> fields(String line) {
+        java.util.Map<String, List<String>> fields = new java.util.HashMap<>();
+        Matcher m = FIELD.matcher(line);
+        while (m.find()) {
+            fields.computeIfAbsent(m.group(1), k -> new ArrayList<>()).add(m.group(2));
+        }
+        return fields;
+    }
+
+    private static final Pattern FIELD = Pattern.compile(" ([A-Za-z][\\w-]*)=(.*?)(?= [A-Za-z][\\w-]*=|$)");
+
     /** The values of a line's name= and person= fields, trimmed and lower-cased; a value runs up to the next field. */
     private static List<String> names(String line) {
         List<String> names = new ArrayList<>();
