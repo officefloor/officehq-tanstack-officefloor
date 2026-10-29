@@ -4,7 +4,8 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.plugin.variable.Val;
 
 public class RefuseInvalidCorrectionInput {
-    // A correction being added must name, by number, a SETTLED claim of the person it is added to.
+    // A correction being added must name, by number, a SETTLED claim of the person it is added to, and take
+    // back no more than remains of it.
     public void refuse(@Val ClaimInput input, @Val Person person, Claims claims) throws InvalidClaimException {
         RefuseInvalidCorrection.refuse(input, person.sheetId(), person.id(), claims);
     }

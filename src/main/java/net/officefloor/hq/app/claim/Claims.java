@@ -64,6 +64,17 @@ public class Claims {
     }
 
     /**
+     * How much of the person's claim numbered {@code number} its corrections other than {@code exceptId} (0: none)
+     * already take back, as a positive amount; VOID and DELETED corrections left out.
+     */
+    public BigDecimal corrected(String sheetId, long personId, String number, long exceptId) {
+        BigDecimal sum = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM " + AsOf.table("claim")
+                + " WHERE sheet_id = ? AND person_id = ? AND corrects = ? AND id <> ? AND status NOT IN ('VOID', 'DELETED')",
+                BigDecimal.class, sheetId, personId, number, exceptId);
+        return sum == null ? BigDecimal.ZERO : sum.negate();
+    }
+
+    /**
      * Whether a claim of the sheet other than {@code exceptId} (0: none) carries the reference {@code ref}, compared
      * without regard to case.
      */
