@@ -1,0 +1,449 @@
+diff --git a/src/main/frontend/features/locale/LocaleFigures.tsx b/src/main/frontend/features/locale/LocaleFigures.tsx
+new file mode 100644
+index 00000000..ea65c665
+--- /dev/null
++++ b/src/main/frontend/features/locale/LocaleFigures.tsx
+@@ -0,0 +1,64 @@
++import { useLayoutEffect, useRef } from 'react';
++import type { ReactNode } from 'react';
++import { showFigure } from './figures';
++import type { Locale } from './localeQuery';
++
++// Text never shown as a figure: what a person types or picks, and what is not shown at all.
++const SKIP = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'SCRIPT', 'STYLE']);
++
++/**
++ * Shows every figure inside it under the user's locale. Figures are worked out and kept as text with a dot
++ * (1234.56) everywhere — in the store, the queries, exports and the audit file — so the locale is applied only
++ * here, where they are shown: any element whose whole text is a figure has it rewritten (1.234,56 under de),
++ * and rewritten again whenever React changes it. Each rewritten text remembers what React wrote, so a figure
++ * that stops being an element's whole text, or a change back to en, restores it.
++ */
++export function LocaleFigures({ locale, children }: { locale: Locale; children: ReactNode }) {
++  const ref = useRef<HTMLDivElement>(null);
++  // text node -> what React wrote and what is shown instead
++  const written = useRef(new WeakMap<Text, { original: string; shown: string }>());
++
++  useLayoutEffect(() => {
++    const root = ref.current;
++    if (!root) return;
++
++    const apply = (node: Text) => {
++      const parent = node.parentElement;
++      if (!parent || SKIP.has(parent.tagName)) return;
++      const seen = written.current.get(node);
++      const original = seen && node.data === seen.shown ? seen.original : node.data;
++      const text = original.trim();
++      const whole = parent.textContent?.trim() === node.data.trim();
++      const shown = whole ? original.replace(text, showFigure(text, locale)) : original;
++      if (shown !== original) written.current.set(node, { original, shown });
++      else written.current.delete(node);
++      if (node.data !== shown) node.data = shown;
++    };
++    const walk = (node: Node | null) => {
++      if (!node) return;
++      if (node.nodeType === Node.TEXT_NODE) {
++        apply(node as Text);
++        return;
++      }
++      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
++      for (let t = walker.nextNode(); t; t = walker.nextNode()) apply(t as Text);
++    };
++
++    walk(root);
++    const observer = new MutationObserver((mutations) => {
++      // A text changed, added or removed changes whether its neighbours are their element's whole text.
++      const touched = new Set<Node>();
++      for (const m of mutations) {
++        const at = m.type === 'characterData' ? m.target.parentNode : m.target;
++        if (at && root.contains(at)) touched.add(at);
++      }
++      touched.forEach(walk);
++      // Our own rewrites are observed too; drop them so they do not loop.
++      observer.takeRecords();
++    });
++    observer.observe(root, { subtree: true, childList: true, characterData: true });
++    return () => observer.disconnect();
++  }, [locale]);
++
++  return <div ref={ref}>{children}</div>;
++}
+diff --git a/src/main/frontend/features/locale/LocalePicker.tsx b/src/main/frontend/features/locale/LocalePicker.tsx
+new file mode 100644
+index 00000000..6ab97923
+--- /dev/null
++++ b/src/main/frontend/features/locale/LocalePicker.tsx
+@@ -0,0 +1,52 @@
++import { useEffect, useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { LOCALES, localeKey, localeQuery } from './localeQuery';
++import type { Locale } from './localeQuery';
++
++/** The signed-in user's locale, and the select that changes it. Kept per user; nothing is written to the audit file. */
++export function LocalePicker({ user }: { user: string }) {
++  const queryClient = useQueryClient();
++  const current = useQuery(localeQuery(user)).data ?? 'en';
++  const [chosen, setChosen] = useState<Locale>(current);
++  const [error, setError] = useState('');
++  useEffect(() => setChosen(current), [current]);
++  const save = useMutation({
++    mutationFn: (locale: Locale) =>
++      putJson<{ locale: Locale }>(`/api/users/${encodeURIComponent(user)}/locale`, { locale }, user),
++    onSuccess: (r) => queryClient.setQueryData(localeKey(user), r.locale),
++    onError: () => setError('The locale could not be saved.'),
++  });
++
++  return (
++    <p>
++      Locale <strong data-testid="user-locale-current">{current}</strong>{' '}
++      <select
++        data-testid="user-locale"
++        value={chosen}
++        onChange={(e) => {
++          setChosen(e.target.value as Locale);
++          setError('');
++        }}
++      >
++        {LOCALES.map((l) => (
++          <option key={l} value={l}>
++            {l}
++          </option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="user-locale-save"
++        disabled={save.isPending}
++        onClick={() => {
++          setError('');
++          save.mutate(chosen);
++        }}
++      >
++        Save locale
++      </button>
++      {error && <span data-testid="user-locale-error">{error}</span>}
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/locale/figures.ts b/src/main/frontend/features/locale/figures.ts
+new file mode 100644
+index 00000000..efe2bbc5
+--- /dev/null
++++ b/src/main/frontend/features/locale/figures.ts
+@@ -0,0 +1,13 @@
++import type { Locale } from './localeQuery';
++
++/** A figure: the whole text is a number with two decimals, as the screen shows amounts, dues, totals, rates, shares and cuts. */
++const FIGURE = /^-?\d+\.\d{2}$/;
++
++/** The figure as shown under the locale; any other text is left as it is. */
++export function showFigure(text: string, locale: Locale): string {
++  if (locale === 'en' || !FIGURE.test(text)) return text;
++  const [whole, decimals] = text.split('.');
++  const sign = whole.startsWith('-') ? '-' : '';
++  const digits = sign ? whole.slice(1) : whole;
++  return `${sign}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${decimals}`;
++}
+diff --git a/src/main/frontend/features/locale/localeQuery.ts b/src/main/frontend/features/locale/localeQuery.ts
+new file mode 100644
+index 00000000..5dcf1006
+--- /dev/null
++++ b/src/main/frontend/features/locale/localeQuery.ts
+@@ -0,0 +1,14 @@
++import { getJson } from '../../api/http';
++
++/** How figures are shown to a user: `en` as stored (1234.56), `de` with a dot every three digits and a comma before the decimals (1.234,56). */
++export type Locale = 'en' | 'de';
++
++export const LOCALES: Locale[] = ['en', 'de'];
++
++/** Kept per user, not per sheet: the key is outside every sheet's key. */
++export const localeKey = (user: string) => ['user', user, 'locale'] as const;
++
++export const localeQuery = (user: string) => ({
++  queryKey: localeKey(user),
++  queryFn: () => getJson<{ locale: Locale }>(`/api/users/${encodeURIComponent(user)}/locale`).then((r) => r.locale),
++});
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 0df17d86..26eebd5a 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -4,6 +4,10 @@ import { SignIn } from '../features/session/SignIn';
+ import { CurrentUser } from '../features/session/CurrentUser';
+ import { SheetPicker } from '../features/sheet/SheetPicker';
+ import { ActiveSheet } from '../features/sheet/ActiveSheet';
++import { useQuery } from '@tanstack/react-query';
++import { LocaleFigures } from '../features/locale/LocaleFigures';
++import { LocalePicker } from '../features/locale/LocalePicker';
++import { localeQuery } from '../features/locale/localeQuery';
+ 
+ // The one screen: sign in by name, then load a sheet by id. Everything else is kept per sheet and
+ // fills the sheet.panel slot (slots/defs/sheetPanel.ts).
+@@ -14,11 +18,18 @@ export const Route = createFileRoute('/')({
+ function Home() {
+   const [user] = useUser();
+   if (user === '') return <SignIn />;
++  return <SignedIn user={user} />;
++}
++
++// Every figure on the screen is shown under the signed-in user's locale (features/locale).
++function SignedIn({ user }: { user: string }) {
++  const locale = useQuery(localeQuery(user)).data ?? 'en';
+   return (
+-    <>
++    <LocaleFigures locale={locale}>
+       <CurrentUser />
++      <LocalePicker user={user} />
+       <SheetPicker />
+       <ActiveSheet user={user} />
+-    </>
++    </LocaleFigures>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index ca9507f5..ee825233 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -17,6 +17,7 @@ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -26,10 +27,11 @@ public class GeneratePlanClaims {
+     // For every plan of the sheet, in the order they were added, and each of its dates (the start, then every N days; or the day of every month) up to
+     // its end and the sheet's today that it has not made a claim for yet: a DRAFT claim of the plan's amount dated that day
+     // with an empty note, added as the claim form adds one and recorded as CLAIM_ADDED. A date the claim form refuses
+-    // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time.
++    // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time. A viewer is
++    // refused at the first claim there is to make, before anything is stored; with none to make, they are told 0.
+     public void generate(@PathVariable("sheetId") String sheetId, Plans plans, People people, Claims claims, Sheets sheets,
+             Settings settings, Holidays holidays, Periods periods, Rollup rollup, ServerHttpConnection connection,
+-            Audit audit, Out<GenerateResponse> result) {
++            Audit audit, Out<GenerateResponse> result) throws ViewerRefusedException {
+         String sheet = sheetId.trim();
+         String user = Audit.user(connection);
+         LocalDate today = sheets.today(sheet);
+@@ -53,6 +55,9 @@ public class GeneratePlanClaims {
+                 } catch (ClaimInClosedPeriodException | ClaimAfterRetirementException e) {
+                     continue;
+                 }
++                if (settings.isViewer(sheet, user)) {
++                    throw new ViewerRefusedException("A viewer can change nothing.");
++                }
+                 Claim claim = claims.add(sheet, person.id(), plan.amount(), date, "", null, dueBy, terms, null, List.of());
+                 claims.log(claim, user.trim(), today, rollup.figure(claim));
+                 plans.markMade(plan.id(), date, claim.id());
+diff --git a/src/main/java/net/officefloor/hq/app/user/ApplyLocale.java b/src/main/java/net/officefloor/hq/app/user/ApplyLocale.java
+new file mode 100644
+index 00000000..67b79f0c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/ApplyLocale.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.user;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class ApplyLocale {
++    public void apply(@PathVariable("user") String user, @Val LocaleRequest request, Locales locales) {
++        locales.set(user.trim(), request.locale());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/HandleInvalidLocale.java b/src/main/java/net/officefloor/hq/app/user/HandleInvalidLocale.java
+new file mode 100644
+index 00000000..317373de
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/HandleInvalidLocale.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.user;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidLocale {
++    public void handle(@Parameter InvalidLocaleException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/InvalidLocaleException.java b/src/main/java/net/officefloor/hq/app/user/InvalidLocaleException.java
+new file mode 100644
+index 00000000..645f5649
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/InvalidLocaleException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.user;
++
++/** A locale was chosen that is not one of {@link Locales#KNOWN}. */
++public class InvalidLocaleException extends Exception {
++
++    public InvalidLocaleException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/LocaleRequest.java b/src/main/java/net/officefloor/hq/app/user/LocaleRequest.java
+new file mode 100644
+index 00000000..14195074
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/LocaleRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.user;
++
++/** The body of choosing a locale: the locale the user is to be shown figures in. */
++public record LocaleRequest(String locale) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/LocaleResponse.java b/src/main/java/net/officefloor/hq/app/user/LocaleResponse.java
+new file mode 100644
+index 00000000..a8ad592e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/LocaleResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.user;
++
++/** A user's locale: how figures are shown to them ({@code en} or {@code de}). */
++public record LocaleResponse(String locale) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/Locales.java b/src/main/java/net/officefloor/hq/app/user/Locales.java
+new file mode 100644
+index 00000000..f0260b67
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/Locales.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.user;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The store of each signed-in user's locale, kept per user across every sheet. */
++@Repository
++public class Locales {
++
++    /** The locales a user may choose; the first is every user's until they choose. */
++    public static final List<String> KNOWN = List.of("en", "de");
++
++    private final JdbcTemplate jdbc;
++
++    public Locales(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public String of(String user) {
++        List<String> found = jdbc.queryForList("SELECT locale FROM user_locale WHERE user_name = ?", String.class, user);
++        return found.isEmpty() ? KNOWN.get(0) : found.get(0);
++    }
++
++    public void set(String user, String locale) {
++        jdbc.update("MERGE INTO user_locale (user_name, locale) KEY (user_name) VALUES (?, ?)", user, locale);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/RespondWithLocale.java b/src/main/java/net/officefloor/hq/app/user/RespondWithLocale.java
+new file mode 100644
+index 00000000..d63f4405
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/RespondWithLocale.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.user;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithLocale {
++    public void respond(@PathVariable("user") String user, Locales locales, ObjectResponse<LocaleResponse> response) {
++        response.send(new LocaleResponse(locales.of(user.trim())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/user/ValidateLocale.java b/src/main/java/net/officefloor/hq/app/user/ValidateLocale.java
+new file mode 100644
+index 00000000..d5de215c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/user/ValidateLocale.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.user;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateLocale {
++    public void validate(@PathVariable("user") String user, @RequestBody LocaleRequest request, Out<LocaleRequest> body)
++            throws InvalidLocaleException {
++        if (user.trim().isEmpty()) {
++            throw new InvalidLocaleException("Sign in to choose a locale.");
++        }
++        if (request == null || request.locale() == null || !Locales.KNOWN.contains(request.locale().trim())) {
++            throw new InvalidLocaleException("Choose a locale of " + String.join(", ", Locales.KNOWN) + ".");
++        }
++        body.set(new LocaleRequest(request.locale().trim()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V73__user_locale.sql b/src/main/resources/db/migration/V73__user_locale.sql
+new file mode 100644
+index 00000000..657ada40
+--- /dev/null
++++ b/src/main/resources/db/migration/V73__user_locale.sql
+@@ -0,0 +1,6 @@
++-- Each signed-in user's locale (how figures are shown to them), kept per user across every sheet. A user with no row
++-- is shown en.
++CREATE TABLE user_locale (
++    user_name VARCHAR(255) PRIMARY KEY,
++    locale    VARCHAR(8)   NOT NULL
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.user.InvalidLocaleException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.user.InvalidLocaleException.yml
+new file mode 100644
+index 00000000..dd1a1851
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.user.InvalidLocaleException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.user.HandleInvalidLocale
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml
+index 768547d3..21aea8ad 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml
+@@ -1,10 +1,7 @@
+ # POST /api/sheets/{sheetId}/plans/generate — for every plan of the sheet, in the order added, a DRAFT claim of its amount
+ # with an empty note for each plan date (the start, then every N days) up to its end and the sheet's today that it has
+ # made none for yet, by the claim form's rules: a date the form refuses is skipped and tried again next time. Responds {"made":n}.
+-viewer:
+-  class: net.officefloor.hq.app.setting.RefuseViewer
+-  next: archived
+-  govern: [ transaction ]
++# A viewer is refused (422) only when there is a claim to make; with none, they are told {"made":0}.
+ archived:
+   class: net.officefloor.hq.app.sheet.RefuseArchived
+   next: snapshot
+diff --git a/src/main/resources/officefloor/rest/api/users/{user}/locale.GET.yml b/src/main/resources/officefloor/rest/api/users/{user}/locale.GET.yml
+new file mode 100644
+index 00000000..87f85a51
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/users/{user}/locale.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/users/{user}/locale — the user's locale ({locale}), en unless they chose another.
++respond:
++  class: net.officefloor.hq.app.user.RespondWithLocale
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/users/{user}/locale.PUT.yml b/src/main/resources/officefloor/rest/api/users/{user}/locale.PUT.yml
+new file mode 100644
+index 00000000..2b4cd9b5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/users/{user}/locale.PUT.yml
+@@ -0,0 +1,13 @@
++# PUT /api/users/{user}/locale — the user chooses their locale. Body {"locale":"en"|"de"}; 400 for any other.
++# Kept per user, not per sheet, and not written to the audit file.
++validate:
++  class: net.officefloor.hq.app.user.ValidateLocale
++  next: apply
++  govern: [ transaction ]
++apply:
++  class: net.officefloor.hq.app.user.ApplyLocale
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.user.RespondWithLocale
++  govern: [ transaction ]
