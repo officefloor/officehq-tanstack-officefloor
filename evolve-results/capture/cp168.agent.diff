@@ -1,0 +1,224 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index d9de6a77..dbf81adb 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -9,6 +9,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import type { Person } from '../people/peopleQuery';
+ import { sumDue } from '../rates/ratesQuery';
+ import { usePeopleDueTotals } from '../rates/due.slot';
++import { poolsKey } from '../pools/poolsQuery';
+ import { crewsKey, crewsQuery } from './crewsQuery';
+ import type { Crew } from './crewsQuery';
+ 
+@@ -31,7 +32,11 @@ function CrewRow({ sheetId, crew, people, dues }: { sheetId: string; crew: Crew;
+     mutationFn: (body: { crew: string; personId: number | null }) =>
+       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crew-members`, body, user),
+     onSuccess: async () => {
+-      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
++      // A crew is also a pool, so its change re-reads the pools too.
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      ]);
+       setPersonId('');
+     },
+     onError: (e: Error) => setError(e instanceof RefusedError ? e.message : 'The member could not be added.'),
+@@ -99,7 +104,11 @@ function Crews({ sheetId }: { sheetId: string }) {
+     mutationFn: (body: { name: string; leadId: number | null }) =>
+       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crews`, body, user),
+     onSuccess: async () => {
+-      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
++      // A crew is also a pool, so its change re-reads the pools too.
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      ]);
+       setName('');
+       setLeadId('');
+     },
+diff --git a/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java b/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
+index 25766787..55e1ada2 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.crew;
+ 
+ import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.pool.Pools;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -8,9 +9,9 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateCrew {
+ 
+-    // The name, trimmed, must not be blank, nor already a crew of the sheet; the lead must be a person of the sheet.
++    // The name, trimmed, must not be blank, nor already a crew or a pool of the sheet; the lead must be a person of the sheet.
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CrewRequest body, Crews crews,
+-            People people, Out<Crew> crew) throws CrewRefusedException {
++            People people, Pools pools, Out<Crew> crew) throws CrewRefusedException {
+         String sheet = sheetId.trim();
+         String name = body == null || body.name() == null ? "" : body.name().trim();
+         if (name.isEmpty()) {
+@@ -19,6 +20,9 @@ public class ValidateCrew {
+         if (crews.has(sheet, name)) {
+             throw new CrewRefusedException("\"" + name + "\" is already a crew.");
+         }
++        if (pools.has(sheet, name)) {
++            throw new CrewRefusedException("\"" + name + "\" is already a pool.");
++        }
+         Person lead = body.leadId() == null ? null : people.find(sheet, body.leadId());
+         if (lead == null) {
+             throw new CrewRefusedException("Choose the crew's lead.");
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 83c5375e..8372af53 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -9,6 +9,8 @@ import java.util.List;
+ import java.util.Map;
+ import java.util.function.Function;
+ import java.util.stream.Collectors;
++import net.officefloor.hq.app.crew.CrewResponse;
++import net.officefloor.hq.app.crew.Crews;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
+@@ -20,6 +22,8 @@ public class RespondWithPools {
+ 
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
++    // Each crew is also a pool, listed after the stored pools under the crew's name: its lead then its members, at
++    // equal shares of 100.00 (each rounded half to even, the remainder on the lead), with no dates.
+     // A member with a retirement date set, whatever the date, counts their share as given toward the pool's total.
+     // Each member of a balanced pool cuts the pool's pot times their share / 100, half to even to two decimals; the remainder goes to the member with the smallest non-zero cut, the latest added on a tie (a member with no cut gets
+     // none; with no non-zero cut it goes to the last member with a share), so the cuts
+@@ -30,13 +34,17 @@ public class RespondWithPools {
+     // there as its pot (none when the pool above has no cuts). A member whose dates do not include the sheet's today is
+     // left out entirely: listed with its share, but not in the total share or the balance, and with no cut ("").
+     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
+-            ObjectResponse<List<PoolResponse>> response) {
++            Crews crews, ObjectResponse<List<PoolResponse>> response) {
+         String sheet = sheetId.trim();
+         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
+-        List<Pools.Membership> members = pools.members(sheet);
++        List<Pools.Membership> members = new ArrayList<>(pools.members(sheet));
+         Map<String, String> parents = pools.parents(sheet);
+         BigDecimal sheetPot = settings.pot(sheet);
+-        List<String> names = pools.names(sheet);
++        List<String> names = new ArrayList<>(pools.names(sheet));
++        for (CrewResponse crew : crews.list(sheet)) {
++            names.add(crew.name());
++            members.addAll(crewMembers(crew, byId));
++        }
+         LocalDate today = sheets.today(sheet);
+ 
+         Map<String, List<Pools.Membership>> inByPool = new HashMap<>();
+@@ -96,6 +104,24 @@ public class RespondWithPools {
+         response.send(out);
+     }
+ 
++    /** The crew as a pool's members: its lead then its members (people of the sheet), at equal shares of 100.00. */
++    private static List<Pools.Membership> crewMembers(CrewResponse crew, Map<Long, Person> byId) {
++        List<Long> ids = new ArrayList<>();
++        ids.add(crew.leadId());
++        ids.addAll(crew.memberIds());
++        ids.removeIf(id -> !byId.containsKey(id));
++        List<Pools.Membership> out = new ArrayList<>();
++        if (ids.isEmpty()) {
++            return out;
++        }
++        BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(ids.size()), 2, RoundingMode.HALF_EVEN);
++        BigDecimal first = HUNDRED.subtract(each.multiply(BigDecimal.valueOf(ids.size() - 1)));
++        for (int i = 0; i < ids.size(); i++) {
++            out.add(new Pools.Membership(crew.name(), ids.get(i), i == 0 ? first : each, null, null, null));
++        }
++        return out;
++    }
++
+     private static List<BigDecimal> cutsOf(String name, BigDecimal sheetPot, Map<String, String> parents,
+             Map<String, List<Pools.Membership>> inByPool, Map<String, BigDecimal> totals, Map<Long, Person> byId,
+             LocalDate today, Map<String, List<BigDecimal>> cutsByPool) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java b/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
+index 64c95485..f7df14a4 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
+@@ -1,14 +1,15 @@
+ package net.officefloor.hq.app.pool;
+ 
++import net.officefloor.hq.app.crew.Crews;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePool {
+ 
+-    // The name, trimmed, must not be blank, nor already a pool of the sheet.
++    // The name, trimmed, must not be blank, nor already a pool or a crew of the sheet.
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolRequest body, Pools pools,
+-            Out<Pool> pool) throws PoolRefusedException {
++            Crews crews, Out<Pool> pool) throws PoolRefusedException {
+         String sheet = sheetId.trim();
+         String name = body == null || body.name() == null ? "" : body.name().trim();
+         if (name.isEmpty()) {
+@@ -17,6 +18,9 @@ public class ValidatePool {
+         if (pools.has(sheet, name)) {
+             throw new PoolRefusedException("\"" + name + "\" is already a pool.");
+         }
++        if (crews.has(sheet, name)) {
++            throw new PoolRefusedException("\"" + name + "\" is already a crew.");
++        }
+         pool.set(new Pool(sheet, name));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java b/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java
+index dfd3f865..43474a27 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.Map;
+ import java.util.regex.Pattern;
++import net.officefloor.hq.app.crew.Crews;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Out;
+@@ -19,19 +20,23 @@ public class ValidatePoolMember {
+ 
+     // The pool and the person must be of the sheet, the person not already in the pool; the share has at most two
+     // decimals, more than 0.00 and at most 100.00. A member pool (memberPool) must be of the sheet, not the pool itself nor
+-    // one containing it through any chain, not already a member of a pool, and the chain it makes at most three deep. The
+-    // from-date and to-date are optional (yyyy-mm-dd); a to-date before the from-date is refused.
++    // one containing it through any chain, not already a member of a pool, and the chain it makes at most three deep.
++    // A crew's pool takes its members from the crew, so none is added to it here; a crew's pool can be a member pool.
++    // The from-date and to-date are optional (yyyy-mm-dd); a to-date before the from-date is refused.
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolMemberRequest body, Pools pools,
+-            People people, Out<PoolMember> member) throws PoolRefusedException {
++            People people, Crews crews, Out<PoolMember> member) throws PoolRefusedException {
+         String sheet = sheetId.trim();
+         String pool = body == null || body.pool() == null ? "" : body.pool().trim();
++        if (crews.has(sheet, pool)) {
++            throw new PoolRefusedException(pool + " is a crew: add its members through the crew.");
++        }
+         if (!pools.has(sheet, pool)) {
+             throw new PoolRefusedException("Choose a pool.");
+         }
+         String memberPool = body.memberPool() == null ? "" : body.memberPool().trim();
+         Person person = null;
+         if (!memberPool.isEmpty()) {
+-            nested(sheet, pool, memberPool, pools);
++            nested(sheet, pool, memberPool, pools, crews);
+         } else {
+             person = body.personId() == null ? null : people.find(sheet, body.personId());
+             if (person == null) {
+@@ -73,8 +78,9 @@ public class ValidatePoolMember {
+ 
+     private static final int DEEPEST = 3;
+ 
+-    private static void nested(String sheet, String pool, String memberPool, Pools pools) throws PoolRefusedException {
+-        if (!pools.has(sheet, memberPool)) {
++    private static void nested(String sheet, String pool, String memberPool, Pools pools, Crews crews)
++            throws PoolRefusedException {
++        if (!pools.has(sheet, memberPool) && !crews.has(sheet, memberPool)) {
+             throw new PoolRefusedException("Choose a pool.");
+         }
+         if (memberPool.equals(pool)) {
