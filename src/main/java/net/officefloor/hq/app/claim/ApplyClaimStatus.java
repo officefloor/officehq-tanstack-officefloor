@@ -151,6 +151,16 @@ public class ApplyClaimStatus {
                 next = ClaimStatus.PENDING;
             }
         }
+        // A DRAFT claim belonging to a period that caps its claims (its due-by falls in it) is opened only while its
+        // person has fewer OPEN or PENDING claims in the period than the cap.
+        if (next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT) {
+            Period capped = periods.on(claim.sheetId(), claim.dueBy());
+            if (capped != null && capped.cap() != null
+                    && claims.openInPeriod(claim.sheetId(), claim.personId(), capped) >= capped.cap()) {
+                throw new ClaimStatusRefusedException("The person already has " + capped.cap()
+                        + " open or pending claims in the period " + capped.name() + ", its cap.");
+            }
+        }
         // While the sheet numbers by period (its today on or after the from-date), an opened claim is numbered
         // within the period its due-by falls in, or in the no-period sequence; otherwise sheet-wide.
         String scope = null;

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.history.AsOf;
+import net.officefloor.hq.app.period.Period;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -136,6 +137,14 @@ public class Claims {
         return Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT COUNT(*) > 0 FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND soft AND from_date <= ? AND ? <= to_date",
                 Boolean.class, sheetId, Date.valueOf(dueBy), Date.valueOf(dueBy)));
+    }
+
+    /** How many of the person's claims are OPEN or PENDING and due by a date inside the period. */
+    public int openInPeriod(String sheetId, long personId, Period period) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND status IN (?, ?)"
+                + " AND due_by >= ? AND due_by <= ?", Integer.class, sheetId, personId, ClaimStatus.OPEN.name(),
+                ClaimStatus.PENDING.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
+        return n == null ? 0 : n;
     }
 
     /** Saves an edit of the claim, recording {@code user} as its last editor. */

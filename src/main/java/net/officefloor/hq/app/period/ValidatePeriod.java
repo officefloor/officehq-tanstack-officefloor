@@ -14,7 +14,8 @@ public class ValidatePeriod {
             .withResolverStyle(ResolverStyle.STRICT);
 
     // A period needs a name not already used on the sheet, and a from and to date (yyyy-mm-dd), the
-    // to-date on or after the from-date, sharing no day with another of the sheet's periods.
+    // to-date on or after the from-date, sharing no day with another of the sheet's periods, and optionally a
+    // claim cap.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PeriodRequest body, Periods periods,
             Out<Period> periodOut) throws InvalidPeriodException {
         String name = body == null || body.name() == null ? "" : body.name().trim();
@@ -26,7 +27,8 @@ public class ValidatePeriod {
         if (to.isBefore(from)) {
             throw new InvalidPeriodException("The to-date must be on or after the from-date.");
         }
-        Period period = new Period(sheetId.trim(), name, from, to);
+        Integer cap = cap(body.cap());
+        Period period = new Period(sheetId.trim(), name, from, to, cap);
         for (Period other : periods.list(period.sheetId())) {
             if (other.name().equals(name)) {
                 throw new InvalidPeriodException("There is already a period named " + name + ".");
@@ -36,6 +38,18 @@ public class ValidatePeriod {
             }
         }
         periodOut.set(period);
+    }
+
+    // A claim cap, when given, is a whole number of at least 1; blank is no cap.
+    private static Integer cap(String typed) throws InvalidPeriodException {
+        String cap = typed == null ? "" : typed.trim();
+        if (cap.isEmpty()) {
+            return null;
+        }
+        if (!cap.matches("\\d{1,9}") || Integer.parseInt(cap) < 1) {
+            throw new InvalidPeriodException("The claim cap must be a whole number of at least 1, or blank for none.");
+        }
+        return Integer.parseInt(cap);
     }
 
     private static LocalDate date(String typed, String which) throws InvalidPeriodException {

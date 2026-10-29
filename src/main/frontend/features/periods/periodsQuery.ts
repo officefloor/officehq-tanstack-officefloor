@@ -21,6 +21,8 @@ export type Period = {
   closedTotal: string | null;
   personTotals: Record<string, string>;
   soft: boolean;
+  /** How many OPEN or PENDING claims each person may have in the period; null for no cap. */
+  cap: number | null;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */

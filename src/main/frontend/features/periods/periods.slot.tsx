@@ -17,6 +17,7 @@ import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodDue } from '
 import type { Period } from './periodsQuery';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const WHOLE = /^\d+$/;
 const YEAR = /^\d{4}$/;
 
 function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
@@ -152,20 +153,22 @@ function Periods({ sheetId }: { sheetId: string }) {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
   const [error, setError] = useState('');
 
   const [user] = useUser();
   const once = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: Pick<Period, 'name' | 'from' | 'to'>) =>
+    mutationFn: (body: Pick<Period, 'name' | 'from' | 'to'> & { cap: string }) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
     },
-    onError: () => setError('The period could not be added: its name must be new and its dates must not overlap another period.'),
+    onError: () => setError('The period could not be added: its name must be new, its dates must not overlap another period and its cap must be a whole number of at least 1.'),
   });
 
   const list = periods.data ?? [];
@@ -175,6 +178,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     const n = name.trim();
     const f = from.trim();
     const t = to.trim();
+    const c = cap.trim();
     if (n === '') {
       setError('A period needs a name.');
       return;
@@ -196,7 +200,11 @@ function Periods({ sheetId }: { sheetId: string }) {
       setError(`The period overlaps ${overlapped.name}.`);
       return;
     }
-    once(() => add.mutateAsync({ name: n, from: f, to: t }));
+    if (c !== '' && (!WHOLE.test(c) || Number(c) < 1)) {
+      setError('The claim cap must be a whole number of at least 1, or blank for none.');
+      return;
+    }
+    once(() => add.mutateAsync({ name: n, from: f, to: t, cap: c }));
   };
 
   const dueTotal = (period: Period) => periodDue(period, claims, people, rates, floor, late);
@@ -219,6 +227,9 @@ function Periods({ sheetId }: { sheetId: string }) {
         <label>
           To <input data-testid="period-form-to" type="date" value={to} onChange={edit(setTo)} />
         </label>{' '}
+        <label>
+          Claim cap <input data-testid="period-form-cap" inputMode="numeric" value={cap} onChange={edit(setCap)} />
+        </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={add.isPending}>
           Add period
         </button>
@@ -234,6 +245,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>To</th>
             <th>Fiscal year</th>
             <th>Due</th>
+            <th>Claim cap</th>
             <th>Closed</th>
           </tr>
         </thead>
@@ -245,6 +257,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-fy">{fiscalYear(p.from, fiscalStart)}</td>
               <td data-testid="period-due-total">{dueTotal(p)}</td>
+              <td data-testid="period-cap">{p.cap ?? ''}</td>
               <PeriodClosed sheetId={sheetId} period={p} />
             </tr>
           ))}

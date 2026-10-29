@@ -19,7 +19,7 @@ public class Periods {
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
-            rs.getBoolean("soft"));
+            rs.getBoolean("soft"), rs.getObject("claim_cap", Integer.class));
 
     private final JdbcTemplate jdbc;
 
@@ -57,8 +57,8 @@ public class Periods {
     }
 
     public void add(Period period) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
-                period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) VALUES (?, ?, ?, ?, ?)",
+                period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()), period.cap());
     }
 
     /**
