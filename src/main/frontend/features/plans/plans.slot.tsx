@@ -15,7 +15,7 @@ type PlanBody = { amount: string; start: string; every: string; day: string; end
 
 /**
  * A plan's row: its figures, whether it is paused, and the buttons that pause and resume it on the sheet's today; the entry
- * its amount is changed through on the sheet's today (for the claims generated from then on), and its changes, oldest
+ * its amount is changed through on the sheet's today (for the claims generated from then on, and those it generated still DRAFT), and its changes, oldest
  * first. Pausing a paused plan, resuming a running one or a bad amount is refused with the row's `plan-error`, cleared
  * by the row's next action.
  */
@@ -41,7 +41,12 @@ function PlanRow({ sheetId, plan: p }: { sheetId: string; plan: Plan }) {
       putJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { amount }, user),
     onSuccess: async () => {
       setAmount('');
-      await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+      // The plan's DRAFT claims take the new amount too.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+      ]);
     },
     onError: (e: Error) =>
       setError(e instanceof RefusedError && e.message ? e.message : 'The plan could not be changed.'),

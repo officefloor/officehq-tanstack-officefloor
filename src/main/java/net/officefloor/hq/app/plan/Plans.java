@@ -58,6 +58,12 @@ public class Plans {
                 (rs, n) -> rs.getDate("on_date").toLocalDate(), planId);
     }
 
+    /** The ids of the claims the plan has made, in the order of their dates. */
+    public List<Long> madeClaims(long planId) {
+        return jdbc.query("SELECT claim_id FROM plan_claim WHERE plan_id = ? ORDER BY on_date",
+                (rs, n) -> rs.getLong("claim_id"), planId);
+    }
+
     /** How many claims each plan of the sheet has made, by plan id (absent for none). */
     public Map<Long, Integer> madeCounts(String sheetId) {
         return jdbc.query("SELECT pc.plan_id, COUNT(*) AS n FROM plan_claim pc JOIN plan p ON p.id = pc.plan_id "
