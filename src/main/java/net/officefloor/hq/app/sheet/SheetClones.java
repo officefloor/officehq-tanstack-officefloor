@@ -116,7 +116,7 @@ public class SheetClones {
                 + "SELECT ?, pool_name, member_pool, share, listed, from_date, to_date FROM pool_nested WHERE sheet_id = ?",
                 to, from);
 
-        // Claims, person by person in list order, each person's in the order they are listed, with their logs.
+        // Claims, person by person in list order, each person's in the order they are listed, with their logs and lines.
         Map<Long, Long> claims = new LinkedHashMap<>();
         for (Map.Entry<Long, Long> person : people.entrySet()) {
             for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class,
@@ -141,6 +141,8 @@ public class SheetClones {
                 jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) "
                         + "SELECT ?, ?, status, by_user, logged_on, due FROM claim_log WHERE claim_id = ? ORDER BY id",
                         to, copy, claim);
+                jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) "
+                        + "SELECT ?, ?, label, qty, unit FROM claim_line WHERE claim_id = ? ORDER BY id", to, copy, claim);
             }
         }
         return claims;

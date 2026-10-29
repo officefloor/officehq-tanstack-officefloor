@@ -326,6 +326,29 @@ public class Claims {
                 claim.sheetId(), claim.id(), user, Date.valueOf(on), text);
     }
 
+    /** Adds a line to the claim, after its others. */
+    public void addLine(Claim claim, ClaimLine line) {
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) VALUES (?, ?, ?, ?, ?)",
+                claim.sheetId(), claim.id(), line.label(), line.qty(), line.unit());
+    }
+
+    /** The claim's lines, in the order added. */
+    public List<ClaimLine> lines(Claim claim) {
+        return jdbc.query("SELECT * FROM " + AsOf.table("claim_line") + " WHERE claim_id = ? ORDER BY id",
+                (rs, n) -> new ClaimLine(rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit").setScale(2)),
+                claim.id());
+    }
+
+    /** The lines of the sheet's claims, by claim id, each in the order added as "label qty x unit". */
+    public java.util.Map<Long, List<String>> lines(String sheetId) {
+        java.util.Map<Long, List<String>> lines = new java.util.HashMap<>();
+        jdbc.query("SELECT * FROM " + AsOf.table("claim_line") + " WHERE sheet_id = ? ORDER BY id", rs -> {
+            lines.computeIfAbsent(rs.getLong("claim_id"), k -> new java.util.ArrayList<>())
+                    .add(new ClaimLine(rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit").setScale(2)).shown());
+        }, sheetId);
+        return lines;
+    }
+
     /** The comments of the sheet's claims, by claim id, each oldest first as "user on date: text". */
     public java.util.Map<Long, List<String>> comments(String sheetId) {
         java.util.Map<Long, List<String>> comments = new java.util.HashMap<>();

@@ -313,7 +313,7 @@ public class People {
     /**
      * Transfer the person to the sheet {@code to}, returning their id there. They arrive with their first grade and every
      * grade given since (with its from-date), their terms, contact, tags and aliases, and their claims (listed in the order
-     * they were, as the newest on that sheet) with their status, dates, notes, frozen figures, comments and logs; a
+     * they were, as the newest on that sheet) with their status, dates, notes, frozen figures, comments, lines and logs; a
      * claim in {@code numbers} takes the number given there, and each keeps the figure a statement bound it to; their
      * statements go with them. The references are not carried. They leave their sheet entirely: their claims, statements, holds, watches, patron links, pool memberships
      * and closed-period figures are dropped with them.
@@ -359,10 +359,13 @@ public class People {
                     + "SELECT ?, ?, status, by_user, logged_on, due FROM claim_log WHERE claim_id = ? ORDER BY id", to, moved, claim);
             jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, commented_on, text) "
                     + "SELECT ?, ?, by_user, commented_on, text FROM claim_comment WHERE claim_id = ? ORDER BY id", to, moved, claim);
+            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) "
+                    + "SELECT ?, ?, label, qty, unit FROM claim_line WHERE claim_id = ? ORDER BY id", to, moved, claim);
         }
         for (Long claim : claims) {
             jdbc.update("DELETE FROM claim_log WHERE claim_id = ?", claim);
             jdbc.update("DELETE FROM claim_comment WHERE claim_id = ?", claim);
+            jdbc.update("DELETE FROM claim_line WHERE claim_id = ?", claim);
             jdbc.update("DELETE FROM claim_lock WHERE claim_id = ?", claim);
             jdbc.update("DELETE FROM claim_batch WHERE claim_id = ?", claim);
             jdbc.update("DELETE FROM claim WHERE id = ?", claim);

@@ -1,0 +1,48 @@
+# POST /api/sheets/{sheetId}/claims/{claimId}/lines — add a line to a DRAFT claim. Body {"label":"...","qty":"3","unit":"2.50"}.
+# Adding a line edits the claim: its amount becomes its lines added up (quantity times unit amount) and the user is kept as
+# its last editor. Refused with 422 for an empty label, a quantity that is not a whole number of at least 1, a unit amount
+# not in up to two decimals, a claim that is not a draft, whose due-by is inside a closed period, or whose editor another
+# user has open (locked); nothing is stored. 404 for a claim not on the sheet.
+viewer:
+  class: net.officefloor.hq.app.setting.RefuseViewer
+  next: archived
+  govern: [ transaction ]
+archived:
+  class: net.officefloor.hq.app.sheet.RefuseArchived
+  next: snapshot
+  govern: [ transaction ]
+snapshot:
+  class: net.officefloor.hq.app.rollup.SnapshotRollup
+  next: load
+  govern: [ transaction ]
+load:
+  class: net.officefloor.hq.app.claim.LoadClaim
+  next: locked
+  govern: [ transaction ]
+locked:
+  class: net.officefloor.hq.app.claim.RefuseLockedClaim
+  next: draft
+  govern: [ transaction ]
+draft:
+  class: net.officefloor.hq.app.claim.RefuseNonDraftClaim
+  next: closed
+  govern: [ transaction ]
+closed:
+  class: net.officefloor.hq.app.claim.RefuseClosedClaim
+  next: apply
+  govern: [ transaction ]
+apply:
+  class: net.officefloor.hq.app.claim.ApplyClaimLine
+  next: audit
+  govern: [ transaction ]
+audit:
+  class: net.officefloor.hq.app.claim.AuditClaimLineAdded
+  next: rollup
+  govern: [ transaction ]
+rollup:
+  class: net.officefloor.hq.app.rollup.AuditRollup
+  next: respond
+  govern: [ transaction ]
+respond:
+  class: net.officefloor.hq.app.claim.RespondWithEditedClaim
+  govern: [ transaction ]

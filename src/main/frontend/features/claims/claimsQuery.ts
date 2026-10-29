@@ -24,7 +24,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `ref` is its external reference, unique on the sheet without regard to case (null when it has none);
  * `tags` are its tags, trimmed, lower-cased, without repeats and sorted (empty for none);
  * `comments` are its comments, oldest first, each "<user> on <date>: <text>" with the sheet's today when written;
- * `batch` is the number of the settle batch (a bulk settle) that settled it (null when none, or settled one at a time).
+ * `batch` is the number of the settle batch (a bulk settle) that settled it (null when none, or settled one at a time);
+ * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum).
  */
 export type Claim = {
   id: number;
@@ -51,6 +52,7 @@ export type Claim = {
   tags: string[];
   comments: string[];
   batch: number | null;
+  lines: string[];
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */
