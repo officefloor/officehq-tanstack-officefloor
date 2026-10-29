@@ -82,6 +82,9 @@ public class ApplySettings {
         if (settings.proofKinds() != null) {
             store.set(settings.sheetId(), Settings.PROOF_KINDS, settings.proofKinds());
         }
+        if (settings.maxOpen() != null) {
+            store.set(settings.sheetId(), Settings.MAX_OPEN, settings.maxOpen());
+        }
         if (settings.defaultGrade() != null) {
             store.set(settings.sheetId(), Settings.DEFAULT_GRADE, settings.defaultGrade());
         }

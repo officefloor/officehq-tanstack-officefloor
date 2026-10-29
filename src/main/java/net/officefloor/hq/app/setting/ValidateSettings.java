@@ -199,6 +199,13 @@ public class ValidateSettings {
             }
             reviewSla = Integer.toString(Integer.parseInt(reviewSla));
         }
+        String maxOpen = body == null || body.maxOpen() == null ? null : body.maxOpen().trim();
+        if (maxOpen != null && !maxOpen.isEmpty()) {
+            if (!DAYS.matcher(maxOpen).matches()) {
+                throw new InvalidSettingException("The maximum of open claims must be a whole number, 0 or more.");
+            }
+            maxOpen = Integer.toString(Integer.parseInt(maxOpen));
+        }
         String scoreMid = scoreThreshold(body == null ? null : body.scoreMid(), "mid");
         String scoreHigh = scoreThreshold(body == null ? null : body.scoreHigh(), "high");
         String scoreLog = body == null || body.scoreLog() == null ? null : body.scoreLog().trim();
@@ -321,7 +328,7 @@ public class ValidateSettings {
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !gradeClerkLimit.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
                 || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null
-                || scoreMid != null || scoreHigh != null || scoreLog != null;
+                || scoreMid != null || scoreHigh != null || scoreLog != null || maxOpen != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -329,7 +336,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh, scoreLog));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh, scoreLog, maxOpen));
     }
 
     /** A score threshold as typed: null is left as it is, blank is none, otherwise a whole number (it may be negative). */

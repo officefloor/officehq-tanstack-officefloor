@@ -60,6 +60,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [alertThreshold, setAlertThreshold] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [maxOpen, setMaxOpen] = useState('');
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
   const [scoreLog, setScoreLog] = useState('');
@@ -68,7 +69,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'maxOpen' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -104,6 +105,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setAlertThreshold('');
       setEscalateAfter('');
       setReviewSla('');
+      setMaxOpen('');
       setScoreMid('');
       setScoreHigh('');
       setScoreLog('');
@@ -247,6 +249,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The review SLA must be a whole number of days, 0 or more.');
       return;
     }
+    const mo = maxOpen.trim();
+    if (mo !== '' && !DAYS.test(mo)) {
+      setError('The maximum of open claims must be a whole number, 0 or more.');
+      return;
+    }
     const sm = scoreMid.trim();
     if (sm !== '' && !SCORE.test(sm)) {
       setError('The mid score threshold must be a whole number.');
@@ -319,7 +326,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     // A blank review threshold is none likewise.
     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && sm === '' && sh === '' && sl === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && mo === '' && sm === '' && sh === '' && sl === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -334,6 +341,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (at !== '' || (none && blank === 'alertThreshold')) body.alertThreshold = at;
     if (ea !== '' || (none && blank === 'escalateAfter')) body.escalateAfter = ea;
     if (rs !== '' || (none && blank === 'reviewSla')) body.reviewSla = rs;
+    if (mo !== '' || (none && blank === 'maxOpen')) body.maxOpen = mo;
     if (sm !== '' || (none && blank === 'scoreMid')) body.scoreMid = sm;
     if (sh !== '' || (none && blank === 'scoreHigh')) body.scoreHigh = sh;
     if (sl !== '' || (none && blank === 'scoreLog')) body.scoreLog = sl;
@@ -810,6 +818,19 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Max open claims per person{' '}
+          <input
+            data-testid="setting-max-open"
+            placeholder="none"
+            value={maxOpen}
+            onFocus={() => setBlank('maxOpen')}
+            onChange={(e) => {
+              setMaxOpen(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Score mid{' '}
           <input
             data-testid="setting-score-mid"
@@ -996,6 +1017,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Review SLA (days): <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Max open claims per person: <span data-testid="setting-max-open-current">{settings.data?.maxOpen ?? ''}</span>
       </p>
       <p>
         Score thresholds: mid <span data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</span>, high{' '}

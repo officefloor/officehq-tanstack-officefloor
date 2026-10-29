@@ -218,6 +218,15 @@ public class ApplyClaimStatus {
                         + " open or pending claims in the period " + capped.name() + ", its cap.");
             }
         }
+        // While the sheet has a maximum of open claims, a DRAFT claim is opened only while its person has fewer OPEN or
+        // PENDING claims than it.
+        if (next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT) {
+            Integer max = settings.maxOpen(claim.sheetId());
+            if (max != null && claims.openOf(claim.sheetId(), claim.personId()) >= max) {
+                throw new ClaimStatusRefusedException("The person already has " + max
+                        + " open or pending claims, the sheet's maximum.");
+            }
+        }
         // A DRAFT claim whose due is above the review threshold in force on its date goes to REVIEW instead of OPEN
         // (a due of n/a is within any threshold), until a steward's review makes it OPEN.
         if (next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT && due != null) {

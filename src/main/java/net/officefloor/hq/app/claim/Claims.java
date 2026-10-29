@@ -158,6 +158,13 @@ public class Claims {
         return n == null ? 0 : n;
     }
 
+    /** How many OPEN or PENDING claims the person has on the sheet. */
+    public int openOf(String sheetId, long personId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND status IN (?, ?)",
+                Integer.class, sheetId, personId, ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name());
+        return n == null ? 0 : n;
+    }
+
     /** Saves an edit of the claim, recording {@code user} as its last editor. */
     public void save(Claim claim, String user) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, edited_by = ? WHERE id = ?",

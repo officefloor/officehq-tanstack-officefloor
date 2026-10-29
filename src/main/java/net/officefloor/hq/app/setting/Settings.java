@@ -58,6 +58,8 @@ public class Settings {
     public static final String SCORE_HIGH = "score-high";
     /** The score log switch (not dated): "on" writes a SCORE line per person when the sheet's today is changed; blank is off. */
     public static final String SCORE_LOG = "score-log";
+    /** The maximum of OPEN or PENDING claims a person may have (not dated; blank: none). */
+    public static final String MAX_OPEN = "max-open";
     /** The proof kinds a claim above the proof threshold needs one proof of each of (not dated; blank: none), comma separated. */
     public static final String PROOF_KINDS = "proof-kinds";
     /** The grade a person quick-added or imported with a blank grade is given (not dated); "" is grade A. */
@@ -352,6 +354,12 @@ public class Settings {
     /** The review SLA, in days; null when there is none. */
     public Integer reviewSla(String sheetId) {
         String value = get(sheetId, REVIEW_SLA);
+        return value.isEmpty() ? null : Integer.valueOf(value);
+    }
+
+    /** The maximum of OPEN or PENDING claims a person may have; null when there is none. */
+    public Integer maxOpen(String sheetId) {
+        String value = get(sheetId, MAX_OPEN);
         return value.isEmpty() ? null : Integer.valueOf(value);
     }
 
