@@ -12,6 +12,6 @@ public class RespondWithPlans {
         String sheet = sheetId.trim();
         Map<Long, Integer> made = plans.madeCounts(sheet);
         LocalDate today = sheets.today(sheet);
-        response.send(plans.list(sheet).stream().map(p -> PlanResponse.from(p, made.getOrDefault(p.id(), 0), today)).toList());
+        response.send(plans.list(sheet).stream().map(p -> PlanResponse.from(p, made.getOrDefault(p.id(), 0), today, plans.pauses(p.id()))).toList());
     }
 }

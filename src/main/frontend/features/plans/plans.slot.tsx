@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { postJson, RefusedError } from '../../api/http';
+import { postJson, putJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
@@ -12,6 +12,54 @@ import { plansKey, plansQuery } from './plansQuery';
 import type { Plan } from './plansQuery';
 
 type PlanBody = { amount: string; start: string; every: string; day: string; end: string };
+
+/**
+ * A plan's row: its figures, whether it is paused, and the buttons that pause and resume it on the sheet's today. Pausing
+ * a paused plan or resuming a running one is refused with the row's `plan-error`, cleared by the row's next action.
+ */
+function PlanRow({ sheetId, plan: p }: { sheetId: string; plan: Plan }) {
+  const queryClient = useQueryClient();
+  const [user] = useUser();
+  const [error, setError] = useState('');
+  const once = useSubmitOnce();
+  const pause = useMutation({
+    mutationFn: (paused: boolean) =>
+      putJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/pause`, { paused }, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
+    onError: (e: Error) =>
+      setError(e instanceof RefusedError && e.message ? e.message : 'The plan could not be changed.'),
+  });
+  const press = (paused: boolean) => () => {
+    setError('');
+    once(() => pause.mutateAsync(paused));
+  };
+
+  return (
+    <tr data-testid={`plan-row-${p.id}`}>
+      <td data-testid="plan-amount-shown">{p.amount}</td>
+      <td data-testid="plan-start">{p.start}</td>
+      <td data-testid="plan-every">{p.day > 0 ? '' : p.every}</td>
+      <td data-testid="plan-day">{p.day > 0 ? p.day : ''}</td>
+      <td data-testid="plan-end">{p.end}</td>
+      <td>
+        made <span data-testid="plan-generated">{p.generated}</span>
+      </td>
+      <td>
+        next <span data-testid="plan-next-dates">{p.nextDates}</span>
+      </td>
+      <td>
+        paused <span data-testid="plan-paused">{p.paused}</span>{' '}
+        <button type="button" data-testid="plan-pause" disabled={pause.isPending} onClick={press(true)}>
+          Pause
+        </button>{' '}
+        <button type="button" data-testid="plan-resume" disabled={pause.isPending} onClick={press(false)}>
+          Resume
+        </button>
+        {error && <p data-testid="plan-error">{error}</p>}
+      </td>
+    </tr>
+  );
+}
 
 /**
  * The person's plans, each with how many claims it has made so far, and the form a plan is added through: an amount,
@@ -61,19 +109,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
       <table>
         <tbody>
           {plans.map((p) => (
-            <tr key={p.id} data-testid={`plan-row-${p.id}`}>
-              <td data-testid="plan-amount-shown">{p.amount}</td>
-              <td data-testid="plan-start">{p.start}</td>
-              <td data-testid="plan-every">{p.day > 0 ? '' : p.every}</td>
-              <td data-testid="plan-day">{p.day > 0 ? p.day : ''}</td>
-              <td data-testid="plan-end">{p.end}</td>
-              <td>
-                made <span data-testid="plan-generated">{p.generated}</span>
-              </td>
-              <td>
-                next <span data-testid="plan-next-dates">{p.nextDates}</span>
-              </td>
-            </tr>
+            <PlanRow key={p.id} sheetId={sheetId} plan={p} />
           ))}
         </tbody>
       </table>

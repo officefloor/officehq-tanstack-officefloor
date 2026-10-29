@@ -426,6 +426,7 @@ public class People {
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", from, from);
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
         jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", from);
+        jdbc.update("DELETE FROM plan_pause WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", from);
         jdbc.update("DELETE FROM plan WHERE person_id = ?", from);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
         jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);

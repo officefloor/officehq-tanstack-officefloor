@@ -34,8 +34,14 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
         return dates;
     }
 
-    /** The first {@code count} of the plan's dates after {@code today} and on or before its end, in order. */
-    public List<LocalDate> nextDates(LocalDate today, int count) {
-        return dates(end).stream().filter(d -> d.isAfter(today)).limit(count).toList();
+    /** The plan's dates up to and including {@code last} that none of its pauses skips, in order. */
+    public List<LocalDate> dates(LocalDate last, List<PlanPause> pauses) {
+        return dates(last).stream().filter(d -> pauses.stream().noneMatch(p -> p.skips(d))).toList();
+    }
+
+    /** The first {@code count} of the plan's dates after {@code today} and on or before its end that none of its pauses
+     *  skips (none while it is paused and not resumed), in order. */
+    public List<LocalDate> nextDates(LocalDate today, int count, List<PlanPause> pauses) {
+        return dates(end, pauses).stream().filter(d -> d.isAfter(today)).limit(count).toList();
     }
 }

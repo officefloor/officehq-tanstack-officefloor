@@ -63,6 +63,28 @@ public class Plans {
                 .stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
+    /** The plan's pauses, in the order they were made. */
+    public List<PlanPause> pauses(long planId) {
+        return jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new PlanPause(rs.getDate("paused_on").toLocalDate(),
+                        rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()), planId);
+    }
+
+    /** Whether the plan is paused now: it has a pause not yet resumed. */
+    public boolean paused(long planId) {
+        return pauses(planId).stream().anyMatch(p -> p.resumedOn() == null);
+    }
+
+    /** Pauses the plan from the date. */
+    public void pause(long planId, LocalDate date) {
+        jdbc.update("INSERT INTO plan_pause (plan_id, paused_on) VALUES (?, ?)", planId, Date.valueOf(date));
+    }
+
+    /** Resumes the plan's open pause on the date. */
+    public void resume(long planId, LocalDate date) {
+        jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(date), planId);
+    }
+
     /** Records that the plan made the claim for the date. */
     public void markMade(long planId, LocalDate date, long claimId) {
         jdbc.update("INSERT INTO plan_claim (plan_id, on_date, claim_id) VALUES (?, ?, ?)", planId, Date.valueOf(date), claimId);
