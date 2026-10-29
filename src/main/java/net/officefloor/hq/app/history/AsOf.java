@@ -34,6 +34,7 @@ public final class AsOf {
             Map.entry("claim_log", List.of("id")),
             Map.entry("claim_comment", List.of("id")),
             Map.entry("claim_line", List.of("id")),
+            Map.entry("claim_share", List.of("id")),
             Map.entry("person_patron", List.of("person_id", "patron_id")),
             Map.entry("person_alias", List.of("id")),
             Map.entry("person_watch", List.of("id")),

@@ -182,15 +182,39 @@ function floored(live: string, floor: string): string {
 }
 
 /**
- * A person's figures added up, before the cap: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
+ * The holder's part of a claim's figure: the figure times their share percent divided by 100, rounded half to even
+ * (n/a when the figure is).
+ */
+export function sharePart(figure: string, share: string): string {
+  return figure === 'n/a' ? 'n/a' : sumOfShares([[figure, share]]);
+}
+
+/**
+ * What the person counts of the claim's figure (null when it is neither theirs nor shared with them): a holder their
+ * part (see `sharePart`), the claim's own person the figure less every holder's part. The figure is worked out for the
+ * claim's own person.
+ */
+export function personPart(claim: Claim, person: Person, people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string | null {
+  const own = claim.personId === person.id;
+  const holding = own ? undefined : claim.shares.find((s) => s.personId === person.id);
+  if (!own && !holding) return null;
+  const whole = figure(claim, rates, people.find((p) => p.id === claim.personId), floor, late);
+  if (whole === 'n/a') return whole;
+  if (holding) return sharePart(whole, holding.share);
+  return difference(whole, sumDue(claim.shares.map((s) => sharePart(whole, s.share))));
+}
+
+/**
+ * A person's figures added up, before the cap: the sum of what they count (see `personPart`) of their own counting
+ * claims' rounded figures, as each claim shows it, and of those shared with them. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
 export function personSum(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, gradeOn(person, today), today);
   const figures = claims
-    .filter((c) => c.personId === person.id && counts(c, people, today))
-    .map((c) => figure(c, rates, person, floor, late))
-    .filter((d) => d !== 'n/a');
+    .filter((c) => counts(c, people, today))
+    .map((c) => personPart(c, person, people, rates, floor, late))
+    .filter((d): d is string => d !== null && d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }
 
@@ -238,16 +262,17 @@ export function recentSettled(personId: number, claims: Claim[], today: string):
 }
 
 /**
- * A person's figures that count (see `personSum`), split by status: their SETTLED claims' frozen figures, and their
- * OPEN and PENDING claims' figures, each added up (n/a skipped; not capped). The two add up to `personSum`.
+ * A person's figures that count (see `personSum`), split by status: what they count (see `personPart`) of the SETTLED
+ * claims' frozen figures, and of the OPEN and PENDING claims' figures, each added up (n/a skipped; not capped). The two add up to `personSum`.
  */
 export function settledAndOpen(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): [string, string] {
   const settled: string[] = [];
   const open: string[] = [];
   if (person) {
     for (const c of claims) {
-      if (c.personId !== person.id || !counts(c, people, today)) continue;
-      (c.status === 'SETTLED' ? settled : open).push(figure(c, rates, person, floor, late));
+      if (!counts(c, people, today)) continue;
+      const part = personPart(c, person, people, rates, floor, late);
+      if (part !== null) (c.status === 'SETTLED' ? settled : open).push(part);
     }
   }
   return [sumDue(settled), sumDue(open)];

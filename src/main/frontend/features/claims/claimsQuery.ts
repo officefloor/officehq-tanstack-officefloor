@@ -30,7 +30,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
  * `waived` is whether a steward waived its late charge: it bears none from then on;
- * `held` is whether it is held: it still counts in every total, as a held person's claims do.
+ * `held` is whether it is held: it still counts in every total, as a held person's claims do;
+ * `shares` are the people it is shared with, in the order added: each holds that percent of its due (see `personPart`).
  */
 export type Claim = {
   id: number;
@@ -63,7 +64,11 @@ export type Claim = {
   reviewOn: string | null;
   waived: boolean;
   held: boolean;
+  shares: ClaimShare[];
 };
+
+/** A share of a claim: the person on the sheet holding it and their percent (two decimals). */
+export type ClaimShare = { personId: number; share: string };
 
 /** Whether a REVIEW claim is late: its review day plus the review SLA's days (`sla`, "" for none) is before the sheet's `today`. */
 export const isReviewLate = (c: Claim, today: string, sla: string) => {

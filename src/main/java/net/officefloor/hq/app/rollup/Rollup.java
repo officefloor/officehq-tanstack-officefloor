@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimShare;
+import net.officefloor.hq.app.claim.ClaimShares;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
@@ -30,14 +32,17 @@ public class Rollup {
     private final Sheets sheets;
     private final Settings settings;
     private final Periods periods;
+    private final ClaimShares shares;
 
-    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Periods periods) {
+    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Periods periods,
+            ClaimShares shares) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
         this.settings = settings;
         this.periods = periods;
+        this.shares = shares;
     }
 
     /** The sheet's alert threshold; null when alerts are off. */
@@ -49,11 +54,15 @@ public class Rollup {
         LocalDate today = sheets.today(sheetId);
         List<Claim> counting = claims.list(sheetId).stream()
                 .filter(c -> c.status().counts()).toList();
+        Map<Long, List<ClaimShare>> shared = shares.of(sheetId);
+        List<Person> listed = people.list(sheetId);
+        Map<Long, Person> byId = new LinkedHashMap<>();
+        listed.forEach(p -> byId.put(p.id(), p));
         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
-        for (Person person : people.list(sheetId)) {
+        for (Person person : listed) {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
             BigDecimal overdue = ZERO;
@@ -61,28 +70,35 @@ public class Rollup {
             int overdueCount = 0;
             boolean anyFigure = false;
             for (Claim claim : counting) {
-                if (claim.personId() != person.id() || !countsClaimed(claim, person, today)) {
+                List<ClaimShare> claimShares = shared.getOrDefault(claim.id(), List.of());
+                boolean own = claim.personId() == person.id();
+                ClaimShare holding = own ? null
+                        : claimShares.stream().filter(sh -> sh.personId() == person.id()).findFirst().orElse(null);
+                Person owner = byId.get(claim.personId());
+                if ((!own && holding == null) || owner == null || !countsClaimed(claim, owner, today)) {
                     continue;
                 }
                 // A claim that corrects another is left out of claimed; its due still counts.
-                if (claim.corrects() == null) {
+                if (own && claim.corrects() == null) {
                     claimed = claimed.add(claim.amount());
                 }
-                if (!counts(claim, person, today)) {
+                if (!counts(claim, owner, today)) {
                     continue;
                 }
-                BigDecimal figure = figure(claim, person, today);
-                if (settings.overdue(claim, today)) {
+                BigDecimal figure = figure(claim, owner, today);
+                if (own && settings.overdue(claim, today)) {
                     overdueCount++;
                 }
+                // A holder counts their part of the figure; the claim's own person the rest.
+                BigDecimal part = figure == null ? null : own ? remainder(figure, claimShares) : holding.part(figure);
                 // The score's settled-total leaves out corrections.
-                if (figure != null && claim.status() == ClaimStatus.SETTLED && claim.corrects() == null) {
-                    settled = settled.add(figure);
+                if (part != null && claim.status() == ClaimStatus.SETTLED && claim.corrects() == null) {
+                    settled = settled.add(part);
                 }
-                if (figure != null) {
-                    due = due.add(figure);
+                if (part != null) {
+                    due = due.add(part);
                     anyFigure = true;
-                    if (settings.overdue(claim, today)) {
+                    if (own && settings.overdue(claim, today)) {
                         overdue = overdue.add(figure);
                     }
                 }
@@ -101,6 +117,11 @@ public class Rollup {
         }
         return new Figures(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
                 trimmed(overdues).toPlainString());
+    }
+
+    /** What the claim's own person counts of its figure: the figure less each holder's part. */
+    private static BigDecimal remainder(BigDecimal figure, List<ClaimShare> claimShares) {
+        return claimShares.stream().map(sh -> sh.part(figure)).reduce(figure, BigDecimal::subtract);
     }
 
     /** A person's score, as the screen shows it: their settled-total (corrections left out) / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
