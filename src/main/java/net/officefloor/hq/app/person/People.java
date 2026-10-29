@@ -29,7 +29,7 @@ public class People {
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
             rs.getObject("retired_from", LocalDate.class), List.of(), List.of(),
             rs.getObject("terms", Integer.class), rs.getString("contact"), List.of(),
-            rs.getString("origin_sheet_id"));
+            rs.getString("origin_sheet_id"), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -72,6 +72,12 @@ public class People {
                     holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
                             new Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
                 }, sheetId);
+        Map<Long, List<Retirement>> retirements = new HashMap<>();
+        jdbc.query("SELECT r.* FROM " + AsOf.table("person_retirement", "r") + " JOIN " + AsOf.table("person", "p") + " ON p.id = r.person_id WHERE p.sheet_id = ? "
+                + "ORDER BY r.from_date, r.id", rs -> {
+                    retirements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
+                            new Retirement(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+                }, sheetId);
         Map<Long, List<String>> aliases = new HashMap<>();
         jdbc.query("SELECT person_id, alias FROM " + AsOf.table("person_alias") + " WHERE sheet_id = ?", rs -> {
             aliases.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getString("alias"));
@@ -79,7 +85,8 @@ public class People {
         aliases.values().forEach(a -> a.sort(BY_NAME));
         return found.stream().map(p -> new Person(p.id(), p.sheetId(), p.name(), p.grade(), p.version(),
                 p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()), p.terms(), p.contact(),
-                List.copyOf(aliases.getOrDefault(p.id(), List.of())), p.origin())).toList();
+                List.copyOf(aliases.getOrDefault(p.id(), List.of())), p.origin(),
+                retirements.getOrDefault(p.id(), List.of()))).toList();
     }
 
     /** The name the person had on the sheet they were transferred from; null when they were not transferred in. */
@@ -210,7 +217,7 @@ public class People {
             return ps;
         }, key);
         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
-                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of(), null);
+                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of(), null, List.of());
     }
 
     /**
@@ -232,6 +239,13 @@ public class People {
     /** Retire the person from the date (replacing any date they were retired from before). */
     public void retire(long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", from, id);
+    }
+
+    /** Unretire the person, keeping the retirement as a past one. */
+    public void unretire(long id, Retirement past) {
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ?", id);
+        jdbc.update("INSERT INTO person_retirement (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
+                Date.valueOf(past.from()), Date.valueOf(past.to()));
     }
 
     /** Add a hold to the person's holds. */
@@ -281,6 +295,7 @@ public class People {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, from);
         jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person WHERE id = ?", from);
@@ -354,6 +369,7 @@ public class People {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
         jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_alias WHERE person_id = ?", from);

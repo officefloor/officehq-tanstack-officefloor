@@ -14,13 +14,15 @@ import net.officefloor.hq.app.setting.Settings;
  * {@code contact} is their contact, trimmed and lower-cased (null for none); no two people on a sheet share one.
  * {@code aliases} are their aliases, sorted as names are compared (ignoring case).
  * {@code origin} is the id of the sheet they were transferred from (null when they were not transferred in).
+ * {@code retirements} are their past retirements (each ended by unretiring them), by from-date.
  */
 public record Person(long id, String sheetId, String name, String grade, long version, LocalDate retiredFrom,
-        List<Hold> holds, List<DatedGrade> dated, Integer terms, String contact, List<String> aliases, String origin) {
+        List<Hold> holds, List<DatedGrade> dated, Integer terms, String contact, List<String> aliases, String origin,
+        List<Retirement> retirements) {
 
     public Person with(PersonRequest request) {
         return new Person(id, sheetId, request.name(), grade, version + 1, retiredFrom, holds, dated,
-                request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), aliases, origin);
+                request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), aliases, origin, retirements);
     }
 
     /** The grade in force on the date: the one with the latest from-date on or before it, else the first grade. */

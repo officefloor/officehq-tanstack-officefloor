@@ -12,16 +12,20 @@ import java.util.List;
  * {@code terms} are their own terms in days, null for none; {@code contact} is their contact, null for none;
  * {@code aliases} are their aliases, sorted as names are compared; {@code clashing} is whether their name or an alias
  * is also a name or alias of someone else on the sheet's tree (see {@link People#clashing}); {@code origin} is the id of
- * the sheet they were transferred from, null when they were not transferred in.
+ * the sheet they were transferred from, null when they were not transferred in; {@code retirements} are their past
+ * retirements by from-date (yyyy-mm-dd, each to the day they were unretired).
  */
 public record PersonResponse(long id, String name, String grade, List<Graded> grades, long version,
         String retiredFrom, boolean held, List<Held> holds, Integer terms, String contact, List<String> aliases, boolean clashing,
-        String origin) {
+        String origin, List<Retired> retirements) {
 
     public record Graded(String from, String grade) {
     }
 
     public record Held(String from, String to) {
+    }
+
+    public record Retired(String from, String to) {
     }
 
     public static PersonResponse from(Person person, LocalDate today) {
@@ -35,6 +39,7 @@ public record PersonResponse(long id, String name, String grade, List<Graded> gr
         return new PersonResponse(person.id(), person.name(), person.gradeOn(today), grades, person.version(),
                 person.retiredFrom() == null ? null : person.retiredFrom().toString(), person.held(),
                 person.holds().stream().map(h -> new Held(h.from().toString(), h.to() == null ? null : h.to().toString()))
-                        .toList(), person.terms(), person.contact(), person.aliases(), clashing, person.origin());
+                        .toList(), person.terms(), person.contact(), person.aliases(), clashing, person.origin(),
+                person.retirements().stream().map(r -> new Retired(r.from().toString(), r.to().toString())).toList());
     }
 }

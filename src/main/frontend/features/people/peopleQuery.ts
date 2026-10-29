@@ -14,9 +14,13 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
  * paste box find a person by one as well as by the name. A name or alias is unique across the sheet's tree (its
  * ancestors and descendants); `clashing` is whether the person's name or an alias is used by someone else there all
  * the same (they were on the sheet before), which refuses every edit of them until a rename frees them. `origin` is
- * the id of the sheet they were transferred from; null when they were not transferred in.
+ * the id of the sheet they were transferred from; null when they were not transferred in. `retirements` are their
+ * past retirements by from-date, each ended by unretiring them: a claim dated strictly between its dates is refused.
  */
-export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null };
+export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[] };
+
+/** A past retirement from `from` to `to`, the day they were unretired (yyyy-mm-dd). */
+export type Retired = { from: string; to: string };
 
 /** A hold from `from` to `to` inclusive (yyyy-mm-dd); `to` is null when it has no end. */
 export type Held = { from: string; to: string | null };

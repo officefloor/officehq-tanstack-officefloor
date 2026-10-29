@@ -12,7 +12,8 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Whether the person is retired, the date they are retired from, and the control that retires them
- * from a date (a blank date is the sheet's today). A person with a date set is retired at once.
+ * from a date (a blank date is the sheet's today). A person with a date set is retired at once. A retired person can
+ * be unretired (on the sheet's today); their past retirements are listed, one line each.
  */
 function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -29,6 +30,14 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
     onError: () => setError('The person could not be retired.'),
+  });
+  const unretire = useMutation({
+    mutationFn: () =>
+      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/unretire`, {}, user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+    },
+    onError: () => setError('Only a retired person can be unretired.'),
   });
 
   return (
@@ -59,7 +68,23 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
         }}
       >
         Retire
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-unretire"
+        disabled={unretire.isPending}
+        onClick={() => {
+          setError('');
+          once(() => unretire.mutateAsync());
+        }}
+      >
+        Unretire
       </button>
+      {(person?.retirements ?? []).map((r, i) => (
+        <div key={i} data-testid="person-retirement-line">
+          {r.from} to {r.to}
+        </div>
+      ))}
     </td>
   );
 }
