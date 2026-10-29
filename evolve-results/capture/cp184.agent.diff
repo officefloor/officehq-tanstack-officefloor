@@ -1,0 +1,102 @@
+diff --git a/src/main/frontend/features/claims/claimed.slot.tsx b/src/main/frontend/features/claims/claimed.slot.tsx
+index cf0debf5..da48976a 100644
+--- a/src/main/frontend/features/claims/claimed.slot.tsx
++++ b/src/main/frontend/features/claims/claimed.slot.tsx
+@@ -3,14 +3,14 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { peopleQuery } from '../people/peopleQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+-import { claimsQuery, counts, sumAmounts } from './claimsQuery';
++import { claimsQuery, countsClaimed, sumAmounts } from './claimsQuery';
+ import { ColumnShown } from '../people/useColumns';
+ 
+-/** The claims that count toward claimed: those that count, leaving out claims that correct another. */
++/** The claims that count toward claimed: those that count (a hold does not leave them out), leaving out claims that correct another. */
+ function useCounting(sheetId: string) {
+   const people = useQuery(peopleQuery(sheetId)).data ?? [];
+   const today = useSheetToday(sheetId);
+-  return (useQuery(claimsQuery(sheetId)).data ?? []).filter((c) => c.corrects === null && counts(c, people, today));
++  return (useQuery(claimsQuery(sheetId)).data ?? []).filter((c) => c.corrects === null && countsClaimed(c, people, today));
+ }
+ 
+ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
+diff --git a/src/main/frontend/features/claims/claimsQuery.ts b/src/main/frontend/features/claims/claimsQuery.ts
+index 616a769c..2574931e 100644
+--- a/src/main/frontend/features/claims/claimsQuery.ts
++++ b/src/main/frontend/features/claims/claimsQuery.ts
+@@ -30,7 +30,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
+  * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
+  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
+  * `waived` is whether a steward waived its late charge: it bears none from then on;
+- * `held` is whether it is held: while open and not bound by a statement it counts in no total, as a held person's claims do.
++ * `held` is whether it is held: while open and not bound by a statement it counts in no due figure (it still counts in claimed), as a held person's claims do.
+  */
+ export type Claim = {
+   id: number;
+@@ -94,6 +94,12 @@ export const counts = (c: Claim, people: Person[], today: string) =>
+   (isOpen(c) &&
+     (c.stated || (!c.held && !leftOut(people.find((p) => p.id === c.personId), c.date, today)))));
+ 
++/** Whether the claim counts toward claimed: as `counts`, except that a hold (the claim's or its person's) does not leave it out. */
++export const countsClaimed = (c: Claim, people: Person[], today: string) => {
++  const person = people.find((p) => p.id === c.personId);
++  return counts({ ...c, held: false }, person ? [{ ...person, holds: [], held: false }] : [], today);
++};
++
+ /** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
+ const leftOut = (person: Person | undefined, date: string, today: string) =>
+   heldOn(person, date) || (!!person?.retiredFrom && !!today && person.retiredFrom <= today);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 227616b6..5a0c51ca 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -19,7 +19,7 @@ import java.time.LocalDate;
+  * {@code ref} is its external reference, unique on the sheet without regard to case (null when it has none).
+  * {@code tags} are its tags, trimmed, lower-cased, without repeats and sorted (empty for none).
+  * {@code waived} is whether a steward waived its late charge: it bears none from then on.
+- * {@code held} is whether it is held: while OPEN or PENDING and not bound by a statement it counts in no live total.
++ * {@code held} is whether it is held: while OPEN or PENDING and not bound by a statement it counts in no live due figure (it still counts in claimed).
+  */
+ public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index c7cd2da2..c3e648e8 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -59,13 +59,17 @@ public class Rollup {
+             BigDecimal overdue = ZERO;
+             boolean anyFigure = false;
+             for (Claim claim : counting) {
+-                if (claim.personId() != person.id() || !counts(claim, person, today)) {
++                if (claim.personId() != person.id() || !countsClaimed(claim, person, today)) {
+                     continue;
+                 }
+                 // A claim that corrects another is left out of claimed; its due still counts.
+                 if (claim.corrects() == null) {
+                     claimed = claimed.add(claim.amount());
+                 }
++                // A held claim counts in claimed, but not in the due figures.
++                if (!counts(claim, person, today)) {
++                    continue;
++                }
+                 BigDecimal figure = figure(claim, person, today);
+                 if (figure != null) {
+                     due = due.add(figure);
+@@ -180,6 +184,17 @@ public class Rollup {
+         return !(claim.status().isOpen() && !bound && (claim.held() || person.heldOn(claim.date()) || person.retiredOn(today)));
+     }
+ 
++    /**
++     * Whether the (OPEN, PENDING or SETTLED) claim counts toward claimed: as {@link #counts}, except that a hold (the
++     * claim's or its person's) does not leave it out.
++     */
++    public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
++        if (claim.deferredOn(today)) {
++            return false;
++        }
++        return !(claim.status().isOpen() && !claim.stated() && person.retiredOn(today));
++    }
++
+     /**
+      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the due its person's
+      * last statement bound it to as shown then (late charge and floor included), otherwise its amount times its person's
