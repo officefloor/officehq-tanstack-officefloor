@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.ClaimShares;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
@@ -33,9 +34,10 @@ public class Rollup {
     private final Settings settings;
     private final Periods periods;
     private final ClaimShares shares;
+    private final PoolCuts poolCuts;
 
     public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Periods periods,
-            ClaimShares shares) {
+            ClaimShares shares, PoolCuts poolCuts) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -43,6 +45,7 @@ public class Rollup {
         this.settings = settings;
         this.periods = periods;
         this.shares = shares;
+        this.poolCuts = poolCuts;
     }
 
     /** The sheet's alert threshold; null when alerts are off. */
@@ -58,6 +61,7 @@ public class Rollup {
         List<Person> listed = people.list(sheetId);
         Map<Long, Person> byId = new LinkedHashMap<>();
         listed.forEach(p -> byId.put(p.id(), p));
+        Map<Long, BigDecimal> cuts = poolCuts.totals(sheetId);
         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         List<BigDecimal> dues = new ArrayList<>();
@@ -105,8 +109,8 @@ public class Rollup {
             }
             // With no rate today and no figure, the due-total is n/a.
             boolean none = !anyFigure && rates.on(sheetId, person.gradeOn(today), today) == null;
-            // Otherwise it is held to the sheet's cap.
-            due = settings.capped(sheetId, due);
+            // Otherwise it is held to the sheet's cap less their cut total.
+            due = settings.capped(sheetId, due, cuts.getOrDefault(person.id(), ZERO));
             claimedTotal = claimedTotal.add(claimed);
             if (!none) {
                 dues.add(due);

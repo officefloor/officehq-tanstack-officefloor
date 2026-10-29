@@ -221,10 +221,10 @@ public class Settings {
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 
-    /** A person's due-total held to the sheet's cap; null (n/a) stays null. */
-    public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
+    /** A person's due-total held to the sheet's cap less their cut total, not below 0.00; null (n/a) stays null. */
+    public BigDecimal capped(String sheetId, BigDecimal dueTotal, BigDecimal cutTotal) {
         BigDecimal cap = cap(sheetId);
-        return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap);
+        return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap.subtract(cutTotal).max(BigDecimal.ZERO.setScale(2)));
     }
 
     /** The floor in force on the date, with two decimals: what a claim's live due is at least; 1.00 when none is. */

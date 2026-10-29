@@ -5,9 +5,10 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+import { useCapFor } from '../pools/poolsQuery';
 import { patronSharesOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+import { useFloor, useLate } from '../settings/settingsQuery';
 import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, settledAndOpen, sumDue, sumOfShares, trimmedSum } from './ratesQuery';
 import { ColumnShown } from '../people/useColumns';
 
@@ -19,7 +20,7 @@ function useSheetData(sheetId: string) {
     today: useSheetToday(sheetId),
     floor: useFloor(sheetId),
     late: useLate(sheetId),
-    cap: useCap(sheetId),
+    capFor: useCapFor(sheetId),
   };
 }
 
@@ -30,14 +31,14 @@ function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
-  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late, cap)}</td>;
+  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
+  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late, capFor(personId))}</td>;
 }
 
-/** What a person's figures add up to above the sheet's cap; 0.00 when they are not above it. */
+/** What a person's figures add up to above their cap (the sheet's cap less their cut total); 0.00 when they are not above it. */
 function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
-  return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), cap)}</td>;
+  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
+  return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), capFor(personId))}</td>;
 }
 
 /** A person's open claims' figures that count, split by the claim's age on the sheet's today: 0-30, 31-60 and 61+ days. */
@@ -105,8 +106,8 @@ function AgedTotal({ sheetId }: { sheetId: string }) {
 
 /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
 export function useSheetDueTotal(sheetId: string) {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
-  return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
+  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
+  return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id))));
 }
 
 /**
@@ -114,24 +115,24 @@ export function useSheetDueTotal(sheetId: string) {
  * skipping n/a — as the summary shows them.
  */
 export function useGradeDueTotals(sheetId: string): string[] {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
   const unretired = people.filter((p) => p.retiredFrom === null);
   return GRADES.map((g) =>
-    sumDue(unretired.filter((p) => gradeOn(p, today) === g).map((p) => personDue(p, people, claims, rates, today, floor, late, cap))),
+    sumDue(unretired.filter((p) => gradeOn(p, today) === g).map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id)))),
   );
 }
 
 /** One person's due-total, as in their row; null when there is no such person. */
 export function usePersonDueTotal(sheetId: string, personId: number | undefined) {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
   const person = people.find((p) => p.id === personId);
-  return person ? personDue(person, people, claims, rates, today, floor, late, cap) : null;
+  return person ? personDue(person, people, claims, rates, today, floor, late, capFor(person.id)) : null;
 }
 
 /** Every person's due-total, as in their row, by person id. */
 export function usePeopleDueTotals(sheetId: string): Map<number, string> {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
-  return new Map(people.map((p) => [p.id, personDue(p, people, claims, rates, today, floor, late, cap)]));
+  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
+  return new Map(people.map((p) => [p.id, personDue(p, people, claims, rates, today, floor, late, capFor(p.id))]));
 }
 
 function DueTotal({ sheetId }: { sheetId: string }) {

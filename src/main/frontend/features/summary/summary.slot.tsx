@@ -4,8 +4,9 @@ import { claimsQuery, isActive, isReviewLate } from '../claims/claimsQuery';
 import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
 import { classicPeriodDue, periodDue, periodsQuery } from '../periods/periodsQuery';
+import { useCapFor } from '../pools/poolsQuery';
 import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
-import { useCap, useFloor, useLate, useReviewSla } from '../settings/settingsQuery';
+import { useFloor, useLate, useReviewSla } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
 
@@ -28,7 +29,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capFor = useCapFor(sheetId);
   const reviewSla = useReviewSla(sheetId);
 
   const unretired = people.filter((p) => p.retiredFrom === null);
@@ -60,7 +61,7 @@ function Summary({ sheetId }: { sheetId: string }) {
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
-                  {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}
+                  {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id))))}
                 </td>
                 <td data-testid={`summary-grade-${g}-active`}>
                   {onGrade.filter((p) => isActive(p.id, claims, people, today)).length}
@@ -140,7 +141,7 @@ function ClassicSummary({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capFor = useCapFor(sheetId);
 
   return (
     <section data-testid="classic-summary">
@@ -162,7 +163,7 @@ function ClassicSummary({ sheetId }: { sheetId: string }) {
         </tbody>
       </table>
       <p>
-        Due <strong data-testid="classic-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}</strong>
+        Due <strong data-testid="classic-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id))))}</strong>
       </p>
     </section>
   );

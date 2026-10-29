@@ -1,5 +1,8 @@
+import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { peopleKey } from '../people/peopleQuery';
+import { capLess, sumDue } from '../rates/ratesQuery';
+import { useCap } from '../settings/settingsQuery';
 
 /** A member of a pool: the person's id and name, their share percent with two decimals, whether they are retired, and their
  *  cut of the pool's pot with two decimals ("" when the pool is not balanced, there is no pot, every member is retired, or the member's dates do
@@ -27,3 +30,16 @@ export const poolsQuery = (sheetId: string) => ({
   queryKey: poolsKey(sheetId),
   queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
 });
+
+/** A person's cut total: their cut in every pool they are a member of, added up; a pool that shows no cut adds nothing. */
+export function cutTotal(pools: Pool[], personId: number): string {
+  const cuts = pools.flatMap((p) => p.members.filter((m) => m.pool === null && m.personId === personId && m.cut !== '').map((m) => m.cut));
+  return sumDue(cuts);
+}
+
+/** The cap a person's due-total is held to, by person id: the sheet's cap less their cut total, not below 0.00 ("" for no cap). */
+export function useCapFor(sheetId: string): (personId: number) => string {
+  const cap = useCap(sheetId);
+  const pools = useQuery(poolsQuery(sheetId)).data ?? [];
+  return (personId) => capLess(cap, cutTotal(pools, personId));
+}

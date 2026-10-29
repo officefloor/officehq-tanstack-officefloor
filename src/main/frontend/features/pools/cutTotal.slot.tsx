@@ -3,14 +3,7 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from '../people/peopleQuery';
 import { sumDue } from '../rates/ratesQuery';
-import { poolsQuery } from './poolsQuery';
-import type { Pool } from './poolsQuery';
-
-/** A person's cut total: their cut in every pool they are a member of, added up; a pool that shows no cut adds nothing. */
-function cutTotal(pools: Pool[], personId: number): string {
-  const cuts = pools.flatMap((p) => p.members.filter((m) => m.pool === null && m.personId === personId && m.cut !== '').map((m) => m.cut));
-  return sumDue(cuts);
-}
+import { cutTotal, poolsQuery } from './poolsQuery';
 
 function PersonCutTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
   const pools = useQuery(poolsQuery(sheetId)).data ?? [];

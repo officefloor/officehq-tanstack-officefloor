@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { downloadCsv } from '../../api/csv';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
+import { useCapFor } from '../pools/poolsQuery';
 import { personDue, ratesQuery } from '../rates/ratesQuery';
-import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+import { useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, peopleQuery } from './peopleQuery';
 
@@ -15,12 +16,12 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capFor = useCapFor(sheetId);
 
   const exportCsv = () => {
     downloadCsv('people.csv', [
       ['name', 'grade', 'retired-from', 'due-total'],
-      ...people.map((p) => [p.name, gradeOn(p, today) ?? p.grade, p.retiredFrom ?? '', personDue(p, people, claims, rates, today, floor, late, cap)]),
+      ...people.map((p) => [p.name, gradeOn(p, today) ?? p.grade, p.retiredFrom ?? '', personDue(p, people, claims, rates, today, floor, late, capFor(p.id))]),
     ]);
   };
 

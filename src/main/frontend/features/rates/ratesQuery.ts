@@ -239,12 +239,19 @@ export function capped(sum: string, cap: string): string {
   return sum === 'n/a' || cap === '' || hundredths(sum) <= hundredths(cap) ? sum : show(hundredths(cap));
 }
 
+/** A cap ("" for none) less a cut total, not below 0.00 ("" stays ""). */
+export function capLess(cap: string, cut: string): string {
+  if (cap === '') return cap;
+  const left = hundredths(cap) - hundredths(cut);
+  return show(left < 0n ? 0n : left);
+}
+
 /** What a sum of figures is above the sheet's `cap`: 0.00 when it is not (or there is no cap, or it is n/a). */
 export function excess(sum: string, cap: string): string {
   return sum === 'n/a' ? '0.00' : show(hundredths(sum) - hundredths(capped(sum, cap)));
 }
 
-/** A person's due-total: their figures added up (see `personSum`), held to the sheet's `cap` (two decimals; "" for none). */
+/** A person's due-total: their figures added up (see `personSum`), held to `cap` — the sheet's cap less their cut total (see `capLess`; two decimals; "" for none). */
 export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late, cap: string): string {
   return capped(personSum(person, people, claims, rates, today, floor, late), cap);
 }

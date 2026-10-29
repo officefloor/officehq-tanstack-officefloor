@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.pool;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,23 @@ public class PoolCuts {
                         sheetId, period, pool.name(), RespondWithPools.member(m), m.cut());
             }
         }
+    }
+
+    /**
+     * Each person's cut total, by person id: their live cut in every pool they are a member of, added up (a pool that
+     * shows no cut adds nothing); a person in no pool is left out.
+     */
+    public Map<Long, BigDecimal> totals(String sheetId) {
+        Map<Long, BigDecimal> out = new HashMap<>();
+        for (PoolResponse pool : RespondWithPools.figure(sheetId, pools, people, settings, sheets, crews, Map.of(),
+                List.of())) {
+            for (PoolResponse.Member m : pool.members()) {
+                if (m.pool() == null && !m.cut().isEmpty()) {
+                    out.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
+                }
+            }
+        }
+        return out;
     }
 
     /** Drops the period's fixed cuts, so they are live again. */
