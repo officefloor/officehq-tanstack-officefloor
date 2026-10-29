@@ -27,7 +27,9 @@ public class GeneratePlanClaims {
     // its end and the sheet's today that it has not made a claim for yet and no pause skips (on or after the day paused, before the day resumed): a DRAFT claim of the plan's amount dated that day
     // with an empty note, added as the claim form adds one and recorded as CLAIM_ADDED. A date the claim form refuses
     // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time. A viewer
-    // changes nothing: they are told 0, and nothing is stored or recorded.
+    // changes nothing: they are told 0, and nothing is stored or recorded. A plan naming a descendant sheet makes its claims
+    // there, for the person of that sheet with the same name (none while there is none), by that sheet's rules and
+    // recorded in that sheet's audit; its dates still run up to this sheet's today.
     public void generate(@PathVariable("sheetId") String sheetId, Plans plans, People people, Claims claims, Sheets sheets,
             Settings settings, Holidays holidays, Periods periods, Rollup rollup, ServerHttpConnection connection,
             Audit audit, Out<GenerateResponse> result) {
@@ -44,6 +46,13 @@ public class GeneratePlanClaims {
             if (person == null) {
                 continue;
             }
+            String on = plan.claimSheet();
+            if (!on.equals(sheet)) {
+                person = people.findByName(on, person.name());
+                if (person == null) {
+                    continue;
+                }
+            }
             Set<LocalDate> done = new HashSet<>(plans.made(plan.id()));
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
             for (LocalDate date : plan.dates(last, plans.pauses(plan.id()))) {
@@ -51,21 +60,21 @@ public class GeneratePlanClaims {
                     continue;
                 }
                 int terms = person.termsNow(settings);
-                LocalDate dueBy = holidays.dueBy(sheet, date, terms);
+                LocalDate dueBy = holidays.dueBy(on, date, terms);
                 try {
-                    ClaimFormRules.refuseClosed(periods, sheet, dueBy);
+                    ClaimFormRules.refuseClosed(periods, on, dueBy);
                     ClaimFormRules.refuseRetired(person, date);
                 } catch (ClaimInClosedPeriodException | ClaimAfterRetirementException e) {
                     continue;
                 }
-                Claim claim = claims.add(sheet, person.id(), plan.amount(), date, "", null, dueBy, terms, null, List.of());
-                claims.log(claim, user.trim(), today, rollup.figure(claim));
+                Claim claim = claims.add(on, person.id(), plan.amount(), date, "", null, dueBy, terms, null, List.of());
+                claims.log(claim, user.trim(), sheets.today(on), rollup.figure(claim));
                 plans.markMade(plan.id(), date, claim.id());
                 ClaimResponse shown = ClaimResponse.from(claim);
-                audit.record(Audit.line("CLAIM_ADDED", sheet, user, "person=" + person.name(), "amount=" + shown.amount(),
+                audit.record(Audit.line("CLAIM_ADDED", on, user, "person=" + person.name(), "amount=" + shown.amount(),
                         "date=" + shown.date()));
                 if (claim.lateEntry()) {
-                    audit.record(Audit.line("LATE_ENTRY", sheet, user, "person=" + person.name(),
+                    audit.record(Audit.line("LATE_ENTRY", on, user, "person=" + person.name(),
                             "amount=" + shown.amount(), "date=" + shown.date()));
                 }
                 made++;

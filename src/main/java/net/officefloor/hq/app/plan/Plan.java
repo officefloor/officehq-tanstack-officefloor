@@ -8,9 +8,15 @@ import java.util.List;
 
 /** A person's plan: a DRAFT claim of {@code amount} on the start date, then every {@code every} days, up to the end date;
  *  or, when {@code day} is 1 to 31 (and {@code every} 0), on that day of every month from the start's month (a day beyond
- *  the month's length on its last day), dates before the start left out. */
+ *  the month's length on its last day), dates before the start left out. {@code targetSheet} names one of the sheet's
+ *  descendants its claims are made on, for the person of the same name there ("" for its own sheet). */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, int every, LocalDate end,
-        int day) {
+        int day, String targetSheet) {
+
+    /** The sheet the plan's claims are made on: the descendant it names, else its own sheet. */
+    public String claimSheet() {
+        return targetSheet == null || targetSheet.isEmpty() ? sheetId : targetSheet;
+    }
 
     public boolean monthly() {
         return day > 0;

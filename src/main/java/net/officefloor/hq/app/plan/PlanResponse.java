@@ -6,15 +6,16 @@ import java.util.stream.Collectors;
 
 /** A plan as the screen shows it: the amount with two decimals, the dates yyyy-mm-dd and how many claims it has made so far, and
  *  its amount changes, oldest first, each "<date> amount=<amount>";
- *  its next dates: the first five after the sheet's today and on or before its end, comma and space separated, left out where a pause skips them; and whether it is paused now (yes/no). */
+ *  its next dates: the first five after the sheet's today and on or before its end, comma and space separated, left out where a pause skips them; and whether it is paused now (yes/no);
+ *  the descendant sheet it makes its claims on ("" for its own). */
 public record PlanResponse(long id, long personId, String amount, String start, int every, String end, int generated, int day,
-        String nextDates, String paused, List<String> changes) {
+        String nextDates, String paused, List<String> changes, String sheet) {
 
     public static PlanResponse from(Plan plan, int generated, LocalDate today, List<PlanPause> pauses, List<PlanChange> changes) {
         return new PlanResponse(plan.id(), plan.personId(), plan.amount().toPlainString(), plan.start().toString(),
                 plan.every(), plan.end().toString(), generated, plan.day(),
                 plan.nextDates(today, 5, pauses).stream().map(LocalDate::toString).collect(Collectors.joining(", ")),
                 pauses.stream().anyMatch(p -> p.resumedOn() == null) ? "yes" : "no",
-                changes.stream().map(c -> c.changedOn() + " amount=" + c.amount().toPlainString()).toList());
+                changes.stream().map(c -> c.changedOn() + " amount=" + c.amount().toPlainString()).toList(), plan.targetSheet());
     }
 }

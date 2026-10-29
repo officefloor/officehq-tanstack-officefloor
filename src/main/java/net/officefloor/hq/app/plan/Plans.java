@@ -23,11 +23,12 @@ public class Plans {
 
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, person_id, amount, start_date, every_days, end_date, day_of_month FROM plan "
+        return jdbc.query("SELECT id, sheet_id, person_id, amount, start_date, every_days, end_date, day_of_month, target_sheet FROM plan "
                 + "WHERE sheet_id = ? ORDER BY id",
                 (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                         rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
-                        rs.getInt("every_days"), rs.getDate("end_date").toLocalDate(), rs.getInt("day_of_month")),
+                        rs.getInt("every_days"), rs.getDate("end_date").toLocalDate(), rs.getInt("day_of_month"),
+                        rs.getString("target_sheet")),
                 sheetId);
     }
 
@@ -35,8 +36,8 @@ public class Plans {
     public Plan add(Plan plan) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date, day_of_month) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date, day_of_month, target_sheet) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, plan.sheetId());
             ps.setLong(2, plan.personId());
             ps.setBigDecimal(3, plan.amount());
@@ -44,10 +45,11 @@ public class Plans {
             ps.setInt(5, plan.every());
             ps.setDate(6, Date.valueOf(plan.end()));
             ps.setInt(7, plan.day());
+            ps.setString(8, plan.targetSheet() == null ? "" : plan.targetSheet());
             return ps;
         }, key);
         return new Plan(key.getKey().longValue(), plan.sheetId(), plan.personId(), plan.amount(), plan.start(),
-                plan.every(), plan.end(), plan.day());
+                plan.every(), plan.end(), plan.day(), plan.targetSheet());
     }
 
     /** The dates the plan has made its claim for. */
@@ -97,7 +99,7 @@ public class Plans {
         BigDecimal scaled = amount.setScale(2);
         jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", scaled, plan.id());
         jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", plan.id(), Date.valueOf(date), scaled);
-        return new Plan(plan.id(), plan.sheetId(), plan.personId(), scaled, plan.start(), plan.every(), plan.end(), plan.day());
+        return new Plan(plan.id(), plan.sheetId(), plan.personId(), scaled, plan.start(), plan.every(), plan.end(), plan.day(), plan.targetSheet());
     }
 
     /** Records that the plan made the claim for the date. */
