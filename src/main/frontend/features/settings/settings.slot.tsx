@@ -16,6 +16,7 @@ import { ratesKey } from '../rates/ratesQuery';
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
+const SCORE = /^-?\d{1,6}$/;
 const MONTH = /^\d{1,2}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -59,12 +60,14 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [alertThreshold, setAlertThreshold] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [scoreMid, setScoreMid] = useState('');
+  const [scoreHigh, setScoreHigh] = useState('');
   const [proofKinds, setProofKinds] = useState('');
   const [defaultGrade, setDefaultGrade] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'scoreMid' | 'scoreHigh' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -100,6 +103,8 @@ function Settings({ sheetId }: { sheetId: string }) {
       setAlertThreshold('');
       setEscalateAfter('');
       setReviewSla('');
+      setScoreMid('');
+      setScoreHigh('');
       setProofKinds('');
       setDefaultGrade('');
       setParent('');
@@ -240,6 +245,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The review SLA must be a whole number of days, 0 or more.');
       return;
     }
+    const sm = scoreMid.trim();
+    if (sm !== '' && !SCORE.test(sm)) {
+      setError('The mid score threshold must be a whole number.');
+      return;
+    }
+    const sh = scoreHigh.trim();
+    if (sh !== '' && !SCORE.test(sh)) {
+      setError('The high score threshold must be a whole number.');
+      return;
+    }
     const pk = proofKinds.trim();
     if (pk !== '' && !pk.split(',').every((k) => PROOF_KINDS.includes(k.trim()))) {
       setError('The proof kinds must be receipt or photo, separated by commas.');
@@ -297,7 +312,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     // A blank review threshold is none likewise.
     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && sm === '' && sh === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -312,6 +327,8 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (at !== '' || (none && blank === 'alertThreshold')) body.alertThreshold = at;
     if (ea !== '' || (none && blank === 'escalateAfter')) body.escalateAfter = ea;
     if (rs !== '' || (none && blank === 'reviewSla')) body.reviewSla = rs;
+    if (sm !== '' || (none && blank === 'scoreMid')) body.scoreMid = sm;
+    if (sh !== '' || (none && blank === 'scoreHigh')) body.scoreHigh = sh;
     if (pk !== '' || (none && blank === 'proofKinds')) body.proofKinds = pk;
     if (dg !== '' || (none && blank === 'defaultGrade')) body.defaultGrade = dg;
     if (pa !== '' || (none && blank === 'parent')) body.parent = pa;
@@ -785,6 +802,32 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Score mid{' '}
+          <input
+            data-testid="setting-score-mid"
+            placeholder="none"
+            value={scoreMid}
+            onFocus={() => setBlank('scoreMid')}
+            onChange={(e) => {
+              setScoreMid(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          Score high{' '}
+          <input
+            data-testid="setting-score-high"
+            placeholder="none"
+            value={scoreHigh}
+            onFocus={() => setBlank('scoreHigh')}
+            onChange={(e) => {
+              setScoreHigh(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Proof kinds{' '}
           <input
             data-testid="setting-proof-kinds"
@@ -932,6 +975,10 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Review SLA (days): <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Score thresholds: mid <span data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</span>, high{' '}
+        <span data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</span>
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</span>

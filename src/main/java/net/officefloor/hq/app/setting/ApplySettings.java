@@ -70,6 +70,12 @@ public class ApplySettings {
         if (settings.reviewSla() != null) {
             store.set(settings.sheetId(), Settings.REVIEW_SLA, settings.reviewSla());
         }
+        if (settings.scoreMid() != null) {
+            store.set(settings.sheetId(), Settings.SCORE_MID, settings.scoreMid());
+        }
+        if (settings.scoreHigh() != null) {
+            store.set(settings.sheetId(), Settings.SCORE_HIGH, settings.scoreHigh());
+        }
         if (settings.proofKinds() != null) {
             store.set(settings.sheetId(), Settings.PROOF_KINDS, settings.proofKinds());
         }

@@ -7,7 +7,7 @@ import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { useFloor, useLate } from '../settings/settingsQuery';
+import { useFloor, useLate, useScoreThresholds } from '../settings/settingsQuery';
 import { figure, isOverdue, ratesQuery, score, settledAndOpen, sumDue, trimmedSum } from './ratesQuery';
 import { useColumnsShown } from '../people/useColumns';
 
@@ -67,12 +67,24 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
 }
 
 /** A person's score: their settled-total / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
-function PersonScore({ sheetId, personId }: { sheetId: string; personId: number }) {
+function usePersonScore(sheetId: string, personId: number): string {
   const data = useOverdueData(sheetId);
   const person = data.people.find((p) => p.id === personId);
   const { count } = person ? overdue(data, person) : { count: 0 };
   const [settled] = settledAndOpen(person, data.people, data.claims, data.rates, data.today, data.floor, data.late);
-  return <td data-testid="person-score">{score(settled, count)}</td>;
+  return score(settled, count);
+}
+
+function PersonScore({ sheetId, personId }: { sheetId: string; personId: number }) {
+  return <td data-testid="person-score">{usePersonScore(sheetId, personId)}</td>;
+}
+
+/** A person's band while both score thresholds are set: HIGH at or above the high one, MID at or above the mid one, else LOW; blank while either is. */
+function PersonBand({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const value = Number(usePersonScore(sheetId, personId));
+  const { mid, high } = useScoreThresholds(sheetId);
+  const band = mid === '' || high === '' ? '' : value >= Number(high) ? 'HIGH' : value >= Number(mid) ? 'MID' : 'LOW';
+  return <td data-testid="person-band">{band}</td>;
 }
 
 /** The sheet's overdue claims that count: how many, and their total (every person's, trimmed of the highest and lowest). */
@@ -111,5 +123,7 @@ export const contributions = [
   PersonCells.fill({ order: 16, Component: PersonOverdue }),
   PersonHeaders.fill({ order: 16.5, Component: () => <th>Score</th> }),
   PersonCells.fill({ order: 16.5, Component: PersonScore }),
+  PersonHeaders.fill({ order: 16.6, Component: () => <th>Band</th> }),
+  PersonCells.fill({ order: 16.6, Component: PersonBand }),
   SheetPanel.fill({ order: 26, Component: OverdueTotal }),
 ];

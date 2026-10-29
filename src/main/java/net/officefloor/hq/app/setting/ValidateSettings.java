@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+    private static final Pattern SCORE = Pattern.compile("-?\\d{1,6}");
     private static final Pattern MONTH = Pattern.compile("\\d{1,2}");
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?");
 
@@ -198,6 +199,8 @@ public class ValidateSettings {
             }
             reviewSla = Integer.toString(Integer.parseInt(reviewSla));
         }
+        String scoreMid = scoreThreshold(body == null ? null : body.scoreMid(), "mid");
+        String scoreHigh = scoreThreshold(body == null ? null : body.scoreHigh(), "high");
         String entryDate = body == null || body.entryDate() == null ? null : body.entryDate().trim();
         if (entryDate != null && !entryDate.isEmpty()) {
             try {
@@ -313,7 +316,8 @@ public class ValidateSettings {
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !gradeClerkLimit.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
-                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null;
+                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null
+                || scoreMid != null || scoreHigh != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -321,7 +325,19 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh));
+    }
+
+    /** A score threshold as typed: null is left as it is, blank is none, otherwise a whole number (it may be negative). */
+    private static String scoreThreshold(String typed, String which) throws InvalidSettingException {
+        String value = typed == null ? null : typed.trim();
+        if (value != null && !value.isEmpty()) {
+            if (!SCORE.matcher(value).matches()) {
+                throw new InvalidSettingException("The " + which + " score threshold must be a whole number.");
+            }
+            value = Integer.toString(Integer.parseInt(value));
+        }
+        return value;
     }
 
     private static String twoDecimals(String amount) {

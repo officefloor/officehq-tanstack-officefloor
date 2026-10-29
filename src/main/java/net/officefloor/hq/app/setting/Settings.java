@@ -52,6 +52,10 @@ public class Settings {
     public static final String ESCALATE_AFTER = "escalate-after";
     /** The review SLA, in days (not dated; blank: none): a REVIEW claim is late once its review day plus these is before the sheet's today. */
     public static final String REVIEW_SLA = "review-sla";
+    /** The score a person's band is MID at or above (not dated; blank: none, so no bands). */
+    public static final String SCORE_MID = "score-mid";
+    /** The score a person's band is HIGH at or above (not dated; blank: none, so no bands). */
+    public static final String SCORE_HIGH = "score-high";
     /** The proof kinds a claim above the proof threshold needs one proof of each of (not dated; blank: none), comma separated. */
     public static final String PROOF_KINDS = "proof-kinds";
     /** The grade a person quick-added or imported with a blank grade is given (not dated); "" is grade A. */

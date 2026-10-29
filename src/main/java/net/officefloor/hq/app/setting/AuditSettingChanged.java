@@ -93,6 +93,14 @@ public class AuditSettingChanged {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.REVIEW_SLA, "value=" + settings.reviewSla()));
         }
+        if (settings.scoreMid() != null) {
+            audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
+                    "key=" + Settings.SCORE_MID, "value=" + settings.scoreMid()));
+        }
+        if (settings.scoreHigh() != null) {
+            audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
+                    "key=" + Settings.SCORE_HIGH, "value=" + settings.scoreHigh()));
+        }
         if (settings.proofKinds() != null) {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.PROOF_KINDS, "value=" + settings.proofKinds()));

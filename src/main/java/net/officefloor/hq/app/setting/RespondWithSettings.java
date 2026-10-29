@@ -22,7 +22,8 @@ public class RespondWithSettings {
                 settings.get(sheet, Settings.POT), settings.parent(sheet),
                 Integer.toString(settings.fiscalStartMonth(sheet)), settings.get(sheet, Settings.ALERT_THRESHOLD),
                 settings.get(sheet, Settings.ESCALATE_AFTER), settings.get(sheet, Settings.REVIEW_SLA),
-                settings.get(sheet, Settings.PROOF_KINDS), settings.get(sheet, Settings.DEFAULT_GRADE)));
+                settings.get(sheet, Settings.PROOF_KINDS), settings.get(sheet, Settings.DEFAULT_GRADE),
+                settings.get(sheet, Settings.SCORE_MID), settings.get(sheet, Settings.SCORE_HIGH)));
     }
 
     private static Map<String, String> gradeTerms(Settings settings, String sheet, LocalDate today) {
