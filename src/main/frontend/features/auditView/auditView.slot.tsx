@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 
 /** The audit viewer: the sheet's audit lines exactly as the audit file holds them, newest first. With a name in the
- *  filter, only the lines about that person (name=<it> or person=<it>, case and surrounding spaces ignored). */
+ *  filter, only the lines about that person (name=<it> or person=<it>, case and surrounding spaces ignored), then, for a
+ *  person transferred in, the lines about them from the sheet they came from. */
 function AuditView({ sheetId }: { sheetId: string }) {
   const [filter, setFilter] = useState('');
   const [lines, setLines] = useState<string[]>([]);

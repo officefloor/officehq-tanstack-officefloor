@@ -11,10 +11,12 @@ import java.util.List;
  * hold; {@code holds} are their holds by from-date (yyyy-mm-dd; {@code to} null when it has no end).
  * {@code terms} are their own terms in days, null for none; {@code contact} is their contact, null for none;
  * {@code aliases} are their aliases, sorted as names are compared; {@code clashing} is whether their name or an alias
- * is also a name or alias of someone else on the sheet's tree (see {@link People#clashing}).
+ * is also a name or alias of someone else on the sheet's tree (see {@link People#clashing}); {@code origin} is the id of
+ * the sheet they were transferred from, null when they were not transferred in.
  */
 public record PersonResponse(long id, String name, String grade, List<Graded> grades, long version,
-        String retiredFrom, boolean held, List<Held> holds, Integer terms, String contact, List<String> aliases, boolean clashing) {
+        String retiredFrom, boolean held, List<Held> holds, Integer terms, String contact, List<String> aliases, boolean clashing,
+        String origin) {
 
     public record Graded(String from, String grade) {
     }
@@ -33,6 +35,6 @@ public record PersonResponse(long id, String name, String grade, List<Graded> gr
         return new PersonResponse(person.id(), person.name(), person.gradeOn(today), grades, person.version(),
                 person.retiredFrom() == null ? null : person.retiredFrom().toString(), person.held(),
                 person.holds().stream().map(h -> new Held(h.from().toString(), h.to() == null ? null : h.to().toString()))
-                        .toList(), person.terms(), person.contact(), person.aliases(), clashing);
+                        .toList(), person.terms(), person.contact(), person.aliases(), clashing, person.origin());
     }
 }

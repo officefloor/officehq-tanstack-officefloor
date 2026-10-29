@@ -28,7 +28,8 @@ public class People {
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
             rs.getObject("retired_from", LocalDate.class), List.of(), List.of(),
-            rs.getObject("terms", Integer.class), rs.getString("contact"), List.of());
+            rs.getObject("terms", Integer.class), rs.getString("contact"), List.of(),
+            rs.getString("origin_sheet_id"));
 
     private final JdbcTemplate jdbc;
 
@@ -78,7 +79,13 @@ public class People {
         aliases.values().forEach(a -> a.sort(BY_NAME));
         return found.stream().map(p -> new Person(p.id(), p.sheetId(), p.name(), p.grade(), p.version(),
                 p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()), p.terms(), p.contact(),
-                List.copyOf(aliases.getOrDefault(p.id(), List.of())))).toList();
+                List.copyOf(aliases.getOrDefault(p.id(), List.of())), p.origin())).toList();
+    }
+
+    /** The name the person had on the sheet they were transferred from; null when they were not transferred in. */
+    public String originName(long id) {
+        List<String> found = jdbc.queryForList("SELECT origin_name FROM " + AsOf.table("person") + " WHERE id = ?", String.class, id);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** The person on the sheet with this name or alias, ignoring case and surrounding spaces; null when none. */
@@ -203,7 +210,7 @@ public class People {
             return ps;
         }, key);
         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
-                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of());
+                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of(), null);
     }
 
     /**
@@ -293,14 +300,16 @@ public class People {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, list_position) VALUES (?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, "
                             + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.name());
             ps.setString(3, person.grade());
             ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
             ps.setString(5, person.contact());
-            ps.setString(6, to);
+            ps.setString(6, person.sheetId());
+            ps.setString(7, person.name());
+            ps.setString(8, to);
             return ps;
         }, key);
         long arrived = key.getKey().longValue();
