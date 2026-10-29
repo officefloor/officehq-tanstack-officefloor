@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
 import { sheetKey, sheetQuery } from './sheetQuery';
+import { plansKey } from '../plans/plansQuery';
 import { periodsKey } from '../periods/periodsQuery';
 import type { Sheet } from './sheetQuery';
 import { useSheetToday } from './useSheetToday';
@@ -29,8 +30,12 @@ function SheetToday({ sheetId }: { sheetId: string }) {
       putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date }, user),
     onSuccess: async (sheet) => {
       queryClient.setQueryData(sheetKey(sheetId), sheet);
-      // The change may have closed periods past their grace days.
-      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      // The change may have closed periods past their grace days,
+      // and moved the plans' next dates.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
+      ]);
     },
     onError: (e) => setError(e instanceof RefusedError ? e.message : 'That is not a date (yyyy-mm-dd).'),
   });

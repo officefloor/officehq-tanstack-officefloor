@@ -70,6 +70,9 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
               <td>
                 made <span data-testid="plan-generated">{p.generated}</span>
               </td>
+              <td>
+                next <span data-testid="plan-next-dates">{p.nextDates}</span>
+              </td>
             </tr>
           ))}
         </tbody>
