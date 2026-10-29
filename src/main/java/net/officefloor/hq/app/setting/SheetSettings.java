@@ -6,6 +6,7 @@ package net.officefloor.hq.app.setting;
  * {@code gradeTerms} are the terms of a grade's own being saved, as a whole number of days, by grade (a grade left out is left as it is).
  * {@code gradeGrace} are the grace days of a grade being saved, as a whole number of days, "" for none, by grade (a grade left out is left as it is).
  * {@code gradeProof} are the proof thresholds of a grade being saved, with two decimals, "" for none (the sheet's is in force), by grade (a grade left out is left as it is).
+ * {@code gradeClerkLimit} are the clerk limits of a grade being saved, with two decimals, "" for none (the sheet's is in force), by grade (a grade left out is left as it is).
  * {@code perms} are the roles each action is permitted to being saved, by action in {@link Settings#PERM_ACTIONS} order, as a comma separated list, "" for the standing rule.
  * {@code pot} is the pot being saved, with two decimals, "" for none (not dated).
  * {@code parent} is the id of the parent sheet being saved, "" for none (not dated).
@@ -21,5 +22,6 @@ package net.officefloor.hq.app.setting;
  */
 public record SheetSettings(String sheetId, String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, String cap, String proofThreshold, String graceDays, String noteThreshold, String entryDate,
         java.util.SortedMap<String, String> gradeTerms, java.util.SortedMap<String, String> gradeGrace, java.util.Map<String, java.time.LocalDate> from,
-        java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
+        java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+        java.util.SortedMap<String, String> gradeClerkLimit) {
 }

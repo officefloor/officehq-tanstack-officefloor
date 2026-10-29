@@ -23,7 +23,7 @@ const PERM_ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
-/** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
+/** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit; each grade may have its own, dated like the floor, blank: none, so the sheet's, the one in force on the sheet's today for a claim's person's grade) and the floor a
  *  claim's live due is at least, and the terms (days after its date a claim is due by) and the late percent (what an overdue claim gains per full 30 days) — and the form
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
@@ -44,6 +44,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [gradeTerms, setGradeTerms] = useState<Partial<Record<Grade, string>>>({});
   const [gradeGrace, setGradeGrace] = useState<Partial<Record<Grade, string>>>({});
   const [gradeProof, setGradeProof] = useState<Partial<Record<Grade, string>>>({});
+  const [gradeLimit, setGradeLimit] = useState<Partial<Record<Grade, string>>>({});
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [numberingFrom, setNumberingFrom] = useState('');
@@ -63,7 +64,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -84,6 +85,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setGradeTerms({});
       setGradeGrace({});
       setGradeProof({});
+      setGradeLimit({});
       setLatePct('');
       setPolicyDate('');
       setNumberingFrom('');
@@ -120,6 +122,15 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (l !== '' && !AMOUNT.test(l)) {
       setError('The clerk limit must be an amount of 0.00 or more, with up to two decimals.');
       return;
+    }
+    const gl: Partial<Record<Grade, string>> = {};
+    for (const grade of GRADES) {
+      const amount = (gradeLimit[grade] ?? '').trim();
+      if (amount !== '' && !AMOUNT.test(amount)) {
+        setError(`The clerk limit of grade ${grade} must be an amount of 0.00 or more, with up to two decimals.`);
+        return;
+      }
+      if (amount !== '') gl[grade] = amount;
     }
     const f = floor.trim();
     if (f !== '' && !AMOUNT.test(f)) {
@@ -277,12 +288,16 @@ function Settings({ sheetId }: { sheetId: string }) {
     for (const grade of GRADES) {
       if (gp[grade] === undefined && (froms[`proof-threshold-${grade}`] ?? '') !== '') gp[grade] = '';
     }
+    // A blank grade's clerk limit is none likewise.
+    for (const grade of GRADES) {
+      if (gl[grade] === undefined && (froms[`clerk-limit-${grade}`] ?? '') !== '') gl[grade] = '';
+    }
     // A blank rounding mode is none likewise: saved when its from-date is given, or when it was the last field worked in.
     const roundingSaved = rm !== '' || (froms['rounding'] ?? '') !== '';
     // A blank review threshold is none likewise.
     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -309,6 +324,10 @@ function Settings({ sheetId }: { sheetId: string }) {
       if (none && blank === `proof-threshold-${grade}`) gp[grade] = '';
     }
     if (Object.keys(gp).length > 0) body.gradeProof = gp;
+    for (const grade of GRADES) {
+      if (none && blank === `clerk-limit-${grade}`) gl[grade] = '';
+    }
+    if (Object.keys(gl).length > 0) body.gradeClerkLimit = gl;
     for (const action of PERM_ACTIONS) {
       if (pm[action] !== undefined || (none && blank === action)) body.perms = { ...body.perms, [action]: pm[action] ?? '' };
     }
@@ -349,6 +368,35 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Clerk limit {grade}{' '}
+              <input
+                data-testid={`setting-clerk-limit-${grade}`}
+                placeholder="sheet's"
+                value={gradeLimit[grade] ?? ''}
+                onFocus={() => setBlank(`clerk-limit-${grade}`)}
+                onChange={(e) => {
+                  setGradeLimit({ ...gradeLimit, [grade]: e.target.value });
+                  setError('');
+                }}
+              />
+            </label>{' '}
+            <label>
+              from{' '}
+              <input
+                data-testid={`setting-clerk-limit-${grade}-from`}
+                placeholder="sheet's today"
+                value={from[`clerk-limit-${grade}`] ?? ''}
+                onChange={(e) => {
+                  setFrom({ ...from, [`clerk-limit-${grade}`]: e.target.value });
+                  setError('');
+                }}
+              />
+            </label>{' '}
+          </span>
+        ))}
         <label>
           Floor{' '}
           <input
@@ -813,6 +861,12 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Clerk limit in force: <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
       </p>
+      {GRADES.map((grade) => (
+        <p key={grade}>
+          Clerk limit of grade {grade} in force:{' '}
+          <span data-testid={`setting-clerk-limit-${grade}-current`}>{current(`clerk-limit-${grade}`)}</span>
+        </p>
+      ))}
       <p>
         Floor in force: <span data-testid="setting-floor-current">{current('floor', DEFAULT_FLOOR)}</span>
       </p>

@@ -11,6 +11,7 @@ public class ApplySettings {
         if (settings.clerkLimit() != null) {
             dated(settings, store, today, Settings.CLERK_LIMIT, settings.clerkLimit());
         }
+        settings.gradeClerkLimit().forEach((grade, amount) -> dated(settings, store, today, Settings.gradeClerkLimitKey(grade), amount));
         if (settings.floor() != null) {
             dated(settings, store, today, Settings.FLOOR, settings.floor());
         }

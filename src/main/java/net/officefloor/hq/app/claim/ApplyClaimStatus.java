@@ -179,7 +179,7 @@ public class ApplyClaimStatus {
         // A clerk settles only a claim whose due is at or below the clerk limit (a due of n/a is within any
         // limit); above it the claim goes PENDING, for a steward to approve. A steward settles anything.
         if (next == ClaimStatus.SETTLED && claim.status() == ClaimStatus.OPEN && due != null && !steward) {
-            BigDecimal limit = settings.clerkLimit(claim.sheetId());
+            BigDecimal limit = settings.clerkLimit(claim);
             if (limit != null && due.compareTo(limit) > 0) {
                 next = ClaimStatus.PENDING;
             }

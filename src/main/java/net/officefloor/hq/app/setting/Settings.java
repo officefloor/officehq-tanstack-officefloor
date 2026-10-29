@@ -62,7 +62,8 @@ public class Settings {
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
-            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"), ROUNDING, REVIEW_THRESHOLD);
+            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"), ROUNDING, REVIEW_THRESHOLD,
+            gradeClerkLimitKey("A"), gradeClerkLimitKey("B"), gradeClerkLimitKey("C"));
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
@@ -153,6 +154,20 @@ public class Settings {
     public BigDecimal clerkLimit(String sheetId) {
         String value = current(sheetId, CLERK_LIMIT);
         return value.isEmpty() ? null : new BigDecimal(value);
+    }
+
+    /** The key a grade's own clerk limit is kept under: clerk-limit-<grade>. */
+    public static String gradeClerkLimitKey(String grade) {
+        return CLERK_LIMIT + "-" + grade;
+    }
+
+    /** The clerk limit in force for the claim: its person's grade's own on the sheet's today when one is set (blank is none), else the sheet's; null when there is none. */
+    public BigDecimal clerkLimit(Claim claim) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        LocalDate today = sheets.today(claim.sheetId());
+        String grade = person == null ? null : person.gradeOn(today);
+        String value = grade == null ? "" : on(claim.sheetId(), gradeClerkLimitKey(grade), today);
+        return value.isEmpty() ? clerkLimit(claim.sheetId()) : new BigDecimal(value);
     }
 
     /** The cap in force on the sheet's today, with two decimals: what a person's due-total is at most; null when there is none. */

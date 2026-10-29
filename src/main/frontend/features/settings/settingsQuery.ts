@@ -14,7 +14,7 @@ import type { DatedValue } from './dated';
  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
  *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none; `graceDays` is a whole number of days (not dated), or "" when closing periods by today is off; `entryDate` is yyyy-mm-dd, or "" when it is off (a new claim left undated takes the sheet's today); `pot` has two decimals (not dated), or is "" when there is none; `alertThreshold` has two decimals (not dated), or is "" when alerts are off; `escalateAfter` is a whole number of days (not dated), or "" when escalation is off; `reviewSla` is a whole number of days (not dated), or "" when there is none; `proofKinds` are the proof kinds, comma separated (not dated), or "" when there are none; `parent` is the id of the sheet whose rates are used where this one has none (not dated), or "" when there is none; `fiscalStartMonth` is the month (1 to 12) the sheet's fiscal year starts on (not dated; "1" unless set).
  *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
- *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
+ *  (clerk-limit, clerk-limit-<grade>, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
  *  by clerk and steward; reassign and reopen by steward). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
@@ -28,6 +28,8 @@ export type PermAction = (typeof PERM_ACTIONS)[number];
  *  `perms` are the roles each action is allowed to, by action: left out is left as it is, blank is the standing rule. */
 export type SettingsChange = {
   clerkLimit?: string;
+  /** A grade's own clerk limit, by grade: left out is left as it is, blank is none (the sheet's is in force). */
+  gradeClerkLimit?: Partial<Record<Grade, string>>;
   floor?: string;
   terms?: string;
   latePct?: string;
