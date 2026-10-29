@@ -89,3 +89,17 @@ export function personPeriodDue(
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
   return sumDue(people.map((p) => personPeriodDue(period, p, claims, people, rates, floor, late)));
 }
+
+/**
+ * A period's classic due-total: the figures (as shown now) of its claims (by due-by) that count by their status now
+ * (OPEN, SETTLED and PENDING; a hold or retirement leaves out an open claim as everywhere else). While the period is
+ * closed or soft-closed it is the figure fixed then.
+ */
+export function classicPeriodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
+  if (isFixed(period)) return period.closedTotal ?? sumDue(Object.values(period.personTotals));
+  return sumDue(
+    claims
+      .filter((c) => period.from <= c.dueBy && c.dueBy <= period.to && counts(c, people, late.today))
+      .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)),
+  );
+}

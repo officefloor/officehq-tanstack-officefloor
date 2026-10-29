@@ -3,7 +3,7 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery, isActive } from '../claims/claimsQuery';
 import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
-import { periodDue, periodsQuery } from '../periods/periodsQuery';
+import { classicPeriodDue, periodDue, periodsQuery } from '../periods/periodsQuery';
 import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
 import { useCap, useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -123,4 +123,47 @@ function Summary({ sheetId }: { sheetId: string }) {
   );
 }
 
-export const contribution = SheetPanel.fill({ order: 30, Component: Summary });
+/**
+ * The classic summary, beside the summary: per period, its due-total counting each claim by its status now (a closed
+ * period shows the figure fixed when it closed), and the sheet's due-total with no trimming (everyone's added up).
+ */
+function ClassicSummary({ sheetId }: { sheetId: string }) {
+  const people = useQuery(peopleQuery(sheetId)).data ?? [];
+  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+  const rates = useQuery(ratesQuery(sheetId)).data ?? [];
+  const periods = useQuery(periodsQuery(sheetId)).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const cap = useCap(sheetId);
+
+  return (
+    <section data-testid="classic-summary">
+      <h3>Classic summary</h3>
+      <table data-testid="classic-periods">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periods.map((p) => (
+            <tr key={p.name} data-testid={`classic-period-${p.name}`}>
+              <td>{p.name}</td>
+              <td data-testid={`classic-period-${p.name}-due-total`}>{classicPeriodDue(p, claims, people, rates, floor, late)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p>
+        Due <strong data-testid="classic-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}</strong>
+      </p>
+    </section>
+  );
+}
+
+export const contributions = [
+  SheetPanel.fill({ order: 30, Component: Summary }),
+  SheetPanel.fill({ order: 31, Component: ClassicSummary }),
+];
