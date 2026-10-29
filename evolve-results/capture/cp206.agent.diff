@@ -1,0 +1,198 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index b3d0d925..01cd0d08 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -11,6 +11,7 @@ import type { SortKey } from './useSortBy';
+ import { usePeopleDueTotals } from '../rates/due.slot';
+ import { ColumnChooser, ColumnShown } from './useColumns';
+ import { useSheetToday } from '../sheet/useSheetToday';
++import { useListedFor } from './useListedFor';
+ 
+ function People({ sheetId }: { sheetId: string }) {
+   const people = useQuery(peopleQuery(sheetId));
+@@ -28,7 +29,9 @@ function People({ sheetId }: { sheetId: string }) {
+     'due-total': (a, b) => compareDue(dues.get(a.id) ?? 'n/a', dues.get(b.id) ?? 'n/a'),
+   };
+   const compare = byKey[sortBy];
+-  const filtered = (people.data ?? []).filter((p) => showRetired || !p.retiredFrom);
++  // A restricted user's list has only their crews' people and themselves (useListedFor).
++  const listedFor = useListedFor(sheetId, people.data ?? []);
++  const filtered = (people.data ?? []).filter((p) => (showRetired || !p.retiredFrom) && listedFor(p));
+   const listed = compare ? [...filtered].sort(compare) : filtered;
+ 
+   return (
+diff --git a/src/main/frontend/features/people/useListedFor.ts b/src/main/frontend/features/people/useListedFor.ts
+new file mode 100644
+index 00000000..4facf184
+--- /dev/null
++++ b/src/main/frontend/features/people/useListedFor.ts
+@@ -0,0 +1,33 @@
++import { useQuery } from '@tanstack/react-query';
++import { crewsQuery } from '../crews/crewsQuery';
++import { rolesQuery } from '../settings/settingsQuery';
++import { useUser } from '../session/useUser';
++import type { Person } from './peopleQuery';
++
++const nameKey = (name: string) => name.trim().toLowerCase();
++
++/**
++ * Whether a person has a row on the people list for the signed-in user. A restricted user sees only the person whose
++ * name or alias is their name (as names are compared: trimmed, ignoring case) and the people of the crews that person
++ * leads or belongs to; with no such person, no one. Every other role sees everyone. Only the rows are narrowed: every
++ * figure is still over everyone on the sheet.
++ */
++export function useListedFor(sheetId: string, people: Person[]): (person: Person) => boolean {
++  const [user] = useUser();
++  const roles = useQuery(rolesQuery(sheetId)).data;
++  const crews = useQuery(crewsQuery(sheetId)).data ?? [];
++  const name = user.trim();
++  const restricted = roles?.some((r) => r.user === name && r.role === 'restricted') ?? false;
++  if (!restricted) return () => true;
++  const me = nameKey(name);
++  const mine = me ? people.find((p) => [p.name, ...p.aliases].some((n) => nameKey(n) === me)) : undefined;
++  if (!mine) return () => false;
++  const seen = new Set<number>([mine.id]);
++  for (const c of crews) {
++    if (c.leadId === mine.id || c.memberIds.includes(mine.id)) {
++      seen.add(c.leadId);
++      c.memberIds.forEach((id) => seen.add(id));
++    }
++  }
++  return (p) => seen.has(p.id);
++}
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index ab802f31..1a19f872 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -991,7 +991,7 @@ function Roles({ sheetId }: { sheetId: string }) {
+       return;
+     }
+     if (!ROLES.includes(r as RoleName)) {
+-      setError('The role must be clerk, steward or viewer.');
++      setError('The role must be clerk, steward, viewer or restricted.');
+       return;
+     }
+     once(() => save.mutateAsync({ user: n, role: r as RoleName }));
+diff --git a/src/main/frontend/features/settings/settingsQuery.ts b/src/main/frontend/features/settings/settingsQuery.ts
+index 59f26765..32c2b94d 100644
+--- a/src/main/frontend/features/settings/settingsQuery.ts
++++ b/src/main/frontend/features/settings/settingsQuery.ts
+@@ -75,12 +75,13 @@ export const PROOF_KINDS = ['receipt', 'photo'];
+ /** The rounding modes a sheet may have in force (dated); blank is none. */
+ export const ROUNDING_MODES = ['half-up', 'half-even'];
+ 
+-export type RoleName = 'clerk' | 'steward' | 'viewer';
++export type RoleName = 'clerk' | 'steward' | 'viewer' | 'restricted';
+ 
+ /** The role a sheet gives a user name; a name with no entry is a clerk. */
+ export type Role = { user: string; role: RoleName };
+ 
+-export const ROLES: RoleName[] = ['clerk', 'steward', 'viewer'];
++/** A restricted user sees on the people list only the people of the crews they lead or belong to, and themselves. */
++export const ROLES: RoleName[] = ['clerk', 'steward', 'viewer', 'restricted'];
+ 
+ /** Under the sheet's key, so re-loading the sheet re-reads its settings and roles. */
+ export const settingsKey = (sheetId: string) => [...sheetKey(sheetId), 'settings'] as const;
+diff --git a/src/main/java/db/migration/V91__role_restricted.java b/src/main/java/db/migration/V91__role_restricted.java
+new file mode 100644
+index 00000000..e664373e
+--- /dev/null
++++ b/src/main/java/db/migration/V91__role_restricted.java
+@@ -0,0 +1,37 @@
++package db.migration;
++
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.Statement;
++import java.util.ArrayList;
++import java.util.List;
++import org.flywaydb.core.api.migration.BaseJavaMigration;
++import org.flywaydb.core.api.migration.Context;
++
++/**
++ * A fourth role, restricted: sees on the people list only the people of the crews they lead or belong to, and
++ * themselves. The role check of sheet_role is replaced in place (its constraint was not named), so the table and its
++ * journal trigger stay as they are.
++ */
++public class V91__role_restricted extends BaseJavaMigration {
++
++    @Override
++    public void migrate(Context context) throws Exception {
++        Connection conn = context.getConnection();
++        List<String> checks = new ArrayList<>();
++        try (PreparedStatement ps = conn.prepareStatement("SELECT constraint_name FROM information_schema.table_constraints "
++                + "WHERE table_name = 'SHEET_ROLE' AND constraint_type = 'CHECK'"); ResultSet rs = ps.executeQuery()) {
++            while (rs.next()) {
++                checks.add(rs.getString(1));
++            }
++        }
++        try (Statement st = conn.createStatement()) {
++            for (String name : checks) {
++                st.execute("ALTER TABLE sheet_role DROP CONSTRAINT \"" + name + "\"");
++            }
++            st.execute("ALTER TABLE sheet_role ADD CONSTRAINT sheet_role_role "
++                    + "CHECK (role IN ('clerk', 'steward', 'viewer', 'restricted'))");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Role.java b/src/main/java/net/officefloor/hq/app/setting/Role.java
+index 4fa5884b..a57c0345 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Role.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Role.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** The role a sheet gives a user name: clerk, steward or viewer. */
++/** The role a sheet gives a user name: clerk, steward, viewer or restricted. */
+ public record Role(String sheetId, String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index fe641815..e757f6cd 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -68,6 +68,8 @@ public class Settings {
+     public static final String STEWARD = "steward";
+     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
+     public static final String VIEWER = "viewer";
++    /** A role that sees on the people list only the people of their crews and themselves; otherwise acts as a clerk. */
++    public static final String RESTRICTED = "restricted";
+     /** The roles a sheet gives user names. */
+     public static final List<String> ROLES = List.of(CLERK, STEWARD);
+     /** The actions the permission matrix decides, each kept (undated) under {@link #permKey}. */
+@@ -436,7 +438,9 @@ public class Settings {
+     public boolean permits(String sheetId, String action, String user) {
+         String saved = perm(sheetId, action);
+         List<String> roles = saved.isEmpty() ? standing(action) : List.of(saved.split(","));
+-        return roles.contains(role(sheetId, user));
++        String role = role(sheetId, user);
++        // A restricted user may do what a clerk may: the role narrows only the people list they see.
++        return roles.contains(RESTRICTED.equals(role) ? CLERK : role);
+     }
+ 
+     /** The sheet's roles, by user name. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java b/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
+index e167d014..d9566067 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
+@@ -7,9 +7,9 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRole {
+ 
+-    private static final Set<String> ROLES = Set.of(Settings.CLERK, Settings.STEWARD, Settings.VIEWER);
++    private static final Set<String> ROLES = Set.of(Settings.CLERK, Settings.STEWARD, Settings.VIEWER, Settings.RESTRICTED);
+ 
+-    // A user name must not be blank, and the role must be clerk, steward or viewer.
++    // A user name must not be blank, and the role must be clerk, steward, viewer or restricted.
+     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("user") String user,
+             @RequestBody RoleRequest body, Out<Role> roleOut) throws InvalidSettingException {
+         String name = user == null ? "" : user.trim();
+@@ -18,7 +18,7 @@ public class ValidateRole {
+             throw new InvalidSettingException("A user name is needed.");
+         }
+         if (!ROLES.contains(role)) {
+-            throw new InvalidSettingException("The role must be clerk, steward or viewer.");
++            throw new InvalidSettingException("The role must be clerk, steward, viewer or restricted.");
+         }
+         roleOut.set(new Role(sheetId.trim(), name, role));
+     }
