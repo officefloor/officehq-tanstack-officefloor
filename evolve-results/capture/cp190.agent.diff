@@ -1,0 +1,107 @@
+diff --git a/src/main/frontend/features/claims/bulkVoid.slot.tsx b/src/main/frontend/features/claims/bulkVoid.slot.tsx
+new file mode 100644
+index 00000000..dbede0ae
+--- /dev/null
++++ b/src/main/frontend/features/claims/bulkVoid.slot.tsx
+@@ -0,0 +1,101 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { peopleQuery } from '../people/peopleQuery';
++import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
++import { claimsKey, claimsQuery } from './claimsQuery';
++import type { Claim } from './claimsQuery';
++import { useSelectedClaims } from './useSelectedClaims';
++
++type Result = { voided: number; refused: number };
++
++/**
++ * Voids every ticked claim as the signed-in user, one at a time in list order (people in their list order, newest
++ * claim first within a person), by the same rules as the row's void (each writes its own CLAIM_VOIDED and rollup
++ * lines). While the sheet has void reasons, the reason chosen beside the button goes with each void; the server
++ * refuses a void without one. A claim the server refuses to void is left as it is and counted as refused.
++ */
++function BulkVoid({ user, sheetId }: { user: string; sheetId: string }) {
++  const queryClient = useQueryClient();
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const voidReasons = useQuery(voidReasonsQuery(sheetId)).data ?? [];
++  const [selected, setSelected] = useSelectedClaims();
++  const [reason, setReason] = useState('');
++  const [result, setResult] = useState<Result | undefined>();
++  const once = useSubmitOnce();
++
++  const ordered = people.flatMap((p) => claims.filter((c) => c.personId === p.id && selected.includes(c.id)));
++
++  const voidAll = useMutation({
++    mutationFn: async ({ targets, voidReason }: { targets: Claim[]; voidReason?: string }): Promise<Result> => {
++      let voided = 0;
++      for (const c of targets) {
++        try {
++          await putJson<Claim>(
++            `/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status/VOID`,
++            { voidReason },
++            user,
++          );
++          voided++;
++        } catch {
++          // refused: left as it is
++        }
++      }
++      return { voided, refused: targets.length - voided };
++    },
++    onSuccess: async (r) => {
++      setSelected([]);
++      setReason('');
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++      setResult(r);
++    },
++  });
++
++  return (
++    <section data-testid="bulk-void-panel">
++      {voidReasons.length > 0 && (
++        <select
++          data-testid="bulk-void-reason"
++          value={reason}
++          onChange={(e) => {
++            setReason(e.target.value);
++            setResult(undefined);
++          }}
++        >
++          <option value="">Void reason…</option>
++          {voidReasons.map((r) => (
++            <option key={r.reason} value={r.reason}>
++              {r.reason}
++            </option>
++          ))}
++        </select>
++      )}{' '}
++      <button
++        type="button"
++        data-testid="bulk-void"
++        disabled={voidAll.isPending}
++        onClick={() => {
++          setResult(undefined);
++          once(() => voidAll.mutateAsync({ targets: ordered, voidReason: reason || undefined }));
++        }}
++      >
++        Void selected
++      </button>
++      {result && (
++        <>
++          {' '}
++          Voided <span data-testid="bulk-voided">{result.voided}</span>, refused{' '}
++          <span data-testid="bulk-void-refused">{result.refused}</span>
++        </>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetPanel.fill({
++  order: 24.5,
++  Component: ({ user, sheetId }) => <BulkVoid key={sheetId} user={user} sheetId={sheetId} />,
++});
