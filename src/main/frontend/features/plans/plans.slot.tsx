@@ -11,11 +11,12 @@ import { useUser } from '../session/useUser';
 import { plansKey, plansQuery } from './plansQuery';
 import type { Plan } from './plansQuery';
 
-type PlanBody = { amount: string; start: string; every: string; end: string };
+type PlanBody = { amount: string; start: string; every: string; day: string; end: string };
 
 /**
  * The person's plans, each with how many claims it has made so far, and the form a plan is added through: an amount,
- * a start date, every N days (a whole number, at least 1) and an end date (a blank date is the sheet's today). An end
+ * a start date, every N days (a whole number, at least 1) or a day of the month (1 to 31, a day beyond the month's length
+ * on its last day) and an end date (a blank date is the sheet's today). An end
  * before the start, or a bad amount or interval, is refused with the row's `plan-error`.
  */
 function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number }) {
@@ -25,6 +26,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
   const [amount, setAmount] = useState('');
   const [start, setStart] = useState('');
   const [every, setEvery] = useState('');
+  const [day, setDay] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
@@ -35,6 +37,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
       setAmount('');
       setStart('');
       setEvery('');
+      setDay('');
       setEnd('');
       await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
     },
@@ -45,7 +48,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    once(() => add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), end: end.trim() }));
+    once(() => add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim() }));
   };
 
   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {
@@ -61,7 +64,8 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
             <tr key={p.id} data-testid={`plan-row-${p.id}`}>
               <td data-testid="plan-amount-shown">{p.amount}</td>
               <td data-testid="plan-start">{p.start}</td>
-              <td data-testid="plan-every">{p.every}</td>
+              <td data-testid="plan-every">{p.day > 0 ? '' : p.every}</td>
+              <td data-testid="plan-day">{p.day > 0 ? p.day : ''}</td>
               <td data-testid="plan-end">{p.end}</td>
               <td>
                 made <span data-testid="plan-generated">{p.generated}</span>
@@ -73,7 +77,8 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
       <form onSubmit={submit}>
         <input data-testid="plan-form-amount" placeholder="Amount" value={amount} onChange={edit(setAmount)} />{' '}
         <input data-testid="plan-form-start" type="date" value={start} onChange={edit(setStart)} />{' '}
-        every <input data-testid="plan-form-every" placeholder="days" size={4} value={every} onChange={edit(setEvery)} /> days to{' '}
+        every <input data-testid="plan-form-every" placeholder="days" size={4} value={every} onChange={edit(setEvery)} /> days or monthly on day{' '}
+        <input data-testid="plan-form-day" placeholder="1-31" size={3} value={day} onChange={edit(setDay)} /> to{' '}
         <input data-testid="plan-form-end" type="date" value={end} onChange={edit(setEnd)} />{' '}
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan

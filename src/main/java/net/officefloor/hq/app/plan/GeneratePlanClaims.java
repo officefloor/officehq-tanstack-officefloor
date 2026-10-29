@@ -23,7 +23,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class GeneratePlanClaims {
-    // For every plan of the sheet, in the order they were added, and each of its dates (the start, then every N days) up to
+    // For every plan of the sheet, in the order they were added, and each of its dates (the start, then every N days; or the day of every month) up to
     // its end and the sheet's today that it has not made a claim for yet: a DRAFT claim of the plan's amount dated that day
     // with an empty note, added as the claim form adds one and recorded as CLAIM_ADDED. A date the claim form refuses
     // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time.
@@ -41,7 +41,7 @@ public class GeneratePlanClaims {
             }
             Set<LocalDate> done = new HashSet<>(plans.made(plan.id()));
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.dates(last)) {
                 if (done.contains(date)) {
                     continue;
                 }

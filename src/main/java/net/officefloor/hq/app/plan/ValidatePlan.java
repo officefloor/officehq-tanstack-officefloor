@@ -19,7 +19,7 @@ public class ValidatePlan {
             .withResolverStyle(ResolverStyle.STRICT);
 
     // The amount must be one the claim form takes for a claim with no correction or reference; every N days a whole
-    // number of at least 1; the dates real dates (a blank start or end is the sheet's today), the end not before the start.
+    // number of at least 1, or instead (every left blank) a day of the month from 1 to 31; the dates real dates (a blank start or end is the sheet's today), the end not before the start.
     // The person is filled in once loaded.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PlanRequest body, Sheets sheets,
             Out<PlanRequestChecked> checked) throws PlanRefusedException {
@@ -31,7 +31,15 @@ public class ValidatePlan {
             throw new PlanRefusedException(e.getMessage());
         }
         String every = body.every() == null ? "" : body.every().trim();
-        if (!every.matches("\\d{1,6}") || Integer.parseInt(every) < 1) {
+        String day = body.day() == null ? "" : body.day().trim();
+        if (!day.isEmpty()) {
+            if (!every.isEmpty()) {
+                throw new PlanRefusedException("A plan runs either every N days or on a day of the month, not both.");
+            }
+            if (!day.matches("\\d{1,2}") || Integer.parseInt(day) < 1 || Integer.parseInt(day) > 31) {
+                throw new PlanRefusedException("The day of the month must be a whole number from 1 to 31.");
+            }
+        } else if (!every.matches("\\d{1,6}") || Integer.parseInt(every) < 1) {
             throw new PlanRefusedException("Every N days must be a whole number of at least 1.");
         }
         LocalDate today = sheets.today(sheet);
@@ -40,7 +48,8 @@ public class ValidatePlan {
         if (end.isBefore(start)) {
             throw new PlanRefusedException("The end date must be on or after the start date.");
         }
-        checked.set(new PlanRequestChecked(input.amount(), start, Integer.parseInt(every), end));
+        checked.set(new PlanRequestChecked(input.amount(), start, day.isEmpty() ? Integer.parseInt(every) : 0, end,
+                day.isEmpty() ? 0 : Integer.parseInt(day)));
     }
 
     private static LocalDate date(String typed, LocalDate today) throws PlanRefusedException {
