@@ -83,7 +83,7 @@ export function personPeriodDue(
           c.personId === person.id &&
           period.from <= c.dueBy &&
           c.dueBy <= period.to &&
-          counts({ ...c, status: statusOn(c, period.to) }, isOpen(c) ? people : [], late.today),
+          counts({ ...c, status: statusOn(c, period.to), held: c.held && isOpen(c) }, isOpen(c) ? people : [], late.today),
       )
       .map((c) => figure(c, rates, person, floor, late)),
   );
@@ -118,7 +118,7 @@ export function personPeriodCarried(
         const own = periodOf(periods, c.dueBy);
         if (!own || own.to >= period.from) return false;
         const status = statusOn(c, period.to);
-        return (status === 'OPEN' || status === 'PENDING') && counts({ ...c, status }, isOpen(c) ? people : [], late.today);
+        return (status === 'OPEN' || status === 'PENDING') && counts({ ...c, status, held: c.held && isOpen(c) }, isOpen(c) ? people : [], late.today);
       })
       .map((c) => figure(c, rates, person, floor, late)),
   ]);

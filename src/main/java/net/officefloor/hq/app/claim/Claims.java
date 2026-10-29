@@ -32,7 +32,7 @@ public class Claims {
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
             rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getInt("proofs_photo"),
             rs.getString("split_from"), rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class),
-            rs.getString("ref"), tags(rs.getString("tags")), rs.getBoolean("waived"));
+            rs.getString("ref"), tags(rs.getString("tags")), rs.getBoolean("waived"), rs.getBoolean("held"));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -140,7 +140,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0, 0, null, late, null, ref, tags, false);
+                false, null, corrects, dueBy, null, 0, 0, null, late, null, ref, tags, false, false);
     }
 
     /** Whether a claim made now, due by {@code dueBy}, is a late entry: its due-by is in a soft-closed period. */
@@ -256,7 +256,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, 0, claim.number(), late, null, null, claim.tags(), false);
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, 0, claim.number(), late, null, null, claim.tags(), false, false);
     }
 
     /**
@@ -319,6 +319,18 @@ public class Claims {
             return null;
         }
         return claim.withWaived();
+    }
+
+    /**
+     * Holds the claim ({@code held} true) or releases it if it is still OPEN or PENDING and not already so, and returns it
+     * as changed; null when it has since changed.
+     */
+    public Claim hold(Claim claim, boolean held) {
+        if (jdbc.update("UPDATE claim SET held = ? WHERE id = ? AND status IN (?, ?) AND held = ?", held, claim.id(),
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), !held) != 1) {
+            return null;
+        }
+        return claim.withHeld(held);
     }
 
     /** Escalates the claim if it was never escalated, and tells whether it was escalated now: a claim is escalated at most once ever. */

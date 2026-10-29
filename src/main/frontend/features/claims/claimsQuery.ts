@@ -29,7 +29,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `batch` is the number of the settle batch (a bulk settle) that settled it (null when none, or settled one at a time);
  * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
- * `waived` is whether a steward waived its late charge: it bears none from then on.
+ * `waived` is whether a steward waived its late charge: it bears none from then on;
+ * `held` is whether it is held: while open and not bound by a statement it counts in no total, as a held person's claims do.
  */
 export type Claim = {
   id: number;
@@ -61,6 +62,7 @@ export type Claim = {
   lines: string[];
   reviewOn: string | null;
   waived: boolean;
+  held: boolean;
 };
 
 /** Whether a REVIEW claim is late: its review day plus the review SLA's days (`sla`, "" for none) is before the sheet's `today`. */
@@ -83,14 +85,14 @@ export const isDeferred = (c: Claim, today: string) =>
 
 /**
  * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts, voided and
- * deleted ones do not, nor do a person's open claims dated within one of their holds, or once the sheet's `today` reaches
+ * deleted ones do not, nor do a held open claim and a person's open claims dated within one of their holds, or once the sheet's `today` reaches
  * their retirement date, unless a statement bound them, nor an OPEN claim deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, people: Person[], today: string) =>
   !isDeferred(c, today) &&
   (c.status === 'SETTLED' ||
   (isOpen(c) &&
-    (c.stated || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
+    (c.stated || (!c.held && !leftOut(people.find((p) => p.id === c.personId), c.date, today)))));
 
 /** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
 const leftOut = (person: Person | undefined, date: string, today: string) =>

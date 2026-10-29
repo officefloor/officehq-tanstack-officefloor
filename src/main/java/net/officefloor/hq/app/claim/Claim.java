@@ -19,53 +19,59 @@ import java.time.LocalDate;
  * {@code ref} is its external reference, unique on the sheet without regard to case (null when it has none).
  * {@code tags} are its tags, trimmed, lower-cased, without repeats and sorted (empty for none).
  * {@code waived} is whether a steward waived its late charge: it bears none from then on.
+ * {@code held} is whether it is held: while OPEN or PENDING and not bound by a statement it counts in no live total.
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
         BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs, int proofsPhoto,
-        String splitFrom, boolean lateEntry, LocalDate remindedOn, String ref, java.util.List<String> tags, boolean waived) {
+        String splitFrom, boolean lateEntry, LocalDate remindedOn, String ref, java.util.List<String> tags, boolean waived, boolean held) {
 
     public Claim with(ClaimInput input, LocalDate date) {
-        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects(), dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, input.ref(), input.tags(), waived);
+        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects(), dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, input.ref(), input.tags(), waived, held);
     }
 
     public Claim withStatus(ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim moved to another person: unbound from any statement, so live until their next one. */
     public Claim withPerson(long personId) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim re-dated to {@code date}, numbered {@code number}. */
     public Claim withDate(LocalDate date, String number) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim deferred to {@code until}. */
     public Claim withDeferredUntil(LocalDate until) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, until, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, until, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim with {@code amount} as its amount, unbound from any statement (live until its person's next one). */
     public Claim withAmountUnbound(BigDecimal amount) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim with {@code proofs} proofs, {@code proofsPhoto} of them photos. */
     public Claim withProofs(int proofs, int proofsPhoto) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim with its late charge waived. */
     public Claim withWaived() {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, true);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, true, held);
+    }
+
+    /** The claim held ({@code held} true) or released. */
+    public Claim withHeld(boolean held) {
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, remindedOn, ref, tags, waived, held);
     }
 
     /** The claim reminded on {@code on}. */
     public Claim withRemindedOn(LocalDate on) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, on, ref, tags, waived);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, proofsPhoto, splitFrom, lateEntry, on, ref, tags, waived, held);
     }
 
     /**
