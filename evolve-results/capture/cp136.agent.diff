@@ -1,0 +1,105 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 7320819c..c316a6f6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -262,15 +262,16 @@ public class People {
+     }
+ 
+     /**
+-     * Merge the person {@code from} into {@code into}: from's claims move to into (numbers and dates kept, unbound from
+-     * any statement, listed after into's claims in the order they were added); from's name and aliases become into's
+-     * aliases; from's patrons are added to into's and anyone naming from names into instead (never themselves, no
+-     * repeats); from's pool memberships and closed-period figures move to into (added to into's own where into has
+-     * one). from's statements, holds, watchers, grades and contact are dropped, and from leaves the sheet.
++     * Merge the person {@code from} into {@code into}: from's claims move to into (numbers, dates and the figures a
++     * statement bound them to kept, listed after into's claims in the order they were added); from's statements become
++     * into's (into's last statement stays their last; having none, from's last becomes it); from's name and aliases
++     * become into's aliases; from's patrons are added to into's and anyone naming from names into instead (never
++     * themselves, no repeats); from's pool memberships and closed-period figures move to into (added to into's own where
++     * into has one). from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
+      */
+     public void merge(String sheetId, long from, long into) {
+         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
+-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = "
++            jdbc.update("UPDATE claim SET person_id = ?, listed = "
+                     + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) WHERE id = ?", into, sheetId, claim);
+         }
+         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ?", String.class, from);
+@@ -300,7 +301,7 @@ public class People {
+             }
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, from);
+-        jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
++        takeStatements(sheetId, from, into);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
+@@ -313,8 +314,8 @@ public class People {
+      * Transfer the person to the sheet {@code to}, returning their id there. They arrive with their first grade and every
+      * grade given since (with its from-date), their terms, contact, tags and aliases, and their claims (listed in the order
+      * they were, as the newest on that sheet) with their status, dates, notes, frozen figures, comments and logs; a
+-     * claim in {@code numbers} takes the number given there. The figures a statement bound and the references are not
+-     * carried. They leave their sheet entirely: their claims, statements, holds, watches, patron links, pool memberships
++     * claim in {@code numbers} takes the number given there, and each keeps the figure a statement bound it to; their
++     * statements go with them. The references are not carried. They leave their sheet entirely: their claims, statements, holds, watches, patron links, pool memberships
+      * and closed-period figures are dropped with them.
+      */
+     public long transfer(Person person, String to, Map<Long, String> numbers) {
+@@ -324,8 +325,9 @@ public class People {
+     /**
+      * Transfer the person to the sheet {@code to} as {@link #transfer(Person, String, Map)} does, merged on arrival
+      * into the person {@code into} there when given (as {@link #merge(String, long, long)} does): their claims go to
+-     * {@code into} (listed after theirs), their name and aliases become {@code into}'s aliases, and their grades and
+-     * contact are dropped. Returns the id of the person they arrived as.
++     * {@code into} (listed after theirs), their statements become {@code into}'s (whose last statement stays their last,
++     * or, having none, becomes the transferred person's last), their name and aliases become {@code into}'s aliases, and
++     * their grades and contact are dropped. Returns the id of the person they arrived as.
+      */
+     public long transfer(Person person, String to, Map<Long, String> numbers, Long into) {
+         long from = person.id();
+@@ -339,9 +341,10 @@ public class People {
+                 PreparedStatement ps = con.prepareStatement(
+                         "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, "
+                                 + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, tags, "
+-                                + "void_reason, edited_by, due_terms, listed) "
++                                + "void_reason, edited_by, due_terms, stated, stated_due, listed) "
+                                 + "SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, corrects, due_by, "
+                                 + "deferred_until, proofs, split_from, late_entry, reminded_on, tags, void_reason, edited_by, due_terms, "
++                                + "stated, stated_due, "
+                                 + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) FROM claim WHERE id = ?",
+                         new String[] { "id" });
+                 ps.setString(1, to);
+@@ -367,7 +370,7 @@ public class People {
+         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", from, from);
+         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
+-        jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
++        takeStatements(to, from, arrived);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
+@@ -404,6 +407,24 @@ public class People {
+         return arrived;
+     }
+ 
++    /**
++     * Give the statements of {@code from} to {@code into} on the sheet {@code sheetId}, in the order taken, ahead of
++     * into's last statement: into's last stays their last, or, having none, from's last becomes it.
++     */
++    private void takeStatements(String sheetId, long from, long into) {
++        List<Long> own = jdbc.queryForList("SELECT id FROM statement WHERE person_id = ? ORDER BY id DESC LIMIT 1",
++                Long.class, into);
++        jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, claims, stated_on) "
++                + "SELECT ?, ?, due_total, claims, stated_on FROM statement WHERE person_id = ? ORDER BY id", sheetId, into, from);
++        jdbc.update("DELETE FROM statement WHERE person_id = ?", from);
++        if (!own.isEmpty()) {
++            // Taken again as the newest, so it is still into's last.
++            jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, claims, stated_on) "
++                    + "SELECT sheet_id, person_id, due_total, claims, stated_on FROM statement WHERE id = ?", own.get(0));
++            jdbc.update("DELETE FROM statement WHERE id = ?", own.get(0));
++        }
++    }
++
+     /** Have the person name the patron, unless it is themselves or already named. */
+     private void linkPatron(long person, long patron) {
+         if (person != patron) {
