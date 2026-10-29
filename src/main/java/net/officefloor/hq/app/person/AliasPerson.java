@@ -19,7 +19,7 @@ public class AliasPerson {
         aliases.add(alias.alias());
         aliases.sort(String.CASE_INSENSITIVE_ORDER);
         Person aliased = new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(),
-                person.retiredFrom(), person.holds(), person.dated(), person.terms(), person.contact(), List.copyOf(aliases), person.origin(), person.retirements(), person.tags(), person.snapshots());
+                person.retiredFrom(), person.holds(), person.dated(), person.terms(), person.contact(), List.copyOf(aliases), person.origin(), person.retirements(), person.tags(), person.snapshots(), person.datedTerms());
         responseOut.set(PersonResponse.from(aliased, sheets.today(person.sheetId())));
     }
 }

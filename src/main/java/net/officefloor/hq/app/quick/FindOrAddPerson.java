@@ -27,7 +27,7 @@ public class FindOrAddPerson {
             if (people.nameTaken(sheet, name.name(), -1)) {
                 throw new InvalidPersonException("The name is already in use on the sheet's tree.");
             }
-            person = people.add(sheet, new PersonRequest(name.name(), "A", null, null, null, null, null));
+            person = people.add(sheet, new PersonRequest(name.name(), "A", null, null, null, null, null, null));
             String user = Audit.user(connection);
             audit.record(Audit.line("PERSON_ADDED", sheet, user, "name=" + person.name(), "grade=" + person.grade()));
             now = RollupLines.record(sheet, user, before, rollup, audit);

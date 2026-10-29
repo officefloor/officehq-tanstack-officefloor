@@ -8,8 +8,9 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
  * `version` is raised on every edit; an edit names the version it loaded. `retiredFrom` (yyyy-mm-dd) is
  * set once the person is retired, which they are at once, whatever the date; null otherwise. `held` is whether
  * they have any hold; `holds` are their holds by from-date: their OPEN claims dated within one, unless bound by a
- * statement, count in no live total. `terms` are their own terms in days, which come before those of their grade
- * and of the sheet; null for none. `contact` is their contact, trimmed and lower-cased, unique on the sheet; null
+ * statement, count in no live total. `terms` are their own terms in days in force on the sheet's today, which come
+ * before those of their grade and of the sheet; null for none. `termses` are all their own terms recorded, by from-date
+ * (null for those from the beginning of time); a claim is due by the ones in force on its date. `contact` is their contact, trimmed and lower-cased, unique on the sheet; null
  * for none. `aliases` are their aliases, sorted as names are compared (ignoring case); the quick-add bar and the
  * paste box find a person by one as well as by the name. A name or alias is unique across the sheet's tree (its
  * ancestors and descendants); `clashing` is whether the person's name or an alias is used by someone else there all
@@ -19,7 +20,10 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
  * `tags` are the tags they carry, trimmed, lower-cased, without repeats and sorted; a tag total counts each of their
  * claims for them. `snapshots` are the SNAPSHOTs written for them, oldest first.
  */
-export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[]; tags: string[]; snapshots: Snapshotted[] };
+export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[]; tags: string[]; snapshots: Snapshotted[]; termses: Termed[] };
+
+/** A person's own terms recorded from `from` (yyyy-mm-dd; null for the beginning of time) on; `terms` null for none. */
+export type Termed = { from: string | null; terms: number | null };
 
 /** A SNAPSHOT written for a person: `day` is the day being left (yyyy-mm-dd), `dueTotal` their due-total then ("n/a" for none). */
 export type Snapshotted = { day: string; dueTotal: string };

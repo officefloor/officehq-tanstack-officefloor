@@ -87,6 +87,8 @@ public class SheetClones {
             people.put(person, copy);
             jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
                     + "WHERE person_id = ? ORDER BY from_date", copy, person);
+            jdbc.update("INSERT INTO person_terms (person_id, from_date, terms) SELECT ?, from_date, terms FROM person_terms "
+                    + "WHERE person_id = ? ORDER BY from_date", copy, person);
             jdbc.update("INSERT INTO person_alias (person_id, sheet_id, alias) SELECT ?, ?, alias FROM person_alias "
                     + "WHERE person_id = ? ORDER BY id", copy, to, person);
             jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) SELECT ?, from_date, to_date FROM person_hold "

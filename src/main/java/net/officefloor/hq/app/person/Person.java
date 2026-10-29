@@ -10,7 +10,8 @@ import net.officefloor.hq.app.setting.Settings;
  * {@code version} is raised on every edit. {@code retiredFrom} is the date they are retired from (null when
  * not retired); a person with one set is retired at once, whatever the date. {@code holds} are their holds, by
  * from-date: their OPEN claims dated within one, unless bound by a statement, count in no live total.
- * {@code terms} are their own terms in days, which come before those of their grade and of the sheet (null for none).
+ * {@code terms} are their own terms in days recorded from the beginning of time, which come before those of their grade
+ * and of the sheet (null for none); {@code datedTerms} are their own terms recorded since, each from its date on, by date.
  * {@code contact} is their contact, trimmed and lower-cased (null for none); no two people on a sheet share one.
  * {@code aliases} are their aliases, sorted as names are compared (ignoring case).
  * {@code origin} is the id of the sheet they were transferred from (null when they were not transferred in).
@@ -20,12 +21,12 @@ import net.officefloor.hq.app.setting.Settings;
  */
 public record Person(long id, String sheetId, String name, String grade, long version, LocalDate retiredFrom,
         List<Hold> holds, List<DatedGrade> dated, Integer terms, String contact, List<String> aliases, String origin,
-        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots) {
+        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots, List<DatedTerms> datedTerms) {
 
     public Person with(PersonRequest request) {
         return new Person(id, sheetId, request.name(), grade, version + 1, retiredFrom, holds, dated,
                 request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), aliases, origin, retirements,
-                request.tags() == null ? List.of() : List.of(request.tags().split(",")), snapshots);
+                request.tags() == null ? List.of() : List.of(request.tags().split(",")), snapshots, datedTerms);
     }
 
     /** The grade in force on the date: the one with the latest from-date on or before it, else the first grade. */
@@ -39,9 +40,21 @@ public record Person(long id, String sheetId, String name, String grade, long ve
         return on;
     }
 
-    /** The terms in force on the date: the person's own, else those of their grade then (else the sheet's). */
+    /** The person's own terms in force on the date: those with the latest from-date on or before it, else those from the beginning of time (null for none). */
+    public Integer ownTermsOn(LocalDate date) {
+        Integer on = terms;
+        for (DatedTerms d : datedTerms) {
+            if (!d.from().isAfter(date)) {
+                on = d.terms();
+            }
+        }
+        return on;
+    }
+
+    /** The terms in force on the date: the person's own then, else those of their grade then (else the sheet's). */
     public int termsOn(LocalDate date, Settings settings) {
-        return terms != null ? terms : settings.terms(sheetId, gradeOn(date), date);
+        Integer own = ownTermsOn(date);
+        return own != null ? own : settings.terms(sheetId, gradeOn(date), date);
     }
 
     /** Whether the person has any hold. */

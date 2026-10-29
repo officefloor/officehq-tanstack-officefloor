@@ -22,6 +22,8 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [gradeFrom, setGradeFrom] = useState('');
   // The person's own terms in days; blank for none.
   const [terms, setTerms] = useState('');
+  // The date an edit's terms are recorded from (yyyy-mm-dd); blank for the beginning of time.
+  const [termsFrom, setTermsFrom] = useState('');
   // The person's contact; blank for none.
   const [contact, setContact] = useState('');
   // The person's tags, comma separated; blank for none.
@@ -36,6 +38,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
     setGrade(p?.grade ?? 'A');
     setGradeFrom('');
     setTerms(p?.terms == null ? '' : String(p.terms));
+    setTermsFrom('');
     setContact(p?.contact ?? '');
     setTags(p?.tags.join(', ') ?? '');
     setVersion(p?.version);
@@ -54,7 +57,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [user] = useUser();
   const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string; contact: string; tags: string }) =>
+    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string; termsFrom?: string; contact: string; tags: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
@@ -66,6 +69,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setTermsFrom('');
         setContact('');
         setTags('');
       }
@@ -104,7 +108,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
       return;
     }
     // Contacts are unique on the sheet; the server refuses one in use (after its version check, so a stale editor is refreshed).
-    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim(), tags } : { name: trimmed, grade, terms: terms.trim(), contact: contact.trim(), tags }));
+    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim(), termsFrom: termsFrom.trim(), contact: contact.trim(), tags } : { name: trimmed, grade, terms: terms.trim(), contact: contact.trim(), tags }));
   };
 
   return (
@@ -158,6 +162,18 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
           inputMode="numeric"
           onChange={(e) => {
             setTerms(e.target.value);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <label>
+        Terms from{' '}
+        <input
+          type="date"
+          data-testid="person-form-terms-from"
+          value={termsFrom}
+          onChange={(e) => {
+            setTermsFrom(e.target.value);
             setError('');
           }}
         />

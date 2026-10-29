@@ -18,6 +18,7 @@ public final class AsOf {
             Map.entry("claim", List.of("id")),
             Map.entry("person", List.of("id")),
             Map.entry("person_grade", List.of("person_id", "from_date")),
+            Map.entry("person_terms", List.of("person_id", "from_date")),
             Map.entry("person_hold", List.of("id")),
             Map.entry("person_retirement", List.of("id")),
             Map.entry("person_snapshot", List.of("id")),

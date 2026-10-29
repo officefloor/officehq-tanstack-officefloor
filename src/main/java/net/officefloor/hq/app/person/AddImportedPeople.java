@@ -35,7 +35,7 @@ public class AddImportedPeople {
                 Person edited = person.with(new PersonRequest(person.name(), request.grade(), null, null,
                         request.terms() != null ? request.terms() : person.terms() == null ? null : person.terms().toString(),
                         request.contact() != null ? request.contact() : person.contact(),
-                        person.tags().isEmpty() ? null : String.join(",", person.tags())));
+                        person.tags().isEmpty() ? null : String.join(",", person.tags()), null));
                 people.save(edited);
                 if (!request.grade().equals(person.gradeOn(today))) {
                     people.gradeFrom(person.id(), today, request.grade());

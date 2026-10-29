@@ -29,7 +29,7 @@ public class People {
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
             rs.getObject("retired_from", LocalDate.class), List.of(), List.of(),
             rs.getObject("terms", Integer.class), rs.getString("contact"), List.of(),
-            rs.getString("origin_sheet_id"), List.of(), tags(rs.getString("tags")), List.of());
+            rs.getString("origin_sheet_id"), List.of(), tags(rs.getString("tags")), List.of(), List.of());
 
     /** Tags as the store keeps them, comma separated (null for none), as a list. */
     private static List<String> tags(String column) {
@@ -63,13 +63,19 @@ public class People {
     /** Aliases sort as names are compared: ignoring case (then as typed, so the order is stable). */
     private static final Comparator<String> BY_NAME = String.CASE_INSENSITIVE_ORDER.thenComparing(Comparator.naturalOrder());
 
-    /** The people with the grades they were given from a date on, their holds and their aliases, read from the store. */
+    /** The people with the grades they were given from a date on, the terms recorded for them from a date on, their holds and their aliases, read from the store. */
     private List<Person> withDated(String sheetId, List<Person> found) {
         Map<Long, List<DatedGrade>> dated = new HashMap<>();
         jdbc.query("SELECT g.* FROM " + AsOf.table("person_grade", "g") + " JOIN " + AsOf.table("person", "p") + " ON p.id = g.person_id WHERE p.sheet_id = ? "
                 + "ORDER BY g.from_date", rs -> {
                     dated.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
                             new DatedGrade(rs.getObject("from_date", LocalDate.class), rs.getString("grade")));
+                }, sheetId);
+        Map<Long, List<DatedTerms>> datedTerms = new HashMap<>();
+        jdbc.query("SELECT t.* FROM " + AsOf.table("person_terms", "t") + " JOIN " + AsOf.table("person", "p") + " ON p.id = t.person_id WHERE p.sheet_id = ? "
+                + "ORDER BY t.from_date", rs -> {
+                    datedTerms.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(
+                            new DatedTerms(rs.getObject("from_date", LocalDate.class), rs.getObject("terms", Integer.class)));
                 }, sheetId);
         Map<Long, List<Hold>> holds = new HashMap<>();
         jdbc.query("SELECT h.* FROM " + AsOf.table("person_hold", "h") + " JOIN " + AsOf.table("person", "p") + " ON p.id = h.person_id WHERE p.sheet_id = ? "
@@ -97,7 +103,8 @@ public class People {
         return found.stream().map(p -> new Person(p.id(), p.sheetId(), p.name(), p.grade(), p.version(),
                 p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()), p.terms(), p.contact(),
                 List.copyOf(aliases.getOrDefault(p.id(), List.of())), p.origin(),
-                retirements.getOrDefault(p.id(), List.of()), p.tags(), snapshots.getOrDefault(p.id(), List.of()))).toList();
+                retirements.getOrDefault(p.id(), List.of()), p.tags(), snapshots.getOrDefault(p.id(), List.of()),
+                datedTerms.getOrDefault(p.id(), List.of()))).toList();
     }
 
     /** The name the person had on the sheet they were transferred from; null when they were not transferred in. */
@@ -230,7 +237,7 @@ public class People {
         }, key);
         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
                 List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of(), null, List.of(),
-                tags(request.tags()), List.of());
+                tags(request.tags()), List.of(), List.of());
     }
 
     /**
@@ -247,6 +254,12 @@ public class People {
         jdbc.update("DELETE FROM person_grade WHERE person_id = ? AND from_date = ?", id, Date.valueOf(from));
         jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) VALUES (?, ?, ?)", id, Date.valueOf(from),
                 grade);
+    }
+
+    /** Record the person's own terms from the date on (null: none), replacing any recorded from that same date. */
+    public void termsFrom(long id, LocalDate from, Integer terms) {
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ? AND from_date = ?", id, Date.valueOf(from));
+        jdbc.update("INSERT INTO person_terms (person_id, from_date, terms) VALUES (?, ?, ?)", id, Date.valueOf(from), terms);
     }
 
     /** Retire the person from the date (replacing any date they were retired from before). */
@@ -320,16 +333,17 @@ public class People {
         jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person WHERE id = ?", from);
         alias(sheetId, into, name);
     }
 
     /**
      * Transfer the person to the sheet {@code to}, returning their id there. They arrive with their first grade and every
-     * grade given since (with its from-date), their terms, contact, tags and aliases, and their claims (listed in the order
+     * grade given since (with its from-date), their terms (and those recorded since, with their from-dates), contact, tags and aliases, and their claims (listed in the order
      * they were, as the newest on that sheet) with their status, dates, notes, frozen figures, comments, lines and logs; a
      * claim in {@code numbers} takes the number given there, and each keeps the figure a statement bound it to; their
-     * statements go with them. The references are not carried. They leave their sheet entirely: their claims, statements, holds, watches, patron links, pool memberships
+     * statements go with them. The references are not carried. They leave their sheet entirely: their claims, statements, holds, watches, plans, patron links, pool memberships
      * and closed-period figures are dropped with them.
      */
     public long transfer(Person person, String to, Map<Long, String> numbers) {
@@ -386,6 +400,8 @@ public class People {
         }
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", from, from);
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
+        jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", from);
+        jdbc.update("DELETE FROM plan WHERE person_id = ?", from);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
         takeStatements(to, from, arrived);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
@@ -393,6 +409,7 @@ public class People {
         jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_alias WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person WHERE id = ?", from);
         if (into != null) {
@@ -421,6 +438,8 @@ public class People {
         }, key);
         long arrived = key.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
+                + "WHERE person_id = ? ORDER BY from_date", arrived, person.id());
+        jdbc.update("INSERT INTO person_terms (person_id, from_date, terms) SELECT ?, from_date, terms FROM person_terms "
                 + "WHERE person_id = ? ORDER BY from_date", arrived, person.id());
         return arrived;
     }

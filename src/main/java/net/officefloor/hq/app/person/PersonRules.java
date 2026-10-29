@@ -31,14 +31,8 @@ final class PersonRules {
             throw new InvalidPersonException("The grade must be A, B or C.");
         }
         // A blank from-date is kept null: the sheet's today, filled in when stored.
-        String from = body.gradeFrom() == null ? "" : body.gradeFrom().trim();
-        if (!from.isEmpty()) {
-            try {
-                LocalDate.parse(from, ISO);
-            } catch (DateTimeParseException e) {
-                throw new InvalidPersonException("Not a date (yyyy-mm-dd): " + from);
-            }
-        }
+        String from = date(body.gradeFrom());
+        String termsFrom = date(body.termsFrom());
         String terms = body.terms() == null ? "" : body.terms().trim();
         if (!terms.isEmpty() && !DAYS.matcher(terms).matches()) {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more.");
@@ -46,7 +40,21 @@ final class PersonRules {
         // The contact is kept trimmed and lower-cased; a blank one is none.
         String contact = body.contact() == null ? "" : body.contact().trim().toLowerCase(java.util.Locale.ROOT);
         return new PersonRequest(name, grade, body.version(), from.isEmpty() ? null : from,
-                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)), contact.isEmpty() ? null : contact, tags(body.tags()));
+                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)), contact.isEmpty() ? null : contact, tags(body.tags()),
+                termsFrom.isEmpty() ? null : termsFrom);
+    }
+
+    /** A from-date as typed, trimmed ("" when blank); one that is not a date is refused. */
+    private static String date(String typed) throws InvalidPersonException {
+        String from = typed == null ? "" : typed.trim();
+        if (!from.isEmpty()) {
+            try {
+                LocalDate.parse(from, ISO);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("Not a date (yyyy-mm-dd): " + from);
+            }
+        }
+        return from;
     }
 
     /** Comma separated tags as a person keeps them: each trimmed and lower-cased, blanks and repeats dropped, sorted. */
