@@ -27,7 +27,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `comments` are its comments, oldest first, each "<user> on <date>: <text>" with the sheet's today when written;
  * `batch` is the number of the settle batch (a bulk settle) that settled it (null when none, or settled one at a time);
  * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
- * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum).
+ * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
+ * `waived` is whether a steward waived its late charge: it bears none from then on.
  */
 export type Claim = {
   id: number;
@@ -56,6 +57,7 @@ export type Claim = {
   batch: number | null;
   lines: string[];
   reviewOn: string | null;
+  waived: boolean;
 };
 
 /** Whether a REVIEW claim is late: its review day plus the review SLA's days (`sla`, "" for none) is before the sheet's `today`. */

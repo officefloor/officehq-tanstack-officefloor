@@ -32,7 +32,7 @@ public class Claims {
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
             rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"),
             rs.getString("split_from"), rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class),
-            rs.getString("ref"), tags(rs.getString("tags")));
+            rs.getString("ref"), tags(rs.getString("tags")), rs.getBoolean("waived"));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -140,7 +140,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0, null, late, null, ref, tags);
+                false, null, corrects, dueBy, null, 0, null, late, null, ref, tags, false);
     }
 
     /** Whether a claim made now, due by {@code dueBy}, is a late entry: its due-by is in a soft-closed period. */
@@ -256,7 +256,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null, null, claim.tags());
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null, null, claim.tags(), false);
     }
 
     /**
@@ -307,6 +307,18 @@ public class Claims {
             return null;
         }
         return claim.withRemindedOn(on);
+    }
+
+    /**
+     * Waives the claim's late charge if it is still OPEN or PENDING and not yet waived, and returns it as waived; null when
+     * it has since changed.
+     */
+    public Claim waive(Claim claim) {
+        if (jdbc.update("UPDATE claim SET waived = TRUE WHERE id = ? AND status IN (?, ?) AND NOT waived", claim.id(),
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name()) != 1) {
+            return null;
+        }
+        return claim.withWaived();
     }
 
     /** Escalates the claim if it was never escalated, and tells whether it was escalated now: a claim is escalated at most once ever. */

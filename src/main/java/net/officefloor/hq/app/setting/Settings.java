@@ -340,6 +340,7 @@ public class Settings {
      * of the figure plus the charges of the boundaries before it (compounding), each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge and no floor, and a deferred claim no late charge (it is not overdue until the sheet's today reaches its date).
+     * A waived claim has no late charge, whatever its overdue state.
      */
     public BigDecimal withLate(Claim claim, BigDecimal figure, LocalDate today) {
         return floored(claim, lateAdded(claim, figure, today));
@@ -347,7 +348,7 @@ public class Settings {
 
     /** The figure with the claim's late charge on {@code today} added on top (see {@link #withLate}), not floored. */
     private BigDecimal lateAdded(Claim claim, BigDecimal figure, LocalDate today) {
-        if (figure == null || !claim.status().isOpen() || claim.isCorrection() || claim.deferredOn(today)) {
+        if (figure == null || !claim.status().isOpen() || claim.isCorrection() || claim.deferredOn(today) || claim.waived()) {
             return figure;
         }
         LocalDate dueBy = overdueFrom(claim);
