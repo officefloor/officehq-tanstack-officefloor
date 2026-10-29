@@ -1,0 +1,70 @@
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 46d7bd08..b0042f19 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -89,6 +89,11 @@ export function sumDue(dues: string[]): string {
+   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
+ }
+ 
++/** One sum less another (two decimals, a minus sign when lower). */
++export function difference(sum: string, previous: string): string {
++  return show(hundredths(sum) - hundredths(previous));
++}
++
+ /** A sheet total of per-person figures: with three or more figures (n/a is none), the single highest and lowest are left out. */
+ export function trimmedSum(dues: string[]): string {
+   const figures = dues.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 30fc8ab3..c708e0dc 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -4,7 +4,7 @@ import { claimsQuery, isActive } from '../claims/claimsQuery';
+ import type { Claim, ClaimStatus } from '../claims/claimsQuery';
+ import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+ import { periodDue, periodsQuery } from '../periods/periodsQuery';
+-import { personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
++import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
+@@ -17,7 +17,7 @@ export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filt
+ /**
+  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
+  * today (retired people excluded), their due-totals added up, skipping n/a, and how many of them are active. Per period: its
+- * due-total. Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
++ * due-total, and its change from the period before it by from-date (none for the earliest). Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
+  */
+ function Summary({ sheetId }: { sheetId: string }) {
+   const people = useQuery(peopleQuery(sheetId)).data ?? [];
+@@ -31,6 +31,13 @@ function Summary({ sheetId }: { sheetId: string }) {
+   const cap = useCap(sheetId);
+ 
+   const unretired = people.filter((p) => p.retiredFrom === null);
++  const byFrom = [...periods].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
++  const dues = new Map(byFrom.map((p) => [p.name, periodDue(p, claims, people, rates, floor, late)]));
++  const periodRows = periods.map((p) => {
++    const at = byFrom.indexOf(p);
++    const due = dues.get(p.name) as string;
++    return { period: p, due, change: at > 0 ? difference(due, dues.get(byFrom[at - 1].name) as string) : '' };
++  });
+ 
+   return (
+     <section data-testid="summary">
+@@ -67,13 +74,15 @@ function Summary({ sheetId }: { sheetId: string }) {
+           <tr>
+             <th>Period</th>
+             <th>Due</th>
++            <th>Change</th>
+           </tr>
+         </thead>
+         <tbody>
+-          {periods.map((p) => (
++          {periodRows.map(({ period: p, due, change }) => (
+             <tr key={p.name} data-testid={`summary-period-${p.name}`}>
+               <td>{p.name}</td>
+-              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDue(p, claims, people, rates, floor, late)}</td>
++              <td data-testid={`summary-period-${p.name}-due-total`}>{due}</td>
++              <td data-testid={`summary-period-${p.name}-change`}>{change}</td>
+             </tr>
+           ))}
+         </tbody>
