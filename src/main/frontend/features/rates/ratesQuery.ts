@@ -11,9 +11,10 @@ import type { DatedValue } from '../settings/dated';
  * `rate` is a percent with two decimals ("12.50"), in force from `from` (yyyy-mm-dd; null: from the
  * beginning of time) through `to` (yyyy-mm-dd; null: with no end). A grade may have several, one per
  * from-date; a grade with no rate has no entry. `level` is the sheet it is the rate of: 0 the sheet's own,
- * 1 its parent's, 2 its parent's parent, up to 3.
+ * 1 its parent's, 2 its parent's parent, up to 3. `version` is how many versions the grade and from-date's rate has
+ * had: setting it again keeps the replaced value as an older version, and the one here is always the newest.
  */
-export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null; level: number };
+export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null; level: number; version?: number };
 
 /** Under the sheet's key, so re-loading the sheet re-reads its rates. */
 export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as const;

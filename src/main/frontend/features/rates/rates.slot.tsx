@@ -18,7 +18,7 @@ const PERCENT = /^\d{1,7}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The sheet's rates — per grade, the one in force on the sheet's today, and every rate with its
- *  from-date and to-date — and the form a grade's rate is set through. */
+ *  from-date, to-date and version count — and the form a grade's rate is set through. */
 function Rates({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const rates = useQuery(ratesQuery(sheetId));
@@ -154,6 +154,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>Rate %</th>
             <th>From</th>
             <th>To</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -163,6 +164,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-pct">{r.rate}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
+              <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>
           ))}
         </tbody>

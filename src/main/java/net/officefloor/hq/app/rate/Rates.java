@@ -11,7 +11,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/** The store of rates, one per grade and from-date, kept per sheet. */
+/**
+ * The store of rates, one per grade and from-date, kept per sheet: the newest version, with the values it replaced kept
+ * as older versions in {@code rate_version}.
+ */
 @Repository
 public class Rates {
 
@@ -19,7 +22,7 @@ public class Rates {
         Date from = rs.getDate("from_date");
         Date to = rs.getDate("to_date");
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
-                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate());
+                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"));
     };
 
     private final JdbcTemplate jdbc;
@@ -53,13 +56,25 @@ public class Rates {
         return lineage;
     }
 
-    /** Sets the rate, replacing any the grade already has for the same from-date. */
-    public void save(Rate rate) {
+    /**
+     * Sets the rate as the newest version for the grade and from-date: the one it replaces, if any, is kept as an older
+     * version. Returns the rate as stored, with its version.
+     */
+    public Rate save(Rate rate) {
         Date from = rate.from() == null ? null : Date.valueOf(rate.from());
+        List<Rate> replaced = jdbc.query("SELECT * FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                ROW, rate.sheetId(), rate.grade(), from);
+        int version = 1;
+        for (Rate old : replaced) {
+            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    old.sheetId(), old.grade(), from, old.version(), old.rate(), old.to() == null ? null : Date.valueOf(old.to()));
+            version = Math.max(version, old.version() + 1);
+        }
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 rate.sheetId(), rate.grade(), from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()));
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()), version);
+        return new Rate(rate.sheetId(), rate.grade(), rate.rate(), rate.from(), rate.to(), version);
     }
 
     /**

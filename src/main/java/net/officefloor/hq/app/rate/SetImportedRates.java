@@ -10,7 +10,8 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class SetImportedRates {
-    // Each checked line is set in order, as the rate form sets it: replacing a rate for the same grade and from-date,
+    // Each checked line is set in order, as the rate form sets it: adding a new version of a rate for the same grade and
+    // from-date,
     // RATE_SET, then its ROLLUP lines.
     public void set(@PathVariable("sheetId") String sheetId, @Val ImportedRates imported, @Val Figures before,
             Rates rates, Rollup rollup, ServerHttpConnection connection, Audit audit, Out<RateImportResponse> result) {
