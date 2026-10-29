@@ -36,6 +36,11 @@ public class Rollup {
         this.settings = settings;
     }
 
+    /** The sheet's alert threshold; null when alerts are off. */
+    public BigDecimal alertThreshold(String sheetId) {
+        return settings.alertThreshold(sheetId);
+    }
+
     public Figures figures(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> counting = claims.list(sheetId).stream()

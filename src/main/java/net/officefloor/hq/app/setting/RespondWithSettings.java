@@ -20,7 +20,7 @@ public class RespondWithSettings {
                 settings.current(sheet, Settings.CAP), dated(settings, sheet), perms(settings, sheet),
                 settings.get(sheet, Settings.GRACE_DAYS), settings.get(sheet, Settings.ENTRY_DATE),
                 settings.get(sheet, Settings.POT), settings.parent(sheet),
-                Integer.toString(settings.fiscalStartMonth(sheet))));
+                Integer.toString(settings.fiscalStartMonth(sheet)), settings.get(sheet, Settings.ALERT_THRESHOLD)));
     }
 
     private static Map<String, String> gradeTerms(Settings settings, String sheet, LocalDate today) {

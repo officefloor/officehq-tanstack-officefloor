@@ -53,10 +53,11 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [grace, setGrace] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
+  const [alertThreshold, setAlertThreshold] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | 'entryDate' | 'pot' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -86,6 +87,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setGrace('');
       setEntryDate('');
       setPot('');
+      setAlertThreshold('');
       setParent('');
       setFiscalStartMonth('');
       setPerms({});
@@ -190,6 +192,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The pot must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const at = alertThreshold.trim();
+    if (at !== '' && !AMOUNT.test(at)) {
+      setError('The alert threshold must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const pa = parent.trim();
     if (pa === sheetId.trim()) {
       setError('A sheet cannot be its own parent.');
@@ -229,7 +236,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       if (gp[grade] === undefined && (froms[`proof-threshold-${grade}`] ?? '') !== '') gp[grade] = '';
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -239,6 +246,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (gd !== '' || (none && blank === 'graceDays')) body.graceDays = gd;
     if (ed !== '' || (none && blank === 'entryDate')) body.entryDate = ed;
     if (pt2 !== '' || (none && blank === 'pot')) body.pot = pt2;
+    if (at !== '' || (none && blank === 'alertThreshold')) body.alertThreshold = at;
     if (pa !== '' || (none && blank === 'parent')) body.parent = pa;
     if (fm !== '') body.fiscalStartMonth = fm;
     for (const grade of GRADES) {
@@ -588,6 +596,19 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Alert threshold{' '}
+          <input
+            data-testid="setting-alert-threshold"
+            placeholder="off"
+            value={alertThreshold}
+            onFocus={() => setBlank('alertThreshold')}
+            onChange={(e) => {
+              setAlertThreshold(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Parent sheet{' '}
           <input
             data-testid="setting-parent"
@@ -688,6 +709,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Pot: <span data-testid="setting-pot-current">{settings.data?.pot ?? ''}</span>
+      </p>
+      <p>
+        Alert threshold: <span data-testid="setting-alert-threshold-current">{settings.data?.alertThreshold ?? ''}</span>
       </p>
       <p>
         Parent sheet: <span data-testid="setting-parent-current">{settings.data?.parent ?? ''}</span>

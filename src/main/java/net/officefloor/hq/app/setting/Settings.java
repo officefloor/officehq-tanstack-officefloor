@@ -44,6 +44,8 @@ public class Settings {
     /** The month (1 to 12) a fiscal year starts on (undated); blank is the default, January. */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
     public static final String FISCAL_START_MONTH_DEFAULT = "1";
+    /** The due-total above which a person is alerted (undated), with two decimals; blank is off. */
+    public static final String ALERT_THRESHOLD = "alert-threshold";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
@@ -270,6 +272,12 @@ public class Settings {
     /** The pot, with two decimals; null when there is none. */
     public BigDecimal pot(String sheetId) {
         String value = get(sheetId, POT);
+        return value.isEmpty() ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** The alert threshold, with two decimals; null when alerts are off. */
+    public BigDecimal alertThreshold(String sheetId) {
+        String value = get(sheetId, ALERT_THRESHOLD);
         return value.isEmpty() ? null : new BigDecimal(value).setScale(2);
     }
 

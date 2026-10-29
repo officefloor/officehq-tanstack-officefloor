@@ -48,6 +48,9 @@ public class ApplySettings {
         if (settings.pot() != null) {
             store.set(settings.sheetId(), Settings.POT, settings.pot());
         }
+        if (settings.alertThreshold() != null) {
+            store.set(settings.sheetId(), Settings.ALERT_THRESHOLD, settings.alertThreshold());
+        }
         if (settings.parent() != null) {
             store.set(settings.sheetId(), Settings.PARENT, settings.parent());
         }

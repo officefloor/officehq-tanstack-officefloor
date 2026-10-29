@@ -36,6 +36,7 @@ public class ValidateSettings {
     // The grace days are missing: left as they are, blank: off, otherwise a whole number of days, 0 or more (not dated).
     // The entry date is like the period numbering from-date: missing is left as it is, blank is off (the sheet's today), otherwise a yyyy-MM-dd date.
     // The pot is like the cap, but not dated: missing is left as it is, blank is none.
+    // The alert threshold is like the pot: missing is left as it is, blank is off.
     // The parent is a sheet id, not dated: missing is left as it is, blank is none. It may not be the sheet itself, nor a
     // sheet that has this one as an ancestor, and it must be a sheet that has been loaded.
     // The fiscal year start month is not dated: missing or blank is left as it is, otherwise a whole month, 1 to 12.
@@ -169,6 +170,13 @@ public class ValidateSettings {
             }
             pot = twoDecimals(pot);
         }
+        String alertThreshold = body == null || body.alertThreshold() == null ? null : body.alertThreshold().trim();
+        if (alertThreshold != null && !alertThreshold.isEmpty()) {
+            if (!AMOUNT.matcher(alertThreshold).matches()) {
+                throw new InvalidSettingException("The alert threshold must be an amount of 0.00 or more, with up to two decimals.");
+            }
+            alertThreshold = twoDecimals(alertThreshold);
+        }
         String parent = body == null || body.parent() == null ? null : body.parent().trim();
         if (parent != null && !parent.isEmpty()) {
             String sheet = sheetId.trim();
@@ -240,7 +248,7 @@ public class ValidateSettings {
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
-                || fiscalStartMonth != null;
+                || fiscalStartMonth != null || alertThreshold != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -248,7 +256,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold));
     }
 
     private static String twoDecimals(String amount) {
