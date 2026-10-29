@@ -3,9 +3,16 @@ import { sheetKey } from '../sheet/sheetQuery';
 
 /**
  * A person's statements: how many were taken, and the last one's due-total ("n/a" when it had none) and
- * date (yyyy-mm-dd), both null when none was taken. A person with no statement has no entry.
+ * date (yyyy-mm-dd), both null when none was taken, and a line per statement still standing, oldest first by
+ * date, as "yyyy-mm-dd due-total". A person with no statement has no entry.
  */
-export type Statements = { personId: number; count: number; dueTotal: string | null; date: string | null };
+export type Statements = {
+  personId: number;
+  count: number;
+  dueTotal: string | null;
+  date: string | null;
+  lines: string[];
+};
 
 /** Under the sheet's key, so re-loading the sheet re-reads its statements. */
 export const statementsKey = (sheetId: string) => [...sheetKey(sheetId), 'statements'] as const;

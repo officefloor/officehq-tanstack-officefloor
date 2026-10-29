@@ -2,9 +2,12 @@ package net.officefloor.hq.app.statement;
 
 import net.officefloor.hq.app.history.AsOf;
 import java.sql.Date;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 /** The store of statements, kept per sheet. */
@@ -41,16 +44,22 @@ public class Statements {
 
     /** Each person of the sheet who has a statement: their count, and their last statement's due-total and date. */
     public List<StatementResponse> list(String sheetId) {
+        Map<Long, List<String>> lines = new HashMap<>();
+        jdbc.query("SELECT person_id, stated_on, due_total FROM " + AsOf.table("statement") + " WHERE sheet_id = ? "
+                + "ORDER BY person_id, stated_on, id",
+                (RowCallbackHandler) rs -> lines.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)),
+                sheetId);
         return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.stated_on FROM " + AsOf.table("statement", "s")
                 + " JOIN (SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + AsOf.table("statement") + " WHERE sheet_id = ? "
                 + "GROUP BY person_id) c ON s.id = c.last_id ORDER BY s.person_id",
                 (rs, n) -> new StatementResponse(rs.getLong(1), rs.getInt(2), rs.getString(3),
-                        rs.getDate(4).toLocalDate().toString()),
+                        rs.getDate(4).toLocalDate().toString(), lines.getOrDefault(rs.getLong(1), List.of())),
                 sheetId);
     }
 
     public StatementResponse find(String sheetId, long personId) {
         return list(sheetId).stream().filter(s -> s.personId() == personId).findFirst()
-                .orElse(new StatementResponse(personId, 0, null, null));
+                .orElse(new StatementResponse(personId, 0, null, null, List.of()));
     }
 }
