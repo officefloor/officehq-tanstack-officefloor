@@ -1,0 +1,86 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
+import { SheetPanel } from '../../slots/defs/sheetPanel';
+import { peopleQuery } from '../people/peopleQuery';
+import { claimsKey, claimsQuery } from './claimsQuery';
+import type { Claim } from './claimsQuery';
+import { useSelectedClaims } from './useSelectedClaims';
+
+type Result = { redated: number; refused: number };
+
+/**
+ * Re-dates every ticked claim to the entered date as the signed-in user, one at a time in list order (people in
+ * their list order, newest claim first within a person), by the same rules as the row's re-date (each writes its
+ * own CLAIM_REDATED and rollup lines). A claim the server refuses to re-date is left as it is and counted as
+ * refused.
+ */
+function BulkRedate({ user, sheetId }: { user: string; sheetId: string }) {
+  const queryClient = useQueryClient();
+  const people = useQuery(peopleQuery(sheetId)).data ?? [];
+  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+  const [selected, setSelected] = useSelectedClaims();
+  const [date, setDate] = useState('');
+  const [result, setResult] = useState<Result | undefined>();
+  const once = useSubmitOnce();
+
+  const ordered = people.flatMap((p) => claims.filter((c) => c.personId === p.id && selected.includes(c.id)));
+
+  const redate = useMutation({
+    mutationFn: async ({ targets, next }: { targets: Claim[]; next: string }): Promise<Result> => {
+      let redated = 0;
+      for (const c of targets) {
+        try {
+          await putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/date`, { date: next }, user);
+          redated++;
+        } catch {
+          // refused: left as it is
+        }
+      }
+      return { redated, refused: targets.length - redated };
+    },
+    onSuccess: async (r) => {
+      setSelected([]);
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      setResult(r);
+    },
+  });
+
+  return (
+    <section data-testid="bulk-redate-panel">
+      <input
+        data-testid="bulk-redate-date"
+        placeholder="yyyy-mm-dd"
+        value={date}
+        onChange={(e) => {
+          setDate(e.target.value);
+          setResult(undefined);
+        }}
+      />
+      <button
+        type="button"
+        data-testid="bulk-redate"
+        disabled={redate.isPending}
+        onClick={() => {
+          setResult(undefined);
+          once(() => redate.mutateAsync({ targets: ordered, next: date.trim() }));
+        }}
+      >
+        Re-date selected
+      </button>
+      {result && (
+        <>
+          {' '}
+          Re-dated <span data-testid="bulk-redated">{result.redated}</span>, refused{' '}
+          <span data-testid="bulk-redate-refused">{result.refused}</span>
+        </>
+      )}
+    </section>
+  );
+}
+
+export const contribution = SheetPanel.fill({
+  order: 24,
+  Component: ({ user, sheetId }) => <BulkRedate key={sheetId} user={user} sheetId={sheetId} />,
+});
