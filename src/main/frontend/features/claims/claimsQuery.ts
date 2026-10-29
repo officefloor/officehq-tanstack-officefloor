@@ -31,7 +31,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
  * `waived` is whether a steward waived its late charge: it bears none from then on;
  * `held` is whether it is held: it still counts in every total, as a held person's claims do;
- * `shares` are the people it is shared with, in the order added: each holds that percent of its due (see `personPart`).
+ * `shares` are the people it is shared with, in the order added: each holds that percent of its due (see `personPart`);
+ * `reviewUser` is the user a steward last assigned its review to (null when never), kept after it leaves REVIEW.
  */
 export type Claim = {
   id: number;
@@ -65,6 +66,7 @@ export type Claim = {
   waived: boolean;
   held: boolean;
   shares: ClaimShare[];
+  reviewUser: string | null;
 };
 
 /** A share of a claim: the person on the sheet holding it and their percent (two decimals). */

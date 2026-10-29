@@ -16,7 +16,8 @@ import { STATUSES, statusCount } from '../summary/summary.slot';
  * summary, and the sheet's due- and overdue-totals. Then the signed-in user's own figures: the due- and
  * overdue-total of the person whose name or alias is the user's name (as names are compared: trimmed, ignoring
  * case); blank when there is no such person. And the user's crew total: the due-totals of the crews that person
- * leads, added up; blank when they lead none.
+ * leads, added up; blank when they lead none. And how many REVIEW claims are assigned to the user (as users are
+ * compared: trimmed).
  */
 const nameKey = (name: string) => name.trim().toLowerCase();
 
@@ -33,6 +34,7 @@ function Header({ sheetId }: { sheetId: string }) {
   const crews = useQuery(crewsQuery(sheetId)).data ?? [];
   const dues = usePeopleDueTotals(sheetId);
   const led = mine ? crews.filter((c) => c.leadId === mine.id) : [];
+  const myReviews = claims.filter((c) => c.status === 'REVIEW' && (c.reviewUser ?? '').trim() === user.trim()).length;
   const myCrewDue = led.length > 0 ? sumDue(led.map((c) => crewDue(c, dues))) : '';
 
   return (
@@ -48,6 +50,7 @@ function Header({ sheetId }: { sheetId: string }) {
       {' '}· Mine due <strong data-testid="my-due-total">{myDue ?? ''}</strong>
       {' '}· Mine overdue <strong data-testid="my-overdue-total">{myOverdue ?? ''}</strong>
       {' '}· Crew due <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
+      {' '}· My reviews <strong data-testid="my-reviews-count">{myReviews}</strong>
     </header>
   );
 }

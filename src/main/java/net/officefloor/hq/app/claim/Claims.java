@@ -433,6 +433,21 @@ public class Claims {
         return on.isEmpty() ? null : on.get(0);
     }
 
+    /** The user each of the sheet's claims had its review last assigned to, by claim id (a claim never assigned is left out). */
+    public java.util.Map<Long, String> reviewUsers(String sheetId) {
+        java.util.Map<Long, String> users = new java.util.HashMap<>();
+        jdbc.query("SELECT id, review_user FROM " + AsOf.table("claim") + " WHERE sheet_id = ? AND review_user IS NOT NULL", rs -> {
+            users.put(rs.getLong("id"), rs.getString("review_user"));
+        }, sheetId);
+        return users;
+    }
+
+    /** Assigns the claim's review to the user if it is still in REVIEW; false when it has since changed. */
+    public boolean assignReview(Claim claim, String user) {
+        return jdbc.update("UPDATE claim SET review_user = ? WHERE id = ? AND status = ?", user, claim.id(),
+                ClaimStatus.REVIEW.name()) == 1;
+    }
+
     /** The sheet's today on which each of the sheet's claims last went to REVIEW, by claim id (a claim that never did is left out). */
     public java.util.Map<Long, LocalDate> reviewOns(String sheetId) {
         java.util.Map<Long, LocalDate> on = new java.util.HashMap<>();
