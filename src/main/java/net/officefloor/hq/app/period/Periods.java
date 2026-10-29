@@ -65,6 +65,22 @@ public class Periods {
         }
     }
 
+    /** Takes the amount back off the person's opening balance for the period, dropping the row when nothing is left. */
+    public void takeOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        jdbc.update("UPDATE period_person_opening SET amount = amount - ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                amount, sheetId, periodName, personId);
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND period_name = ? AND person_id = ? AND amount <= 0",
+                sheetId, periodName, personId);
+    }
+
+    /** Removes the sheet's period of that name with everything kept for it (fixed figures, openings, pool cuts). */
+    public void remove(String sheetId, String name) {
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
+    }
+
     /** The sheet's period of that name, or null when there is none. */
     public Period find(String sheetId, String name) {
         return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND name = ?", ROW, sheetId, name).stream()
