@@ -10,6 +10,7 @@ import { useUser } from '../session/useUser';
 import { usePersonError } from '../people/usePersonError';
 import { statementsKey, statementsQuery } from './statementsQuery';
 import type { Statements } from './statementsQuery';
+import { ColumnShown } from '../people/useColumns';
 
 /**
  * A person's statements and the button that takes one: it records their due-total now and binds each of
@@ -55,9 +56,15 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
 
   return (
     <td>
-      <span data-testid="person-statement-count">{shown?.count ?? 0}</span>{' '}
-      <span data-testid="person-stated-total">{shown?.dueTotal ?? ''}</span>{' '}
-      <span data-testid="person-statement-date">{shown?.date ?? ''}</span>{' '}
+      <ColumnShown column="statement-count">
+        <span data-testid="person-statement-count">{shown?.count ?? 0}</span>{' '}
+      </ColumnShown>
+      <ColumnShown column="stated-total">
+        <span data-testid="person-stated-total">{shown?.dueTotal ?? ''}</span>{' '}
+      </ColumnShown>
+      <ColumnShown column="statement-date">
+        <span data-testid="person-statement-date">{shown?.date ?? ''}</span>{' '}
+      </ColumnShown>
       <input
         data-testid="person-statement-asof"
         type="date"

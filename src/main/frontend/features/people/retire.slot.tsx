@@ -7,6 +7,7 @@ import { usePersonError } from './usePersonError';
 import { useUser } from '../session/useUser';
 import { peopleKey, peopleQuery } from './peopleQuery';
 import type { Person } from './peopleQuery';
+import { ColumnShown } from './useColumns';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -90,6 +91,6 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
 }
 
 export const contributions = [
-  PersonHeaders.fill({ order: 18, Component: () => <th>Retired</th> }),
-  PersonCells.fill({ order: 18, Component: PersonRetire }),
+  PersonHeaders.fill({ order: 18, Component: () => <ColumnShown column="retired"><th>Retired</th></ColumnShown> }),
+  PersonCells.fill({ order: 18, Component: (ctx) => <ColumnShown column="retired"><PersonRetire {...ctx} /></ColumnShown> }),
 ];

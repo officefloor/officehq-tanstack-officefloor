@@ -9,6 +9,7 @@ import { patronSharesOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useCap, useFloor, useLate } from '../settings/settingsQuery';
 import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, settledAndOpen, sumDue, sumOfShares, trimmedSum } from './ratesQuery';
+import { ColumnShown } from '../people/useColumns';
 
 function useSheetData(sheetId: string) {
   return {
@@ -118,16 +119,16 @@ function DueTotal({ sheetId }: { sheetId: string }) {
 
 export const contributions = [
   ClaimCells.fill({ order: 10, Component: ClaimDue }),
-  PersonHeaders.fill({ order: 15, Component: () => <th>Due</th> }),
-  PersonCells.fill({ order: 15, Component: PersonDueTotal }),
+  PersonHeaders.fill({ order: 15, Component: () => <ColumnShown column="due-total"><th>Due</th></ColumnShown> }),
+  PersonCells.fill({ order: 15, Component: (ctx) => <ColumnShown column="due-total"><PersonDueTotal {...ctx} /></ColumnShown> }),
   PersonHeaders.fill({ order: 15.2, Component: () => <><th>Settled</th><th>Open</th></> }),
   PersonCells.fill({ order: 15.2, Component: PersonSettledOpen }),
   PersonHeaders.fill({ order: 15.5, Component: () => <><th>0–30</th><th>31–60</th><th>61+</th></> }),
   PersonCells.fill({ order: 15.5, Component: PersonAged }),
-  PersonHeaders.fill({ order: 16, Component: () => <th>Excess</th> }),
-  PersonCells.fill({ order: 16, Component: PersonExcess }),
-  PersonHeaders.fill({ order: 22, Component: () => <th>Backing</th> }),
-  PersonCells.fill({ order: 22, Component: PersonBacking }),
+  PersonHeaders.fill({ order: 16, Component: () => <ColumnShown column="excess"><th>Excess</th></ColumnShown> }),
+  PersonCells.fill({ order: 16, Component: (ctx) => <ColumnShown column="excess"><PersonExcess {...ctx} /></ColumnShown> }),
+  PersonHeaders.fill({ order: 22, Component: () => <ColumnShown column="backing"><th>Backing</th></ColumnShown> }),
+  PersonCells.fill({ order: 22, Component: (ctx) => <ColumnShown column="backing"><PersonBacking {...ctx} /></ColumnShown> }),
   SheetPanel.fill({ order: 25, Component: DueTotal }),
   SheetPanel.fill({ order: 25.5, Component: SettledOpenTotal }),
 ];

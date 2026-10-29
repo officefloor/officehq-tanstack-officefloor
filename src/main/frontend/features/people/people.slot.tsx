@@ -9,6 +9,7 @@ import { useShowRetired } from './useShowRetired';
 import { compareDue, compareNames, SORT_KEYS, useSortBy } from './useSortBy';
 import type { SortKey } from './useSortBy';
 import { usePeopleDueTotals } from '../rates/due.slot';
+import { ColumnChooser, ColumnShown } from './useColumns';
 
 function People({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId));
@@ -51,14 +52,15 @@ function People({ sheetId }: { sheetId: string }) {
           ))}
         </select>
       </label>
+      <ColumnChooser />
       {people.isError && <p data-testid="people-load-error">Could not load the people.</p>}
       <table>
         <thead>
           <tr>
             <th>Name</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            <ColumnShown column="terms"><th>Terms</th></ColumnShown>
+            <ColumnShown column="contact"><th>Contact</th></ColumnShown>
             <th>Tags</th>
             <PersonHeaders.Slot sheetId={sheetId} />
             <th />
@@ -69,8 +71,8 @@ function People({ sheetId }: { sheetId: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-terms">{p.terms ?? ''}</td>
-              <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <ColumnShown column="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></ColumnShown>
+              <ColumnShown column="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></ColumnShown>
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <PersonCells.Slot sheetId={sheetId} personId={p.id} />
               <td>

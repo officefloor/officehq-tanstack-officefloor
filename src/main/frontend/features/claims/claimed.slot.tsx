@@ -4,6 +4,7 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { claimsQuery, counts, sumAmounts } from './claimsQuery';
+import { ColumnShown } from '../people/useColumns';
 
 /** The claims that count toward claimed: those that count, leaving out claims that correct another. */
 function useCounting(sheetId: string) {
@@ -27,7 +28,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
 }
 
 export const contributions = [
-  PersonHeaders.fill({ order: 10, Component: () => <th>Claimed</th> }),
-  PersonCells.fill({ order: 10, Component: PersonClaimed }),
+  PersonHeaders.fill({ order: 10, Component: () => <ColumnShown column="claimed"><th>Claimed</th></ColumnShown> }),
+  PersonCells.fill({ order: 10, Component: (ctx) => <ColumnShown column="claimed"><PersonClaimed {...ctx} /></ColumnShown> }),
   SheetPanel.fill({ order: 20, Component: ClaimedTotal }),
 ];

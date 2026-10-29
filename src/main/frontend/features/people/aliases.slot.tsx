@@ -7,6 +7,7 @@ import { usePersonError } from './usePersonError';
 import { useUser } from '../session/useUser';
 import { peopleKey, peopleQuery } from './peopleQuery';
 import type { Person } from './peopleQuery';
+import { ColumnShown } from './useColumns';
 
 /**
  * The person's aliases, sorted as names are compared, and the control that adds one. An alias shares the names'
@@ -63,6 +64,6 @@ function PersonAliases({ sheetId, personId }: { sheetId: string; personId: numbe
 
 // The row's `person-error` is shown by the hold cell, shared by every cell acting on the person.
 export const contributions = [
-  PersonHeaders.fill({ order: 9, Component: () => <th>Aliases</th> }),
-  PersonCells.fill({ order: 9, Component: PersonAliases }),
+  PersonHeaders.fill({ order: 9, Component: () => <ColumnShown column="aliases"><th>Aliases</th></ColumnShown> }),
+  PersonCells.fill({ order: 9, Component: (ctx) => <ColumnShown column="aliases"><PersonAliases {...ctx} /></ColumnShown> }),
 ];

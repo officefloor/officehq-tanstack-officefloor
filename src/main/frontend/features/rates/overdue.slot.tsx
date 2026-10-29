@@ -9,6 +9,7 @@ import type { Person } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import { figure, isOverdue, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
+import { useColumnsShown } from '../people/useColumns';
 
 function useOverdueData(sheetId: string) {
   return {
@@ -42,14 +43,25 @@ function ClaimDueBy({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   );
 }
 
+function OverdueHeader() {
+  const countShown = useColumnsShown('overdue-count');
+  const totalShown = useColumnsShown('overdue-total');
+  return countShown || totalShown ? <th>Overdue</th> : null;
+}
+
 function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: number }) {
   const data = useOverdueData(sheetId);
   const person = data.people.find((p) => p.id === personId);
   const { count, total } = person ? overdue(data, person) : { count: 0, total: '0.00' };
+  const countShown = useColumnsShown('overdue-count');
+  const totalShown = useColumnsShown('overdue-total');
+  // The cell holds two columns: it goes only when both are switched off.
+  if (!countShown && !totalShown) return null;
   return (
     <td>
-      <span data-testid="person-overdue-count">{count}</span> /{' '}
-      <span data-testid="person-overdue-total">{total}</span>
+      {countShown && <span data-testid="person-overdue-count">{count}</span>}
+      {countShown && totalShown && ' / '}
+      {totalShown && <span data-testid="person-overdue-total">{total}</span>}
     </td>
   );
 }
@@ -80,7 +92,7 @@ function OverdueTotal({ sheetId }: { sheetId: string }) {
 
 export const contributions = [
   ClaimCells.fill({ order: 12, Component: ClaimDueBy }),
-  PersonHeaders.fill({ order: 16, Component: () => <th>Overdue</th> }),
+  PersonHeaders.fill({ order: 16, Component: OverdueHeader }),
   PersonCells.fill({ order: 16, Component: PersonOverdue }),
   SheetPanel.fill({ order: 26, Component: OverdueTotal }),
 ];

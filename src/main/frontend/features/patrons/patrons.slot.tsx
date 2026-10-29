@@ -7,6 +7,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import { useUser } from '../session/useUser';
 import { patronSharesOf, patronsKey, patronsQuery } from './patronsQuery';
 import type { PatronLink } from './patronsQuery';
+import { ColumnShown } from '../people/useColumns';
 
 /**
  * The person's patrons (each as name and share, sorted by name, comma separated) and the control that names one more: any other
@@ -78,6 +79,6 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
 }
 
 export const contributions = [
-  PersonHeaders.fill({ order: 21, Component: () => <th>Patrons</th> }),
-  PersonCells.fill({ order: 21, Component: PersonPatrons }),
+  PersonHeaders.fill({ order: 21, Component: () => <ColumnShown column="patrons"><th>Patrons</th></ColumnShown> }),
+  PersonCells.fill({ order: 21, Component: (ctx) => <ColumnShown column="patrons"><PersonPatrons {...ctx} /></ColumnShown> }),
 ];
