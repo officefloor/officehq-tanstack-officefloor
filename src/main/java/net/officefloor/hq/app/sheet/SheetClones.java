@@ -127,10 +127,10 @@ public class SheetClones {
                 jdbc.update(con -> {
                     PreparedStatement ps = con.prepareStatement(
                             "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, "
-                                    + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, "
+                                    + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, escalated, "
                                     + "ref, ref_key, tags, void_reason, edited_by, due_terms, listed) "
                                     + "SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, corrects, due_by, "
-                                    + "deferred_until, proofs, split_from, late_entry, reminded_on, ref, ref_key, tags, "
+                                    + "deferred_until, proofs, split_from, late_entry, reminded_on, escalated, ref, ref_key, tags, "
                                     + "void_reason, edited_by, due_terms, listed FROM claim WHERE id = ?",
                             new String[] { "id" });
                     ps.setString(1, to);

@@ -309,6 +309,11 @@ public class Claims {
         return claim.withRemindedOn(on);
     }
 
+    /** Escalates the claim if it was never escalated, and tells whether it was escalated now: a claim is escalated at most once ever. */
+    public boolean escalate(Claim claim) {
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE id = ? AND NOT escalated", claim.id()) == 1;
+    }
+
     /**
      * Raises the claim's proofs count by one if it still has its loaded status and count, and returns it as raised; null when
      * it has since changed.

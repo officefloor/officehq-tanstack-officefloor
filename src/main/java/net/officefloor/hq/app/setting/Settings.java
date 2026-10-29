@@ -48,6 +48,8 @@ public class Settings {
     public static final String FISCAL_START_MONTH_DEFAULT = "1";
     /** The due-total above which a person is alerted (undated), with two decimals; blank is off. */
     public static final String ALERT_THRESHOLD = "alert-threshold";
+    /** The escalation gap, in days (not dated; blank: off). */
+    public static final String ESCALATE_AFTER = "escalate-after";
     /** How a claim's live figures round (dated): half-up or half-even; blank is none, so the policy date decides. */
     public static final String ROUNDING = "rounding";
     public static final List<String> ROUNDING_MODES = List.of("half-up", "half-even");
@@ -284,6 +286,12 @@ public class Settings {
     public BigDecimal pot(String sheetId) {
         String value = get(sheetId, POT);
         return value.isEmpty() ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** The escalation gap: how many days a claim's previous reminder must be before the sheet's today for reminding it to escalate it; null when it is off. */
+    public Integer escalateAfter(String sheetId) {
+        String value = get(sheetId, ESCALATE_AFTER);
+        return value.isEmpty() ? null : Integer.valueOf(value);
     }
 
     /** The alert threshold, with two decimals; null when alerts are off. */

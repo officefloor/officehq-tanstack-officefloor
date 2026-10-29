@@ -63,6 +63,9 @@ public class ApplySettings {
         if (settings.reviewThreshold() != null) {
             dated(settings, store, today, Settings.REVIEW_THRESHOLD, settings.reviewThreshold());
         }
+        if (settings.escalateAfter() != null) {
+            store.set(settings.sheetId(), Settings.ESCALATE_AFTER, settings.escalateAfter());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

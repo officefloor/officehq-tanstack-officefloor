@@ -279,7 +279,7 @@ public class People {
      * into's (into's last statement stays their last; having none, from's last becomes it); from's name and aliases
      * become into's aliases; from's patrons are added to into's and anyone naming from names into instead (never
      * themselves, no repeats); from's pool memberships and closed-period figures move to into (added to into's own where
-     * into has one). from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
+     * into has one), and so do from's plans. from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
      */
     public void merge(String sheetId, long from, long into) {
         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
@@ -313,6 +313,7 @@ public class People {
             }
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, from);
+        jdbc.update("UPDATE plan SET person_id = ? WHERE person_id = ?", into, from);
         takeStatements(sheetId, from, into);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", from);
@@ -353,10 +354,10 @@ public class People {
             jdbc.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
                         "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, "
-                                + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, tags, "
+                                + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, escalated, tags, "
                                 + "void_reason, edited_by, due_terms, stated, stated_due, listed) "
                                 + "SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, corrects, due_by, "
-                                + "deferred_until, proofs, split_from, late_entry, reminded_on, tags, void_reason, edited_by, due_terms, "
+                                + "deferred_until, proofs, split_from, late_entry, reminded_on, escalated, tags, void_reason, edited_by, due_terms, "
                                 + "stated, stated_due, "
                                 + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) FROM claim WHERE id = ?",
                         new String[] { "id" });
