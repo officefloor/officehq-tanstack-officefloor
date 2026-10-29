@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Claims;
@@ -22,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class TransferPerson {
     // Only a steward (a delegation included) transfers a person who is not retired, to another sheet that is not archived
-    // and has none of their name, aliases or contact. Each numbered claim takes the next number of the other sheet, in
+    // and has none of their name, aliases or contact, unless one person there has their name or an alias of theirs:
+    // they are then merged into that person (who must not be retired), as a merge does. Each numbered claim takes the next number of the other sheet, in
     // the order the claims were opened (the sheet's today when each was first opened, then the order they were added).
     public void transfer(@RequestBody(required = false) TransferRequest body, @Val Person person, People people,
             Claims claims, Settings settings, Sheets sheets, Periods periods, Rollup rollup,
@@ -44,11 +46,21 @@ public class TransferPerson {
         if (sheets.isArchived(to)) {
             throw new PersonTransferRefusedException("The sheet " + to + " is archived.");
         }
-        if (people.nameTaken(to, person.name(), person.id())
-                || person.aliases().stream().anyMatch(a -> people.nameTaken(to, a, person.id()))) {
-            throw new PersonTransferRefusedException("A name or alias of theirs is already on the sheet " + to + ".");
+        // A person on the other sheet with their name or an alias of theirs is merged into, as a merge does.
+        List<String> names = new ArrayList<>();
+        names.add(person.name());
+        names.addAll(person.aliases());
+        Person into = names.stream().map(n -> people.findByName(to, n)).filter(Objects::nonNull).findFirst().orElse(null);
+        for (String name : names) {
+            Person holder = people.findByName(to, name);
+            if (holder == null ? people.nameTaken(to, name, person.id()) : holder.id() != into.id()) {
+                throw new PersonTransferRefusedException("A name or alias of theirs is already on the sheet " + to + ".");
+            }
         }
-        if (person.contact() != null && people.contactTaken(to, person.contact(), -1)) {
+        if (into != null && into.retired()) {
+            throw new PersonTransferRefusedException("A retired person cannot be merged.");
+        }
+        if (into == null && person.contact() != null && people.contactTaken(to, person.contact(), -1)) {
             throw new PersonTransferRefusedException("Their contact is already on the sheet " + to + ".");
         }
         Figures before = rollup.figures(to);
@@ -71,9 +83,9 @@ public class TransferPerson {
             numbers.put(claim.id(), claims.number(to, scope));
         }
 
-        long arrived = people.transfer(person, to, numbers);
+        long arrived = people.transfer(person, to, numbers, into == null ? null : into.id());
         sheets.markLoaded(to);
-        transferredOut.set(new TransferredPerson(person, to, before));
+        transferredOut.set(new TransferredPerson(person, to, before, into));
         responseOut.set(PersonResponse.from(people.find(to, arrived), sheets.today(to)));
     }
 }

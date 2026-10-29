@@ -311,25 +311,18 @@ public class People {
      * and closed-period figures are dropped with them.
      */
     public long transfer(Person person, String to, Map<Long, String> numbers) {
+        return transfer(person, to, numbers, null);
+    }
+
+    /**
+     * Transfer the person to the sheet {@code to} as {@link #transfer(Person, String, Map)} does, merged on arrival
+     * into the person {@code into} there when given (as {@link #merge(String, long, long)} does): their claims go to
+     * {@code into} (listed after theirs), their name and aliases become {@code into}'s aliases, and their grades and
+     * contact are dropped. Returns the id of the person they arrived as.
+     */
+    public long transfer(Person person, String to, Map<Long, String> numbers, Long into) {
         long from = person.id();
-        KeyHolder key = new GeneratedKeyHolder();
-        jdbc.update(con -> {
-            PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, "
-                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
-            ps.setString(1, to);
-            ps.setString(2, person.name());
-            ps.setString(3, person.grade());
-            ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
-            ps.setString(5, person.contact());
-            ps.setString(6, person.sheetId());
-            ps.setString(7, person.name());
-            ps.setString(8, to);
-            return ps;
-        }, key);
-        long arrived = key.getKey().longValue();
-        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
-                + "WHERE person_id = ? ORDER BY from_date", arrived, from);
+        long arrived = into != null ? into : arrive(person, to);
         jdbc.update("INSERT INTO person_alias (person_id, sheet_id, alias) SELECT ?, ?, alias FROM person_alias "
                 + "WHERE person_id = ? ORDER BY id", arrived, to, from);
         List<Long> claims = jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from);
@@ -374,6 +367,32 @@ public class People {
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_alias WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person WHERE id = ?", from);
+        if (into != null) {
+            alias(to, into, person.name());
+        }
+        return arrived;
+    }
+
+    /** Add the person, arriving on the sheet {@code to}, with their grades; returning their id there. */
+    private long arrive(Person person, String to) {
+        KeyHolder key = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
+            ps.setString(1, to);
+            ps.setString(2, person.name());
+            ps.setString(3, person.grade());
+            ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
+            ps.setString(5, person.contact());
+            ps.setString(6, person.sheetId());
+            ps.setString(7, person.name());
+            ps.setString(8, to);
+            return ps;
+        }, key);
+        long arrived = key.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
+                + "WHERE person_id = ? ORDER BY from_date", arrived, person.id());
         return arrived;
     }
 
