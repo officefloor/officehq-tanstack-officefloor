@@ -1,0 +1,109 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 42127520..32de3afd 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -2,16 +2,31 @@ import { useQuery } from '@tanstack/react-query';
+ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { peopleQuery } from './peopleQuery';
++import type { Person } from './peopleQuery';
+ import { PersonForm } from './PersonForm';
+ import { useEditingPerson } from './useEditingPerson';
+ import { useShowRetired } from './useShowRetired';
++import { compareDue, compareNames, SORT_KEYS, useSortBy } from './useSortBy';
++import type { SortKey } from './useSortBy';
++import { usePeopleDueTotals } from '../rates/due.slot';
+ 
+ function People({ sheetId }: { sheetId: string }) {
+   const people = useQuery(peopleQuery(sheetId));
+   const [, setEditingId] = useEditingPerson();
+   const [showRetired, setShowRetired] = useShowRetired();
+   // Retired people have no row at all unless "show retired" is on; their claims still count in every total.
+-  const listed = (people.data ?? []).filter((p) => showRetired || !p.retiredFrom);
++  const [sortBy, setSortBy] = useSortBy();
++  const dues = usePeopleDueTotals(sheetId);
++  // Sorting changes only the order shown; equal keys keep list order (the sort is stable).
++  const byKey: Record<SortKey, ((a: Person, b: Person) => number) | null> = {
++    added: null,
++    name: (a, b) => compareNames(a.name, b.name),
++    grade: (a, b) => a.grade.localeCompare(b.grade),
++    'due-total': (a, b) => compareDue(dues.get(a.id) ?? 'n/a', dues.get(b.id) ?? 'n/a'),
++  };
++  const compare = byKey[sortBy];
++  const filtered = (people.data ?? []).filter((p) => showRetired || !p.retiredFrom);
++  const listed = compare ? [...filtered].sort(compare) : filtered;
+ 
+   return (
+     <section data-testid="people">
+@@ -25,6 +40,16 @@ function People({ sheetId }: { sheetId: string }) {
+           onChange={(e) => setShowRetired(e.target.checked || undefined)}
+         />{' '}
+         Show retired
++      </label>{' '}
++      <label>
++        Sort by{' '}
++        <select data-testid="sort-by" value={sortBy} onChange={(e) => setSortBy(e.target.value === 'added' ? undefined : (e.target.value as SortKey))}>
++          {SORT_KEYS.map((k) => (
++            <option key={k} value={k}>
++              {k}
++            </option>
++          ))}
++        </select>
+       </label>
+       {people.isError && <p data-testid="people-load-error">Could not load the people.</p>}
+       <table>
+diff --git a/src/main/frontend/features/people/useSortBy.ts b/src/main/frontend/features/people/useSortBy.ts
+new file mode 100644
+index 00000000..efa08aec
+--- /dev/null
++++ b/src/main/frontend/features/people/useSortBy.ts
+@@ -0,0 +1,32 @@
++import { useSearchParam } from '../../url/useSearchParam';
++
++export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
++export type SortKey = (typeof SORT_KEYS)[number];
++
++const asSortKey = (raw: unknown): SortKey => (SORT_KEYS.includes(raw as SortKey) ? (raw as SortKey) : 'added');
++
++/**
++ * How the people list is sorted on this screen, kept in the URL: added (list order) when the screen is first opened,
++ * and left as it is by loading a sheet. It changes only what the screen shows, never the list order itself.
++ */
++export function useSortBy() {
++  return useSearchParam('sortBy', asSortKey);
++}
++
++/** Names compare as names are compared: trimmed, ignoring case (then as typed). */
++export function compareNames(a: string, b: string): number {
++  const x = a.trim().toLowerCase();
++  const y = b.trim().toLowerCase();
++  if (x !== y) return x < y ? -1 : 1;
++  return a < b ? -1 : a > b ? 1 : 0;
++}
++
++/** Due-totals compare as numbers, lowest first, with n/a last. */
++export function compareDue(a: string, b: string): number {
++  const x = Number(a);
++  const y = Number(b);
++  const xa = Number.isNaN(x);
++  const ya = Number.isNaN(y);
++  if (xa || ya) return xa === ya ? 0 : xa ? 1 : -1;
++  return x - y;
++}
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 023992f7..23657b8e 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -102,6 +102,12 @@ export function usePersonDueTotal(sheetId: string, personId: number | undefined)
+   return person ? personDue(person, people, claims, rates, today, floor, late, cap) : null;
+ }
+ 
++/** Every person's due-total, as in their row, by person id. */
++export function usePeopleDueTotals(sheetId: string): Map<number, string> {
++  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
++  return new Map(people.map((p) => [p.id, personDue(p, people, claims, rates, today, floor, late, cap)]));
++}
++
+ function DueTotal({ sheetId }: { sheetId: string }) {
+   return (
+     <p data-testid="rollup-due">
