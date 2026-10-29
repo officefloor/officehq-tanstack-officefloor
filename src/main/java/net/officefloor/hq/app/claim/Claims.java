@@ -9,7 +9,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import net.officefloor.hq.app.holiday.Holidays;
+import net.officefloor.hq.app.person.People;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -36,8 +38,11 @@ public class Claims {
 
     private final JdbcTemplate jdbc;
 
-    public Claims(JdbcTemplate jdbc) {
+    private final People people;
+
+    public Claims(JdbcTemplate jdbc, People people) {
         this.jdbc = jdbc;
+        this.people = people;
     }
 
     /** The sheet's claims, newest first (a reassigned claim as new as when it was moved). */
@@ -405,19 +410,28 @@ public class Claims {
     }
 
     /**
-     * The sheet's next claim number. The counter row is locked by the increment until the transaction
-     * commits, so two claims opened at once get different numbers.
+     * The sheet's next claim number: one after the last number given anywhere in the sheet's tree, which share one
+     * sequence. The tree's counter rows are locked (in sheet order) by the increment until the transaction commits,
+     * so two claims opened at once anywhere in the tree get different numbers.
      */
     private long nextNumber(String sheetId) {
-        try {
-            jdbc.update("INSERT INTO claim_number_seq (sheet_id, last_number) SELECT ?, 0 "
-                    + "WHERE NOT EXISTS (SELECT 1 FROM claim_number_seq WHERE sheet_id = ?)", sheetId, sheetId);
-        } catch (DuplicateKeyException e) {
-            // Another user started the sheet's counter at the same moment.
+        Set<String> tree = new TreeSet<>(people.tree(sheetId));
+        for (String sheet : tree) {
+            try {
+                jdbc.update("INSERT INTO claim_number_seq (sheet_id, last_number) SELECT ?, 0 "
+                        + "WHERE NOT EXISTS (SELECT 1 FROM claim_number_seq WHERE sheet_id = ?)", sheet, sheet);
+            } catch (DuplicateKeyException e) {
+                // Another user started the sheet's counter at the same moment.
+            }
         }
-        jdbc.update("UPDATE claim_number_seq SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
-        return jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?", Long.class,
-                sheetId);
+        long last = 0;
+        for (String sheet : tree) {
+            jdbc.update("UPDATE claim_number_seq SET last_number = last_number WHERE sheet_id = ?", sheet);
+            last = Math.max(last, jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?",
+                    Long.class, sheet));
+        }
+        jdbc.update("UPDATE claim_number_seq SET last_number = ? WHERE sheet_id = ?", last + 1, sheetId);
+        return last + 1;
     }
 
     /** The next number of the sheet's sequence for the period ("" for no period); locked like {@link #nextNumber(String)}. */
