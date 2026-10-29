@@ -9,7 +9,8 @@ import { sheetKey } from '../sheet/sheetQuery';
 
 /**
  * The control that transfers the person to another sheet by id (a steward only; not a retired person, not this
- * sheet). The person leaves this sheet with their claims, so every figure of the sheet is re-read.
+ * sheet). The person leaves this sheet with their claims, so every figure of the sheet is re-read. Beside it, the
+ * undo of the transfer that brought them here: a steward, on the sheet-today they arrived, sends them back.
  */
 function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -26,6 +27,15 @@ function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: numb
       await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
     },
     onError: () => setError('The person could not be transferred.'),
+  });
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<unknown>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/transfer-undo`, {}, user),
+    onSuccess: async () => {
+      setError('');
+      await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
+    },
+    onError: () => setError('The transfer could not be undone.'),
   });
 
   return (
@@ -53,6 +63,17 @@ function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: numb
         }}
       >
         Transfer
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-transfer-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          setError('');
+          once(() => undo.mutateAsync());
+        }}
+      >
+        Undo transfer
       </button>
     </td>
   );

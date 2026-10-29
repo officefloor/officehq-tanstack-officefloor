@@ -107,6 +107,12 @@ public class People {
                 datedTerms.getOrDefault(p.id(), List.of()))).toList();
     }
 
+    /** The sheet's today when the person arrived by transfer; null when they were not transferred in. */
+    public LocalDate transferredOn(long id) {
+        List<LocalDate> found = jdbc.queryForList("SELECT transferred_on FROM person WHERE id = ?", LocalDate.class, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The name the person had on the sheet they were transferred from; null when they were not transferred in. */
     public String originName(long id) {
         List<String> found = jdbc.queryForList("SELECT origin_name FROM " + AsOf.table("person") + " WHERE id = ?", String.class, id);
@@ -433,7 +439,8 @@ public class People {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet_id, origin_name, transferred_on, list_position) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT today_date FROM sheet WHERE id = ?), CURRENT_DATE), "
                             + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.name());
@@ -444,6 +451,7 @@ public class People {
             ps.setString(7, person.sheetId());
             ps.setString(8, person.name());
             ps.setString(9, to);
+            ps.setString(10, to);
             return ps;
         }, key);
         long arrived = key.getKey().longValue();

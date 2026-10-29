@@ -34,6 +34,13 @@ public class TransferPerson {
             throw new PersonTransferRefusedException("Only a steward can transfer a person.");
         }
         String to = body == null || body.toSheetId() == null ? "" : body.toSheetId().trim();
+        move(person, to, people, claims, settings, sheets, periods, rollup, transferredOut, responseOut);
+    }
+
+    /** Transfer the steward's person to the sheet {@code to} by the transfer rules; the undo of a transfer uses it too. */
+    static void move(Person person, String to, People people, Claims claims, Settings settings, Sheets sheets,
+            Periods periods, Rollup rollup, Out<TransferredPerson> transferredOut, Out<PersonResponse> responseOut)
+            throws PersonTransferRefusedException {
         if (to.isEmpty()) {
             throw new PersonTransferRefusedException("Give the id of the sheet to transfer to.");
         }
