@@ -1,0 +1,138 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 290a337a..968c9ac1 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -24,8 +24,9 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+ 
+-export function getJson<T>(path: string): Promise<T> {
+-  return send<T>(path);
++/** A read; with a user, it names the signed-in user (X-User) for a read whose answer depends on who asks. */
++export function getJson<T>(path: string, user?: string): Promise<T> {
++  return send<T>(path, user ? { headers: { 'X-User': user } } : undefined);
+ }
+ 
+ // A write names the signed-in user (X-User) so the server can record who made the change.
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+new file mode 100644
+index 00000000..a8878788
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -0,0 +1,44 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { claimsKey } from '../claims/claimsQuery';
++
++/** The counts, each null for a user who is not a steward. */
++type Dashboard = { pending: number | null; review: number | null; overdue: number | null };
++
++/** Under the claims' key, so whatever re-reads the claims re-reads the dashboard too. */
++const dashboardQuery = (sheetId: string, user: string) => ({
++  queryKey: [...claimsKey(sheetId), 'dashboard', user] as const,
++  queryFn: () => getJson<Dashboard>(`/api/sheets/${encodeURIComponent(sheetId)}/dashboard`, user),
++});
++
++/**
++ * The steward's dashboard: how many of the sheet's claims are PENDING, how many REVIEW, and how many that count are
++ * overdue. A user who is not a steward (a delegation included) sees the cells empty; as of a date, the counts and the
++ * role are as they stood then.
++ */
++function StewardDashboard({ user, sheetId }: { user: string; sheetId: string }) {
++  const dash = useQuery(dashboardQuery(sheetId, user)).data;
++  const shown = (n: number | null | undefined) => (n == null ? '' : String(n));
++
++  return (
++    <table data-testid="dashboard">
++      <thead>
++        <tr>
++          <th>Pending</th>
++          <th>Review</th>
++          <th>Overdue</th>
++        </tr>
++      </thead>
++      <tbody>
++        <tr>
++          <td data-testid="dash-pending-count">{shown(dash?.pending)}</td>
++          <td data-testid="dash-review-count">{shown(dash?.review)}</td>
++          <td data-testid="dash-overdue-count">{shown(dash?.overdue)}</td>
++        </tr>
++      </tbody>
++    </table>
++  );
++}
++
++export const contribution = SheetPanel.fill({ order: 0.6, Component: StewardDashboard });
+diff --git a/src/main/java/net/officefloor/hq/app/dashboard/DashboardResponse.java b/src/main/java/net/officefloor/hq/app/dashboard/DashboardResponse.java
+new file mode 100644
+index 00000000..5fbf3bb4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/dashboard/DashboardResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.dashboard;
++
++/** The steward's dashboard counts; each null for a user who is not a steward. */
++public record DashboardResponse(Integer pending, Integer review, Integer overdue) {
++
++    public static final DashboardResponse NONE = new DashboardResponse(null, null, null);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java b/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java
+new file mode 100644
+index 00000000..7a515746
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app.dashboard;
++
++import java.time.LocalDate;
++import java.util.List;
++import java.util.Map;
++import java.util.function.Function;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.server.http.ServerHttpConnection;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithDashboard {
++    // Only a steward (a delegation included) on the sheet's today sees the counts; as of a date, the role then.
++    public void respond(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection, Settings settings,
++            Sheets sheets, Claims claims, People people, ObjectResponse<DashboardResponse> response) {
++        String sheet = sheetId.trim();
++        if (!Settings.STEWARD.equals(settings.role(sheet, Audit.user(connection).trim()))) {
++            response.send(DashboardResponse.NONE);
++            return;
++        }
++        LocalDate today = sheets.today(sheet);
++        List<Claim> all = claims.list(sheet);
++        Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
++        int pending = (int) all.stream().filter(c -> c.status() == ClaimStatus.PENDING).count();
++        int review = (int) all.stream().filter(c -> c.status() == ClaimStatus.REVIEW).count();
++        int overdue = (int) all.stream().filter(c -> {
++            Person person = byId.get(c.personId());
++            return person != null && Rollup.counts(c, person, today) && settings.overdue(c, today);
++        }).count();
++        response.send(new DashboardResponse(pending, review, overdue));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml
+new file mode 100644
+index 00000000..34340a38
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml
+@@ -0,0 +1,6 @@
++# GET /api/sheets/{sheetId}/dashboard — the steward's dashboard for the user named by X-User: the sheet's PENDING and
++# REVIEW claims and its overdue claims that count ({"pending":1,"review":0,"overdue":2}); every count null for a user
++# who is not a steward (as of the sheet's today, or the as-of date).
++respond:
++  class: net.officefloor.hq.app.dashboard.RespondWithDashboard
++  govern: [ readonly-transaction ]
