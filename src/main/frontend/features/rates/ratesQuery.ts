@@ -89,6 +89,11 @@ export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
 }
 
+/** One sum less another (two decimals, a minus sign when lower). */
+export function difference(sum: string, previous: string): string {
+  return show(hundredths(sum) - hundredths(previous));
+}
+
 /** A sheet total of per-person figures: with three or more figures (n/a is none), the single highest and lowest are left out. */
 export function trimmedSum(dues: string[]): string {
   const figures = dues.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
