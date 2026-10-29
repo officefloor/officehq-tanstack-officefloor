@@ -29,7 +29,12 @@ public class People {
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
             rs.getObject("retired_from", LocalDate.class), List.of(), List.of(),
             rs.getObject("terms", Integer.class), rs.getString("contact"), List.of(),
-            rs.getString("origin_sheet_id"), List.of());
+            rs.getString("origin_sheet_id"), List.of(), tags(rs.getString("tags")));
+
+    /** Tags as the store keeps them, comma separated (null for none), as a list. */
+    private static List<String> tags(String column) {
+        return column == null ? List.of() : List.of(column.split(","));
+    }
 
     private final JdbcTemplate jdbc;
 
@@ -86,7 +91,7 @@ public class People {
         return found.stream().map(p -> new Person(p.id(), p.sheetId(), p.name(), p.grade(), p.version(),
                 p.retiredFrom(), holds.getOrDefault(p.id(), List.of()), dated.getOrDefault(p.id(), List.of()), p.terms(), p.contact(),
                 List.copyOf(aliases.getOrDefault(p.id(), List.of())), p.origin(),
-                retirements.getOrDefault(p.id(), List.of()))).toList();
+                retirements.getOrDefault(p.id(), List.of()), p.tags())).toList();
     }
 
     /** The name the person had on the sheet they were transferred from; null when they were not transferred in. */
@@ -206,18 +211,20 @@ public class People {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, list_position) VALUES (?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, list_position) VALUES (?, ?, ?, ?, ?, ?, "
                             + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, request.name());
             ps.setString(3, request.grade());
             ps.setObject(4, request.terms() == null ? null : Integer.valueOf(request.terms()), java.sql.Types.INTEGER);
             ps.setString(5, request.contact());
-            ps.setString(6, sheetId);
+            ps.setString(6, request.tags());
+            ps.setString(7, sheetId);
             return ps;
         }, key);
         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
-                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of(), null, List.of());
+                List.of(), request.terms() == null ? null : Integer.valueOf(request.terms()), request.contact(), List.of(), null, List.of(),
+                tags(request.tags()));
     }
 
     /**
@@ -225,8 +232,8 @@ public class People {
      * nothing, when the person has been saved since it was loaded.
      */
     public boolean save(Person person) {
-        return jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, version = ? WHERE id = ? AND version = ?",
-                person.name(), person.terms(), person.contact(), person.version(), person.id(), person.version() - 1) == 1;
+        return jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = ? WHERE id = ? AND version = ?",
+                person.name(), person.terms(), person.contact(), person.tags().isEmpty() ? null : String.join(",", person.tags()), person.version(), person.id(), person.version() - 1) == 1;
     }
 
     /** Give the person the grade from the date on, replacing any grade they were given from that same date. */
@@ -304,7 +311,7 @@ public class People {
 
     /**
      * Transfer the person to the sheet {@code to}, returning their id there. They arrive with their first grade and every
-     * grade given since (with its from-date), their terms, contact and aliases, and their claims (listed in the order
+     * grade given since (with its from-date), their terms, contact, tags and aliases, and their claims (listed in the order
      * they were, as the newest on that sheet) with their status, dates, notes, frozen figures, comments and logs; a
      * claim in {@code numbers} takes the number given there. The figures a statement bound and the references are not
      * carried. They leave their sheet entirely: their claims, statements, holds, watches, patron links, pool memberships
@@ -378,16 +385,17 @@ public class People {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet_id, origin_name, list_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
                             + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.name());
             ps.setString(3, person.grade());
             ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
             ps.setString(5, person.contact());
-            ps.setString(6, person.sheetId());
-            ps.setString(7, person.name());
-            ps.setString(8, to);
+            ps.setString(6, person.tags().isEmpty() ? null : String.join(",", person.tags()));
+            ps.setString(7, person.sheetId());
+            ps.setString(8, person.name());
+            ps.setString(9, to);
             return ps;
         }, key);
         long arrived = key.getKey().longValue();

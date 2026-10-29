@@ -46,6 +46,13 @@ final class PersonRules {
         // The contact is kept trimmed and lower-cased; a blank one is none.
         String contact = body.contact() == null ? "" : body.contact().trim().toLowerCase(java.util.Locale.ROOT);
         return new PersonRequest(name, grade, body.version(), from.isEmpty() ? null : from,
-                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)), contact.isEmpty() ? null : contact);
+                terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)), contact.isEmpty() ? null : contact, tags(body.tags()));
+    }
+
+    /** Comma separated tags as a person keeps them: each trimmed and lower-cased, blanks and repeats dropped, sorted. */
+    static String tags(String typed) {
+        java.util.List<String> tags = typed == null ? java.util.List.of() : java.util.Arrays.stream(typed.split(","))
+                .map(t -> t.trim().toLowerCase(java.util.Locale.ROOT)).filter(t -> !t.isEmpty()).distinct().sorted().toList();
+        return tags.isEmpty() ? null : String.join(",", tags);
     }
 }

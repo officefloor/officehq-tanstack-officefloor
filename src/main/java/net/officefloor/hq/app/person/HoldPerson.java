@@ -23,7 +23,7 @@ public class HoldPerson {
         holds.add(hold);
         holds.sort(Comparator.comparing(Hold::from));
         Person held = new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(),
-                person.retiredFrom(), List.copyOf(holds), person.dated(), person.terms(), person.contact(), person.aliases(), person.origin(), person.retirements());
+                person.retiredFrom(), List.copyOf(holds), person.dated(), person.terms(), person.contact(), person.aliases(), person.origin(), person.retirements(), person.tags());
         responseOut.set(PersonResponse.from(held, today));
     }
 }

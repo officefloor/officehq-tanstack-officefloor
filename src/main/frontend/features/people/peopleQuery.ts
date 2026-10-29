@@ -16,8 +16,10 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
  * the same (they were on the sheet before), which refuses every edit of them until a rename frees them. `origin` is
  * the id of the sheet they were transferred from; null when they were not transferred in. `retirements` are their
  * past retirements by from-date, each ended by unretiring them: a claim dated strictly between its dates is refused.
+ * `tags` are the tags they carry, trimmed, lower-cased, without repeats and sorted; a tag total counts each of their
+ * claims for them.
  */
-export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[] };
+export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[]; tags: string[] };
 
 /** A past retirement from `from` to `to`, the day they were unretired (yyyy-mm-dd). */
 export type Retired = { from: string; to: string };

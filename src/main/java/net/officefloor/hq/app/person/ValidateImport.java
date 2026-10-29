@@ -35,7 +35,7 @@ public class ValidateImport {
             }
             try {
                 PersonRequest request = PersonRules.parse(new PersonRequest(fields[0], fields[1], null, null,
-                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : ""));
+                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
                 if (!names.add(request.name().toLowerCase(Locale.ROOT))) {
                     throw new InvalidPersonException("The name " + request.name() + " is given twice in the import.");
                 }

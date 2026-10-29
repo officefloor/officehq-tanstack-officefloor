@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ConflictError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
+import { tagsKey } from '../claims/claimsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useUser } from '../session/useUser';
 import { GRADES, peopleKey, peopleQuery } from './peopleQuery';
@@ -23,6 +24,8 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [terms, setTerms] = useState('');
   // The person's contact; blank for none.
   const [contact, setContact] = useState('');
+  // The person's tags, comma separated; blank for none.
+  const [tags, setTags] = useState('');
   const today = useSheetToday(sheetId);
   const [error, setError] = useState('');
   // The version of the person the editor loaded; a save is refused once someone else has saved since.
@@ -34,6 +37,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
     setGradeFrom('');
     setTerms(p?.terms == null ? '' : String(p.terms));
     setContact(p?.contact ?? '');
+    setTags(p?.tags.join(', ') ?? '');
     setVersion(p?.version);
   };
 
@@ -50,7 +54,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [user] = useUser();
   const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string; contact: string }) =>
+    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string; contact: string; tags: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
@@ -63,8 +67,11 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
         setGradeFrom('');
         setTerms('');
         setContact('');
+        setTags('');
       }
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      // A person's new tags join the tags used on the sheet.
+      void queryClient.invalidateQueries({ queryKey: tagsKey(sheetId) });
     },
     onError: async (e) => {
       if (e instanceof ConflictError && editing) {
@@ -97,7 +104,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
       return;
     }
     // Contacts are unique on the sheet; the server refuses one in use (after its version check, so a stale editor is refreshed).
-    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim() } : { name: trimmed, grade, terms: terms.trim(), contact: contact.trim() }));
+    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim(), tags } : { name: trimmed, grade, terms: terms.trim(), contact: contact.trim(), tags }));
   };
 
   return (
@@ -162,6 +169,17 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
           value={contact}
           onChange={(e) => {
             setContact(e.target.value);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <label>
+        Tags{' '}
+        <input
+          data-testid="person-form-tags"
+          value={tags}
+          onChange={(e) => {
+            setTags(e.target.value);
             setError('');
           }}
         />

@@ -33,7 +33,7 @@ function BulkGrade({ user, sheetId }: { user: string; sheetId: string }) {
         try {
           await putJson<Person>(
             `/api/sheets/${encodeURIComponent(sheetId)}/people/${p.id}`,
-            { name: p.name, grade, gradeFrom: from.trim(), terms: p.terms == null ? '' : String(p.terms), contact: p.contact ?? '' },
+            { name: p.name, grade, gradeFrom: from.trim(), terms: p.terms == null ? '' : String(p.terms), contact: p.contact ?? '', tags: p.tags.join(',') },
             user,
           );
           changed++;

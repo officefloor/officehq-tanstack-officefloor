@@ -7,8 +7,8 @@ import { useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 
 /**
- * A due-total per tag, for every tag ever used on the sheet: the figures of the claims that count which carry it, added
- * up (n/a skipped; not capped). A claim with two tags counts in both.
+ * A due-total per tag, for every tag ever used on the sheet: the figures of the claims that count which carry it, or
+ * whose person carries it, added up (n/a skipped; not capped) — a claim once per tag. A claim with two tags counts in both.
  */
 function TagTotals({ sheetId }: { sheetId: string }) {
   const tags = useQuery(tagsQuery(sheetId)).data ?? [];
@@ -34,7 +34,7 @@ function TagTotals({ sheetId }: { sheetId: string }) {
             <td>{t}</td>
             <td data-testid={`tag-${t}-due-total`}>
               {sumDue(counting
-                .filter((c) => c.tags.includes(t))
+                .filter((c) => c.tags.includes(t) || people.find((p) => p.id === c.personId)?.tags.includes(t))
                 .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)))}
             </td>
           </tr>

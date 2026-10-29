@@ -7,6 +7,8 @@ package net.officefloor.hq.app.person;
  * which applies from the beginning of time, so it ignores {@code gradeFrom}. {@code terms} are the person's own
  * terms, a whole number of days, null (blank) for none. {@code contact} is the person's contact, trimmed and
  * lower-cased, null (blank) for none.
+ * {@code tags} are the person's tags, comma separated: each trimmed and lower-cased, blanks and repeats dropped, sorted
+ * (null for none).
  */
-public record PersonRequest(String name, String grade, Long version, String gradeFrom, String terms, String contact) {
+public record PersonRequest(String name, String grade, Long version, String gradeFrom, String terms, String contact, String tags) {
 }

@@ -39,7 +39,7 @@ public class SheetClones {
 
     /**
      * Copy the sheet {@code from} to the empty sheet {@code to}, which takes {@code today}: its settings, roles, rates,
-     * holidays, void reasons, templates, people (grades, terms, contacts, aliases, holds, retirements, patrons), pools,
+     * holidays, void reasons, templates, people (grades, terms, contacts, tags, aliases, holds, retirements, patrons), pools,
      * periods (all open) and claims (status, frozen figures, dates, notes, tags, references, logs; unnumbered and unbound by
      * any statement, listed in the order they were). Returns each copied claim's id here by its id on {@code from}, in the
      * order they were added to the clone.
@@ -73,8 +73,8 @@ public class SheetClones {
             KeyHolder key = new GeneratedKeyHolder();
             jdbc.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
-                        "INSERT INTO person (sheet_id, name, grade, retired_from, terms, contact, list_position, "
-                                + "origin_sheet_id, origin_name) SELECT ?, name, grade, retired_from, terms, contact, "
+                        "INSERT INTO person (sheet_id, name, grade, retired_from, terms, contact, tags, list_position, "
+                                + "origin_sheet_id, origin_name) SELECT ?, name, grade, retired_from, terms, contact, tags, "
                                 + "list_position, origin_sheet_id, origin_name FROM person WHERE id = ?",
                         new String[] { "id" });
                 ps.setString(1, to);

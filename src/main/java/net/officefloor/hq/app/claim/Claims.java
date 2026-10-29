@@ -87,13 +87,15 @@ public class Claims {
     }
 
     /**
-     * Every tag ever carried by a claim of the sheet (as of the date the store is read as of), sorted: a tag stays
-     * once used, even when no claim carries it now.
+     * Every tag ever carried by a claim or a person of the sheet (as of the date the store is read as of), sorted: a tag
+     * stays once used, even when nothing carries it now.
      */
     public List<String> tagsUsed(String sheetId) {
         LocalDate on = AsOf.date();
         List<String> columns = jdbc.queryForList("SELECT DISTINCT tags FROM claim_history WHERE sheet_id = ? AND tags IS NOT NULL"
-                + (on == null ? "" : " AND history_on <= DATE '" + on + "'"), String.class, sheetId);
+                + (on == null ? "" : " AND history_on <= DATE '" + on + "'")
+                + " UNION SELECT DISTINCT tags FROM person_history WHERE sheet_id = ? AND tags IS NOT NULL"
+                + (on == null ? "" : " AND history_on <= DATE '" + on + "'"), String.class, sheetId, sheetId);
         return columns.stream().flatMap(c -> tags(c).stream()).distinct().sorted().toList();
     }
 
