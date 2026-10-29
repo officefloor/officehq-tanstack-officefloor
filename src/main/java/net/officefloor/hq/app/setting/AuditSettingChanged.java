@@ -87,6 +87,10 @@ public class AuditSettingChanged {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.ESCALATE_AFTER, "value=" + settings.escalateAfter()));
         }
+        if (settings.reviewSla() != null) {
+            audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
+                    "key=" + Settings.REVIEW_SLA, "value=" + settings.reviewSla()));
+        }
     }
 
     private static String from(SheetSettings settings, String key) {

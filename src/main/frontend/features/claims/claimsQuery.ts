@@ -26,6 +26,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `tags` are its tags, trimmed, lower-cased, without repeats and sorted (empty for none);
  * `comments` are its comments, oldest first, each "<user> on <date>: <text>" with the sheet's today when written;
  * `batch` is the number of the settle batch (a bulk settle) that settled it (null when none, or settled one at a time);
+ * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum).
  */
 export type Claim = {
@@ -54,6 +55,15 @@ export type Claim = {
   comments: string[];
   batch: number | null;
   lines: string[];
+  reviewOn: string | null;
+};
+
+/** Whether a REVIEW claim is late: its review day plus the review SLA's days (`sla`, "" for none) is before the sheet's `today`. */
+export const isReviewLate = (c: Claim, today: string, sla: string) => {
+  if (c.status !== 'REVIEW' || c.reviewOn === null || sla === '' || today === '') return false;
+  const due = new Date(`${c.reviewOn}T00:00:00Z`);
+  due.setUTCDate(due.getUTCDate() + Number(sla));
+  return due.toISOString().slice(0, 10) < today;
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */

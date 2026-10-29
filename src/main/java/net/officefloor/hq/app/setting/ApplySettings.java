@@ -66,6 +66,9 @@ public class ApplySettings {
         if (settings.escalateAfter() != null) {
             store.set(settings.sheetId(), Settings.ESCALATE_AFTER, settings.escalateAfter());
         }
+        if (settings.reviewSla() != null) {
+            store.set(settings.sheetId(), Settings.REVIEW_SLA, settings.reviewSla());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

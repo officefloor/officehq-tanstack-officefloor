@@ -171,6 +171,13 @@ public class ValidateSettings {
             }
             escalateAfter = Integer.toString(Integer.parseInt(escalateAfter));
         }
+        String reviewSla = body == null || body.reviewSla() == null ? null : body.reviewSla().trim();
+        if (reviewSla != null && !reviewSla.isEmpty()) {
+            if (!DAYS.matcher(reviewSla).matches()) {
+                throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more.");
+            }
+            reviewSla = Integer.toString(Integer.parseInt(reviewSla));
+        }
         String entryDate = body == null || body.entryDate() == null ? null : body.entryDate().trim();
         if (entryDate != null && !entryDate.isEmpty()) {
             try {
@@ -268,7 +275,7 @@ public class ValidateSettings {
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
-                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null;
+                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -276,7 +283,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla));
     }
 
     private static String twoDecimals(String amount) {
