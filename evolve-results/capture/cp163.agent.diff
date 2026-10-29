@@ -1,0 +1,111 @@
+diff --git a/src/main/frontend/features/statements/statementLines.slot.tsx b/src/main/frontend/features/statements/statementLines.slot.tsx
+new file mode 100644
+index 00000000..bae5741f
+--- /dev/null
++++ b/src/main/frontend/features/statements/statementLines.slot.tsx
+@@ -0,0 +1,22 @@
++import { useQuery } from '@tanstack/react-query';
++import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
++import { statementsQuery } from './statementsQuery';
++
++/** The person's statement lines (see `Statements.lines`): one per statement still standing, oldest first. */
++function PersonStatementLines({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const shown = (useQuery(statementsQuery(sheetId)).data ?? []).find((s) => s.personId === personId);
++  return (
++    <td>
++      {(shown?.lines ?? []).map((line, i) => (
++        <div key={i} data-testid="person-statement-line-line">
++          {line}
++        </div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHeaders.fill({ order: 17.5, Component: () => <th>Statement lines</th> }),
++  PersonCells.fill({ order: 17.5, Component: PersonStatementLines }),
++];
+diff --git a/src/main/frontend/features/statements/statementsQuery.ts b/src/main/frontend/features/statements/statementsQuery.ts
+index c6d8adf2..9e5958e6 100644
+--- a/src/main/frontend/features/statements/statementsQuery.ts
++++ b/src/main/frontend/features/statements/statementsQuery.ts
+@@ -3,9 +3,16 @@ import { sheetKey } from '../sheet/sheetQuery';
+ 
+ /**
+  * A person's statements: how many were taken, and the last one's due-total ("n/a" when it had none) and
+- * date (yyyy-mm-dd), both null when none was taken. A person with no statement has no entry.
++ * date (yyyy-mm-dd), both null when none was taken, and a line per statement still standing, oldest first by
++ * date, as "yyyy-mm-dd due-total". A person with no statement has no entry.
+  */
+-export type Statements = { personId: number; count: number; dueTotal: string | null; date: string | null };
++export type Statements = {
++  personId: number;
++  count: number;
++  dueTotal: string | null;
++  date: string | null;
++  lines: string[];
++};
+ 
+ /** Under the sheet's key, so re-loading the sheet re-reads its statements. */
+ export const statementsKey = (sheetId: string) => [...sheetKey(sheetId), 'statements'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementResponse.java b/src/main/java/net/officefloor/hq/app/statement/StatementResponse.java
+index 31ec88a8..24591583 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementResponse.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementResponse.java
+@@ -1,8 +1,11 @@
+ package net.officefloor.hq.app.statement;
+ 
++import java.util.List;
++
+ /**
+  * A person's statements as the screen sees them: how many were taken, and the last one's due-total and
+- * date as yyyy-MM-dd (both null when none was taken).
++ * date as yyyy-MM-dd (both null when none was taken), and a line per statement still standing, oldest first by date
++ * (then in the order taken), as "yyyy-MM-dd due-total".
+  */
+-public record StatementResponse(long personId, int count, String dueTotal, String date) {
++public record StatementResponse(long personId, int count, String dueTotal, String date, List<String> lines) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statements.java b/src/main/java/net/officefloor/hq/app/statement/Statements.java
+index 780825ed..f72844ae 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Statements.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Statements.java
+@@ -2,9 +2,12 @@ package net.officefloor.hq.app.statement;
+ 
+ import net.officefloor.hq.app.history.AsOf;
+ import java.sql.Date;
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+ import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The store of statements, kept per sheet. */
+@@ -41,16 +44,22 @@ public class Statements {
+ 
+     /** Each person of the sheet who has a statement: their count, and their last statement's due-total and date. */
+     public List<StatementResponse> list(String sheetId) {
++        Map<Long, List<String>> lines = new HashMap<>();
++        jdbc.query("SELECT person_id, stated_on, due_total FROM " + AsOf.table("statement") + " WHERE sheet_id = ? "
++                + "ORDER BY person_id, stated_on, id",
++                (RowCallbackHandler) rs -> lines.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
++                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)),
++                sheetId);
+         return jdbc.query("SELECT s.person_id, c.n, s.due_total, s.stated_on FROM " + AsOf.table("statement", "s")
+                 + " JOIN (SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + AsOf.table("statement") + " WHERE sheet_id = ? "
+                 + "GROUP BY person_id) c ON s.id = c.last_id ORDER BY s.person_id",
+                 (rs, n) -> new StatementResponse(rs.getLong(1), rs.getInt(2), rs.getString(3),
+-                        rs.getDate(4).toLocalDate().toString()),
++                        rs.getDate(4).toLocalDate().toString(), lines.getOrDefault(rs.getLong(1), List.of())),
+                 sheetId);
+     }
+ 
+     public StatementResponse find(String sheetId, long personId) {
+         return list(sheetId).stream().filter(s -> s.personId() == personId).findFirst()
+-                .orElse(new StatementResponse(personId, 0, null, null));
++                .orElse(new StatementResponse(personId, 0, null, null, List.of()));
+     }
+ }
