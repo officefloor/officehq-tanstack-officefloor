@@ -4,7 +4,7 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
-import { peopleQuery } from '../people/peopleQuery';
+import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
 import { patronSharesOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useCap, useFloor, useLate } from '../settings/settingsQuery';
@@ -107,6 +107,18 @@ function AgedTotal({ sheetId }: { sheetId: string }) {
 export function useSheetDueTotal(sheetId: string) {
   const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
   return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
+}
+
+/**
+ * Per grade (as `GRADES` orders them), the due-totals of the people on it today, retired people left out, added up
+ * skipping n/a — as the summary shows them.
+ */
+export function useGradeDueTotals(sheetId: string): string[] {
+  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+  const unretired = people.filter((p) => p.retiredFrom === null);
+  return GRADES.map((g) =>
+    sumDue(unretired.filter((p) => gradeOn(p, today) === g).map((p) => personDue(p, people, claims, rates, today, floor, late, cap))),
+  );
 }
 
 /** One person's due-total, as in their row; null when there is no such person. */
