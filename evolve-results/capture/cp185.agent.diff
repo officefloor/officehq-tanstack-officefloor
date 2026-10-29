@@ -1,0 +1,282 @@
+diff --git a/src/main/frontend/features/claims/settlePart.slot.tsx b/src/main/frontend/features/claims/settlePart.slot.tsx
+new file mode 100644
+index 00000000..3cb13174
+--- /dev/null
++++ b/src/main/frontend/features/claims/settlePart.slot.tsx
+@@ -0,0 +1,56 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson, RefusedError } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { ClaimCells } from '../../slots/defs/claimColumns';
++import { useUser } from '../session/useUser';
++import { claimsKey } from './claimsQuery';
++import type { Claim } from './claimsQuery';
++import { useClaimError } from './useClaimError';
++
++/**
++ * The entry and button that part-settle an OPEN claim: the amount is split off as the split button does, and the new
++ * claim settled by the user as the settle button does (PENDING above the clerk limit). Four eyes and the proof rule are
++ * judged on this claim. The server refuses the whole action when the split or the settle would be refused, and the
++ * refusal shows on the claim until its next action.
++ */
++function ClaimSettlePart({ sheetId, claim }: { sheetId: string; claim: Claim }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const [, setError] = useClaimError(claim.id);
++  const [amount, setAmount] = useState('');
++  const once = useSubmitOnce();
++  const settlePart = useMutation({
++    mutationFn: (value: string) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/settle-part`, { amount: value }, user),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++    onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be part-settled.'),
++  });
++
++  return (
++    <td>
++      <input
++        data-testid="claim-settle-part-amount"
++        placeholder="0.00"
++        value={amount}
++        onChange={(e) => {
++          setAmount(e.target.value);
++          setError('');
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-settle-part"
++        disabled={settlePart.isPending}
++        onClick={() => {
++          setError('');
++          once(() => settlePart.mutateAsync(amount.trim()));
++        }}
++      >
++        Settle part
++      </button>
++    </td>
++  );
++}
++
++export const contribution = ClaimCells.fill({ order: 24.5, Component: ClaimSettlePart });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 4190b615..a6547db6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -88,14 +88,16 @@ public class ApplyClaimStatus {
+         if (next == ClaimStatus.PENDING) {
+             throw new ClaimStatusRefusedException("A claim becomes PENDING only when a clerk settles it above the clerk limit.");
+         }
++        // Four eyes and the proof rule are judged on the claim itself, or for a part-settle on the claim it was split off.
++        Claim judged = judged(claim);
+         // Four eyes: the user who opened a claim cannot settle it, nor approve it.
+-        if (next == ClaimStatus.SETTLED && claim.openedBy() != null && claim.openedBy().equals(user)) {
++        if (next == ClaimStatus.SETTLED && judged.openedBy() != null && judged.openedBy().equals(user)) {
+             throw new ClaimStatusRefusedException(claim.status() == ClaimStatus.PENDING
+                     ? "The user who opened a claim cannot approve it."
+                     : "The user who opened a claim cannot settle it.");
+         }
+         // Nor can the user who last edited it.
+-        if (next == ClaimStatus.SETTLED && user.equals(claims.editedBy(claim))) {
++        if (next == ClaimStatus.SETTLED && user.equals(claims.editedBy(judged))) {
+             throw new ClaimStatusRefusedException(claim.status() == ClaimStatus.PENDING
+                     ? "The user who last edited a claim cannot approve it."
+                     : "The user who last edited a claim cannot settle it.");
+@@ -151,12 +153,14 @@ public class ApplyClaimStatus {
+         // A claim whose due is above the proof threshold in force on its date (its person's grade's, else the sheet's) is settled or approved only once it has a
+         // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
+         // While the sheet has proof kinds, such a claim needs at least one proof of each of them instead.
+-        if (next == ClaimStatus.SETTLED && due != null) {
+-            java.util.List<String> kinds = settings.proofKinds(claim.sheetId());
+-            java.util.List<String> missing = kinds.isEmpty() ? (claim.proofs() == 0 ? java.util.List.of("") : java.util.List.of())
+-                    : kinds.stream().filter(kind -> claim.proofsOf(kind) == 0).toList();
+-            BigDecimal threshold = missing.isEmpty() ? null : settings.proofThreshold(claim);
+-            if (threshold != null && due.compareTo(threshold) > 0) {
++        BigDecimal judgedDue = judged == claim ? due : judged.stated() ? judged.statedDue()
++                : settings.withLate(judged, due(judged, people, rates, settings), sheets.today(judged.sheetId()));
++        if (next == ClaimStatus.SETTLED && judgedDue != null) {
++            java.util.List<String> kinds = settings.proofKinds(judged.sheetId());
++            java.util.List<String> missing = kinds.isEmpty() ? (judged.proofs() == 0 ? java.util.List.of("") : java.util.List.of())
++                    : kinds.stream().filter(kind -> judged.proofsOf(kind) == 0).toList();
++            BigDecimal threshold = missing.isEmpty() ? null : settings.proofThreshold(judged);
++            if (threshold != null && judgedDue.compareTo(threshold) > 0) {
+                 throw new ClaimProofNeededException("The claim's due is above the proof threshold (" + threshold.toPlainString()
+                         + "): add " + (kinds.isEmpty() ? "a proof" : "a " + String.join(" and a ", missing))
+                         + " before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));
+@@ -222,6 +226,11 @@ public class ApplyClaimStatus {
+         requestOut.set(new ClaimStatusRequest(action, reason, voidReason));
+     }
+ 
++    /** The claim four eyes and the proof rule are judged on: the claim itself (a part-settle judges the claim it split). */
++    protected Claim judged(Claim claim) {
++        return claim;
++    }
++
+     /**
+      * The unbound claim's due now, before its late charge: its amount times its
+      * person's grade's rate on the claim's date, rounded by the policy date (not yet floored); null when none applies.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+new file mode 100644
+index 00000000..6900e096
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+@@ -0,0 +1,88 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.batch.SettleBatches;
++import net.officefloor.hq.app.flag.Flags;
++import net.officefloor.hq.app.holiday.Holidays;
++import net.officefloor.hq.app.period.Periods;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.rollup.Figures;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupLines;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.hq.app.voidreason.VoidReasons;
++import net.officefloor.hq.app.watch.NotifyWatchers;
++import net.officefloor.hq.app.watch.Watches;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ApplyPartSettle {
++    // All or nothing: the amount is split off as the split button does (with its lines and rollup), then the new claim is
++    // settled as the settle button does (going PENDING above the clerk limit; with its lines, watchers and rollup), in one
++    // transaction. Four eyes and the proof rule are judged on the original claim as loaded (the new claim's opener is the
++    // user). If either step is refused, the transaction is rolled back, its lines dropped and the refusal sent.
++    // Run outside the pipeline's governance: this step owns its transaction.
++    public void apply(@RequestBody(required = false) SplitRequest body, @Val Claim claim, Claims claims, People people,
++            Rates rates, Settings settings, Holidays holidays, Sheets sheets, Periods periods, Rollup rollup,
++            VoidReasons voidReasons, SettleBatches batches, Flags flags, Watches watches, Audit audit,
++            PlatformTransactionManager transactions, ServerHttpConnection connection, Out<ClaimResponse> responseOut)
++            throws ClaimPartSettleRefusedException {
++        String sheet = claim.sheetId();
++        String user = Audit.user(connection).trim();
++        List<Object[]> lines = new ArrayList<>();
++        // Holds the lines until the transaction commits; it writes nothing itself.
++        Audit buffer = new Audit(".", null) {
++            @Override
++            public void record(String entry, LocalDate on) {
++                lines.add(new Object[] { entry, on });
++            }
++        };
++        String[] refused = new String[1];
++        ClaimResponse settled = new TransactionTemplate(transactions).execute(tx -> {
++            try {
++                Figures before = rollup.figures(sheet);
++                Split[] split = new Split[1];
++                new ApplySplit().apply(body, claim, claims, people, settings, holidays, sheets, periods, rollup,
++                        connection, r -> { }, s -> split[0] = s);
++                new AuditClaimSplit().audit(split[0], people, connection, buffer);
++                RollupLines.record(sheet, user, before, rollup, buffer);
++
++                Claim created = split[0].created();
++                before = rollup.figures(sheet);
++                ClaimResponse[] changed = new ClaimResponse[1];
++                ClaimStatusRequest[] request = new ClaimStatusRequest[1];
++                new ApplyClaimStatus() {
++                    @Override
++                    protected Claim judged(Claim c) {
++                        return claim;
++                    }
++                }.apply(ClaimStatus.SETTLED.name(), null, created, claims, people, rates, settings, sheets, periods,
++                        rollup, voidReasons, batches, flags, connection, r -> changed[0] = r, r -> request[0] = r);
++                new AuditClaimStatus().audit(created, changed[0], request[0], people, connection, buffer);
++                new NotifyWatchers().notifyWatchers(created, changed[0], people, watches, connection, buffer);
++                RollupLines.record(sheet, user, before, rollup, buffer);
++                return changed[0];
++            } catch (Exception e) {
++                refused[0] = e.getMessage() == null ? "The claim could not be part-settled." : e.getMessage();
++                tx.setRollbackOnly();
++                return null;
++            }
++        });
++        if (settled == null) {
++            throw new ClaimPartSettleRefusedException(refused[0]);
++        }
++        for (Object[] line : lines) {
++            audit.record((String) line[0], (LocalDate) line[1]);
++        }
++        responseOut.set(settled);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimPartSettleRefusedException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimPartSettleRefusedException.java
+new file mode 100644
+index 00000000..207ac907
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimPartSettleRefusedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++/** A part-settle whose split or whose settle of the split-off claim would be refused: nothing is stored. */
++public class ClaimPartSettleRefusedException extends Exception {
++
++    public ClaimPartSettleRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimPartSettleRefused.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimPartSettleRefused.java
+new file mode 100644
+index 00000000..4659dd81
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimPartSettleRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimPartSettleRefused {
++    public void handle(@Parameter ClaimPartSettleRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimPartSettleRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimPartSettleRefusedException.yml
+new file mode 100644
+index 00000000..668fc0e8
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimPartSettleRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimPartSettleRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 00000000..75431ae2
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,23 @@
++# POST /api/sheets/{sheetId}/claims/{claimId}/settle-part — part-settle an OPEN claim (body: {"amount":"5.25"}).
++# The amount is split off as the split action does (CLAIM_SPLIT, CLAIM_OPENED, rollup lines), and the new claim is then
++# settled by the user as the settle action does (CLAIM_SETTLED, or CLAIM_PENDING above the clerk limit; watchers; rollup
++# lines). Four eyes and the proof rule are judged on the original claim; the new claim's opener is the user, who may
++# still part-settle it. 422 when the split or the settle would be refused; nothing is stored or recorded. 404 for a
++# claim not on the sheet. The step owns its transaction, so it is not governed here.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  next: closed
++closed:
++  class: net.officefloor.hq.app.claim.RefuseClosedClaim
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyPartSettle
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithEditedClaim
