@@ -254,6 +254,20 @@ export function settledAndOpen(person: Person | undefined, people: Person[], cla
 }
 
 /**
+ * A person's score: their settled-total (two decimals) divided by 100, minus 5 for each of their overdue claims that
+ * count, rounded half to even to a whole number.
+ */
+export function score(settled: string, overdueCount: number): string {
+  const n = hundredths(settled) - 50000n * BigInt(overdueCount);
+  const negative = n < 0n;
+  const abs = negative ? -n : n;
+  const whole = abs / 10000n;
+  const rest = abs % 10000n;
+  const rounded = rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+  return (negative && rounded !== 0n ? -rounded : rounded).toString();
+}
+
+/**
  * What setting the grade's rate to `pct` on every date would change: of the OPEN and PENDING claims of people on the
  * grade (the grade they had on the claim's date), how many would show a different figure, and the sum of the new
  * figures minus the current ones (two decimals; n/a counts as 0.00). A claim a statement bound keeps its figure.

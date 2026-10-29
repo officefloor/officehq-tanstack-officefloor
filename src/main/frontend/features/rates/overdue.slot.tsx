@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useFloor, useLate } from '../settings/settingsQuery';
-import { figure, isOverdue, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
+import { figure, isOverdue, ratesQuery, score, settledAndOpen, sumDue, trimmedSum } from './ratesQuery';
 import { useColumnsShown } from '../people/useColumns';
 
 function useOverdueData(sheetId: string) {
@@ -66,6 +66,15 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
+/** A person's score: their settled-total / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
+function PersonScore({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const data = useOverdueData(sheetId);
+  const person = data.people.find((p) => p.id === personId);
+  const { count } = person ? overdue(data, person) : { count: 0 };
+  const [settled] = settledAndOpen(person, data.people, data.claims, data.rates, data.today, data.floor, data.late);
+  return <td data-testid="person-score">{score(settled, count)}</td>;
+}
+
 /** The sheet's overdue claims that count: how many, and their total (every person's, trimmed of the highest and lowest). */
 export function useSheetOverdue(sheetId: string) {
   const data = useOverdueData(sheetId);
@@ -100,5 +109,7 @@ export const contributions = [
   ClaimCells.fill({ order: 12, Component: ClaimDueBy }),
   PersonHeaders.fill({ order: 16, Component: OverdueHeader }),
   PersonCells.fill({ order: 16, Component: PersonOverdue }),
+  PersonHeaders.fill({ order: 16.5, Component: () => <th>Score</th> }),
+  PersonCells.fill({ order: 16.5, Component: PersonScore }),
   SheetPanel.fill({ order: 26, Component: OverdueTotal }),
 ];
