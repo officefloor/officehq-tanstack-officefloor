@@ -1,32 +1,25 @@
-# POST /api/sheets/{sheetId}/claims/paste — add a DRAFT claim per pasted line. Body {"text":"..."}, lines of
+# POST /api/sheets/{sheetId}/claims/paste — add and open a claim per pasted line. Body {"text":"..."}, lines of
 # name,amount,date,note (a blank date is the entry date, else the sheet's today; the note may hold commas or be absent, and may end in " #<reference>": that part is the claim's reference, not its note). Every line is
 # checked first, by the claim form's rules and against a person of that name (ignoring case) on the sheet: 400 for a
-# bad line, a name not on the sheet, a reference already used on the sheet or repeated in the paste (ignoring case), 422 for a date inside a closed period or after the person's retirement —
-# and then nothing is stored. Responds {"added":n}.
+# bad line, a name not on the sheet, a reference already used on the sheet or repeated in the paste (ignoring case), 422 for a date inside a closed period or after the person's retirement.
+# A line whose person, date and note match one of the person's claims as they stood before the paste (VOID and DELETED
+# ones aside) updates the newest such DRAFT instead (CLAIM_EDITED when its amount changes); 400 when the matches include
+# no DRAFT, or an earlier line already updates it.
+# Then, in paste order, each claim is added (or edited) and opened as its open button opens it (CLAIM_OPENED, then the
+# ROLLUP and TOTALS lines), all in one transaction: any refusal the open button would give refuses the whole paste, and
+# then nothing is stored or recorded. Responds {"added":n}, the lines that went through.
+# The add step owns its transaction, so the pipeline is not governed.
 viewer:
   class: net.officefloor.hq.app.setting.RefuseViewer
   next: archived
-  govern: [ transaction ]
 archived:
   class: net.officefloor.hq.app.sheet.RefuseArchived
-  next: snapshot
-  govern: [ transaction ]
-snapshot:
-  class: net.officefloor.hq.app.rollup.SnapshotRollup
   next: validate
-  govern: [ transaction ]
 validate:
   class: net.officefloor.hq.app.claim.ValidatePaste
   next: add
-  govern: [ transaction ]
 add:
   class: net.officefloor.hq.app.claim.AddPastedClaims
-  next: rollup
-  govern: [ transaction ]
-rollup:
-  class: net.officefloor.hq.app.rollup.AuditRollup
   next: respond
-  govern: [ transaction ]
 respond:
   class: net.officefloor.hq.app.claim.RespondWithPasted
-  govern: [ transaction ]

@@ -9,9 +9,10 @@ import { peopleKey } from '../people/peopleQuery';
 import { useUser } from '../session/useUser';
 
 /**
- * The paste box: lines of name,amount,date,note each add a DRAFT claim, in order, for the person of
- * that name or alias on the sheet (ignoring case). The server checks every line by the claim form's rules first
- * and adds nothing when any is refused. Shows how many were added.
+ * The paste box: lines of name,amount,date,note each add a claim, in order, for the person of that name or alias
+ * on the sheet (ignoring case), and open it as its open button would; a line matching a DRAFT of that person (same
+ * date and note) updates and opens that DRAFT instead. The server checks every line first, and stores nothing when any
+ * line, or any open, is refused. Shows how many lines went through.
  */
 function PasteClaims({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();

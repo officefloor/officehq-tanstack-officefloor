@@ -22,6 +22,9 @@ public class ValidatePaste {
     // may hold commas or be absent). A note ending in " #<reference>" gives the claim that reference (that part is not
     // the note), refused when the sheet or an earlier line already uses it (ignoring case). Blank lines are skipped; a
     // paste with no line is refused.
+    // A line whose person, date and note match one of the person's claims as they stood before the paste (VOID and DELETED
+    // ones aside) updates the newest such DRAFT instead of adding a claim; matches that include no DRAFT refuse the line,
+    // and so do two lines updating the same DRAFT.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest body, People people,
             Claims claims, Settings settings, Holidays holidays, Periods periods, Out<PastedLines> out)
             throws InvalidClaimException, ClaimInClosedPeriodException, ClaimAfterRetirementException {
@@ -29,6 +32,8 @@ public class ValidatePaste {
         String text = body == null || body.text() == null ? "" : body.text();
         List<PastedLine> lines = new ArrayList<>();
         Set<String> refs = new HashSet<>();
+        List<Claim> before = claims.list(sheet);
+        Set<Long> drafts = new HashSet<>();
         int n = 0;
         for (String line : text.split("\\r?\\n")) {
             n++;
@@ -69,11 +74,37 @@ public class ValidatePaste {
                         + " is closed: no claim due by " + dueBy + " can be added.");
             }
             RefuseRetiredInput.check(person, date);
-            lines.add(new PastedLine(person, input));
+            Claim draft = null;
+            boolean matched = false;
+            for (Claim claim : before) {
+                if (claim.personId() == person.id() && date.equals(claim.date())
+                        && note(input.note()).equals(note(claim.note())) && claim.status() != ClaimStatus.VOID
+                        && claim.status() != ClaimStatus.DELETED) {
+                    matched = true;
+                    if (claim.status() == ClaimStatus.DRAFT) {
+                        draft = claim;
+                        break;
+                    }
+                }
+            }
+            if (matched && draft == null) {
+                throw new InvalidClaimException("Line " + n + ": " + person.name() + "'s claim of " + date
+                        + " with that note is not a DRAFT: it cannot be pasted again.");
+            }
+            if (draft != null && !drafts.add(draft.id())) {
+                throw new InvalidClaimException("Line " + n + ": an earlier line already updates " + person.name()
+                        + "'s DRAFT claim of " + date + " with that note.");
+            }
+            lines.add(new PastedLine(person, input, draft));
         }
         if (lines.isEmpty()) {
             throw new InvalidClaimException("Paste at least one line of name,amount,date,note.");
         }
         out.set(new PastedLines(lines));
+    }
+
+    /** A note as a paste line and a claim are matched on: trimmed, none as empty. */
+    private static String note(String note) {
+        return note == null ? "" : note.trim();
     }
 }
