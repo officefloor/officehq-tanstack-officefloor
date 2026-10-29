@@ -18,7 +18,7 @@ public class SheetClones {
 
     /** The tables kept per sheet (by sheet_id) whose rows show a sheet has been used. */
     private static final List<String> SHEET_TABLES = List.of("person", "claim", "setting", "setting_from", "rate",
-            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool", "crew");
+            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool", "crew", "grade_retired");
 
     private final JdbcTemplate jdbc;
 
@@ -64,6 +64,8 @@ public class SheetClones {
                 to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, reason, listed) SELECT ?, reason, listed FROM void_reason "
                 + "WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO grade_retired (sheet_id, grade) SELECT ?, grade FROM grade_retired WHERE sheet_id = ?",
+                to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note, listed) SELECT ?, name, amount, note, listed "
                 + "FROM claim_template WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, closed, closed_total, soft) "

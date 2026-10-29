@@ -17,8 +17,9 @@ public class ApplyPerson {
     // The form's terms are recorded from its terms from-date, keeping (or replacing, for the same date) those already
     // recorded; with no from-date they are recorded from the beginning of time, unless they are the terms in force today.
     // The name is refused when anyone else on the sheet's tree uses it as a name or alias.
+    // A retired grade is refused, unless the save leaves it as the grade in force today, with no from-date.
     public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets,
-            Out<PersonResponse> responseOut) throws InvalidPersonException, PersonConflictException {
+            net.officefloor.hq.app.grade.Grades grades, Out<PersonResponse> responseOut) throws InvalidPersonException, PersonConflictException {
         if (request.version() != null && request.version() != person.version()) {
             throw new PersonConflictException("Someone else has saved this person since it was opened.");
         }
@@ -33,6 +34,10 @@ public class ApplyPerson {
             throw new InvalidPersonException("The contact is already in use.");
         }
         LocalDate today = sheets.today(person.sheetId());
+        if (grades.retired(person.sheetId(), request.grade())
+                && (request.gradeFrom() != null || !request.grade().equals(person.gradeOn(today)))) {
+            throw new InvalidPersonException("Grade " + request.grade() + " is retired.");
+        }
         Integer terms = request.terms() == null ? null : Integer.valueOf(request.terms());
         String fromStart = request.termsFrom() == null && !Objects.equals(terms, person.ownTermsOn(today)) ? request.terms()
                 : person.terms() == null ? null : person.terms().toString();

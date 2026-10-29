@@ -11,19 +11,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateImport {
     // Every line is checked before any is stored, by the person form's rules: name,grade,terms,contact (the last two may be
-    // absent or blank; a blank grade is the sheet's default grade). A line whose name matches a person on the sheet (by name or alias, as names are compared) updates
+    // absent or blank; a blank grade is the sheet's default grade, or A when that is retired). A retired grade is refused, unless the line matches a person and leaves them on it (the grade in force today). A line whose name matches a person on the sheet (by name or alias, as names are compared) updates
     // them, checked as their edit form would be; any other line adds, and is refused when its name is used on the sheet's
     // tree as a name or alias. A contact already used by someone else on the sheet is refused, as is a name, contact or
     // matched person repeated in the import (ignoring case). Blank lines are skipped; an import with no line is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRequest body, People people,
-            net.officefloor.hq.app.setting.Settings settings, Out<ImportedPeople> out) throws InvalidPersonException {
+            net.officefloor.hq.app.setting.Settings settings, net.officefloor.hq.app.grade.Grades grades,
+            net.officefloor.hq.app.sheet.Sheets sheets, Out<ImportedPeople> out) throws InvalidPersonException {
         String sheet = sheetId.trim();
         String text = body == null || body.text() == null ? "" : body.text();
         List<ImportedPeople.Line> lines = new ArrayList<>();
         Set<String> names = new HashSet<>();
         Set<String> contacts = new HashSet<>();
         Set<Long> matched = new HashSet<>();
-        String defaultGrade = settings.defaultGrade(sheet);
+        String defaultGrade = grades.defaultFor(sheet, settings.defaultGrade(sheet));
+        java.time.LocalDate today = sheets.today(sheet);
         int n = 0;
         for (String line : text.split("\\r?\\n")) {
             n++;
@@ -53,6 +55,10 @@ public class ValidateImport {
                     }
                 } else if (people.nameTaken(sheet, request.name(), -1)) {
                     throw new InvalidPersonException("The name is already in use.");
+                }
+                if (grades.retired(sheet, request.grade())
+                        && (existing == null || !request.grade().equals(existing.gradeOn(today)))) {
+                    throw new InvalidPersonException("Grade " + request.grade() + " is retired.");
                 }
                 if (request.contact() != null
                         && people.contactTaken(sheet, request.contact(), existing == null ? -1 : existing.id())) {
