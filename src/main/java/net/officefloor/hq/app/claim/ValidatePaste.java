@@ -67,7 +67,7 @@ public class ValidatePaste {
                 throw new InvalidClaimException("Line " + n + ": " + e.getMessage());
             }
             LocalDate date = input.date() != null ? input.date() : settings.entryDate(sheet);
-            LocalDate dueBy = holidays.dueBy(sheet, date, person.termsOn(date, settings));
+            LocalDate dueBy = holidays.dueBy(sheet, date, person.termsNow(settings));
             Period closed = periods.closedOn(sheet, dueBy);
             if (closed != null) {
                 throw new ClaimInClosedPeriodException("Line " + n + ": the period " + closed.name()

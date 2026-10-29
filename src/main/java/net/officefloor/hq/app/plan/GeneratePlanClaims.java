@@ -47,7 +47,7 @@ public class GeneratePlanClaims {
                 if (done.contains(date)) {
                     continue;
                 }
-                int terms = person.termsOn(date, settings);
+                int terms = person.termsNow(settings);
                 LocalDate dueBy = holidays.dueBy(sheet, date, terms);
                 try {
                     ClaimFormRules.refuseClosed(periods, sheet, dueBy);

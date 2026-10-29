@@ -212,6 +212,20 @@ public class Settings {
         return Integer.parseInt(value.isEmpty() ? TERMS_DEFAULT : value);
     }
 
+    /**
+     * The terms a claim made now is fixed with: those in force on the sheet's today, for a person not on the sheet the
+     * terms of {@code grade} (the sheet's when null).
+     */
+    public int termsNow(String sheetId, String grade) {
+        LocalDate today = sheets.today(sheetId);
+        return grade == null ? terms(sheetId, today) : terms(sheetId, grade, today);
+    }
+
+    /** The sheet's today. */
+    public LocalDate today(String sheetId) {
+        return sheets.today(sheetId);
+    }
+
     /** The key a grade's own terms are kept under: terms-<grade>. */
     public static String gradeTermsKey(String grade) {
         return TERMS + "-" + grade;

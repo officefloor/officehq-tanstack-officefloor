@@ -12,14 +12,14 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 
 public class AddClaim {
-    // The due-by is fixed now: the claim's date plus the person's own terms, else the terms of
-    // their grade in force on that date (the sheet's when the grade has none), moved past the sheet's holidays as they
+    // The due-by is fixed now: the claim's date plus the terms in force on the sheet's today (the day it
+    // is made, not its date): the person's own then, else those of their grade then (the sheet's when the grade has none), moved past the sheet's holidays as they
     // are now: on a holiday it is the next day that is not one.
     // Its status log starts with its DRAFT line, at its due as shown now.
     public void add(@Val ClaimInput input, @Val Person person, Claims claims, Sheets sheets, Settings settings,
             Holidays holidays, Rollup rollup, ServerHttpConnection connection, Out<Claim> claimOut) {
         LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.sheetId());
-        int terms = person.termsOn(date, settings);
+        int terms = person.termsNow(settings);
         LocalDate dueBy = holidays.dueBy(person.sheetId(), date, terms);
         Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), input.corrects(),
                 dueBy, terms, input.ref(), input.tags());

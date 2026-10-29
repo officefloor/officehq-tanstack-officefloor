@@ -57,6 +57,14 @@ public record Person(long id, String sheetId, String name, String grade, long ve
         return own != null ? own : settings.terms(sheetId, gradeOn(date), date);
     }
 
+    /**
+     * The terms a claim of theirs made now has its due-by fixed with, whatever its date: those in force on the sheet's
+     * today (the day it is made) — their own then, else those of the grade they had then, else the sheet's then.
+     */
+    public int termsNow(Settings settings) {
+        return termsOn(settings.today(sheetId), settings);
+    }
+
     /** Whether the person has any hold. */
     public boolean held() {
         return !holds.isEmpty();
