@@ -1,0 +1,424 @@
+diff --git a/src/main/frontend/features/approvers/approver.slot.tsx b/src/main/frontend/features/approvers/approver.slot.tsx
+new file mode 100644
+index 00000000..24515b9c
+--- /dev/null
++++ b/src/main/frontend/features/approvers/approver.slot.tsx
+@@ -0,0 +1,67 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
++import { usePersonError } from '../people/usePersonError';
++import { useUser } from '../session/useUser';
++import { approversKey, approversQuery } from './approversQuery';
++import type { Approver } from './approversQuery';
++
++/**
++ * The person's approver, and the control that sets one by user name. The approver approves or rejects the person's
++ * PENDING claims as a steward may (the opener and the last editor still may not approve their own).
++ */
++function PersonApprover({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const [name, setName] = useState('');
++  const [, setError] = usePersonError(personId);
++  const once = useSubmitOnce();
++  const approver = (useQuery(approversQuery(sheetId)).data ?? []).find((a) => a.personId === personId);
++  const save = useMutation({
++    mutationFn: (body: { user: string }) =>
++      putJson<Approver>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/approver`, body, user),
++    onSuccess: async () => {
++      setName('');
++      await queryClient.invalidateQueries({ queryKey: approversKey(sheetId) });
++    },
++    onError: () => setError('The approver could not be set.'),
++  });
++
++  return (
++    <td>
++      <span data-testid="person-approver">{approver?.user ?? ''}</span>{' '}
++      <input
++        data-testid="person-approver-input"
++        placeholder="user"
++        value={name}
++        onChange={(e) => {
++          setName(e.target.value);
++          setError('');
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="person-approver-save"
++        disabled={save.isPending}
++        onClick={() => {
++          setError('');
++          const u = name.trim();
++          if (u === '') {
++            setError("Give the approver's user name.");
++            return;
++          }
++          once(() => save.mutateAsync({ user: u }));
++        }}
++      >
++        Set approver
++      </button>
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHeaders.fill({ order: 19.3, Component: () => <th>Approver</th> }),
++  PersonCells.fill({ order: 19.3, Component: PersonApprover }),
++];
+diff --git a/src/main/frontend/features/approvers/approversQuery.ts b/src/main/frontend/features/approvers/approversQuery.ts
+new file mode 100644
+index 00000000..c73c02f9
+--- /dev/null
++++ b/src/main/frontend/features/approvers/approversQuery.ts
+@@ -0,0 +1,13 @@
++import { getJson } from '../../api/http';
++import { sheetKey } from '../sheet/sheetQuery';
++
++/** A person's approver: the user who may approve or reject their PENDING claims as a steward may. */
++export type Approver = { personId: number; user: string };
++
++/** Under the sheet's key, so re-loading the sheet re-reads its approvers. */
++export const approversKey = (sheetId: string) => [...sheetKey(sheetId), 'approvers'] as const;
++
++export const approversQuery = (sheetId: string) => ({
++  queryKey: approversKey(sheetId),
++  queryFn: () => getJson<Approver[]>(`/api/sheets/${encodeURIComponent(sheetId)}/approvers`),
++});
+diff --git a/src/main/java/net/officefloor/hq/app/approver/ApplyApprover.java b/src/main/java/net/officefloor/hq/app/approver/ApplyApprover.java
+new file mode 100644
+index 00000000..2f1bf377
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/ApplyApprover.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.approver;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class ApplyApprover {
++    // Setting an approver replaces any the person had, and is recorded as APPROVER_SET.
++    public void apply(@Val Approver approver, @Val Person person, Approvers approvers, ServerHttpConnection connection,
++            Audit audit) {
++        approvers.set(person.id(), approver.user());
++        audit.record(Audit.line("APPROVER_SET", person.sheetId(), Audit.user(connection), "name=" + person.name(),
++                "user=" + approver.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/approver/Approver.java b/src/main/java/net/officefloor/hq/app/approver/Approver.java
+new file mode 100644
+index 00000000..b133f923
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/Approver.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.approver;
++
++/** A person's approver: the user name who may approve or reject the person's PENDING claims as a steward may. */
++public record Approver(long personId, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/approver/ApproverRequest.java b/src/main/java/net/officefloor/hq/app/approver/ApproverRequest.java
+new file mode 100644
+index 00000000..b92e5fda
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/ApproverRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.approver;
++
++/** The body of setting a person's approver: the user name, as typed. */
++public record ApproverRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/approver/Approvers.java b/src/main/java/net/officefloor/hq/app/approver/Approvers.java
+new file mode 100644
+index 00000000..da72a959
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/Approvers.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.approver;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The store of the people's approvers, kept per sheet through the people. */
++@Repository
++public class Approvers {
++
++    private static final RowMapper<Approver> ROW = (rs, n) -> new Approver(rs.getLong("person_id"),
++            rs.getString("user_name"));
++
++    private final JdbcTemplate jdbc;
++
++    public Approvers(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Every approver of the sheet's people. */
++    public List<Approver> list(String sheetId) {
++        return jdbc.query(
++                "SELECT a.* FROM person_approver a JOIN person p ON p.id = a.person_id WHERE p.sheet_id = ?", ROW,
++                sheetId);
++    }
++
++    /** Whether the user is the person's approver. */
++    public boolean isApprover(long personId, String user) {
++        List<Approver> found = jdbc.query("SELECT * FROM person_approver WHERE person_id = ?", ROW, personId);
++        return !found.isEmpty() && found.get(0).user().equals(user);
++    }
++
++    /** Make the user the person's approver, replacing any approver they had. */
++    public void set(long personId, String user) {
++        jdbc.update("DELETE FROM person_approver WHERE person_id = ?", personId);
++        jdbc.update("INSERT INTO person_approver (person_id, user_name) VALUES (?, ?)", personId, user);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/approver/RespondWithApprover.java b/src/main/java/net/officefloor/hq/app/approver/RespondWithApprover.java
+new file mode 100644
+index 00000000..2bef9b88
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/RespondWithApprover.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.approver;
++
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithApprover {
++    public void respond(@Val Approver approver, @Val Person person, ObjectResponse<Approver> response) {
++        response.send(new Approver(person.id(), approver.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/approver/RespondWithApprovers.java b/src/main/java/net/officefloor/hq/app/approver/RespondWithApprovers.java
+new file mode 100644
+index 00000000..f9a877fd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/RespondWithApprovers.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.approver;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithApprovers {
++    public void respond(@PathVariable("sheetId") String sheetId, Approvers approvers,
++            ObjectResponse<List<Approver>> response) {
++        response.send(approvers.list(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/approver/ValidateApprover.java b/src/main/java/net/officefloor/hq/app/approver/ValidateApprover.java
+new file mode 100644
+index 00000000..7f7e80f8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/approver/ValidateApprover.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.approver;
++
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateApprover {
++    // The approver's user name must not be blank.
++    public void validate(@RequestBody ApproverRequest body, Out<Approver> approver) throws InvalidPersonException {
++        String user = body == null || body.user() == null ? "" : body.user().trim();
++        if (user.isEmpty()) {
++            throw new InvalidPersonException("Give the approver's user name.");
++        }
++        approver.set(new Approver(0, user));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/batch/ApplyBulkSettle.java b/src/main/java/net/officefloor/hq/app/batch/ApplyBulkSettle.java
+index d06af234..23c4d564 100644
+--- a/src/main/java/net/officefloor/hq/app/batch/ApplyBulkSettle.java
++++ b/src/main/java/net/officefloor/hq/app/batch/ApplyBulkSettle.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.approver.Approvers;
+ import net.officefloor.hq.app.flag.Flags;
+ import net.officefloor.hq.app.claim.ApplyClaimStatus;
+ import net.officefloor.hq.app.claim.AuditClaimStatus;
+@@ -38,7 +39,7 @@ public class ApplyBulkSettle {
+     // line follows the claims' own lines. Run outside the pipeline's governance: this step owns its transaction.
+     public void apply(@PathVariable("sheetId") String sheetId, @RequestBody(required = false) BulkSettleRequest body,
+             Claims claims, People people, Rates rates, Settings settings, Sheets sheets, Periods periods, Rollup rollup,
+-            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, Audit audit,
++            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, Approvers approvers, Audit audit,
+             PlatformTransactionManager transactions,
+             ServerHttpConnection connection, Out<BulkSettleResponse> responseOut) {
+         String sheet = sheetId.trim();
+@@ -69,7 +70,7 @@ public class ApplyBulkSettle {
+                 ClaimStatusRequest[] request = new ClaimStatusRequest[1];
+                 try {
+                     new ApplyClaimStatus().apply(ClaimStatus.SETTLED.name(), null, claim, claims, people, rates,
+-                            settings, sheets, periods, rollup, voidReasons, batches, flags, connection, r -> changed[0] = r,
++                            settings, sheets, periods, rollup, voidReasons, batches, flags, approvers, connection, r -> changed[0] = r,
+                             r -> request[0] = r);
+                 } catch (Exception refused) {
+                     ok = false;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 22397c8a..c32be22d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -5,6 +5,7 @@ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.batch.SettleBatches;
++import net.officefloor.hq.app.approver.Approvers;
+ import net.officefloor.hq.app.flag.Flags;
+ import net.officefloor.hq.app.holiday.Holidays;
+ import net.officefloor.hq.app.period.Period;
+@@ -34,7 +35,7 @@ public class AddPastedClaims {
+     // If any is refused, the transaction is rolled back, its lines dropped, and the refusal is the paste's.
+     public void add(@PathVariable("sheetId") String sheetId, @Val PastedLines pasted, Claims claims, ClaimLocks locks,
+             People people, Rates rates, Sheets sheets, Settings settings, Holidays holidays, Periods periods, Rollup rollup,
+-            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, PlatformTransactionManager transactions,
++            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, Approvers approvers, PlatformTransactionManager transactions,
+             ServerHttpConnection connection, Audit audit, Out<PasteResponse> result)
+             throws ClaimStatusRefusedException, ClaimNoteNeededException, ClaimProofNeededException,
+             ClaimVoidReasonNeededException, ClaimInClosedPeriodException, ClaimLockedException, ClaimNotDraftException {
+@@ -59,7 +60,7 @@ public class AddPastedClaims {
+                     ClaimResponse[] changed = new ClaimResponse[1];
+                     ClaimStatusRequest[] request = new ClaimStatusRequest[1];
+                     new ApplyClaimStatus().apply(ClaimStatus.OPEN.name(), null, claim, claims, people, rates, settings,
+-                            sheets, periods, rollup, voidReasons, batches, flags, connection, r -> changed[0] = r, r -> request[0] = r);
++                            sheets, periods, rollup, voidReasons, batches, flags, approvers, connection, r -> changed[0] = r, r -> request[0] = r);
+                     new AuditClaimStatus().audit(claim, changed[0], request[0], people, connection, buffer);
+                     new NotifyWatchers().notifyWatchers(claim, changed[0], people, watches, connection, buffer);
+                     RollupLines.record(sheet, user, before, rollup, buffer);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index bb42726e..16a00a60 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.approver.Approvers;
+ import net.officefloor.hq.app.batch.SettleBatches;
+ import net.officefloor.hq.app.flag.Flags;
+ import net.officefloor.hq.app.history.AsOf;
+@@ -24,12 +25,12 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ApplyClaimStatus {
+     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
+-    // A PENDING claim moves only by a steward's decision: "approve" (to SETTLED) or "reject" (to OPEN, with a reason);
++    // A PENDING claim moves only by a steward's (or the person's approver's) decision: "approve" (to SETTLED) or "reject" (to OPEN, with a reason);
+     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
+     // A REVIEW claim moves only by a steward's "review" (to OPEN, numbered then), or is voided.
+     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
+             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
+-            Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, Flags flags, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
++            Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, Flags flags, Approvers approvers, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+             Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException,
+             ClaimVoidReasonNeededException {
+         ClaimStatus next;
+@@ -149,9 +150,10 @@ public class ApplyClaimStatus {
+                         + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement.");
+             }
+         }
++        // The person's approver approves or rejects their PENDING claims as a steward may.
+         if (claim.status() == ClaimStatus.PENDING && (next == ClaimStatus.SETTLED || next == ClaimStatus.OPEN)
+-                && !steward) {
+-            throw new ClaimStatusRefusedException("Only a steward can approve or reject a pending claim.");
++                && !steward && !approvers.isApprover(claim.personId(), user)) {
++            throw new ClaimStatusRefusedException("Only a steward or the person's approver can approve or reject a pending claim.");
+         }
+         if (claim.status() == ClaimStatus.PENDING && next == ClaimStatus.OPEN && reason.isEmpty()) {
+             throw new ClaimStatusRefusedException("Give a reason to reject the claim.");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+index 6900e096..d20f953b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+@@ -5,6 +5,7 @@ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.batch.SettleBatches;
++import net.officefloor.hq.app.approver.Approvers;
+ import net.officefloor.hq.app.flag.Flags;
+ import net.officefloor.hq.app.holiday.Holidays;
+ import net.officefloor.hq.app.period.Periods;
+@@ -33,7 +34,7 @@ public class ApplyPartSettle {
+     // Run outside the pipeline's governance: this step owns its transaction.
+     public void apply(@RequestBody(required = false) SplitRequest body, @Val Claim claim, Claims claims, People people,
+             Rates rates, Settings settings, Holidays holidays, Sheets sheets, Periods periods, Rollup rollup,
+-            VoidReasons voidReasons, SettleBatches batches, Flags flags, Watches watches, Audit audit,
++            VoidReasons voidReasons, SettleBatches batches, Flags flags, Approvers approvers, Watches watches, Audit audit,
+             PlatformTransactionManager transactions, ServerHttpConnection connection, Out<ClaimResponse> responseOut)
+             throws ClaimPartSettleRefusedException {
+         String sheet = claim.sheetId();
+@@ -66,7 +67,7 @@ public class ApplyPartSettle {
+                         return claim;
+                     }
+                 }.apply(ClaimStatus.SETTLED.name(), null, created, claims, people, rates, settings, sheets, periods,
+-                        rollup, voidReasons, batches, flags, connection, r -> changed[0] = r, r -> request[0] = r);
++                        rollup, voidReasons, batches, flags, approvers, connection, r -> changed[0] = r, r -> request[0] = r);
+                 new AuditClaimStatus().audit(created, changed[0], request[0], people, connection, buffer);
+                 new NotifyWatchers().notifyWatchers(created, changed[0], people, watches, connection, buffer);
+                 RollupLines.record(sheet, user, before, rollup, buffer);
+diff --git a/src/main/resources/db/migration/V88__person_approver.sql b/src/main/resources/db/migration/V88__person_approver.sql
+new file mode 100644
+index 00000000..d8cefe89
+--- /dev/null
++++ b/src/main/resources/db/migration/V88__person_approver.sql
+@@ -0,0 +1,7 @@
++-- A person's approver: a user name who may approve or reject the person's PENDING claims as a steward may (four eyes
++-- still applies). One approver per person: setting again replaces it. Kept by person id without a reference, like the
++-- flag, so a person leaving the sheet leaves only an unread row behind.
++CREATE TABLE person_approver (
++    person_id BIGINT       NOT NULL PRIMARY KEY,
++    user_name VARCHAR(255) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/approvers.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/approvers.GET.yml
+new file mode 100644
+index 00000000..57648cea
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/approvers.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/approvers — every approver of the sheet's people ({personId, user}).
++respond:
++  class: net.officefloor.hq.app.approver.RespondWithApprovers
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.PUT.yml
+new file mode 100644
+index 00000000..f115db50
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.PUT.yml
+@@ -0,0 +1,27 @@
++# PUT /api/sheets/{sheetId}/people/{personId}/approver — set the person's approver. Body {"user":"..."}; it replaces any
++# approver they had (APPROVER_SET). The approver may approve or reject the person's PENDING claims as a steward may (the
++# opener and the last editor still may not approve their own). 400 for a blank user name, and nothing is stored; 404
++# for a person not on the sheet.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: validate
++  govern: [ transaction ]
++validate:
++  class: net.officefloor.hq.app.approver.ValidateApprover
++  next: load
++  govern: [ transaction ]
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  next: apply
++  govern: [ transaction ]
++apply:
++  class: net.officefloor.hq.app.approver.ApplyApprover
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.approver.RespondWithApprover
++  govern: [ transaction ]
