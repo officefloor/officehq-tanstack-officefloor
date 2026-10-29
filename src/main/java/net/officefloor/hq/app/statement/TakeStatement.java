@@ -22,8 +22,8 @@ import net.officefloor.plugin.variable.Val;
 
 public class TakeStatement {
     // Records the person's due-total now (a deferred claim counts in none and is left unbound) (held to the sheet's cap) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
-    // the rest of their claims are left unbound. The late charge is never bound: the due-total includes it,
-    // but each claim is bound to the figure under it.
+    // the rest of their claims are left unbound. Each claim is bound to its due as shown, late charge and floor included, so
+    // while bound it no longer follows the sheet's today; a claim already bound keeps the figure it was bound to.
     // Taken as of a date (on or before the sheet's today), it is worked out from the person and their claims as they stood at
     // the end of that date, with that date for the sheet's today; it binds those claims still theirs, and records that date.
     public void take(@Val Person person, @Val StatementAsOf asOf, Claims claims, People people, Rates rates, Settings settings,
@@ -67,9 +67,8 @@ public class TakeStatement {
         for (Claim claim : claims.list(person.sheetId())) {
             if (claim.personId() == person.id()
                     && (claim.status() == ClaimStatus.SETTLED || (claim.status().isOpen() && Rollup.counts(claim, person, today)))) {
-                BigDecimal figure = figure(claim, person, rates, settings);
-                figures.put(claim.id(), figure);
-                BigDecimal due = claim.settledDue() != null ? figure : settings.withLate(claim, figure, today);
+                BigDecimal due = due(claim, person, today, rates, settings);
+                figures.put(claim.id(), due);
                 if (due != null) {
                     total = total.add(due);
                 }
@@ -82,10 +81,11 @@ public class TakeStatement {
     }
 
     /**
-     * The claim's figure now (null when it has none): a settled claim's frozen due, otherwise the figure the
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date (not floored: the floor goes on last, after the late charge).
+     * The claim's due as shown with {@code today} as the sheet's today (null when it has none): a settled claim's frozen due,
+     * otherwise the due the last statement bound it to, otherwise its amount times its person's grade's rate on its date,
+     * rounded by the policy date, with its late charge on {@code today} added on top, then raised to the floor.
      */
-    private static BigDecimal figure(Claim claim, Person person, Rates rates, Settings settings) {
+    private static BigDecimal due(Claim claim, Person person, LocalDate today, Rates rates, Settings settings) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
@@ -93,6 +93,6 @@ public class TakeStatement {
             return claim.statedDue();
         }
         BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));
-        return settings.live(claim, rate);
+        return settings.withLate(claim, settings.live(claim, rate), today);
     }
 }

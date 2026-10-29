@@ -139,8 +139,9 @@ public class ApplyClaimStatus {
                         : "\"" + voidReason + "\" is not one of the sheet's void reasons.");
             }
         }
-        // Settling (or approving) freezes the late charge on the sheet's today into the due.
-        BigDecimal due = settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
+        // Settling (or approving) freezes the due as shown: the one a statement bound, else the late charge on the sheet's today into the due.
+        BigDecimal due = claim.stated() ? claim.statedDue()
+                : settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
         // A claim whose due is above the proof threshold in force on its date (its person's grade's, else the sheet's) is settled or approved only once it has a
         // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
         if (next == ClaimStatus.SETTLED && claim.proofs() == 0 && due != null) {
@@ -211,14 +212,10 @@ public class ApplyClaimStatus {
     }
 
     /**
-     * The claim's due now, before its late charge: the figure its person's last statement bound it to (a PENDING
-     * claim too), otherwise its amount times its
+     * The unbound claim's due now, before its late charge: its amount times its
      * person's grade's rate on the claim's date, rounded by the policy date (not yet floored); null when none applies.
      */
     private static BigDecimal due(Claim claim, People people, Rates rates, Settings settings) {
-        if (claim.stated()) {
-            return claim.statedDue();
-        }
         Person person = people.find(claim.sheetId(), claim.personId());
         if (person == null) {
             return null;
