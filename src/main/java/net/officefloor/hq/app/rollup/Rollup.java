@@ -198,7 +198,7 @@ public class Rollup {
     /**
      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the due its person's
      * last statement bound it to as shown then (late charge and floor included), otherwise its amount times its person's
-     * grade's rate on its date, rounded by the policy date, with its late charge on {@code today} added on top, then raised to the floor.
+     * grade's rate on its date, rounded by the policy date, raised to the floor, with its late charge on {@code today} (worked out on the floored figure) added on top.
      * A PENDING claim is bound like any other claim that counts.
      */
     private BigDecimal figure(Claim claim, Person person, LocalDate today) {

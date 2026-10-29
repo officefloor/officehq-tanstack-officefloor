@@ -378,8 +378,8 @@ public class Settings {
     }
 
     /**
-     * A claim's live due from its rate figure (or the figure a statement bound): the figure with its late charge added on top, then raised
-     * to the floor in force on the claim's date ({@link #floored}). An open (OPEN or PENDING) claim whose due-by (fixed when it was made) plus
+     * A claim's live due from its rate figure: the figure raised to the floor in force on the claim's date ({@link #floored}), then its
+     * late charge, worked out on that floored figure, added on top. An open (OPEN or PENDING) claim whose due-by (fixed when it was made) plus
      * its grade's grace ({@link #overdueFrom}) is before {@code today} gains, for every full 30 days it is overdue, the late percent in force on
      * that boundary date (the due-by plus the grace plus 30, 60, 90 ... days)
      * of the figure plus the charges of the boundaries before it (compounding), each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
@@ -388,10 +388,10 @@ public class Settings {
      * A waived claim has no late charge, whatever its overdue state.
      */
     public BigDecimal withLate(Claim claim, BigDecimal figure, LocalDate today) {
-        return floored(claim, lateAdded(claim, figure, today));
+        return lateAdded(claim, floored(claim, figure), today);
     }
 
-    /** The figure with the claim's late charge on {@code today} added on top (see {@link #withLate}), not floored. */
+    /** The (floored) figure with the claim's late charge on {@code today} added on top (see {@link #withLate}). */
     private BigDecimal lateAdded(Claim claim, BigDecimal figure, LocalDate today) {
         if (figure == null || !claim.status().isOpen() || claim.isCorrection() || claim.deferredOn(today) || claim.waived()) {
             return figure;
@@ -412,7 +412,7 @@ public class Settings {
         return total;
     }
 
-    /** The claim's due (its figure plus its late charge) raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */
+    /** The claim's rate figure raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */
     public BigDecimal floored(Claim claim, BigDecimal due) {
         return due == null || claim.isCorrection() ? due : due.max(floor(claim.sheetId(), claim.date()));
     }

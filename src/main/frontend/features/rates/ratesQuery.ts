@@ -157,9 +157,9 @@ function addDays(date: string, days: number): string {
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the due its person's last
  * statement bound it to, as shown then (its late charge and floor included, so it no longer follows the sheet's today),
  * otherwise its amount times the rate, on the claim's date, of
- * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`). An overdue claim's late charge — for every full 30 days overdue, the late
- * percent in force on that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of that rate figure plus the charges of the boundaries before it (compounding), each rounded like the claim, added up — is added on top,
- * following the sheet's today. Last, the sum is raised to the sheet's `floor` in force on the claim's date (two decimals).
+ * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` in force on the claim's date (two decimals).
+ * An overdue claim's late charge — for every full 30 days overdue, the late percent in force on that boundary date (the due-by plus the grace plus 30, 60, 90 ... days)
+ * of that floored figure plus the charges of the boundaries before it (compounding), each rounded like the claim, added up — is then added on top, following the sheet's today.
  * A correction has neither floor nor late charge.
  */
 export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: DatedValue[], late: Late): string {
@@ -170,11 +170,11 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, 
   if (isCorrection(claim) || bound === 'n/a') return bound;
   const months = lateMonths(claim, late);
   const from = overdueFrom(claim, late);
-  let total = hundredths(bound);
+  let total = hundredths(floored(bound, valueOn(floor, claim.date) ?? DEFAULT_FLOOR));
   for (let n = 1n; n <= months; n++) {
     total += dueCents(show(total), valueOn(late.pct, addDays(from, Number(n) * 30)) ?? DEFAULT_LATE_PCT, halfUp);
   }
-  return floored(show(total), valueOn(floor, claim.date) ?? DEFAULT_FLOOR);
+  return show(total);
 }
 
 function floored(live: string, floor: string): string {

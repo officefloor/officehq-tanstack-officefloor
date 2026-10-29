@@ -83,7 +83,7 @@ public class TakeStatement {
     /**
      * The claim's due as shown with {@code today} as the sheet's today (null when it has none): a settled claim's frozen due,
      * otherwise the due the last statement bound it to, otherwise its amount times its person's grade's rate on its date,
-     * rounded by the policy date, with its late charge on {@code today} added on top, then raised to the floor.
+     * rounded by the policy date, raised to the floor, with its late charge on {@code today} (worked out on the floored figure) added on top.
      */
     private static BigDecimal due(Claim claim, Person person, LocalDate today, Rates rates, Settings settings) {
         if (claim.settledDue() != null) {
