@@ -124,9 +124,9 @@ public class Audit {
     }
 
     /**
-     * The sheet's lines about one claim, exactly as the file holds them, newest first: with a number, those carrying
-     * number=<it>; without one, those carrying no number (a numbered line is about the numbered claim it names) whose
-     * person= (compared as names are), amount= and date= are all the claim's.
+     * The sheet's lines about one claim, exactly as the file holds them, newest first: those carrying number=<its
+     * number>, and those carrying no number (a numbered line is about the numbered claim it names) whose person=
+     * (compared as names are), amount= and date= are all the claim's (as it was before it was numbered on settling).
      */
     public synchronized List<String> claimLines(String sheetId, String number, String person, String amount, String date) {
         String wanted = person == null ? "" : person.trim().toLowerCase(Locale.ROOT);
@@ -134,8 +134,8 @@ public class Audit {
         for (String line : lines(sheetId, null)) {
             java.util.Map<String, List<String>> fields = fields(line);
             boolean about = number != null && !number.isBlank()
-                    ? fields.getOrDefault("number", List.of()).contains(number)
-                    : !fields.containsKey("number") && fields.getOrDefault("person", List.of()).stream()
+                    && fields.getOrDefault("number", List.of()).contains(number)
+                    || !fields.containsKey("number") && fields.getOrDefault("person", List.of()).stream()
                             .anyMatch(n -> n.trim().toLowerCase(Locale.ROOT).equals(wanted))
                             && fields.getOrDefault("amount", List.of()).contains(amount)
                             && fields.getOrDefault("date", List.of()).contains(date);

@@ -27,7 +27,7 @@ public class ApplyClaimStatus {
     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
     // A PENDING claim moves only by a steward's (or the person's approver's) decision: "approve" (to SETTLED) or "reject" (to OPEN, with a reason);
     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
-    // A REVIEW claim moves only by a steward's "review" (to OPEN, numbered then), or is voided.
+    // A REVIEW claim moves only by a steward's "review" (to OPEN), or is voided.
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
             Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, Flags flags, Approvers approvers, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
@@ -219,18 +219,18 @@ public class ApplyClaimStatus {
             }
         }
         // A DRAFT claim whose due is above the review threshold in force on its date goes to REVIEW instead of OPEN
-        // (a due of n/a is within any threshold): it is numbered only when a steward's review makes it OPEN.
+        // (a due of n/a is within any threshold), until a steward's review makes it OPEN.
         if (next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT && due != null) {
             BigDecimal threshold = settings.reviewThreshold(claim.sheetId(), claim.date());
             if (threshold != null && due.compareTo(threshold) > 0) {
                 next = ClaimStatus.REVIEW;
             }
         }
-        // While the sheet numbers by period (its today on or after the from-date), an opened claim is numbered
-        // within the period its due-by falls in, or in the no-period sequence; otherwise sheet-wide.
+        // While the sheet numbers by period (its today on or after the from-date), a settled (or approved) claim is
+        // numbered within the period its due-by falls in, or in the no-period sequence; otherwise sheet-wide.
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
-        if (next == ClaimStatus.OPEN && numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
+        if (next == ClaimStatus.SETTLED && numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
             Period period = periods.on(claim.sheetId(), claim.dueBy());
             scope = period == null ? "" : period.name();
         }

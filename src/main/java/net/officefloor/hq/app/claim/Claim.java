@@ -5,7 +5,7 @@ import java.time.LocalDate;
 
 /**
  * A claim made by a person on a sheet. {@code amount} is 0.00 or more, in two decimals. {@code number}
- * is given when the claim is opened (null for a draft or a voided claim). {@code settledDue} is the due fixed
+ * is given when the claim is settled or approved, and kept by a void (null before; a claim numbered on opening before keeps its number). {@code settledDue} is the due fixed
  * when it was settled (null when not settled, or settled while no rate of its grade applied on its date).
  * {@code openedBy} is the user who opened it (null when never opened). {@code stated} is whether its person's
  * last statement bound it, at {@code statedDue} (null when it had no figure then). A claim with a negative amount is a

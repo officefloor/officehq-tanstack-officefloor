@@ -35,7 +35,7 @@ public class ApplyReassign {
             throw new ClaimReassignRefusedException("Choose a person on this sheet to move the claim to.");
         }
         RefuseRetiredInput.check(to, claim.date());
-        // A numbered claim takes the next number of the sequence it would be opened in (as ApplyClaimStatus).
+        // A numbered claim takes the next number of the sequence it would be settled in (as ApplyClaimStatus); an unnumbered one has none to keep.
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {

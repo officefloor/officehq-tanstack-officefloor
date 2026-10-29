@@ -40,7 +40,7 @@ public class AuditClaimStatus {
         if (status == ClaimStatus.SETTLED && request.settleOn() != null) {
             fields.add("on=" + request.settleOn());
         }
-        // A reviewed claim is recorded as reviewed (as it was, unnumbered), then as opened with its number.
+        // A reviewed claim is recorded as reviewed (without any number), then as opened.
         if (loaded.status() == ClaimStatus.REVIEW && status == ClaimStatus.OPEN) {
             audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(), Audit.user(connection),
                     fields.stream().filter(f -> !f.startsWith("number=")).toArray(String[]::new)));

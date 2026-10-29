@@ -6,7 +6,7 @@ package net.officefloor.hq.app.claim;
  * settle of a claim whose due is above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED)
  * or rejects it (back to OPEN). A DRAFT claim can be DELETED, counting nowhere, and restored to DRAFT on the same
  * sheet's today it was deleted. Opening a DRAFT claim whose due is above the review threshold in force on its date makes it
- * REVIEW instead (no number yet), counting in no total, until a steward's review makes it OPEN; a REVIEW claim can be VOID.
+ * REVIEW instead, counting in no total, until a steward's review makes it OPEN; a REVIEW claim can be VOID.
  */
 public enum ClaimStatus {
     DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED, REVIEW;

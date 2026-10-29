@@ -194,11 +194,11 @@ public class Claims {
 
     /**
      * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
-     * it has since changed. Opening gives it the next number of {@code scope} (null: the sheet-wide sequence; a
-     * period's name, or "" for no period, while the sheet numbers by period), which it keeps
-     * (voided or rejected back to OPEN too: a number is never reused). Settling
-     * stores {@code due} as its fixed due (null keeps it live). Opening (or sending to REVIEW) a DRAFT records {@code user} as its
-     * opener; a REVIEW claim is numbered when its review makes it OPEN.
+     * it has since changed. Settling (or approving) an unnumbered claim gives it the next number of {@code scope} (null:
+     * the sheet-wide sequence; a period's name, or "" for no period, while the sheet numbers by period), which it keeps
+     * (voided too: a number is never reused); an OPEN, PENDING or REVIEW claim has none (one numbered before keeps it).
+     * Settling stores {@code due} as its fixed due (null keeps it live). Opening (or sending to REVIEW) a DRAFT records
+     * {@code user} as its opener.
      */
     public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due, String user, String scope) {
         if (jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND status = ?", next.name(), claim.id(),
@@ -206,7 +206,7 @@ public class Claims {
             return null;
         }
         String number = switch (next) {
-            case OPEN -> claim.status() != ClaimStatus.DRAFT && claim.status() != ClaimStatus.REVIEW ? claim.number()
+            case SETTLED -> claim.number() != null ? claim.number()
                     : number(claim.sheetId(), scope, claim.dueBy() == null ? claim.date() : claim.dueBy());
             default -> claim.number();
         };
@@ -221,17 +221,17 @@ public class Claims {
     /**
      * Splits {@code amount} off the claim if it is still OPEN at the amount it was loaded with, and returns the new
      * claim; null when it has since changed. The claim keeps the rest of its amount and is unbound from any statement;
-     * the new claim is OPEN with the same person, date, note and tags, numbered next in {@code scope} (as
+     * the new claim is OPEN with the same person, date, note and tags, unnumbered (numbered when settled, as
      * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy} (fixed with {@code terms}), split from the claim's number, a late entry
      * when its due-by is in a soft-closed period, and listed as the newest claim on the sheet.
      */
-    public Claim split(Claim claim, BigDecimal amount, String user, String scope, LocalDate dueBy, int terms) {
+    public Claim split(Claim claim, BigDecimal amount, String user, LocalDate dueBy, int terms) {
         BigDecimal rest = claim.amount().subtract(amount);
         if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE id = ? AND status = ? AND amount = ?",
                 rest, claim.id(), ClaimStatus.OPEN.name(), claim.amount()) != 1) {
             return null;
         }
-        String number = number(claim.sheetId(), scope, dueBy);
+        String number = null;
         boolean late = lateEntry(claim.sheetId(), dueBy);
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -488,7 +488,7 @@ public class Claims {
     }
 
     /**
-     * The next number of {@code scope} on the sheet, as {@link #changeStatus} numbers an opened claim due by
+     * The next number of {@code scope} on the sheet, as {@link #changeStatus} numbers a settled claim due by
      * {@code dueBy} (null: sheet-wide, FY<yyyy>-<n> in the fiscal year {@code dueBy} falls in).
      */
     public String number(String sheetId, String scope, LocalDate dueBy) {
