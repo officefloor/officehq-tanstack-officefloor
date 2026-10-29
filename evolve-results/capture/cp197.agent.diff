@@ -1,0 +1,110 @@
+diff --git a/src/main/frontend/features/auditView/activity.slot.tsx b/src/main/frontend/features/auditView/activity.slot.tsx
+new file mode 100644
+index 00000000..25ba6867
+--- /dev/null
++++ b/src/main/frontend/features/auditView/activity.slot.tsx
+@@ -0,0 +1,49 @@
++import { useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++
++/** The sheet's activity: one line "<user> <EVENT> <count>" per user and event in its audit lines, sorted by user then
++ *  event. Re-read from the audit file each time it is shown. */
++function Activity({ sheetId }: { sheetId: string }) {
++  const [lines, setLines] = useState<string[]>([]);
++  const [error, setError] = useState('');
++
++  const show = useMutation({
++    mutationFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/activity`),
++    onSuccess: (found) => setLines(found),
++    onError: (e: Error) => setError(e.message || 'The activity could not be read.'),
++  });
++
++  return (
++    <section data-testid="activity">
++      <h3>Activity</h3>
++      <button
++        type="button"
++        data-testid="activity-show"
++        disabled={show.isPending}
++        onClick={() => {
++          setError('');
++          setLines([]);
++          show.mutate();
++        }}
++      >
++        Show
++      </button>
++      {error && <p data-testid="activity-error">{error}</p>}
++      <ul data-testid="activity-lines">
++        {lines.map((line) => (
++          <li key={line} data-testid="activity-line">
++            {line}
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++// Keyed by sheet, so the lines shown never carry over to another sheet.
++export const contribution = SheetPanel.fill({
++  order: 40.5,
++  Component: ({ sheetId }) => <Activity key={`activity-${sheetId}`} sheetId={sheetId} />,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index cf39c3ac..4960c195 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -170,6 +170,22 @@ public class Audit {
+ 
+     private static final Pattern NAME_FIELD = Pattern.compile(" (?:name|person)=(.*?)(?= [A-Za-z][\\w-]*=|$)");
+ 
++    /**
++     * The sheet's activity: for every user (by=) and every event the sheet's lines hold, one line
++     * {@code <user> <EVENT> <count>}, sorted by user then event.
++     */
++    public synchronized List<String> activity(String sheetId) {
++        java.util.TreeMap<String, java.util.TreeMap<String, Integer>> counts = new java.util.TreeMap<>();
++        for (String line : lines(sheetId, null)) {
++            String[] parts = line.split(" ", 4);
++            String user = parts.length >= 3 && parts[2].startsWith("by=") ? parts[2].substring("by=".length()) : "";
++            counts.computeIfAbsent(user, k -> new java.util.TreeMap<>()).merge(parts[0], 1, Integer::sum);
++        }
++        List<String> activity = new ArrayList<>();
++        counts.forEach((user, events) -> events.forEach((event, n) -> activity.add(user + " " + event + " " + n)));
++        return activity;
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/auditview/RespondWithActivity.java b/src/main/java/net/officefloor/hq/app/auditview/RespondWithActivity.java
+new file mode 100644
+index 00000000..d0b61b89
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/auditview/RespondWithActivity.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.auditview;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithActivity {
++    public void respond(@PathVariable("sheetId") String sheetId, Audit audit, ObjectResponse<List<String>> response) {
++        response.send(audit.activity(sheetId.trim()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+new file mode 100644
+index 00000000..f4d938e9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/activity — for every user and every event in the sheet's audit lines, one line
++# "<user> <EVENT> <count>", sorted by user then event.
++respond:
++  class: net.officefloor.hq.app.auditview.RespondWithActivity
