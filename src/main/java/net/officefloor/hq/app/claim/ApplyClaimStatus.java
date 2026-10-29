@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.approver.Approvers;
 import net.officefloor.hq.app.batch.SettleBatches;
 import net.officefloor.hq.app.flag.Flags;
 import net.officefloor.hq.app.history.AsOf;
@@ -24,12 +25,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ApplyClaimStatus {
     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
-    // A PENDING claim moves only by a steward's decision: "approve" (to SETTLED) or "reject" (to OPEN, with a reason);
+    // A PENDING claim moves only by a steward's (or the person's approver's) decision: "approve" (to SETTLED) or "reject" (to OPEN, with a reason);
     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
     // A REVIEW claim moves only by a steward's "review" (to OPEN, numbered then), or is voided.
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
-            Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, Flags flags, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+            Periods periods, Rollup rollup, VoidReasons voidReasons, SettleBatches batches, Flags flags, Approvers approvers, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
             Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException,
             ClaimVoidReasonNeededException {
         ClaimStatus next;
@@ -149,9 +150,10 @@ public class ApplyClaimStatus {
                         + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement.");
             }
         }
+        // The person's approver approves or rejects their PENDING claims as a steward may.
         if (claim.status() == ClaimStatus.PENDING && (next == ClaimStatus.SETTLED || next == ClaimStatus.OPEN)
-                && !steward) {
-            throw new ClaimStatusRefusedException("Only a steward can approve or reject a pending claim.");
+                && !steward && !approvers.isApprover(claim.personId(), user)) {
+            throw new ClaimStatusRefusedException("Only a steward or the person's approver can approve or reject a pending claim.");
         }
         if (claim.status() == ClaimStatus.PENDING && next == ClaimStatus.OPEN && reason.isEmpty()) {
             throw new ClaimStatusRefusedException("Give a reason to reject the claim.");

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.batch.SettleBatches;
+import net.officefloor.hq.app.approver.Approvers;
 import net.officefloor.hq.app.flag.Flags;
 import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.Period;
@@ -34,7 +35,7 @@ public class AddPastedClaims {
     // If any is refused, the transaction is rolled back, its lines dropped, and the refusal is the paste's.
     public void add(@PathVariable("sheetId") String sheetId, @Val PastedLines pasted, Claims claims, ClaimLocks locks,
             People people, Rates rates, Sheets sheets, Settings settings, Holidays holidays, Periods periods, Rollup rollup,
-            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, PlatformTransactionManager transactions,
+            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, Approvers approvers, PlatformTransactionManager transactions,
             ServerHttpConnection connection, Audit audit, Out<PasteResponse> result)
             throws ClaimStatusRefusedException, ClaimNoteNeededException, ClaimProofNeededException,
             ClaimVoidReasonNeededException, ClaimInClosedPeriodException, ClaimLockedException, ClaimNotDraftException {
@@ -59,7 +60,7 @@ public class AddPastedClaims {
                     ClaimResponse[] changed = new ClaimResponse[1];
                     ClaimStatusRequest[] request = new ClaimStatusRequest[1];
                     new ApplyClaimStatus().apply(ClaimStatus.OPEN.name(), null, claim, claims, people, rates, settings,
-                            sheets, periods, rollup, voidReasons, batches, flags, connection, r -> changed[0] = r, r -> request[0] = r);
+                            sheets, periods, rollup, voidReasons, batches, flags, approvers, connection, r -> changed[0] = r, r -> request[0] = r);
                     new AuditClaimStatus().audit(claim, changed[0], request[0], people, connection, buffer);
                     new NotifyWatchers().notifyWatchers(claim, changed[0], people, watches, connection, buffer);
                     RollupLines.record(sheet, user, before, rollup, buffer);

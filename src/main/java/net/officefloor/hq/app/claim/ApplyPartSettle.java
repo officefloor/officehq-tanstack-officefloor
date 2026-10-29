@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.batch.SettleBatches;
+import net.officefloor.hq.app.approver.Approvers;
 import net.officefloor.hq.app.flag.Flags;
 import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.Periods;
@@ -33,7 +34,7 @@ public class ApplyPartSettle {
     // Run outside the pipeline's governance: this step owns its transaction.
     public void apply(@RequestBody(required = false) SplitRequest body, @Val Claim claim, Claims claims, People people,
             Rates rates, Settings settings, Holidays holidays, Sheets sheets, Periods periods, Rollup rollup,
-            VoidReasons voidReasons, SettleBatches batches, Flags flags, Watches watches, Audit audit,
+            VoidReasons voidReasons, SettleBatches batches, Flags flags, Approvers approvers, Watches watches, Audit audit,
             PlatformTransactionManager transactions, ServerHttpConnection connection, Out<ClaimResponse> responseOut)
             throws ClaimPartSettleRefusedException {
         String sheet = claim.sheetId();
@@ -66,7 +67,7 @@ public class ApplyPartSettle {
                         return claim;
                     }
                 }.apply(ClaimStatus.SETTLED.name(), null, created, claims, people, rates, settings, sheets, periods,
-                        rollup, voidReasons, batches, flags, connection, r -> changed[0] = r, r -> request[0] = r);
+                        rollup, voidReasons, batches, flags, approvers, connection, r -> changed[0] = r, r -> request[0] = r);
                 new AuditClaimStatus().audit(created, changed[0], request[0], people, connection, buffer);
                 new NotifyWatchers().notifyWatchers(created, changed[0], people, watches, connection, buffer);
                 RollupLines.record(sheet, user, before, rollup, buffer);
