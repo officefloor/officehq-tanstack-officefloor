@@ -102,6 +102,12 @@ export function usePersonDueTotal(sheetId: string, personId: number | undefined)
   return person ? personDue(person, people, claims, rates, today, floor, late, cap) : null;
 }
 
+/** Every person's due-total, as in their row, by person id. */
+export function usePeopleDueTotals(sheetId: string): Map<number, string> {
+  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+  return new Map(people.map((p) => [p.id, personDue(p, people, claims, rates, today, floor, late, cap)]));
+}
+
 function DueTotal({ sheetId }: { sheetId: string }) {
   return (
     <p data-testid="rollup-due">
