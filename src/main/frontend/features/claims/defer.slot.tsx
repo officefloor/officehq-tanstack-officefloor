@@ -9,6 +9,10 @@ import { claimsKey, isDeferred } from './claimsQuery';
 import type { Claim } from './claimsQuery';
 import { useClaimError } from './useClaimError';
 
+/** A voided claim keeps the deferral it had: it still shows as deferred until the date it was deferred to. */
+const deferralKept = (claim: Claim, today: string) =>
+  claim.status === 'VOID' && claim.deferredUntil !== null && (today === '' || today < claim.deferredUntil);
+
 /**
  * Whether the claim is deferred on the sheet's today, the date it was deferred to, and the entry and button that
  * defer it. The server refuses a claim that is not OPEN, a date not after the sheet's today, or a claim dated in a
@@ -30,7 +34,7 @@ function ClaimDefer({ sheetId, claim }: { sheetId: string; claim: Claim }) {
 
   return (
     <td>
-      <span data-testid="claim-deferred">{isDeferred(claim, today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-deferred">{isDeferred(claim, today) || deferralKept(claim, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
       <input
         data-testid="claim-defer-date"
