@@ -73,6 +73,12 @@ export function useSheetOverdue(sheetId: string) {
   return { count, total: trimmedSum(data.people.map((p) => overdue(data, p).total)) };
 }
 
+/** Every person's overdue-total, as in their row, in the order of the sheet's people. */
+export function usePeopleOverdueTotals(sheetId: string): string[] {
+  const data = useOverdueData(sheetId);
+  return data.people.map((p) => overdue(data, p).total);
+}
+
 /** One person's overdue-total, as in their row; null when there is no such person. */
 export function usePersonOverdueTotal(sheetId: string, personId: number | undefined) {
   const data = useOverdueData(sheetId);
