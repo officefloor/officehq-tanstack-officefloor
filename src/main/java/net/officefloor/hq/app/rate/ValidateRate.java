@@ -25,6 +25,11 @@ public class ValidateRate {
     // that is not a date, or is before the from-date, is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("grade") String grade,
             @RequestBody RateRequest body, Out<Rate> rateOut) throws InvalidRateException {
+        rateOut.set(parse(sheetId, grade, body));
+    }
+
+    /** The rate the form's rules make of a grade and a typed body; refused as {@link #validate} refuses it. */
+    static Rate parse(String sheetId, String grade, RateRequest body) throws InvalidRateException {
         String g = grade == null ? "" : grade.trim();
         String typed = body == null || body.rate() == null ? "" : body.rate().trim();
         if (!GRADES.contains(g)) {
@@ -54,6 +59,6 @@ public class ValidateRate {
                 throw new InvalidRateException("The to-date must not be before the from-date.");
             }
         }
-        rateOut.set(new Rate(sheetId.trim(), g, new BigDecimal(typed).setScale(2, RoundingMode.UNNECESSARY), from, to));
+        return new Rate(sheetId.trim(), g, new BigDecimal(typed).setScale(2, RoundingMode.UNNECESSARY), from, to);
     }
 }
