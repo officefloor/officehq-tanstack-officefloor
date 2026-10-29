@@ -36,9 +36,17 @@ public class People {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's people in the order they were added. */
+    /** The sheet's people in list order: by position (new people go to the end). */
     public List<Person> list(String sheetId) {
-        return withDated(sheetId, jdbc.query("SELECT * FROM " + AsOf.table("person") + " WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
+        return withDated(sheetId, jdbc.query("SELECT * FROM " + AsOf.table("person") + " WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId));
+    }
+
+    /** Swap the two people's positions in the list. */
+    public void swap(long a, long b) {
+        Long at = jdbc.queryForObject("SELECT list_position FROM person WHERE id = ?", Long.class, a);
+        Long bt = jdbc.queryForObject("SELECT list_position FROM person WHERE id = ?", Long.class, b);
+        jdbc.update("UPDATE person SET list_position = ? WHERE id = ?", bt, a);
+        jdbc.update("UPDATE person SET list_position = ? WHERE id = ?", at, b);
     }
 
     public Person find(String sheetId, long id) {
@@ -184,12 +192,14 @@ public class People {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, list_position) VALUES (?, ?, ?, ?, ?, "
+                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, request.name());
             ps.setString(3, request.grade());
             ps.setObject(4, request.terms() == null ? null : Integer.valueOf(request.terms()), java.sql.Types.INTEGER);
             ps.setString(5, request.contact());
+            ps.setString(6, sheetId);
             return ps;
         }, key);
         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
@@ -283,12 +293,14 @@ public class People {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, list_position) VALUES (?, ?, ?, ?, ?, "
+                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.name());
             ps.setString(3, person.grade());
             ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
             ps.setString(5, person.contact());
+            ps.setString(6, to);
             return ps;
         }, key);
         long arrived = key.getKey().longValue();
