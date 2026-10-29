@@ -1,0 +1,409 @@
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index 71718750..c4c34d8c 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
+ import { downloadCsv } from '../../api/csv';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { claimsQuery } from '../claims/claimsQuery';
++import { useCapFor } from '../pools/poolsQuery';
+ import { personDue, ratesQuery } from '../rates/ratesQuery';
+-import { useCap, useFloor, useLate } from '../settings/settingsQuery';
++import { useFloor, useLate } from '../settings/settingsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { gradeOn, peopleQuery } from './peopleQuery';
+ 
+@@ -15,12 +16,12 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capFor = useCapFor(sheetId);
+ 
+   const exportCsv = () => {
+     downloadCsv('people.csv', [
+       ['name', 'grade', 'retired-from', 'due-total'],
+-      ...people.map((p) => [p.name, gradeOn(p, today) ?? p.grade, p.retiredFrom ?? '', personDue(p, people, claims, rates, today, floor, late, cap)]),
++      ...people.map((p) => [p.name, gradeOn(p, today) ?? p.grade, p.retiredFrom ?? '', personDue(p, people, claims, rates, today, floor, late, capFor(p.id))]),
+     ]);
+   };
+ 
+diff --git a/src/main/frontend/features/pools/cutTotal.slot.tsx b/src/main/frontend/features/pools/cutTotal.slot.tsx
+index ac4309b7..07a1a005 100644
+--- a/src/main/frontend/features/pools/cutTotal.slot.tsx
++++ b/src/main/frontend/features/pools/cutTotal.slot.tsx
+@@ -3,14 +3,7 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { peopleQuery } from '../people/peopleQuery';
+ import { sumDue } from '../rates/ratesQuery';
+-import { poolsQuery } from './poolsQuery';
+-import type { Pool } from './poolsQuery';
+-
+-/** A person's cut total: their cut in every pool they are a member of, added up; a pool that shows no cut adds nothing. */
+-function cutTotal(pools: Pool[], personId: number): string {
+-  const cuts = pools.flatMap((p) => p.members.filter((m) => m.pool === null && m.personId === personId && m.cut !== '').map((m) => m.cut));
+-  return sumDue(cuts);
+-}
++import { cutTotal, poolsQuery } from './poolsQuery';
+ 
+ function PersonCutTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const pools = useQuery(poolsQuery(sheetId)).data ?? [];
+diff --git a/src/main/frontend/features/pools/poolsQuery.ts b/src/main/frontend/features/pools/poolsQuery.ts
+index fe1c8349..e94e9f3b 100644
+--- a/src/main/frontend/features/pools/poolsQuery.ts
++++ b/src/main/frontend/features/pools/poolsQuery.ts
+@@ -1,5 +1,8 @@
++import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { peopleKey } from '../people/peopleQuery';
++import { capLess, sumDue } from '../rates/ratesQuery';
++import { useCap } from '../settings/settingsQuery';
+ 
+ /** A member of a pool: the person's id and name, their share percent with two decimals, whether they are retired, and their
+  *  cut of the pool's pot with two decimals ("" when the pool is not balanced, there is no pot, every member is retired, or the member's dates do
+@@ -27,3 +30,16 @@ export const poolsQuery = (sheetId: string) => ({
+   queryKey: poolsKey(sheetId),
+   queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
+ });
++
++/** A person's cut total: their cut in every pool they are a member of, added up; a pool that shows no cut adds nothing. */
++export function cutTotal(pools: Pool[], personId: number): string {
++  const cuts = pools.flatMap((p) => p.members.filter((m) => m.pool === null && m.personId === personId && m.cut !== '').map((m) => m.cut));
++  return sumDue(cuts);
++}
++
++/** The cap a person's due-total is held to, by person id: the sheet's cap less their cut total, not below 0.00 ("" for no cap). */
++export function useCapFor(sheetId: string): (personId: number) => string {
++  const cap = useCap(sheetId);
++  const pools = useQuery(poolsQuery(sheetId)).data ?? [];
++  return (personId) => capLess(cap, cutTotal(pools, personId));
++}
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index b7d68270..7d3e8769 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -5,9 +5,10 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { claimsQuery } from '../claims/claimsQuery';
+ import type { Claim } from '../claims/claimsQuery';
+ import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
++import { useCapFor } from '../pools/poolsQuery';
+ import { patronSharesOf, patronsQuery } from '../patrons/patronsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+-import { useCap, useFloor, useLate } from '../settings/settingsQuery';
++import { useFloor, useLate } from '../settings/settingsQuery';
+ import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, settledAndOpen, sumDue, sumOfShares, trimmedSum } from './ratesQuery';
+ import { ColumnShown } from '../people/useColumns';
+ 
+@@ -19,7 +20,7 @@ function useSheetData(sheetId: string) {
+     today: useSheetToday(sheetId),
+     floor: useFloor(sheetId),
+     late: useLate(sheetId),
+-    cap: useCap(sheetId),
++    capFor: useCapFor(sheetId),
+   };
+ }
+ 
+@@ -30,14 +31,14 @@ function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+ }
+ 
+ function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+-  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late, cap)}</td>;
++  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
++  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late, capFor(personId))}</td>;
+ }
+ 
+-/** What a person's figures add up to above the sheet's cap; 0.00 when they are not above it. */
++/** What a person's figures add up to above their cap (the sheet's cap less their cut total); 0.00 when they are not above it. */
+ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number }) {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+-  return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), cap)}</td>;
++  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
++  return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), capFor(personId))}</td>;
+ }
+ 
+ /** A person's open claims' figures that count, split by the claim's age on the sheet's today: 0-30, 31-60 and 61+ days. */
+@@ -105,8 +106,8 @@ function AgedTotal({ sheetId }: { sheetId: string }) {
+ 
+ /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
+ export function useSheetDueTotal(sheetId: string) {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+-  return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
++  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
++  return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id))));
+ }
+ 
+ /**
+@@ -114,24 +115,24 @@ export function useSheetDueTotal(sheetId: string) {
+  * skipping n/a — as the summary shows them.
+  */
+ export function useGradeDueTotals(sheetId: string): string[] {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
++  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
+   const unretired = people.filter((p) => p.retiredFrom === null);
+   return GRADES.map((g) =>
+-    sumDue(unretired.filter((p) => gradeOn(p, today) === g).map((p) => personDue(p, people, claims, rates, today, floor, late, cap))),
++    sumDue(unretired.filter((p) => gradeOn(p, today) === g).map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id)))),
+   );
+ }
+ 
+ /** One person's due-total, as in their row; null when there is no such person. */
+ export function usePersonDueTotal(sheetId: string, personId: number | undefined) {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
++  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
+   const person = people.find((p) => p.id === personId);
+-  return person ? personDue(person, people, claims, rates, today, floor, late, cap) : null;
++  return person ? personDue(person, people, claims, rates, today, floor, late, capFor(person.id)) : null;
+ }
+ 
+ /** Every person's due-total, as in their row, by person id. */
+ export function usePeopleDueTotals(sheetId: string): Map<number, string> {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+-  return new Map(people.map((p) => [p.id, personDue(p, people, claims, rates, today, floor, late, cap)]));
++  const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
++  return new Map(people.map((p) => [p.id, personDue(p, people, claims, rates, today, floor, late, capFor(p.id))]));
+ }
+ 
+ function DueTotal({ sheetId }: { sheetId: string }) {
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 3a320b07..81760b9d 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -239,12 +239,19 @@ export function capped(sum: string, cap: string): string {
+   return sum === 'n/a' || cap === '' || hundredths(sum) <= hundredths(cap) ? sum : show(hundredths(cap));
+ }
+ 
++/** A cap ("" for none) less a cut total, not below 0.00 ("" stays ""). */
++export function capLess(cap: string, cut: string): string {
++  if (cap === '') return cap;
++  const left = hundredths(cap) - hundredths(cut);
++  return show(left < 0n ? 0n : left);
++}
++
+ /** What a sum of figures is above the sheet's `cap`: 0.00 when it is not (or there is no cap, or it is n/a). */
+ export function excess(sum: string, cap: string): string {
+   return sum === 'n/a' ? '0.00' : show(hundredths(sum) - hundredths(capped(sum, cap)));
+ }
+ 
+-/** A person's due-total: their figures added up (see `personSum`), held to the sheet's `cap` (two decimals; "" for none). */
++/** A person's due-total: their figures added up (see `personSum`), held to `cap` — the sheet's cap less their cut total (see `capLess`; two decimals; "" for none). */
+ export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late, cap: string): string {
+   return capped(personSum(person, people, claims, rates, today, floor, late), cap);
+ }
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 22248061..5d5c55f9 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -4,8 +4,9 @@ import { claimsQuery, isActive, isReviewLate } from '../claims/claimsQuery';
+ import type { Claim, ClaimStatus } from '../claims/claimsQuery';
+ import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+ import { classicPeriodDue, periodDue, periodsQuery } from '../periods/periodsQuery';
++import { useCapFor } from '../pools/poolsQuery';
+ import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
+-import { useCap, useFloor, useLate, useReviewSla } from '../settings/settingsQuery';
++import { useFloor, useLate, useReviewSla } from '../settings/settingsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
+ 
+@@ -28,7 +29,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capFor = useCapFor(sheetId);
+   const reviewSla = useReviewSla(sheetId);
+ 
+   const unretired = people.filter((p) => p.retiredFrom === null);
+@@ -60,7 +61,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>
+-                  {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}
++                  {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id))))}
+                 </td>
+                 <td data-testid={`summary-grade-${g}-active`}>
+                   {onGrade.filter((p) => isActive(p.id, claims, people, today)).length}
+@@ -140,7 +141,7 @@ function ClassicSummary({ sheetId }: { sheetId: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capFor = useCapFor(sheetId);
+ 
+   return (
+     <section data-testid="classic-summary">
+@@ -162,7 +163,7 @@ function ClassicSummary({ sheetId }: { sheetId: string }) {
+         </tbody>
+       </table>
+       <p>
+-        Due <strong data-testid="classic-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}</strong>
++        Due <strong data-testid="classic-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id))))}</strong>
+       </p>
+     </section>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java b/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
+index 7f592084..de24e050 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.pool;
+ 
++import java.math.BigDecimal;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+@@ -44,6 +45,23 @@ public class PoolCuts {
+         }
+     }
+ 
++    /**
++     * Each person's cut total, by person id: their live cut in every pool they are a member of, added up (a pool that
++     * shows no cut adds nothing); a person in no pool is left out.
++     */
++    public Map<Long, BigDecimal> totals(String sheetId) {
++        Map<Long, BigDecimal> out = new HashMap<>();
++        for (PoolResponse pool : RespondWithPools.figure(sheetId, pools, people, settings, sheets, crews, Map.of(),
++                List.of())) {
++            for (PoolResponse.Member m : pool.members()) {
++                if (m.pool() == null && !m.cut().isEmpty()) {
++                    out.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
++                }
++            }
++        }
++        return out;
++    }
++
+     /** Drops the period's fixed cuts, so they are live again. */
+     public void drop(String sheetId, String period) {
+         jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, period);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 293a4381..c1991891 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.ClaimShares;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.pool.PoolCuts;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.Person;
+@@ -33,9 +34,10 @@ public class Rollup {
+     private final Settings settings;
+     private final Periods periods;
+     private final ClaimShares shares;
++    private final PoolCuts poolCuts;
+ 
+     public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Periods periods,
+-            ClaimShares shares) {
++            ClaimShares shares, PoolCuts poolCuts) {
+         this.people = people;
+         this.claims = claims;
+         this.rates = rates;
+@@ -43,6 +45,7 @@ public class Rollup {
+         this.settings = settings;
+         this.periods = periods;
+         this.shares = shares;
++        this.poolCuts = poolCuts;
+     }
+ 
+     /** The sheet's alert threshold; null when alerts are off. */
+@@ -58,6 +61,7 @@ public class Rollup {
+         List<Person> listed = people.list(sheetId);
+         Map<Long, Person> byId = new LinkedHashMap<>();
+         listed.forEach(p -> byId.put(p.id(), p));
++        Map<Long, BigDecimal> cuts = poolCuts.totals(sheetId);
+         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
+         BigDecimal claimedTotal = ZERO;
+         List<BigDecimal> dues = new ArrayList<>();
+@@ -105,8 +109,8 @@ public class Rollup {
+             }
+             // With no rate today and no figure, the due-total is n/a.
+             boolean none = !anyFigure && rates.on(sheetId, person.gradeOn(today), today) == null;
+-            // Otherwise it is held to the sheet's cap.
+-            due = settings.capped(sheetId, due);
++            // Otherwise it is held to the sheet's cap less their cut total.
++            due = settings.capped(sheetId, due, cuts.getOrDefault(person.id(), ZERO));
+             claimedTotal = claimedTotal.add(claimed);
+             if (!none) {
+                 dues.add(due);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index daac4770..12d036e8 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -221,10 +221,10 @@ public class Settings {
+         return value.isEmpty() ? null : new BigDecimal(value);
+     }
+ 
+-    /** A person's due-total held to the sheet's cap; null (n/a) stays null. */
+-    public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
++    /** A person's due-total held to the sheet's cap less their cut total, not below 0.00; null (n/a) stays null. */
++    public BigDecimal capped(String sheetId, BigDecimal dueTotal, BigDecimal cutTotal) {
+         BigDecimal cap = cap(sheetId);
+-        return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap);
++        return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap.subtract(cutTotal).max(BigDecimal.ZERO.setScale(2)));
+     }
+ 
+     /** The floor in force on the date, with two decimals: what a claim's live due is at least; 1.00 when none is. */
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 7c6adfcb..a2816253 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.pool.PoolCuts;
+ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.Settings;
+@@ -21,25 +22,25 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class TakeStatement {
+-    // Records the person's due-total now (a deferred claim counts in none and is left unbound) (held to the sheet's cap) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
++    // Records the person's due-total now (a deferred claim counts in none and is left unbound) (held to the sheet's cap less their cut total) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
+     // the rest of their claims are left unbound. Each claim is bound to its due as shown, late charge and floor included, so
+     // while bound it no longer follows the sheet's today; a claim already bound keeps the figure it was bound to.
+     // Taken as of a date (on or before the sheet's today), it is worked out from the person and their claims as they stood at
+     // the end of that date, with that date for the sheet's today; it binds those claims still theirs, and records that date.
+     public void take(@Val Person person, @Val StatementAsOf asOf, Claims claims, People people, Rates rates, Settings settings,
+-            Sheets sheets, Statements statements, Out<Statement> statementOut) throws StatementRefusedException {
++            Sheets sheets, PoolCuts poolCuts, Statements statements, Out<Statement> statementOut) throws StatementRefusedException {
+         statements.lock(person.id());
+         LocalDate today = sheets.today(person.sheetId());
+         Stated stated;
+         if (asOf.date() == null) {
+-            stated = stated(person, today, claims, rates, settings);
++            stated = stated(person, today, claims, rates, settings, poolCuts);
+         } else {
+             if (asOf.date().isAfter(today)) {
+                 throw new StatementRefusedException("A statement cannot be taken as of a date after the sheet's today.");
+             }
+             stated = AsOf.on(asOf.date(), () -> {
+                 Person then = people.find(person.sheetId(), person.id());
+-                return then == null ? null : stated(then, asOf.date(), claims, rates, settings);
++                return then == null ? null : stated(then, asOf.date(), claims, rates, settings, poolCuts);
+             });
+             if (stated == null) {
+                 throw new StatementRefusedException(person.name() + " was not on the sheet on " + asOf.date() + ".");
+@@ -61,7 +62,8 @@ public class TakeStatement {
+     }
+ 
+     /** The person's statement with {@code today} as the sheet's today. */
+-    private static Stated stated(Person person, LocalDate today, Claims claims, Rates rates, Settings settings) {
++    private static Stated stated(Person person, LocalDate today, Claims claims, Rates rates, Settings settings,
++            PoolCuts poolCuts) {
+         Map<Long, BigDecimal> figures = new LinkedHashMap<>();
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         for (Claim claim : claims.list(person.sheetId())) {
+@@ -77,7 +79,8 @@ public class TakeStatement {
+         // With no rate today and no figure, the due-total is n/a.
+         boolean none = rates.on(person.sheetId(), person.gradeOn(today), today) == null
+                 && figures.values().stream().allMatch(Objects::isNull);
+-        return new Stated(figures, none ? "n/a" : settings.capped(person.sheetId(), total).toPlainString());
++        return new Stated(figures, none ? "n/a" : settings.capped(person.sheetId(), total,
++                poolCuts.totals(person.sheetId()).getOrDefault(person.id(), BigDecimal.ZERO.setScale(2))).toPlainString());
+     }
+ 
+     /**
