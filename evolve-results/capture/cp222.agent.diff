@@ -1,0 +1,78 @@
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+index a8878788..5e30b86d 100644
+--- a/src/main/frontend/features/dashboard/dashboard.slot.tsx
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -13,7 +13,7 @@ const dashboardQuery = (sheetId: string, user: string) => ({
+ });
+ 
+ /**
+- * The steward's dashboard: how many of the sheet's claims are PENDING, how many REVIEW, and how many that count are
++ * The steward's dashboard: how many of the claims over the sheet and its descendants are PENDING, how many REVIEW, and how many that count are
+  * overdue. A user who is not a steward (a delegation included) sees the cells empty; as of a date, the counts and the
+  * role are as they stood then.
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java b/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java
+index 7a515746..46dc4f02 100644
+--- a/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java
++++ b/src/main/java/net/officefloor/hq/app/dashboard/RespondWithDashboard.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.dashboard;
+ 
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.function.Function;
+@@ -19,6 +20,7 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class RespondWithDashboard {
++    // Counted over the sheet and all its descendants, each by its own today.
+     // Only a steward (a delegation included) on the sheet's today sees the counts; as of a date, the role then.
+     public void respond(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection, Settings settings,
+             Sheets sheets, Claims claims, People people, ObjectResponse<DashboardResponse> response) {
+@@ -27,15 +29,20 @@ public class RespondWithDashboard {
+             response.send(DashboardResponse.NONE);
+             return;
+         }
+-        LocalDate today = sheets.today(sheet);
+-        List<Claim> all = claims.list(sheet);
+-        Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
+-        int pending = (int) all.stream().filter(c -> c.status() == ClaimStatus.PENDING).count();
+-        int review = (int) all.stream().filter(c -> c.status() == ClaimStatus.REVIEW).count();
+-        int overdue = (int) all.stream().filter(c -> {
+-            Person person = byId.get(c.personId());
+-            return person != null && Rollup.counts(c, person, today) && settings.overdue(c, today);
+-        }).count();
++        int pending = 0, review = 0, overdue = 0;
++        List<String> tree = new ArrayList<>(List.of(sheet));
++        tree.addAll(settings.descendants(sheet));
++        for (String each : tree) {
++            LocalDate today = sheets.today(each);
++            List<Claim> all = claims.list(each);
++            Map<Long, Person> byId = people.list(each).stream().collect(Collectors.toMap(Person::id, Function.identity()));
++            pending += (int) all.stream().filter(c -> c.status() == ClaimStatus.PENDING).count();
++            review += (int) all.stream().filter(c -> c.status() == ClaimStatus.REVIEW).count();
++            overdue += (int) all.stream().filter(c -> {
++                Person person = byId.get(c.personId());
++                return person != null && Rollup.counts(c, person, today) && settings.overdue(c, today);
++            }).count();
++        }
+         response.send(new DashboardResponse(pending, review, overdue));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml
+index 34340a38..451b0207 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/dashboard.GET.yml
+@@ -1,6 +1,7 @@
+-# GET /api/sheets/{sheetId}/dashboard — the steward's dashboard for the user named by X-User: the sheet's PENDING and
+-# REVIEW claims and its overdue claims that count ({"pending":1,"review":0,"overdue":2}); every count null for a user
+-# who is not a steward (as of the sheet's today, or the as-of date).
++# GET /api/sheets/{sheetId}/dashboard — the steward's dashboard for the user named by X-User: the PENDING and
++# REVIEW claims and the overdue claims that count, over the sheet and all its descendants, each by its own today
++# ({"pending":1,"review":0,"overdue":2}); every count null for a user who is not a steward on the sheet (as of the
++# sheet's today, or the as-of date).
+ respond:
+   class: net.officefloor.hq.app.dashboard.RespondWithDashboard
+   govern: [ readonly-transaction ]
