@@ -88,14 +88,16 @@ public class ApplyClaimStatus {
         if (next == ClaimStatus.PENDING) {
             throw new ClaimStatusRefusedException("A claim becomes PENDING only when a clerk settles it above the clerk limit.");
         }
+        // Four eyes and the proof rule are judged on the claim itself, or for a part-settle on the claim it was split off.
+        Claim judged = judged(claim);
         // Four eyes: the user who opened a claim cannot settle it, nor approve it.
-        if (next == ClaimStatus.SETTLED && claim.openedBy() != null && claim.openedBy().equals(user)) {
+        if (next == ClaimStatus.SETTLED && judged.openedBy() != null && judged.openedBy().equals(user)) {
             throw new ClaimStatusRefusedException(claim.status() == ClaimStatus.PENDING
                     ? "The user who opened a claim cannot approve it."
                     : "The user who opened a claim cannot settle it.");
         }
         // Nor can the user who last edited it.
-        if (next == ClaimStatus.SETTLED && user.equals(claims.editedBy(claim))) {
+        if (next == ClaimStatus.SETTLED && user.equals(claims.editedBy(judged))) {
             throw new ClaimStatusRefusedException(claim.status() == ClaimStatus.PENDING
                     ? "The user who last edited a claim cannot approve it."
                     : "The user who last edited a claim cannot settle it.");
@@ -151,12 +153,14 @@ public class ApplyClaimStatus {
         // A claim whose due is above the proof threshold in force on its date (its person's grade's, else the sheet's) is settled or approved only once it has a
         // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
         // While the sheet has proof kinds, such a claim needs at least one proof of each of them instead.
-        if (next == ClaimStatus.SETTLED && due != null) {
-            java.util.List<String> kinds = settings.proofKinds(claim.sheetId());
-            java.util.List<String> missing = kinds.isEmpty() ? (claim.proofs() == 0 ? java.util.List.of("") : java.util.List.of())
-                    : kinds.stream().filter(kind -> claim.proofsOf(kind) == 0).toList();
-            BigDecimal threshold = missing.isEmpty() ? null : settings.proofThreshold(claim);
-            if (threshold != null && due.compareTo(threshold) > 0) {
+        BigDecimal judgedDue = judged == claim ? due : judged.stated() ? judged.statedDue()
+                : settings.withLate(judged, due(judged, people, rates, settings), sheets.today(judged.sheetId()));
+        if (next == ClaimStatus.SETTLED && judgedDue != null) {
+            java.util.List<String> kinds = settings.proofKinds(judged.sheetId());
+            java.util.List<String> missing = kinds.isEmpty() ? (judged.proofs() == 0 ? java.util.List.of("") : java.util.List.of())
+                    : kinds.stream().filter(kind -> judged.proofsOf(kind) == 0).toList();
+            BigDecimal threshold = missing.isEmpty() ? null : settings.proofThreshold(judged);
+            if (threshold != null && judgedDue.compareTo(threshold) > 0) {
                 throw new ClaimProofNeededException("The claim's due is above the proof threshold (" + threshold.toPlainString()
                         + "): add " + (kinds.isEmpty() ? "a proof" : "a " + String.join(" and a ", missing))
                         + " before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));
@@ -220,6 +224,11 @@ public class ApplyClaimStatus {
         claims.log(changed, user, sheets.today(claim.sheetId()), rollup.figure(changed));
         responseOut.set(ClaimResponse.from(changed));
         requestOut.set(new ClaimStatusRequest(action, reason, voidReason));
+    }
+
+    /** The claim four eyes and the proof rule are judged on: the claim itself (a part-settle judges the claim it split). */
+    protected Claim judged(Claim claim) {
+        return claim;
     }
 
     /**
