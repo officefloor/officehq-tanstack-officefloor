@@ -3,14 +3,14 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { claimsQuery, counts, sumAmounts } from './claimsQuery';
+import { claimsQuery, countsClaimed, sumAmounts } from './claimsQuery';
 import { ColumnShown } from '../people/useColumns';
 
-/** The claims that count toward claimed: those that count, leaving out claims that correct another. */
+/** The claims that count toward claimed: those that count (a hold does not leave them out), leaving out claims that correct another. */
 function useCounting(sheetId: string) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const today = useSheetToday(sheetId);
-  return (useQuery(claimsQuery(sheetId)).data ?? []).filter((c) => c.corrects === null && counts(c, people, today));
+  return (useQuery(claimsQuery(sheetId)).data ?? []).filter((c) => c.corrects === null && countsClaimed(c, people, today));
 }
 
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {

@@ -30,7 +30,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
  * `waived` is whether a steward waived its late charge: it bears none from then on;
- * `held` is whether it is held: while open and not bound by a statement it counts in no total, as a held person's claims do.
+ * `held` is whether it is held: while open and not bound by a statement it counts in no due figure (it still counts in claimed), as a held person's claims do.
  */
 export type Claim = {
   id: number;
@@ -93,6 +93,12 @@ export const counts = (c: Claim, people: Person[], today: string) =>
   (c.status === 'SETTLED' ||
   (isOpen(c) &&
     (c.stated || (!c.held && !leftOut(people.find((p) => p.id === c.personId), c.date, today)))));
+
+/** Whether the claim counts toward claimed: as `counts`, except that a hold (the claim's or its person's) does not leave it out. */
+export const countsClaimed = (c: Claim, people: Person[], today: string) => {
+  const person = people.find((p) => p.id === c.personId);
+  return counts({ ...c, held: false }, person ? [{ ...person, holds: [], held: false }] : [], today);
+};
 
 /** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
 const leftOut = (person: Person | undefined, date: string, today: string) =>

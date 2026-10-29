@@ -59,12 +59,16 @@ public class Rollup {
             BigDecimal overdue = ZERO;
             boolean anyFigure = false;
             for (Claim claim : counting) {
-                if (claim.personId() != person.id() || !counts(claim, person, today)) {
+                if (claim.personId() != person.id() || !countsClaimed(claim, person, today)) {
                     continue;
                 }
                 // A claim that corrects another is left out of claimed; its due still counts.
                 if (claim.corrects() == null) {
                     claimed = claimed.add(claim.amount());
+                }
+                // A held claim counts in claimed, but not in the due figures.
+                if (!counts(claim, person, today)) {
+                    continue;
                 }
                 BigDecimal figure = figure(claim, person, today);
                 if (figure != null) {
@@ -178,6 +182,17 @@ public class Rollup {
         }
         boolean bound = claim.stated();
         return !(claim.status().isOpen() && !bound && (claim.held() || person.heldOn(claim.date()) || person.retiredOn(today)));
+    }
+
+    /**
+     * Whether the (OPEN, PENDING or SETTLED) claim counts toward claimed: as {@link #counts}, except that a hold (the
+     * claim's or its person's) does not leave it out.
+     */
+    public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
+        if (claim.deferredOn(today)) {
+            return false;
+        }
+        return !(claim.status().isOpen() && !claim.stated() && person.retiredOn(today));
     }
 
     /**

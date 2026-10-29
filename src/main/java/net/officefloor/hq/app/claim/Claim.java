@@ -19,7 +19,7 @@ import java.time.LocalDate;
  * {@code ref} is its external reference, unique on the sheet without regard to case (null when it has none).
  * {@code tags} are its tags, trimmed, lower-cased, without repeats and sorted (empty for none).
  * {@code waived} is whether a steward waived its late charge: it bears none from then on.
- * {@code held} is whether it is held: while OPEN or PENDING and not bound by a statement it counts in no live total.
+ * {@code held} is whether it is held: while OPEN or PENDING and not bound by a statement it counts in no live due figure (it still counts in claimed).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
