@@ -1,0 +1,304 @@
+diff --git a/src/main/frontend/features/people/move.slot.tsx b/src/main/frontend/features/people/move.slot.tsx
+new file mode 100644
+index 00000000..afe3e4fe
+--- /dev/null
++++ b/src/main/frontend/features/people/move.slot.tsx
+@@ -0,0 +1,52 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
++import { usePersonError } from './usePersonError';
++import { useUser } from '../session/useUser';
++import { peopleKey } from './peopleQuery';
++import type { Person } from './peopleQuery';
++
++/**
++ * The controls that move the person up or down the list, swapping them with the person above or
++ * below. The top person cannot move up nor the bottom person down: the server refuses it.
++ */
++function PersonMove({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const [, setError] = usePersonError(personId);
++  const once = useSubmitOnce();
++  const move = useMutation({
++    mutationFn: (direction: 'up' | 'down') =>
++      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/move/${direction}`, {}, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++    },
++    onError: (_e, direction) => setError(`The person could not be moved ${direction}.`),
++  });
++
++  const button = (direction: 'up' | 'down', label: string) => (
++    <button
++      type="button"
++      data-testid={`person-move-${direction}`}
++      disabled={move.isPending}
++      onClick={() => {
++        setError('');
++        once(() => move.mutateAsync(direction));
++      }}
++    >
++      {label}
++    </button>
++  );
++
++  return (
++    <td>
++      {button('up', 'Up')} {button('down', 'Down')}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHeaders.fill({ order: 24, Component: () => <th>Move</th> }),
++  PersonCells.fill({ order: 24, Component: PersonMove }),
++];
+diff --git a/src/main/frontend/features/people/select.slot.tsx b/src/main/frontend/features/people/select.slot.tsx
+index a2329213..7dfcfd72 100644
+--- a/src/main/frontend/features/people/select.slot.tsx
++++ b/src/main/frontend/features/people/select.slot.tsx
+@@ -1,9 +1,11 @@
+ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
++import { usePersonError } from './usePersonError';
+ import { useSelectedPeople } from './useSelectedPeople';
+ 
+-/** The checkbox that ticks a person for a bulk action. */
++/** The checkbox that ticks a person for a bulk action; ticking it is the next action on the row, so it clears the row's refusal. */
+ function PersonSelect({ personId }: { sheetId: string; personId: number }) {
+   const [selected, setSelected] = useSelectedPeople();
++  const [, setError] = usePersonError(personId);
+   const checked = selected.includes(personId);
+   return (
+     <td>
+@@ -11,9 +13,10 @@ function PersonSelect({ personId }: { sheetId: string; personId: number }) {
+         type="checkbox"
+         data-testid="person-select"
+         checked={checked}
+-        onChange={(e) =>
+-          setSelected(e.target.checked ? [...selected, personId] : selected.filter((id) => id !== personId))
+-        }
++        onChange={(e) => {
++          setError('');
++          setSelected(e.target.checked ? [...selected, personId] : selected.filter((id) => id !== personId));
++        }}
+       />
+     </td>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java
+new file mode 100644
+index 00000000..80961ab7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditPersonMoved {
++    public void audit(@Val MovedPerson moved, ServerHttpConnection connection, Audit audit) {
++        audit.record(Audit.line("PERSON_MOVED", moved.person().sheetId(), Audit.user(connection),
++                "name=" + moved.person().name(), "position=" + moved.position()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandlePersonMoveRefused.java b/src/main/java/net/officefloor/hq/app/person/HandlePersonMoveRefused.java
+new file mode 100644
+index 00000000..c10082b5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandlePersonMoveRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandlePersonMoveRefused {
++    public void handle(@Parameter PersonMoveRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MovePerson.java b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+new file mode 100644
+index 00000000..1f96b4eb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class MovePerson {
++    // Swaps the person with the one above (up) or below (down) them in the list; the top cannot move up nor the bottom down.
++    public void move(@PathVariable("direction") String direction, @Val Person person, People people, Sheets sheets,
++            Out<MovedPerson> movedOut, Out<PersonResponse> responseOut) throws PersonMoveRefusedException {
++        List<Person> list = people.list(person.sheetId());
++        int at = -1;
++        for (int i = 0; i < list.size(); i++) {
++            if (list.get(i).id() == person.id()) {
++                at = i;
++            }
++        }
++        int to = switch (direction) {
++            case "up" -> at - 1;
++            case "down" -> at + 1;
++            default -> throw new PersonMoveRefusedException("No direction " + direction + ".");
++        };
++        if (at < 0 || to < 0 || to >= list.size()) {
++            throw new PersonMoveRefusedException(person.name() + " cannot move " + direction + ".");
++        }
++        people.swap(person.id(), list.get(to).id());
++        movedOut.set(new MovedPerson(person, to + 1));
++        responseOut.set(PersonResponse.from(person, sheets.today(person.sheetId())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MovedPerson.java b/src/main/java/net/officefloor/hq/app/person/MovedPerson.java
+new file mode 100644
+index 00000000..0aa53723
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MovedPerson.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The person moved, with their new position in the list (counting from 1). */
++public record MovedPerson(Person person, int position) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 9f1b7b04..950e51c9 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -36,9 +36,17 @@ public class People {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's people in the order they were added. */
++    /** The sheet's people in list order: by position (new people go to the end). */
+     public List<Person> list(String sheetId) {
+-        return withDated(sheetId, jdbc.query("SELECT * FROM " + AsOf.table("person") + " WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
++        return withDated(sheetId, jdbc.query("SELECT * FROM " + AsOf.table("person") + " WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId));
++    }
++
++    /** Swap the two people's positions in the list. */
++    public void swap(long a, long b) {
++        Long at = jdbc.queryForObject("SELECT list_position FROM person WHERE id = ?", Long.class, a);
++        Long bt = jdbc.queryForObject("SELECT list_position FROM person WHERE id = ?", Long.class, b);
++        jdbc.update("UPDATE person SET list_position = ? WHERE id = ?", bt, a);
++        jdbc.update("UPDATE person SET list_position = ? WHERE id = ?", at, b);
+     }
+ 
+     public Person find(String sheetId, long id) {
+@@ -184,12 +192,14 @@ public class People {
+         KeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, list_position) VALUES (?, ?, ?, ?, ?, "
++                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, request.name());
+             ps.setString(3, request.grade());
+             ps.setObject(4, request.terms() == null ? null : Integer.valueOf(request.terms()), java.sql.Types.INTEGER);
+             ps.setString(5, request.contact());
++            ps.setString(6, sheetId);
+             return ps;
+         }, key);
+         return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, List.of(),
+@@ -283,12 +293,14 @@ public class People {
+         KeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, list_position) VALUES (?, ?, ?, ?, ?, "
++                            + "(SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "id" });
+             ps.setString(1, to);
+             ps.setString(2, person.name());
+             ps.setString(3, person.grade());
+             ps.setObject(4, person.terms(), java.sql.Types.INTEGER);
+             ps.setString(5, person.contact());
++            ps.setString(6, to);
+             return ps;
+         }, key);
+         long arrived = key.getKey().longValue();
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMoveRefusedException.java b/src/main/java/net/officefloor/hq/app/person/PersonMoveRefusedException.java
+new file mode 100644
+index 00000000..1307ef95
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMoveRefusedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.person;
++
++/** A move that may not happen: the top person moved up, the bottom person moved down, or no such direction. */
++public class PersonMoveRefusedException extends Exception {
++
++    public PersonMoveRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/db/migration/V59__person_position.sql b/src/main/resources/db/migration/V59__person_position.sql
+new file mode 100644
+index 00000000..870ee9b6
+--- /dev/null
++++ b/src/main/resources/db/migration/V59__person_position.sql
+@@ -0,0 +1,12 @@
++-- A person's position in the sheet's list: the list (and everything worked out in list order) runs by position, lowest
++-- first. A new person (added, imported or transferred in) goes after everyone on the sheet; moving a person up or down
++-- swaps positions with their neighbour. Positions may have gaps (a person merged away or transferred out leaves one).
++-- People stored before keep the order they were added in. Kept in the person's history too (see V39). The journal
++-- trigger is made again around the change, as in V41.
++DROP TRIGGER person_journal;
++ALTER TABLE person ADD COLUMN list_position BIGINT;
++UPDATE person SET list_position = id;
++ALTER TABLE person ALTER COLUMN list_position SET NOT NULL;
++ALTER TABLE person_history ADD COLUMN list_position BIGINT;
++UPDATE person_history SET list_position = id;
++CREATE TRIGGER person_journal AFTER INSERT, UPDATE, DELETE ON person FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonMoveRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonMoveRefusedException.yml
+new file mode 100644
+index 00000000..87486633
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonMoveRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandlePersonMoveRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move/{direction}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move/{direction}.PUT.yml
+new file mode 100644
+index 00000000..045f60f4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move/{direction}.PUT.yml
+@@ -0,0 +1,27 @@
++# PUT /api/sheets/{sheetId}/people/{personId}/move/{direction} — move a person up or down the list, swapping them with
++# the person above or below. The top person moving up, the bottom person moving down, or any other direction is
++# refused with 422 and nothing is stored; 404 for a person not on the sheet. Audited as PERSON_MOVED with the new
++# position (counting from 1).
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: load
++  govern: [ transaction ]
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  next: move
++  govern: [ transaction ]
++move:
++  class: net.officefloor.hq.app.person.MovePerson
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonMoved
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.person.RespondWithEditedPerson
++  govern: [ transaction ]
