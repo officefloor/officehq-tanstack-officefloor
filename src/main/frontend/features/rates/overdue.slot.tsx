@@ -66,12 +66,16 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-/** A person's score: their settled-total / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
+/**
+ * A person's score: their settled-total / 100, minus 5 per overdue claim of theirs that counts, rounded half to even.
+ * Its settled-total leaves out corrections: only SETTLED claims that correct nothing count toward it.
+ */
 function usePersonScore(sheetId: string, personId: number): string {
   const data = useOverdueData(sheetId);
   const person = data.people.find((p) => p.id === personId);
   const { count } = person ? overdue(data, person) : { count: 0 };
-  const [settled] = settledAndOpen(person, data.people, data.claims, data.rates, data.today, data.floor, data.late);
+  const uncorrecting = data.claims.filter((c) => c.corrects === null);
+  const [settled] = settledAndOpen(person, data.people, uncorrecting, data.rates, data.today, data.floor, data.late);
   return score(settled, count);
 }
 
