@@ -62,12 +62,13 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [reviewSla, setReviewSla] = useState('');
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
+  const [scoreLog, setScoreLog] = useState('');
   const [proofKinds, setProofKinds] = useState('');
   const [defaultGrade, setDefaultGrade] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'scoreMid' | 'scoreHigh' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -105,6 +106,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setReviewSla('');
       setScoreMid('');
       setScoreHigh('');
+      setScoreLog('');
       setProofKinds('');
       setDefaultGrade('');
       setParent('');
@@ -255,6 +257,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The high score threshold must be a whole number.');
       return;
     }
+    const sl = scoreLog.trim();
+    if (sl !== '' && sl !== 'on') {
+      setError('The score log must be on or blank.');
+      return;
+    }
     const pk = proofKinds.trim();
     if (pk !== '' && !pk.split(',').every((k) => PROOF_KINDS.includes(k.trim()))) {
       setError('The proof kinds must be receipt or photo, separated by commas.');
@@ -312,7 +319,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     // A blank review threshold is none likewise.
     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && sm === '' && sh === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && sm === '' && sh === '' && sl === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -329,6 +336,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (rs !== '' || (none && blank === 'reviewSla')) body.reviewSla = rs;
     if (sm !== '' || (none && blank === 'scoreMid')) body.scoreMid = sm;
     if (sh !== '' || (none && blank === 'scoreHigh')) body.scoreHigh = sh;
+    if (sl !== '' || (none && blank === 'scoreLog')) body.scoreLog = sl;
     if (pk !== '' || (none && blank === 'proofKinds')) body.proofKinds = pk;
     if (dg !== '' || (none && blank === 'defaultGrade')) body.defaultGrade = dg;
     if (pa !== '' || (none && blank === 'parent')) body.parent = pa;
@@ -828,6 +836,19 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Score log{' '}
+          <input
+            data-testid="setting-score-log"
+            placeholder="off"
+            value={scoreLog}
+            onFocus={() => setBlank('scoreLog')}
+            onChange={(e) => {
+              setScoreLog(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Proof kinds{' '}
           <input
             data-testid="setting-proof-kinds"
@@ -979,6 +1000,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Score thresholds: mid <span data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</span>, high{' '}
         <span data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</span>
+      </p>
+      <p>
+        Score log: <span data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</span>
       </p>
       <p>
         Proof kinds: <span data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</span>

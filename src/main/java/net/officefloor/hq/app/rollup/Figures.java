@@ -8,8 +8,8 @@ import java.util.Map;
  */
 public record Figures(Map<Long, PersonFigures> people, String claimedTotal, String dueTotal, String overdueTotal) {
 
-    /** A person's name, claimed, due-total ({@code "n/a"} when they have none) and overdue-total. */
-    public record PersonFigures(String name, String claimed, String dueTotal, String overdueTotal) {
+    /** A person's name, claimed, due-total ({@code "n/a"} when they have none), overdue-total and score. */
+    public record PersonFigures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
 
         public boolean sameAs(PersonFigures other) {
             return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)

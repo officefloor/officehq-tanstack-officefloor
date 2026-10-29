@@ -56,6 +56,8 @@ public class Settings {
     public static final String SCORE_MID = "score-mid";
     /** The score a person's band is HIGH at or above (not dated; blank: none, so no bands). */
     public static final String SCORE_HIGH = "score-high";
+    /** The score log switch (not dated): "on" writes a SCORE line per person when the sheet's today is changed; blank is off. */
+    public static final String SCORE_LOG = "score-log";
     /** The proof kinds a claim above the proof threshold needs one proof of each of (not dated; blank: none), comma separated. */
     public static final String PROOF_KINDS = "proof-kinds";
     /** The grade a person quick-added or imported with a blank grade is given (not dated); "" is grade A. */
@@ -351,6 +353,11 @@ public class Settings {
     public Integer reviewSla(String sheetId) {
         String value = get(sheetId, REVIEW_SLA);
         return value.isEmpty() ? null : Integer.valueOf(value);
+    }
+
+    /** Whether the score log is on. */
+    public boolean scoreLog(String sheetId) {
+        return "on".equals(get(sheetId, SCORE_LOG));
     }
 
     /** The alert threshold, with two decimals; null when alerts are off. */

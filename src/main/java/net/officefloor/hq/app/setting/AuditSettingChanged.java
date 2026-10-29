@@ -101,6 +101,10 @@ public class AuditSettingChanged {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.SCORE_HIGH, "value=" + settings.scoreHigh()));
         }
+        if (settings.scoreLog() != null) {
+            audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
+                    "key=" + Settings.SCORE_LOG, "value=" + settings.scoreLog()));
+        }
         if (settings.proofKinds() != null) {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.PROOF_KINDS, "value=" + settings.proofKinds()));

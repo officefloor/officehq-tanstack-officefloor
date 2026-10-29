@@ -57,6 +57,8 @@ public class Rollup {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
             BigDecimal overdue = ZERO;
+            BigDecimal settled = ZERO;
+            int overdueCount = 0;
             boolean anyFigure = false;
             for (Claim claim : counting) {
                 if (claim.personId() != person.id() || !countsClaimed(claim, person, today)) {
@@ -70,6 +72,12 @@ public class Rollup {
                     continue;
                 }
                 BigDecimal figure = figure(claim, person, today);
+                if (settings.overdue(claim, today)) {
+                    overdueCount++;
+                }
+                if (figure != null && claim.status() == ClaimStatus.SETTLED) {
+                    settled = settled.add(figure);
+                }
                 if (figure != null) {
                     due = due.add(figure);
                     anyFigure = true;
@@ -88,10 +96,16 @@ public class Rollup {
             }
             overdues.add(overdue);
             figures.put(person.id(), new Figures.PersonFigures(person.name(), claimed.toPlainString(),
-                    none ? "n/a" : due.toPlainString(), overdue.toPlainString()));
+                    none ? "n/a" : due.toPlainString(), overdue.toPlainString(), score(settled, overdueCount)));
         }
         return new Figures(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
                 trimmed(overdues).toPlainString());
+    }
+
+    /** A person's score, as the screen shows it: their settled-total / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
+    private static String score(BigDecimal settled, int overdueCount) {
+        return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
+                .setScale(0, java.math.RoundingMode.HALF_EVEN).toPlainString();
     }
 
     /** A sheet total of per-person figures: with three or more, the single highest and lowest are left out. */

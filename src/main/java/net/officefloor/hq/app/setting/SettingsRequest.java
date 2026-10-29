@@ -5,5 +5,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         String cap, String proofThreshold, String graceDays, String noteThreshold, String entryDate,
         java.util.Map<String, String> gradeTerms, java.util.Map<String, String> gradeGrace, java.util.Map<String, String> from, java.util.Map<String, String> perms,
         java.util.Map<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        java.util.Map<String, String> gradeClerkLimit, String scoreMid, String scoreHigh) {
+        java.util.Map<String, String> gradeClerkLimit, String scoreMid, String scoreHigh, String scoreLog) {
 }

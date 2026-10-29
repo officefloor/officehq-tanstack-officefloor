@@ -76,6 +76,9 @@ public class ApplySettings {
         if (settings.scoreHigh() != null) {
             store.set(settings.sheetId(), Settings.SCORE_HIGH, settings.scoreHigh());
         }
+        if (settings.scoreLog() != null) {
+            store.set(settings.sheetId(), Settings.SCORE_LOG, settings.scoreLog());
+        }
         if (settings.proofKinds() != null) {
             store.set(settings.sheetId(), Settings.PROOF_KINDS, settings.proofKinds());
         }

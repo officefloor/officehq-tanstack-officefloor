@@ -201,6 +201,10 @@ public class ValidateSettings {
         }
         String scoreMid = scoreThreshold(body == null ? null : body.scoreMid(), "mid");
         String scoreHigh = scoreThreshold(body == null ? null : body.scoreHigh(), "high");
+        String scoreLog = body == null || body.scoreLog() == null ? null : body.scoreLog().trim();
+        if (scoreLog != null && !scoreLog.isEmpty() && !scoreLog.equals("on")) {
+            throw new InvalidSettingException("The score log must be on or blank.");
+        }
         String entryDate = body == null || body.entryDate() == null ? null : body.entryDate().trim();
         if (entryDate != null && !entryDate.isEmpty()) {
             try {
@@ -317,7 +321,7 @@ public class ValidateSettings {
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !gradeClerkLimit.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
                 || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null
-                || scoreMid != null || scoreHigh != null;
+                || scoreMid != null || scoreHigh != null || scoreLog != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -325,7 +329,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh, scoreLog));
     }
 
     /** A score threshold as typed: null is left as it is, blank is none, otherwise a whole number (it may be negative). */
