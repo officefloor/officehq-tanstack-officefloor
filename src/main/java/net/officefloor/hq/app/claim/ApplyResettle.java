@@ -28,7 +28,7 @@ public class ApplyResettle {
         BigDecimal due = null;
         Person person = people.find(claim.sheetId(), claim.personId());
         if (person != null) {
-            BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
+            BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));
             Claim open = claim.withStatus(ClaimStatus.OPEN, claim.number(), null, claim.openedBy());
             due = settings.withLate(open, settings.live(claim, rate), sheets.today(claim.sheetId()));
         }

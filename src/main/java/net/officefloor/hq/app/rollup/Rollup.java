@@ -164,7 +164,7 @@ public class Rollup {
         if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
             return claim.statedDue();
         }
-        BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
+        BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));
         return settings.live(claim, rate);
     }
 }

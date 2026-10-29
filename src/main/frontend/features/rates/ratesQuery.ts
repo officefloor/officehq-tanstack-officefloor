@@ -13,8 +13,10 @@ import type { DatedValue } from '../settings/dated';
  * from-date; a grade with no rate has no entry. `level` is the sheet it is the rate of: 0 the sheet's own,
  * 1 its parent's, 2 its parent's parent, up to 3. `version` is how many versions the grade and from-date's rate has
  * had: setting it again keeps the replaced value as an older version, and the one here is always the newest.
+ * `claimsAfter` is set on a forward-only rate (saved with a from-date on or after the sheet's today): it applies only to
+ * claims with a higher id, those added after it was saved; null (or absent) applies to every claim.
  */
-export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null; level: number; version?: number };
+export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null; level: number; version?: number; claimsAfter?: number | null };
 
 /** Under the sheet's key, so re-loading the sheet re-reads its rates. */
 export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as const;
@@ -27,12 +29,15 @@ export const ratesQuery = (sheetId: string) => ({
 /**
  * The grade's rate on the date (yyyy-mm-dd): the one with the latest from-date on or before it, or undefined when none
  * applies or that one's to-date is before the date (an earlier rate does not take over again). When the sheet's own
- * rates give none, its parent's are used, then its parent's parent's, and so on (by `level`).
+ * rates give none, its parent's are used, then its parent's parent's, and so on (by `level`). Given a claim's id, the
+ * rate is the claim's: forward-only rates saved after the claim was added are passed over; without one it is the rate
+ * in force, regardless.
  */
-export function rateFor(rates: Rate[], grade: Grade | undefined, date: string): string | undefined {
-  const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
+export function rateFor(rates: Rate[], grade: Grade | undefined, date: string, claimId?: number): string | undefined {
+  const applying = claimId === undefined ? rates : rates.filter((r) => r.claimsAfter == null || claimId > r.claimsAfter);
+  const levels = [...new Set(applying.map((r) => r.level ?? 0))].sort((a, b) => a - b);
   for (const level of levels) {
-    const rate = rateOn(rates.filter((r) => (r.level ?? 0) === level), grade, date);
+    const rate = rateOn(applying.filter((r) => (r.level ?? 0) === level), grade, date);
     if (rate !== undefined) return rate;
   }
   return undefined;
@@ -159,7 +164,7 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, 
   const halfUp = roundsHalfUp(claim, late);
   const bound = claim.stated && claim.status !== 'PENDING'
     ? (claim.statedDue ?? 'n/a')
-    : due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
+    : due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date, claim.id), halfUp);
   if (isCorrection(claim) || bound === 'n/a') return bound;
   const months = lateMonths(claim, late);
   const from = overdueFrom(claim, late);

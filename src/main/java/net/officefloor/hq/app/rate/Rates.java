@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.rate;
 
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.Sheets;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -22,13 +24,17 @@ public class Rates {
         Date from = rs.getDate("from_date");
         Date to = rs.getDate("to_date");
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
-                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"));
+                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"),
+                rs.getObject("claims_after", Long.class));
     };
 
     private final JdbcTemplate jdbc;
 
-    public Rates(JdbcTemplate jdbc) {
+    private final Sheets sheets;
+
+    public Rates(JdbcTemplate jdbc, Sheets sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     /** The sheet's rates, by grade, then by from-date (one with none first). */
@@ -58,23 +64,29 @@ public class Rates {
 
     /**
      * Sets the rate as the newest version for the grade and from-date: the one it replaces, if any, is kept as an older
-     * version. Returns the rate as stored, with its version.
+     * version. A rate with a from-date on or after the sheet's today is forward-only: it is kept with the highest claim
+     * id there is now, and applies only to claims added after it. Returns the rate as stored, with its version.
      */
     public Rate save(Rate rate) {
         Date from = rate.from() == null ? null : Date.valueOf(rate.from());
+        Long claimsAfter = rate.from() != null && !rate.from().isBefore(sheets.today(rate.sheetId()))
+                ? jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM claim", Long.class)
+                : null;
         List<Rate> replaced = jdbc.query("SELECT * FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 ROW, rate.sheetId(), rate.grade(), from);
         int version = 1;
         for (Rate old : replaced) {
-            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) VALUES (?, ?, ?, ?, ?, ?)",
-                    old.sheetId(), old.grade(), from, old.version(), old.rate(), old.to() == null ? null : Date.valueOf(old.to()));
+            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date, claims_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    old.sheetId(), old.grade(), from, old.version(), old.rate(), old.to() == null ? null : Date.valueOf(old.to()),
+                    old.claimsAfter());
             version = Math.max(version, old.version() + 1);
         }
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 rate.sheetId(), rate.grade(), from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()), version);
-        return new Rate(rate.sheetId(), rate.grade(), rate.rate(), rate.from(), rate.to(), version);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, claims_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()), version,
+                claimsAfter);
+        return new Rate(rate.sheetId(), rate.grade(), rate.rate(), rate.from(), rate.to(), version, claimsAfter);
     }
 
     /**
@@ -83,8 +95,20 @@ public class Rates {
      * parent's rate for the grade and date is used, then the parent's parent, up to {@link #PARENT_LEVELS} levels up.
      */
     public BigDecimal on(String sheetId, String grade, LocalDate date) {
+        return on(sheetId, grade, date, null);
+    }
+
+    /**
+     * The grade's rate for the claim, on its date (see {@link #on(String, String, LocalDate)}): forward-only rates saved
+     * after the claim was added are passed over, as if they were not there.
+     */
+    public BigDecimal forClaim(Claim claim, String grade) {
+        return on(claim.sheetId(), grade, claim.date(), claim.id());
+    }
+
+    private BigDecimal on(String sheetId, String grade, LocalDate date, Long claimId) {
         for (String sheet : lineage(sheetId)) {
-            BigDecimal rate = own(sheet, grade, date);
+            BigDecimal rate = own(sheet, grade, date, claimId);
             if (rate != null) {
                 return rate;
             }
@@ -93,9 +117,9 @@ public class Rates {
     }
 
     /** The grade's rate on the date among the sheet's own rates (see {@link #on}), not its parent's. */
-    private BigDecimal own(String sheetId, String grade, LocalDate date) {
+    private BigDecimal own(String sheetId, String grade, LocalDate date, Long claimId) {
         return list(sheetId).stream()
-                .filter(r -> r.grade().equals(grade) && (r.from() == null || !r.from().isAfter(date)))
+                .filter(r -> r.grade().equals(grade) && (r.from() == null || !r.from().isAfter(date)) && r.appliesTo(claimId))
                 .max(Comparator.comparing(Rate::from, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .filter(r -> r.to() == null || !r.to().isBefore(date))
                 .map(Rate::rate).orElse(null);
