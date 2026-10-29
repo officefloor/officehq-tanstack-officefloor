@@ -24,8 +24,9 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-export function getJson<T>(path: string): Promise<T> {
-  return send<T>(path);
+/** A read; with a user, it names the signed-in user (X-User) for a read whose answer depends on who asks. */
+export function getJson<T>(path: string, user?: string): Promise<T> {
+  return send<T>(path, user ? { headers: { 'X-User': user } } : undefined);
 }
 
 // A write names the signed-in user (X-User) so the server can record who made the change.
