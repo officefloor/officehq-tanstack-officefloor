@@ -21,7 +21,8 @@ public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     // A member with a retirement date set, whatever the date, counts their share as given toward the pool's total.
-    // Each member of a balanced pool cuts the pool's pot times their share / 100, half to even to two decimals; the remainder goes to the member with the largest share, the earliest added on a tie, so the cuts
+    // Each member of a balanced pool cuts the pool's pot times their share / 100, half to even to two decimals; the remainder goes to the member with the smallest non-zero cut, the latest added on a tie (a member with no cut gets
+    // none; with no non-zero cut it goes to the last member with a share), so the cuts
     // total the pot. A member held on the sheet's today, or retired, has a cut of 0.00: the pot is spread over the
     // members with a cut, each the pot times their share / the shares of the members with a cut added up (all 0.00 when
     // none has a cut); the total share and balance are unchanged by a hold or a retirement. A pool whose every member
@@ -163,7 +164,8 @@ public class RespondWithPools {
         boolean anyCut = shares.signum() > 0;
         List<BigDecimal> cuts = new ArrayList<>();
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
-        int largest = -1;
+        int smallest = -1;
+        int last = -1;
         for (int i = 0; i < in.size(); i++) {
             Pools.Membership m = in.get(i);
             boolean none = !anyCut || noCut(m, byId, today);
@@ -171,12 +173,17 @@ public class RespondWithPools {
                     : pot.multiply(m.share()).divide(shares, 2, RoundingMode.HALF_EVEN);
             cuts.add(cut);
             sum = sum.add(cut);
-            if (!none && (largest < 0 || m.share().compareTo(in.get(largest).share()) > 0)) {
-                largest = i;
+            if (none) {
+                continue;
+            }
+            last = i;
+            if (cut.signum() != 0 && (smallest < 0 || cut.compareTo(cuts.get(smallest)) <= 0)) {
+                smallest = i;
             }
         }
-        if (largest >= 0) {
-            cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
+        int to = smallest >= 0 ? smallest : last;
+        if (to >= 0) {
+            cuts.set(to, cuts.get(to).add(pot.subtract(sum)));
         }
         return cuts;
     }
