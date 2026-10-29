@@ -10,8 +10,9 @@ public record PoolResponse(String name, List<Member> members, String totalShare,
 
     /**
      * A member: the person's id and name, their share with two decimals, whether they are retired, and their cut of the
-     * pot with two decimals ("" when the pool is not balanced or there is no pot).
+     * pot with two decimals ("" when the pool is not balanced or there is no pot). A member that is another pool has
+     * personId 0, its name as name and as pool, and is never retired; pool is null for a person.
      */
-    public record Member(long personId, String name, String share, boolean retired, String cut) {
+    public record Member(long personId, String name, String share, boolean retired, String cut, String pool) {
     }
 }

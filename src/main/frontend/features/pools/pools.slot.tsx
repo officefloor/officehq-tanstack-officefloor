@@ -11,8 +11,9 @@ import { poolsKey, poolsQuery } from './poolsQuery';
 import type { Pool } from './poolsQuery';
 
 /** One pool's row: its total share and whether it is balanced, its members with their shares, and the form a member is
- *  added through. A person already in the pool, or a bad share, is refused with an error on the pool. */
-function PoolRow({ sheetId, pool, people }: { sheetId: string; pool: Pool; people: Person[] }) {
+ *  added through. A member is a person, or another pool chosen as pool:<name>. A person already in the pool, a pool
+ *  already in a pool, a chain that loops or is more than three deep, or a bad share, is refused with an error on the pool. */
+function PoolRow({ sheetId, pool, people, poolNames }: { sheetId: string; pool: Pool; people: Person[]; poolNames: string[] }) {
   const queryClient = useQueryClient();
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
@@ -21,7 +22,7 @@ function PoolRow({ sheetId, pool, people }: { sheetId: string; pool: Pool; peopl
   const [user] = useUser();
   const once = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: { pool: string; personId: number | null; share: string }) =>
+    mutationFn: (body: { pool: string; personId: number | null; memberPool: string | null; share: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/pool-members`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
@@ -34,7 +35,9 @@ function PoolRow({ sheetId, pool, people }: { sheetId: string; pool: Pool; peopl
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    once(() => add.mutateAsync({ pool: pool.name, personId: personId === '' ? null : Number(personId), share: share.trim() }));
+    const memberPool = personId.startsWith('pool:') ? personId.slice('pool:'.length) : null;
+    const person = personId === '' || memberPool !== null ? null : Number(personId);
+    once(() => add.mutateAsync({ pool: pool.name, personId: person, memberPool, share: share.trim() }));
   };
 
   const edit = (set: (v: string) => void) => (v: string) => {
@@ -48,7 +51,10 @@ function PoolRow({ sheetId, pool, people }: { sheetId: string; pool: Pool; peopl
       balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
-          <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+          <li
+            key={m.pool === null ? m.personId : `pool-${m.pool}`}
+            data-testid={m.pool === null ? `pool-member-${pool.name}-${m.personId}` : `pool-member-${pool.name}-pool-${m.pool}`}
+          >
             <span data-testid="pool-member-name">{m.name}</span> <span data-testid="pool-share">{m.share}</span>
             {' '}cut <span data-testid="pool-cut">{m.cut}</span>
             {m.retired && ' (retired)'}
@@ -61,6 +67,11 @@ function PoolRow({ sheetId, pool, people }: { sheetId: string; pool: Pool; peopl
           {people.map((p) => (
             <option key={p.id} value={String(p.id)}>
               {p.name}
+            </option>
+          ))}
+          {poolNames.map((n) => (
+            <option key={`pool:${n}`} value={`pool:${n}`}>
+              pool:{n}
             </option>
           ))}
         </select>{' '}
@@ -120,7 +131,7 @@ function Pools({ sheetId }: { sheetId: string }) {
       {pools.isError && <p data-testid="pools-load-error">Could not load the pools.</p>}
       <ul>
         {(pools.data ?? []).map((p) => (
-          <PoolRow key={p.name} sheetId={sheetId} pool={p} people={people.data ?? []} />
+          <PoolRow key={p.name} sheetId={sheetId} pool={p} people={people.data ?? []} poolNames={(pools.data ?? []).map((q) => q.name)} />
         ))}
       </ul>
     </section>
