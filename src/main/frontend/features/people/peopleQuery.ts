@@ -17,9 +17,12 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
  * the id of the sheet they were transferred from; null when they were not transferred in. `retirements` are their
  * past retirements by from-date, each ended by unretiring them: a claim dated strictly between its dates is refused.
  * `tags` are the tags they carry, trimmed, lower-cased, without repeats and sorted; a tag total counts each of their
- * claims for them.
+ * claims for them. `snapshots` are the SNAPSHOTs written for them, oldest first.
  */
-export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[]; tags: string[] };
+export type Person = { id: number; name: string; grade: Grade; grades: Graded[]; version: number; retiredFrom: string | null; held: boolean; holds: Held[]; terms: number | null; contact: string | null; aliases: string[]; clashing: boolean; origin: string | null; retirements: Retired[]; tags: string[]; snapshots: Snapshotted[] };
+
+/** A SNAPSHOT written for a person: `day` is the day being left (yyyy-mm-dd), `dueTotal` their due-total then ("n/a" for none). */
+export type Snapshotted = { day: string; dueTotal: string };
 
 /** A past retirement from `from` to `to`, the day they were unretired (yyyy-mm-dd). */
 export type Retired = { from: string; to: string };

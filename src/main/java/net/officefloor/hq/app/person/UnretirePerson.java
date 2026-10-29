@@ -22,7 +22,7 @@ public class UnretirePerson {
         retirements.add(past);
         Person unretired = new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version(),
                 null, person.holds(), person.dated(), person.terms(), person.contact(), person.aliases(), person.origin(),
-                List.copyOf(retirements), person.tags());
+                List.copyOf(retirements), person.tags(), person.snapshots());
         responseOut.set(PersonResponse.from(unretired, today));
     }
 }
