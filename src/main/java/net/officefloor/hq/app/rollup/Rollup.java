@@ -164,6 +164,37 @@ public class Rollup {
         return carried;
     }
 
+    /**
+     * Each person's open figure at the end of {@code end}, by person id in sheet order: the figures (as shown now) of
+     * their claims that count belonging (by due-by) to one of {@code periods} that were OPEN or PENDING by the status
+     * their log records at the end of {@code end} (a hold leaving out only a claim that is open now), those without one
+     * skipped.
+     */
+    public Map<Long, BigDecimal> personOpenAt(String sheetId, List<Period> periods, LocalDate end) {
+        LocalDate today = sheets.today(sheetId);
+        Map<Long, ClaimStatus> ended = claims.statusesOn(sheetId, end);
+        List<Claim> within = claims.list(sheetId).stream()
+                .filter(c -> periods.stream().anyMatch(p -> p.contains(c.dueBy()))).toList();
+        Map<Long, BigDecimal> open = new LinkedHashMap<>();
+        for (Person person : people.list(sheetId)) {
+            BigDecimal total = ZERO;
+            for (Claim claim : within) {
+                Claim then = claim.withStatus(ended.getOrDefault(claim.id(), claim.status()), claim.number(),
+                        claim.settledDue(), claim.openedBy());
+                boolean left = claim.status().isOpen() ? !counts(then, person, today) : then.deferredOn(today);
+                if (claim.personId() != person.id() || !then.status().isOpen() || left) {
+                    continue;
+                }
+                BigDecimal figure = figure(claim, person, today);
+                if (figure != null) {
+                    total = total.add(figure);
+                }
+            }
+            open.put(person.id(), total);
+        }
+        return open;
+    }
+
     /** The claim's figure as the screen shows it on the sheet's today (null: n/a), whatever its status. */
     public BigDecimal figure(Claim claim) {
         Person person = people.find(claim.sheetId(), claim.personId());
