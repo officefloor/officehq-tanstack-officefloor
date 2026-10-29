@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.flag.Flags;
 import net.officefloor.hq.app.claim.ApplyClaimStatus;
 import net.officefloor.hq.app.claim.AuditClaimStatus;
 import net.officefloor.hq.app.claim.Claim;
@@ -37,7 +38,7 @@ public class ApplyBulkSettle {
     // line follows the claims' own lines. Run outside the pipeline's governance: this step owns its transaction.
     public void apply(@PathVariable("sheetId") String sheetId, @RequestBody(required = false) BulkSettleRequest body,
             Claims claims, People people, Rates rates, Settings settings, Sheets sheets, Periods periods, Rollup rollup,
-            VoidReasons voidReasons, Watches watches, SettleBatches batches, Audit audit,
+            VoidReasons voidReasons, Watches watches, SettleBatches batches, Flags flags, Audit audit,
             PlatformTransactionManager transactions,
             ServerHttpConnection connection, Out<BulkSettleResponse> responseOut) {
         String sheet = sheetId.trim();
@@ -68,7 +69,7 @@ public class ApplyBulkSettle {
                 ClaimStatusRequest[] request = new ClaimStatusRequest[1];
                 try {
                     new ApplyClaimStatus().apply(ClaimStatus.SETTLED.name(), null, claim, claims, people, rates,
-                            settings, sheets, periods, rollup, voidReasons, batches, connection, r -> changed[0] = r,
+                            settings, sheets, periods, rollup, voidReasons, batches, flags, connection, r -> changed[0] = r,
                             r -> request[0] = r);
                 } catch (Exception refused) {
                     ok = false;
