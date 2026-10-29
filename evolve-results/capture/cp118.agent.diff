@@ -1,0 +1,262 @@
+diff --git a/src/main/frontend/features/rates/import.slot.tsx b/src/main/frontend/features/rates/import.slot.tsx
+new file mode 100644
+index 00000000..25b40a91
+--- /dev/null
++++ b/src/main/frontend/features/rates/import.slot.tsx
+@@ -0,0 +1,71 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson, RefusedError } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { useUser } from '../session/useUser';
++import { ratesKey } from './ratesQuery';
++
++/**
++ * The rate import box: lines of grade,rate,from,to, in order. The server checks every line by the rate form's rules
++ * first and sets nothing when any is refused; otherwise each is set as the rate form sets it. Shows how many were set.
++ */
++function ImportRates({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const [text, setText] = useState('');
++  const [error, setError] = useState('');
++  const [set, setSet] = useState('');
++  const once = useSubmitOnce();
++  const importRates = useMutation({
++    mutationFn: (body: { text: string }) =>
++      postJson<{ set: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/import`, body, user),
++    onSuccess: async (res) => {
++      await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
++      setText('');
++      setSet(String(res.set));
++    },
++    onError: (e) =>
++      setError(e instanceof RefusedError ? e.message : 'The rates could not be imported: check every line.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    setSet('');
++    if (text.trim() === '') {
++      setError('Paste at least one line of grade,rate,from,to.');
++      return;
++    }
++    once(() => importRates.mutateAsync({ text }));
++  };
++
++  return (
++    <form data-testid="import-rates-box" onSubmit={submit}>
++      <label>
++        Import rates (grade,rate,from,to){' '}
++        <textarea
++          data-testid="import-rates"
++          rows={4}
++          value={text}
++          onChange={(e) => {
++            setText(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="import-rates-submit" disabled={importRates.isPending}>
++        Import rates
++      </button>{' '}
++      Set: <span data-testid="import-rates-set">{set}</span>
++      {error && <p data-testid="import-rates-error">{error}</p>}
++    </form>
++  );
++}
++
++// Below the rates; keyed by sheet, so pasted text, a count or an error never carries over.
++export const contribution = SheetPanel.fill({
++  order: 5.5,
++  Component: ({ sheetId }) => <ImportRates key={sheetId} sheetId={sheetId} />,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ImportedRates.java b/src/main/java/net/officefloor/hq/app/rate/ImportedRates.java
+new file mode 100644
+index 00000000..2d890afd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ImportedRates.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.List;
++
++/** Every line of an import of rates, checked by the rate form's rules, in the order typed. */
++public record ImportedRates(List<Rate> rates) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateImportRequest.java b/src/main/java/net/officefloor/hq/app/rate/RateImportRequest.java
+new file mode 100644
+index 00000000..9730722b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RateImportRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rate;
++
++/** The body of an import of rates, as typed: lines of grade,rate,from,to (the last two may be absent or blank). */
++public record RateImportRequest(String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateImportResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateImportResponse.java
+new file mode 100644
+index 00000000..447d3313
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RateImportResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rate;
++
++/** How many rates an import set. */
++public record RateImportResponse(int set) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRateImport.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRateImport.java
+new file mode 100644
+index 00000000..886b0b6a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRateImport.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithRateImport {
++    public void respond(@Val RateImportResponse imported, ObjectResponse<RateImportResponse> response) {
++        response.send(imported);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java b/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
+new file mode 100644
+index 00000000..7f999160
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Figures;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupLines;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class SetImportedRates {
++    // Each checked line is set in order, as the rate form sets it: replacing a rate for the same grade and from-date,
++    // RATE_SET, then its ROLLUP lines.
++    public void set(@PathVariable("sheetId") String sheetId, @Val ImportedRates imported, @Val Figures before,
++            Rates rates, Rollup rollup, ServerHttpConnection connection, Audit audit, Out<RateImportResponse> result) {
++        String sheet = sheetId.trim();
++        String user = Audit.user(connection);
++        Figures figures = before;
++        for (Rate rate : imported.rates()) {
++            rates.save(rate);
++            new AuditRateSet().audit(rate, connection, audit);
++            figures = RollupLines.record(sheet, user, figures, rollup, audit);
++        }
++        result.set(new RateImportResponse(imported.rates().size()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index f64136b7..bc16a57e 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -25,6 +25,11 @@ public class ValidateRate {
+     // that is not a date, or is before the from-date, is refused.
+     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("grade") String grade,
+             @RequestBody RateRequest body, Out<Rate> rateOut) throws InvalidRateException {
++        rateOut.set(parse(sheetId, grade, body));
++    }
++
++    /** The rate the form's rules make of a grade and a typed body; refused as {@link #validate} refuses it. */
++    static Rate parse(String sheetId, String grade, RateRequest body) throws InvalidRateException {
+         String g = grade == null ? "" : grade.trim();
+         String typed = body == null || body.rate() == null ? "" : body.rate().trim();
+         if (!GRADES.contains(g)) {
+@@ -54,6 +59,6 @@ public class ValidateRate {
+                 throw new InvalidRateException("The to-date must not be before the from-date.");
+             }
+         }
+-        rateOut.set(new Rate(sheetId.trim(), g, new BigDecimal(typed).setScale(2, RoundingMode.UNNECESSARY), from, to));
++        return new Rate(sheetId.trim(), g, new BigDecimal(typed).setScale(2, RoundingMode.UNNECESSARY), from, to);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRateImport.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRateImport.java
+new file mode 100644
+index 00000000..75079b4f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRateImport.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateRateImport {
++    // Every line is checked before any is stored, by the rate form's rules: grade,rate,from,to (the last two may be
++    // absent or blank). Blank lines are skipped; an import with no line is refused.
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateImportRequest body,
++            Out<ImportedRates> out) throws InvalidRateException {
++        String text = body == null || body.text() == null ? "" : body.text();
++        List<Rate> rates = new ArrayList<>();
++        int n = 0;
++        for (String line : text.split("\\r?\\n")) {
++            n++;
++            if (line.isBlank()) {
++                continue;
++            }
++            String[] fields = line.split(",", -1);
++            if (fields.length < 2 || fields.length > 4) {
++                throw new InvalidRateException("Line " + n + ": type grade,rate,from,to.");
++            }
++            try {
++                rates.add(ValidateRate.parse(sheetId, fields[0], new RateRequest(fields[1],
++                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "")));
++            } catch (InvalidRateException e) {
++                throw new InvalidRateException("Line " + n + ": " + e.getMessage());
++            }
++        }
++        if (rates.isEmpty()) {
++            throw new InvalidRateException("Paste at least one line of grade,rate,from,to.");
++        }
++        out.set(new ImportedRates(rates));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/import.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/import.POST.yml
+new file mode 100644
+index 00000000..9c89de1a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/import.POST.yml
+@@ -0,0 +1,27 @@
++# POST /api/sheets/{sheetId}/rates/import — set a rate per pasted line. Body {"text":"..."}, lines of grade,rate,from,to
++# (the last two may be absent or blank). Every line is checked first by the rate form's rules: 400 for a bad line or
++# none, and then nothing is stored. Otherwise each is set in order as the form sets it (replacing a rate for the same
++# grade and from-date; RATE_SET, then its ROLLUP lines). Responds {"set":n}.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: snapshot
++  govern: [ transaction ]
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  next: validate
++  govern: [ transaction ]
++validate:
++  class: net.officefloor.hq.app.rate.ValidateRateImport
++  next: set
++  govern: [ transaction ]
++set:
++  class: net.officefloor.hq.app.rate.SetImportedRates
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.rate.RespondWithRateImport
++  govern: [ transaction ]
