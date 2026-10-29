@@ -3,11 +3,14 @@ package net.officefloor.hq.app.statement;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimShare;
+import net.officefloor.hq.app.claim.ClaimShares;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.history.AsOf;
@@ -28,19 +31,19 @@ public class TakeStatement {
     // Taken as of a date (on or before the sheet's today), it is worked out from the person and their claims as they stood at
     // the end of that date, with that date for the sheet's today; it binds those claims still theirs, and records that date.
     public void take(@Val Person person, @Val StatementAsOf asOf, Claims claims, People people, Rates rates, Settings settings,
-            Sheets sheets, PoolCuts poolCuts, Statements statements, Out<Statement> statementOut) throws StatementRefusedException {
+            Sheets sheets, PoolCuts poolCuts, ClaimShares shares, Statements statements, Out<Statement> statementOut) throws StatementRefusedException {
         statements.lock(person.id());
         LocalDate today = sheets.today(person.sheetId());
         Stated stated;
         if (asOf.date() == null) {
-            stated = stated(person, today, claims, rates, settings, poolCuts);
+            stated = stated(person, today, claims, people, shares, rates, settings, poolCuts);
         } else {
             if (asOf.date().isAfter(today)) {
                 throw new StatementRefusedException("A statement cannot be taken as of a date after the sheet's today.");
             }
             stated = AsOf.on(asOf.date(), () -> {
                 Person then = people.find(person.sheetId(), person.id());
-                return then == null ? null : stated(then, asOf.date(), claims, rates, settings, poolCuts);
+                return then == null ? null : stated(then, asOf.date(), claims, people, shares, rates, settings, poolCuts);
             });
             if (stated == null) {
                 throw new StatementRefusedException(person.name() + " was not on the sheet on " + asOf.date() + ".");
@@ -61,18 +64,36 @@ public class TakeStatement {
     private record Stated(Map<Long, BigDecimal> figures, String dueTotal) {
     }
 
-    /** The person's statement with {@code today} as the sheet's today. */
-    private static Stated stated(Person person, LocalDate today, Claims claims, Rates rates, Settings settings,
-            PoolCuts poolCuts) {
+    /**
+     * The person's statement with {@code today} as the sheet's today. As in their row, a claim shared with others counts
+     * its own person only the rest of its figure, and a holder their part of it; only the person's own claims are bound.
+     */
+    private static Stated stated(Person person, LocalDate today, Claims claims, People people, ClaimShares shares,
+            Rates rates, Settings settings, PoolCuts poolCuts) {
         Map<Long, BigDecimal> figures = new LinkedHashMap<>();
+        Map<Long, List<ClaimShare>> shared = shares.of(person.sheetId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : claims.list(person.sheetId())) {
-            if (claim.personId() == person.id()
-                    && (claim.status() == ClaimStatus.SETTLED || (claim.status().isOpen() && Rollup.counts(claim, person, today)))) {
-                BigDecimal due = due(claim, person, today, rates, settings);
-                figures.put(claim.id(), due);
+            if (claim.status() != ClaimStatus.SETTLED && !claim.status().isOpen()) {
+                continue;
+            }
+            List<ClaimShare> claimShares = shared.getOrDefault(claim.id(), List.of());
+            if (claim.personId() == person.id()) {
+                if (claim.status() == ClaimStatus.SETTLED || Rollup.counts(claim, person, today)) {
+                    BigDecimal due = due(claim, person, today, rates, settings);
+                    figures.put(claim.id(), due);
+                    if (due != null) {
+                        total = total.add(claimShares.stream().map(sh -> sh.part(due)).reduce(due, BigDecimal::subtract));
+                    }
+                }
+                continue;
+            }
+            ClaimShare holding = claimShares.stream().filter(sh -> sh.personId() == person.id()).findFirst().orElse(null);
+            Person owner = holding == null ? null : people.find(person.sheetId(), claim.personId());
+            if (owner != null && (claim.status() == ClaimStatus.SETTLED || Rollup.counts(claim, owner, today))) {
+                BigDecimal due = due(claim, owner, today, rates, settings);
                 if (due != null) {
-                    total = total.add(due);
+                    total = total.add(holding.part(due));
                 }
             }
         }

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.sheet;
 
 import net.officefloor.hq.app.history.AsOf;
+import net.officefloor.hq.app.history.Preview;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,8 +18,9 @@ public class Sheets {
     }
 
     public Sheet find(String id) {
-        // While the store is read as of a date, that date stands in for the sheet's today.
-        LocalDate asOf = AsOf.date();
+        // While the store is read as of a date, that date stands in for the sheet's today; failing that, while a read is
+        // previewed at a date, that date does (over the current records).
+        LocalDate asOf = AsOf.date() != null ? AsOf.date() : Preview.date();
         List<Sheet> found = jdbc.query("SELECT today_date, archived FROM " + AsOf.table("sheet") + " WHERE id = ?",
                 (rs, n) -> new Sheet(id, asOf != null ? asOf : rs.getObject(1, LocalDate.class), rs.getBoolean(2)), id);
         return found.isEmpty() ? new Sheet(id, asOf != null ? asOf : LocalDate.now(), false) : found.get(0);

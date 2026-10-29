@@ -1,4 +1,5 @@
 import { currentAsOf } from './asOf';
+import { currentPreview } from './preview';
 
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
@@ -11,7 +12,12 @@ export class RefusedError extends Error {}
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   // A screen shown as of a date names it on every request: reads come back as of it, changes are refused (422).
   const asOf = currentAsOf();
-  const res = await fetch(path, asOf ? { ...init, headers: { ...init?.headers, 'X-As-Of': asOf } } : init);
+  // A screen previewing a date names it too: reads are figured as if the sheet's today were that date.
+  const preview = currentPreview();
+  const extra: Record<string, string> = {};
+  if (asOf) extra['X-As-Of'] = asOf;
+  if (preview) extra['X-Preview'] = preview;
+  const res = await fetch(path, asOf || preview ? { ...init, headers: { ...init?.headers, ...extra } } : init);
   if (res.status === 409) {
     throw new ConflictError(`${init?.method ?? 'GET'} ${path} -> 409`);
   }
