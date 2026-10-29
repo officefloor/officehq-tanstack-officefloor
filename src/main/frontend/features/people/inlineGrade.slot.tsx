@@ -1,0 +1,76 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
+import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
+import { usePersonError } from './usePersonError';
+import { useUser } from '../session/useUser';
+import { sheetKey } from '../sheet/sheetQuery';
+import { GRADES, peopleQuery } from './peopleQuery';
+import type { Grade, Person } from './peopleQuery';
+
+/**
+ * The select and button with which a person's grade is changed in their row. It saves through the person form's
+ * edit, from the sheet's today, keeping their name, terms, contact and tags and naming the version the row shows, so
+ * the server refuses it by the same rules (a viewer, an archived sheet, someone else's save since) and writes
+ * PERSON_EDITED and the rollup lines; the refusal shows on the row until its next action.
+ */
+function PersonInlineGrade({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const queryClient = useQueryClient();
+  const [user] = useUser();
+  const [, setError] = usePersonError(personId);
+  const person = (useQuery(peopleQuery(sheetId)).data ?? []).find((p) => p.id === personId);
+  // Blank until a grade is chosen: the person's grade shows.
+  const [grade, setGrade] = useState<Grade | ''>('');
+  const once = useSubmitOnce();
+  const save = useMutation({
+    mutationFn: ({ p, next }: { p: Person; next: Grade }) =>
+      putJson<Person>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/people/${p.id}`,
+        { name: p.name, grade: next, version: p.version, gradeFrom: '', terms: p.terms == null ? '' : String(p.terms), contact: p.contact ?? '', tags: p.tags.join(',') },
+        user,
+      ),
+    onSuccess: async () => {
+      setGrade('');
+      // A grade changes the person's dues and every total over them.
+      await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
+    },
+    onError: () => setError('The grade could not be saved.'),
+  });
+
+  return (
+    <td>
+      <select
+        data-testid="person-inline-grade"
+        value={grade || person?.grade || 'A'}
+        onChange={(e) => {
+          setGrade(e.target.value as Grade);
+          setError('');
+        }}
+      >
+        {GRADES.map((g) => (
+          <option key={g} value={g}>
+            {g}
+          </option>
+        ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="person-inline-grade-save"
+        disabled={save.isPending}
+        onClick={() => {
+          setError('');
+          if (!person) return;
+          once(() => save.mutateAsync({ p: person, next: grade || person.grade }));
+        }}
+      >
+        Save grade
+      </button>
+    </td>
+  );
+}
+
+export const contributions = [
+  PersonHeaders.fill({ order: 9.8, Component: () => <th>Set grade</th> }),
+  PersonCells.fill({ order: 9.8, Component: PersonInlineGrade }),
+];
