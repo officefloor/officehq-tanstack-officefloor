@@ -4,8 +4,8 @@ import { claimsKey } from '../claims/claimsQuery';
 /** A person's plan: `amount` with two decimals, `start` and `end` yyyy-mm-dd, a DRAFT claim every `every` days, or (`every` 0)
  *  on day `day` (1 to 31) of every month; `generated` is how many claims it has made so far; `nextDates`
  *  its first five dates after the sheet's today and on or before its end that no pause skips, comma and space separated;
- *  `paused` yes while it is paused and not resumed. */
-export type Plan = { id: number; personId: number; amount: string; start: string; every: number; end: string; generated: number; day: number; nextDates: string; paused: 'yes' | 'no' };
+ *  `paused` yes while it is paused and not resumed; `changes` its amount changes, oldest first, each `<date> amount=<amount>`. */
+export type Plan = { id: number; personId: number; amount: string; start: string; every: number; end: string; generated: number; day: number; nextDates: string; paused: 'yes' | 'no'; changes: string[] };
 
 /** Under the claims' key, so whatever re-reads the claims (a generate, a re-load of the sheet) re-reads the plans too. */
 export const plansKey = (sheetId: string) => [...claimsKey(sheetId), 'plans'] as const;

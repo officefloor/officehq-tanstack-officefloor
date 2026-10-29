@@ -14,8 +14,10 @@ import type { Plan } from './plansQuery';
 type PlanBody = { amount: string; start: string; every: string; day: string; end: string };
 
 /**
- * A plan's row: its figures, whether it is paused, and the buttons that pause and resume it on the sheet's today. Pausing
- * a paused plan or resuming a running one is refused with the row's `plan-error`, cleared by the row's next action.
+ * A plan's row: its figures, whether it is paused, and the buttons that pause and resume it on the sheet's today; the entry
+ * its amount is changed through on the sheet's today (for the claims generated from then on), and its changes, oldest
+ * first. Pausing a paused plan, resuming a running one or a bad amount is refused with the row's `plan-error`, cleared
+ * by the row's next action.
  */
 function PlanRow({ sheetId, plan: p }: { sheetId: string; plan: Plan }) {
   const queryClient = useQueryClient();
@@ -32,6 +34,21 @@ function PlanRow({ sheetId, plan: p }: { sheetId: string; plan: Plan }) {
   const press = (paused: boolean) => () => {
     setError('');
     once(() => pause.mutateAsync(paused));
+  };
+  const [amount, setAmount] = useState('');
+  const change = useMutation({
+    mutationFn: (amount: string) =>
+      putJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { amount }, user),
+    onSuccess: async () => {
+      setAmount('');
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+    },
+    onError: (e: Error) =>
+      setError(e instanceof RefusedError && e.message ? e.message : 'The plan could not be changed.'),
+  });
+  const save = () => {
+    setError('');
+    once(() => change.mutateAsync(amount.trim()));
   };
 
   return (
@@ -56,6 +73,28 @@ function PlanRow({ sheetId, plan: p }: { sheetId: string; plan: Plan }) {
           Resume
         </button>
         {error && <p data-testid="plan-error">{error}</p>}
+      </td>
+      <td>
+        <input
+          data-testid="plan-amount"
+          placeholder="New amount"
+          size={8}
+          value={amount}
+          onChange={(e) => {
+            setAmount(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <button type="button" data-testid="plan-amount-save" disabled={change.isPending} onClick={save}>
+          Save amount
+        </button>
+        <ul>
+          {p.changes.map((c, i) => (
+            <li key={i} data-testid="plan-change-line">
+              {c}
+            </li>
+          ))}
+        </ul>
       </td>
     </tr>
   );

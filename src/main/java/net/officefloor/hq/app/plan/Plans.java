@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.plan;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -83,6 +84,20 @@ public class Plans {
     /** Resumes the plan's open pause on the date. */
     public void resume(long planId, LocalDate date) {
         jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(date), planId);
+    }
+
+    /** The plan's amount changes, oldest first. */
+    public List<PlanChange> changes(long planId) {
+        return jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(), rs.getBigDecimal("amount").setScale(2)), planId);
+    }
+
+    /** Changes the plan's amount on the date, keeping the change: the plan with its new amount. */
+    public Plan changeAmount(Plan plan, BigDecimal amount, LocalDate date) {
+        BigDecimal scaled = amount.setScale(2);
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", scaled, plan.id());
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", plan.id(), Date.valueOf(date), scaled);
+        return new Plan(plan.id(), plan.sheetId(), plan.personId(), scaled, plan.start(), plan.every(), plan.end(), plan.day());
     }
 
     /** Records that the plan made the claim for the date. */

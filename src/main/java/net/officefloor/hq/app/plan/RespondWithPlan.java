@@ -6,6 +6,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPlan {
     public void respond(@Val Plan plan, Plans plans, Sheets sheets, ObjectResponse<PlanResponse> response) {
-        response.send(PlanResponse.from(plan, plans.made(plan.id()).size(), sheets.today(plan.sheetId()), plans.pauses(plan.id())));
+        response.send(PlanResponse.from(plan, plans.made(plan.id()).size(), sheets.today(plan.sheetId()), plans.pauses(plan.id()), plans.changes(plan.id())));
     }
 }
