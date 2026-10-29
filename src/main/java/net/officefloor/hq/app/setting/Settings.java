@@ -46,10 +46,13 @@ public class Settings {
     public static final String FISCAL_START_MONTH_DEFAULT = "1";
     /** The due-total above which a person is alerted (undated), with two decimals; blank is off. */
     public static final String ALERT_THRESHOLD = "alert-threshold";
+    /** How a claim's live figures round (dated): half-up or half-even; blank is none, so the policy date decides. */
+    public static final String ROUNDING = "rounding";
+    public static final List<String> ROUNDING_MODES = List.of("half-up", "half-even");
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
-            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"));
+            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"), ROUNDING);
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
@@ -282,8 +285,8 @@ public class Settings {
     }
 
     /**
-     * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after it.
-     * A correction rounds by the date of the claim it corrects.
+     * How the claim's live figures round: by the rounding mode in force on its date when there is one, else half up when it is
+     * dated before the policy date, half to even on or after it. A correction rounds by the date of the claim it corrects.
      */
     public RoundingMode rounding(Claim claim) {
         LocalDate date = claim.date();
@@ -292,6 +295,10 @@ public class Settings {
             if (corrected != null) {
                 date = corrected.date();
             }
+        }
+        String mode = on(claim.sheetId(), ROUNDING, date);
+        if (!mode.isEmpty()) {
+            return mode.equals("half-up") ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
         }
         return date.isBefore(policyDate(claim.sheetId())) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }

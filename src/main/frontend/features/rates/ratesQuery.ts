@@ -103,20 +103,22 @@ export function trimmedSum(dues: string[]): string {
 
 /**
  * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percents
- * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects),
+ * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set), its rounding modes by from-date (half-up or half-even; blank is none) and its claims (to find what a correction corrects),
  * each grade's grace days by from-date (by grade; a blank value is none) and its people (to find the grade a claim's person had on its date).
  */
-export type Late = { today: string; pct: DatedValue[]; policy: string; claims: Claim[]; grace: Partial<Record<Grade, DatedValue[]>>; people: Person[] };
+export type Late = { today: string; pct: DatedValue[]; policy: string; rounding: DatedValue[]; claims: Claim[]; grace: Partial<Record<Grade, DatedValue[]>>; people: Person[] };
 
 /**
- * Whether the claim's live figures round half up: it is dated before the policy date (on or after it, they round half
- * to even). A correction rounds by the date of the claim it corrects.
+ * Whether the claim's live figures round half up: the rounding mode in force on its date is half-up, or, with none in
+ * force, it is dated before the policy date (on or after it, they round half to even). A correction rounds by the date of the claim it corrects.
  */
-export function roundsHalfUp(claim: Claim, { policy, claims }: Late): boolean {
+export function roundsHalfUp(claim: Claim, { policy, claims, rounding }: Late): boolean {
   const corrected = isCorrection(claim) && claim.corrects !== null
     ? claims.find((c) => c.personId === claim.personId && c.number === claim.corrects)
     : undefined;
-  return (corrected ?? claim).date < policy;
+  const date = (corrected ?? claim).date;
+  const mode = valueOn(rounding, date) ?? '';
+  return mode !== '' ? mode === 'half-up' : date < policy;
 }
 
 /** The date (yyyy-mm-dd) the claim's overdue count runs from: its due-by plus the grace days, in force on its date, of the grade its person had on its date (none: its due-by). */

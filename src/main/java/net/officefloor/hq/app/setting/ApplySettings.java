@@ -57,6 +57,9 @@ public class ApplySettings {
         if (settings.fiscalStartMonth() != null) {
             store.set(settings.sheetId(), Settings.FISCAL_START_MONTH, settings.fiscalStartMonth());
         }
+        if (settings.rounding() != null) {
+            dated(settings, store, today, Settings.ROUNDING, settings.rounding());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

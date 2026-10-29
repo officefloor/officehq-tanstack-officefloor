@@ -5,7 +5,7 @@ import { putJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
-import { PERM_ACTIONS, ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
+import { PERM_ACTIONS, ROLES, ROUNDING_MODES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, valueOn } from './dated';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { PermAction, Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
@@ -28,7 +28,7 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today). A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) — its person's grade's own when one is in force then (dated like the floor; blank: none, so the sheet's) — is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). Each grade may have grace days (blank: none), dated like the floor: a claim whose person's grade on its date has a grace in force on that date is overdue only once its due-by plus the grace is before the sheet's today, and its late charge counts from there; a blank grade's grace is saved as none when its from-date is given or it was the last field worked in. When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated). While the entry date is set it is the date a new claim left undated is given (blank: off, the sheet's today; not dated).
+ *  today), unless a rounding mode (half-up or half-even, dated like the floor; blank: none) is in force on the claim's date. A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) — its person's grade's own when one is in force then (dated like the floor; blank: none, so the sheet's) — is settled or approved only once it has a proof, and one whose due is above the note threshold in force on its date (blank: none) is opened only once it has a note. From the period numbering date on, an opened claim is numbered within its period (blank: off). Each grade may have grace days (blank: none), dated like the floor: a claim whose person's grade on its date has a grace in force on that date is overdue only once its due-by plus the grace is before the sheet's today, and its late charge counts from there; a blank grade's grace is saved as none when its from-date is given or it was the last field worked in. When the sheet's today is changed, each open period whose to-date plus the grace days is before it is closed (blank: off; not dated). While the entry date is set it is the date a new claim left undated is given (blank: off, the sheet's today; not dated).
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
  *  date, the cap, the proof threshold, the note threshold and the grace days and the entry date was last worked in (the clerk limit unless it was one of the others).
  *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
@@ -50,6 +50,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [cap, setCap] = useState('');
   const [threshold, setThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
+  const [rounding, setRounding] = useState('');
   const [grace, setGrace] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
@@ -57,7 +58,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -84,6 +85,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setCap('');
       setThreshold('');
       setNoteThreshold('');
+      setRounding('');
       setGrace('');
       setEntryDate('');
       setPot('');
@@ -177,6 +179,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The note threshold must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const rm = rounding.trim();
+    if (rm !== '' && !ROUNDING_MODES.includes(rm)) {
+      setError('The rounding mode must be half-up or half-even.');
+      return;
+    }
     const gd = grace.trim();
     if (gd !== '' && !DAYS.test(gd)) {
       setError('The grace days must be a whole number of days, 0 or more.');
@@ -235,14 +242,17 @@ function Settings({ sheetId }: { sheetId: string }) {
     for (const grade of GRADES) {
       if (gp[grade] === undefined && (froms[`proof-threshold-${grade}`] ?? '') !== '') gp[grade] = '';
     }
+    // A blank rounding mode is none likewise: saved when its from-date is given, or when it was the last field worked in.
+    const roundingSaved = rm !== '' || (froms['rounding'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
     if (c !== '' || (none && blank === 'cap')) body.cap = c;
     if (pt !== '' || (none && blank === 'proofThreshold')) body.proofThreshold = pt;
     if (nt !== '' || (none && blank === 'noteThreshold')) body.noteThreshold = nt;
+    if (roundingSaved || (none && blank === 'rounding')) body.rounding = rm;
     if (gd !== '' || (none && blank === 'graceDays')) body.graceDays = gd;
     if (ed !== '' || (none && blank === 'entryDate')) body.entryDate = ed;
     if (pt2 !== '' || (none && blank === 'pot')) body.pot = pt2;
@@ -528,6 +538,31 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Rounding{' '}
+          <input
+            data-testid="setting-rounding"
+            placeholder="none (half-up or half-even)"
+            value={rounding}
+            onFocus={() => setBlank('rounding')}
+            onChange={(e) => {
+              setRounding(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid="setting-rounding-from"
+            placeholder="sheet's today"
+            value={from['rounding'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['rounding']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Grace days{' '}
           <input
             data-testid="setting-grace-days"
@@ -695,6 +730,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       ))}
       <p>
         Note threshold in force: <span data-testid="setting-note-threshold-current">{current('note-threshold')}</span>
+      </p>
+      <p>
+        Rounding in force: <span data-testid="setting-rounding-current">{current('rounding')}</span>
       </p>
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</span>
