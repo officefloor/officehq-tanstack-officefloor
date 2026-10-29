@@ -292,7 +292,7 @@ public class People {
      * into's (into's last statement stays their last; having none, from's last becomes it); from's name and aliases
      * become into's aliases; from's patrons are added to into's and anyone naming from names into instead (never
      * themselves, no repeats); from's pool memberships and closed-period figures move to into (added to into's own where
-     * into has one), and so do from's plans. from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
+     * into has one), and so do from's opening balances and plans. from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
      */
     public void merge(String sheetId, long from, long into) {
         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
@@ -326,6 +326,15 @@ public class People {
             }
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, from);
+        for (Map<String, Object> m : jdbc.queryForList("SELECT period_name, amount FROM period_person_opening WHERE sheet_id = ? AND person_id = ?",
+                sheetId, from)) {
+            if (jdbc.update("UPDATE period_person_opening SET amount = amount + ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                    m.get("amount"), sheetId, m.get("period_name"), into) == 0) {
+                jdbc.update("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) VALUES (?, ?, ?, ?)",
+                        sheetId, m.get("period_name"), into, m.get("amount"));
+            }
+        }
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND person_id = ?", sheetId, from);
         jdbc.update("UPDATE plan SET person_id = ? WHERE person_id = ?", into, from);
         takeStatements(sheetId, from, into);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
@@ -403,6 +412,7 @@ public class People {
         jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", from);
         jdbc.update("DELETE FROM plan WHERE person_id = ?", from);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND person_id = ?", person.sheetId(), from);
         takeStatements(to, from, arrived);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", from);

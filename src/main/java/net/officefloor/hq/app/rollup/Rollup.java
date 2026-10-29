@@ -11,6 +11,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
@@ -28,13 +29,15 @@ public class Rollup {
     private final Rates rates;
     private final Sheets sheets;
     private final Settings settings;
+    private final Periods periods;
 
-    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings) {
+    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Periods periods) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
         this.settings = settings;
+        this.periods = periods;
     }
 
     /** The sheet's alert threshold; null when alerts are off. */
@@ -130,11 +133,12 @@ public class Rollup {
      * Each person's carried figure for the period, by person id in sheet order: the figures (as shown now) of their claims
      * belonging (by due-by) to one of {@code periods} ending before it starts that were still OPEN or PENDING by the
      * status their log records at the end of its last day (a hold leaving out only a claim that is open now), those without
-     * one skipped.
+     * one skipped; and their opening balance for the period added.
      */
     public Map<Long, BigDecimal> personCarried(String sheetId, Period period, List<Period> periods) {
         LocalDate today = sheets.today(sheetId);
         Map<Long, ClaimStatus> ended = claims.statusesOn(sheetId, period.to());
+        Map<Long, BigDecimal> openings = this.periods.openings(sheetId).getOrDefault(period.name(), Map.of());
         List<Claim> earlier = claims.list(sheetId).stream()
                 .filter(c -> periods.stream().anyMatch(p -> p.contains(c.dueBy()) && p.to().isBefore(period.from()))).toList();
         Map<Long, BigDecimal> carried = new LinkedHashMap<>();
@@ -152,7 +156,7 @@ public class Rollup {
                     total = total.add(figure);
                 }
             }
-            carried.put(person.id(), total);
+            carried.put(person.id(), total.add(openings.getOrDefault(person.id(), ZERO)));
         }
         return carried;
     }

@@ -13,6 +13,7 @@ import type { DatedValue } from '../settings/dated';
  * person's due-total for it (`personTotals`, by person id; empty while open, and a person added later has none), and
  * each person's carried figure for it (`personCarried`, the same way; a period fixed before carried figures were has none).
  * A soft-closed period (`soft`, not `closed`) has its figures fixed the same way, while its claims can still change.
+ * Each person's pasted opening balance for it (`personOpenings`, by person id; none is 0.00) is part of their carried figure.
  */
 export type Period = {
   name: string;
@@ -25,6 +26,7 @@ export type Period = {
   soft: boolean;
   /** How many OPEN or PENDING claims each person may have in the period; null for no cap. */
   cap: number | null;
+  personOpenings: Record<string, string>;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */
@@ -89,8 +91,8 @@ export function personPeriodDue(
 
 /**
  * A person's carried figure for a period: the figures (as shown now) of their claims that count which belong (by due-by)
- * to a period ending before this one starts and were still OPEN or PENDING at the end of its last day, by their log.
- * While the period is closed or soft-closed it is the figure fixed then (0.00 for a person added since).
+ * to a period ending before this one starts and were still OPEN or PENDING at the end of its last day, by their log,
+ * and their opening balance for it. While the period is closed or soft-closed it is the figure fixed then (0.00 for a person added since).
  */
 export function personPeriodCarried(
   period: Period,
@@ -107,8 +109,10 @@ export function personPeriodCarried(
     if (id in period.personCarried) return period.personCarried[id];
     if (!(id in period.personTotals)) return '0.00';
   }
-  return sumDue(
-    claims
+  const opening = period.personOpenings?.[String(person.id)] ?? '0.00';
+  return sumDue([
+    opening,
+    ...claims
       .filter((c) => {
         if (c.personId !== person.id) return false;
         const own = periodOf(periods, c.dueBy);
@@ -117,7 +121,7 @@ export function personPeriodCarried(
         return (status === 'OPEN' || status === 'PENDING') && counts({ ...c, status }, isOpen(c) ? people : [], late.today);
       })
       .map((c) => figure(c, rates, person, floor, late)),
-  );
+  ]);
 }
 
 /** A period's due-total: its people's due-totals for it added up. */

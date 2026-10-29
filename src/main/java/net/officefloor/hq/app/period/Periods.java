@@ -45,6 +45,25 @@ public class Periods {
                 .toList();
     }
 
+    /** Each person's opening balance for each of the sheet's periods, by period name, then by person id. */
+    public Map<String, Map<Long, BigDecimal>> openings(String sheetId) {
+        Map<String, Map<Long, BigDecimal>> openings = new HashMap<>();
+        jdbc.query("SELECT * FROM " + AsOf.table("period_person_opening") + " WHERE sheet_id = ? ORDER BY person_id", rs -> {
+            openings.computeIfAbsent(rs.getString("period_name"), k -> new LinkedHashMap<>())
+                    .put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+        }, sheetId);
+        return openings;
+    }
+
+    /** Adds the amount to the person's opening balance for the period (from none, 0.00). */
+    public void addOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        if (jdbc.update("UPDATE period_person_opening SET amount = amount + ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                amount, sheetId, periodName, personId) == 0) {
+            jdbc.update("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) VALUES (?, ?, ?, ?)",
+                    sheetId, periodName, personId, amount);
+        }
+    }
+
     /** The sheet's period of that name, or null when there is none. */
     public Period find(String sheetId, String name) {
         return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? AND name = ?", ROW, sheetId, name).stream()
