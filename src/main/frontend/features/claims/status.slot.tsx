@@ -32,6 +32,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
  * While the sheet has void reasons, a void needs one chosen from them; the server refuses a void without one.
  * A DRAFT claim can be deleted (DELETED counts nowhere and cannot be edited, opened or voided), and restored to DRAFT
  * on the sheet's today it was deleted; the server refuses a restore on a later day.
+ * A settle can be given a date (on or before the sheet's today): the claim is frozen at its due as the as-of view shows
+ * it at the end of that date; the server refuses a later date, or a claim not on the sheet then.
  * Opening a claim whose due is above the review threshold makes it REVIEW (unnumbered, in no total): a steward's review
  * makes it OPEN (numbered then); the server refuses anyone else. A REVIEW claim can otherwise only be voided.
  */
@@ -41,13 +43,14 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
   const [error, setError] = useClaimError(claim.id);
   const [reason, setReason] = useState('');
   const [voidReason, setVoidReason] = useState('');
+  const [settleOn, setSettleOn] = useState('');
   const voidReasons = useQuery(voidReasonsQuery(sheetId)).data ?? [];
   const once = useSubmitOnce();
   const change = useMutation({
-    mutationFn: ({ to, decision, reason, voidReason }: { to: ClaimStatus; decision?: Decision; reason?: string; voidReason?: string }) =>
+    mutationFn: ({ to, decision, reason, voidReason, settleOn }: { to: ClaimStatus; decision?: Decision; reason?: string; voidReason?: string; settleOn?: string }) =>
       putJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`,
-        { action: decision, reason, voidReason },
+        { action: decision, reason, voidReason, settleOn },
         user,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -93,13 +96,25 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
             once(() =>
               to === 'VOID'
                 ? change.mutateAsync({ to, voidReason }).then(() => setVoidReason(''))
-                : change.mutateAsync({ to, decision }),
+                : action === 'settle'
+                  ? change.mutateAsync({ to, settleOn: settleOn.trim() || undefined }).finally(() => setSettleOn(''))
+                  : change.mutateAsync({ to, decision }),
             );
           }}
         >
           {label}
         </button>
       ))}
+      <input
+        type="date"
+        data-testid="claim-settle-date"
+        aria-label="Settle as of"
+        value={settleOn}
+        onChange={(e) => {
+          setSettleOn(e.target.value);
+          setError('');
+        }}
+      />{' '}
       {voidReasons.length > 0 && (
         <select
           data-testid="claim-void-reason"

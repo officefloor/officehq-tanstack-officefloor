@@ -36,6 +36,10 @@ public class AuditClaimStatus {
         if (status == ClaimStatus.VOID && request.voidReason() != null && !request.voidReason().isEmpty()) {
             fields.add("reason=" + request.voidReason());
         }
+        // A claim settled as of a date carries that date.
+        if (status == ClaimStatus.SETTLED && request.settleOn() != null) {
+            fields.add("on=" + request.settleOn());
+        }
         // A reviewed claim is recorded as reviewed (as it was, unnumbered), then as opened with its number.
         if (loaded.status() == ClaimStatus.REVIEW && status == ClaimStatus.OPEN) {
             audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(), Audit.user(connection),

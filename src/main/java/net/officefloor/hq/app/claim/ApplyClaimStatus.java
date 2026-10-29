@@ -6,6 +6,7 @@ import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.batch.SettleBatches;
 import net.officefloor.hq.app.flag.Flags;
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
@@ -41,6 +42,25 @@ public class ApplyClaimStatus {
         String action = body == null || body.action() == null ? "" : body.action().trim();
         String reason = body == null || body.reason() == null ? "" : body.reason().trim();
         String voidReason = body == null || body.voidReason() == null ? "" : body.voidReason().trim();
+        String settleRaw = body == null || body.settleOn() == null ? "" : body.settleOn().trim();
+        // A settle as of a date freezes the claim's figure as the as-of view shows it at the end of that date: refused
+        // for a date after the sheet's today, or for a claim not on the sheet then.
+        LocalDate settleOn = null;
+        Claim then = null;
+        if (next == ClaimStatus.SETTLED && action.isEmpty() && !settleRaw.isEmpty()) {
+            try {
+                settleOn = LocalDate.parse(settleRaw);
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new ClaimStatusRefusedException("The settle date is not a date (yyyy-mm-dd).");
+            }
+            if (settleOn.isAfter(sheets.today(claim.sheetId()))) {
+                throw new ClaimStatusRefusedException("A claim cannot be settled as of a date after the sheet's today.");
+            }
+            then = AsOf.on(settleOn, () -> claims.find(claim.sheetId(), claim.id()));
+            if (then == null) {
+                throw new ClaimStatusRefusedException("The claim was not on the sheet on " + settleOn + ".");
+            }
+        }
         boolean review = action.equals("review");
         if (review && next != ClaimStatus.OPEN) {
             throw new ClaimStatusRefusedException("A review makes a claim OPEN.");
@@ -148,7 +168,9 @@ public class ApplyClaimStatus {
             }
         }
         // Settling (or approving) freezes the due as shown: the one a statement bound, else the late charge on the sheet's today into the due.
-        BigDecimal due = claim.stated() ? claim.statedDue()
+        Claim asOf = then;
+        BigDecimal due = asOf != null ? AsOf.on(settleOn, () -> rollup.figure(asOf))
+                : claim.stated() ? claim.statedDue()
                 : settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
         // A claim whose due is above the proof threshold in force on its date (its person's grade's, else the sheet's) is settled or approved only once it has a
         // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
@@ -223,7 +245,8 @@ public class ApplyClaimStatus {
         }
         claims.log(changed, user, sheets.today(claim.sheetId()), rollup.figure(changed));
         responseOut.set(ClaimResponse.from(changed));
-        requestOut.set(new ClaimStatusRequest(action, reason, voidReason));
+        requestOut.set(new ClaimStatusRequest(action, reason, voidReason,
+                next == ClaimStatus.SETTLED && settleOn != null ? settleOn.toString() : null));
     }
 
     /** The claim four eyes and the proof rule are judged on: the claim itself (a part-settle judges the claim it split). */
