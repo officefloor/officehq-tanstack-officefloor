@@ -17,6 +17,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -26,10 +27,11 @@ public class GeneratePlanClaims {
     // For every plan of the sheet, in the order they were added, and each of its dates (the start, then every N days; or the day of every month) up to
     // its end and the sheet's today that it has not made a claim for yet: a DRAFT claim of the plan's amount dated that day
     // with an empty note, added as the claim form adds one and recorded as CLAIM_ADDED. A date the claim form refuses
-    // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time.
+    // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time. A viewer is
+    // refused at the first claim there is to make, before anything is stored; with none to make, they are told 0.
     public void generate(@PathVariable("sheetId") String sheetId, Plans plans, People people, Claims claims, Sheets sheets,
             Settings settings, Holidays holidays, Periods periods, Rollup rollup, ServerHttpConnection connection,
-            Audit audit, Out<GenerateResponse> result) {
+            Audit audit, Out<GenerateResponse> result) throws ViewerRefusedException {
         String sheet = sheetId.trim();
         String user = Audit.user(connection);
         LocalDate today = sheets.today(sheet);
@@ -52,6 +54,9 @@ public class GeneratePlanClaims {
                     ClaimFormRules.refuseRetired(person, date);
                 } catch (ClaimInClosedPeriodException | ClaimAfterRetirementException e) {
                     continue;
+                }
+                if (settings.isViewer(sheet, user)) {
+                    throw new ViewerRefusedException("A viewer can change nothing.");
                 }
                 Claim claim = claims.add(sheet, person.id(), plan.amount(), date, "", null, dueBy, terms, null, List.of());
                 claims.log(claim, user.trim(), today, rollup.figure(claim));
