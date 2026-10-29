@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.crew.Crews;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.plugin.variable.Out;
@@ -19,19 +20,23 @@ public class ValidatePoolMember {
 
     // The pool and the person must be of the sheet, the person not already in the pool; the share has at most two
     // decimals, more than 0.00 and at most 100.00. A member pool (memberPool) must be of the sheet, not the pool itself nor
-    // one containing it through any chain, not already a member of a pool, and the chain it makes at most three deep. The
-    // from-date and to-date are optional (yyyy-mm-dd); a to-date before the from-date is refused.
+    // one containing it through any chain, not already a member of a pool, and the chain it makes at most three deep.
+    // A crew's pool takes its members from the crew, so none is added to it here; a crew's pool can be a member pool.
+    // The from-date and to-date are optional (yyyy-mm-dd); a to-date before the from-date is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolMemberRequest body, Pools pools,
-            People people, Out<PoolMember> member) throws PoolRefusedException {
+            People people, Crews crews, Out<PoolMember> member) throws PoolRefusedException {
         String sheet = sheetId.trim();
         String pool = body == null || body.pool() == null ? "" : body.pool().trim();
+        if (crews.has(sheet, pool)) {
+            throw new PoolRefusedException(pool + " is a crew: add its members through the crew.");
+        }
         if (!pools.has(sheet, pool)) {
             throw new PoolRefusedException("Choose a pool.");
         }
         String memberPool = body.memberPool() == null ? "" : body.memberPool().trim();
         Person person = null;
         if (!memberPool.isEmpty()) {
-            nested(sheet, pool, memberPool, pools);
+            nested(sheet, pool, memberPool, pools, crews);
         } else {
             person = body.personId() == null ? null : people.find(sheet, body.personId());
             if (person == null) {
@@ -73,8 +78,9 @@ public class ValidatePoolMember {
 
     private static final int DEEPEST = 3;
 
-    private static void nested(String sheet, String pool, String memberPool, Pools pools) throws PoolRefusedException {
-        if (!pools.has(sheet, memberPool)) {
+    private static void nested(String sheet, String pool, String memberPool, Pools pools, Crews crews)
+            throws PoolRefusedException {
+        if (!pools.has(sheet, memberPool) && !crews.has(sheet, memberPool)) {
             throw new PoolRefusedException("Choose a pool.");
         }
         if (memberPool.equals(pool)) {

@@ -9,6 +9,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
 import { sumDue } from '../rates/ratesQuery';
 import { usePeopleDueTotals } from '../rates/due.slot';
+import { poolsKey } from '../pools/poolsQuery';
 import { crewsKey, crewsQuery } from './crewsQuery';
 import type { Crew } from './crewsQuery';
 
@@ -31,7 +32,11 @@ function CrewRow({ sheetId, crew, people, dues }: { sheetId: string; crew: Crew;
     mutationFn: (body: { crew: string; personId: number | null }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crew-members`, body, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      // A crew is also a pool, so its change re-reads the pools too.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]);
       setPersonId('');
     },
     onError: (e: Error) => setError(e instanceof RefusedError ? e.message : 'The member could not be added.'),
@@ -99,7 +104,11 @@ function Crews({ sheetId }: { sheetId: string }) {
     mutationFn: (body: { name: string; leadId: number | null }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crews`, body, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      // A crew is also a pool, so its change re-reads the pools too.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]);
       setName('');
       setLeadId('');
     },

@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import net.officefloor.hq.app.crew.CrewResponse;
+import net.officefloor.hq.app.crew.Crews;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Settings;
@@ -20,6 +22,8 @@ public class RespondWithPools {
 
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
+    // Each crew is also a pool, listed after the stored pools under the crew's name: its lead then its members, at
+    // equal shares of 100.00 (each rounded half to even, the remainder on the lead), with no dates.
     // A member with a retirement date set, whatever the date, counts their share as given toward the pool's total.
     // Each member of a balanced pool cuts the pool's pot times their share / 100, half to even to two decimals; the remainder goes to the member with the smallest non-zero cut, the latest added on a tie (a member with no cut gets
     // none; with no non-zero cut it goes to the last member with a share), so the cuts
@@ -30,13 +34,17 @@ public class RespondWithPools {
     // there as its pot (none when the pool above has no cuts). A member whose dates do not include the sheet's today is
     // left out entirely: listed with its share, but not in the total share or the balance, and with no cut ("").
     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
-            ObjectResponse<List<PoolResponse>> response) {
+            Crews crews, ObjectResponse<List<PoolResponse>> response) {
         String sheet = sheetId.trim();
         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
-        List<Pools.Membership> members = pools.members(sheet);
+        List<Pools.Membership> members = new ArrayList<>(pools.members(sheet));
         Map<String, String> parents = pools.parents(sheet);
         BigDecimal sheetPot = settings.pot(sheet);
-        List<String> names = pools.names(sheet);
+        List<String> names = new ArrayList<>(pools.names(sheet));
+        for (CrewResponse crew : crews.list(sheet)) {
+            names.add(crew.name());
+            members.addAll(crewMembers(crew, byId));
+        }
         LocalDate today = sheets.today(sheet);
 
         Map<String, List<Pools.Membership>> inByPool = new HashMap<>();
@@ -94,6 +102,24 @@ public class RespondWithPools {
             out.add(new PoolResponse(name, shown, total.toPlainString(), total.compareTo(HUNDRED) == 0));
         }
         response.send(out);
+    }
+
+    /** The crew as a pool's members: its lead then its members (people of the sheet), at equal shares of 100.00. */
+    private static List<Pools.Membership> crewMembers(CrewResponse crew, Map<Long, Person> byId) {
+        List<Long> ids = new ArrayList<>();
+        ids.add(crew.leadId());
+        ids.addAll(crew.memberIds());
+        ids.removeIf(id -> !byId.containsKey(id));
+        List<Pools.Membership> out = new ArrayList<>();
+        if (ids.isEmpty()) {
+            return out;
+        }
+        BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(ids.size()), 2, RoundingMode.HALF_EVEN);
+        BigDecimal first = HUNDRED.subtract(each.multiply(BigDecimal.valueOf(ids.size() - 1)));
+        for (int i = 0; i < ids.size(); i++) {
+            out.add(new Pools.Membership(crew.name(), ids.get(i), i == 0 ? first : each, null, null, null));
+        }
+        return out;
     }
 
     private static List<BigDecimal> cutsOf(String name, BigDecimal sheetPot, Map<String, String> parents,
