@@ -46,7 +46,7 @@ public class Statements {
     public List<StatementResponse> list(String sheetId) {
         Map<Long, List<String>> lines = new HashMap<>();
         jdbc.query("SELECT person_id, stated_on, due_total FROM " + AsOf.table("statement") + " WHERE sheet_id = ? "
-                + "ORDER BY person_id, stated_on, id",
+                + "ORDER BY person_id, id",
                 (RowCallbackHandler) rs -> lines.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                         .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)),
                 sheetId);

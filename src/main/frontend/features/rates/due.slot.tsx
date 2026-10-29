@@ -90,6 +90,19 @@ function SettledOpenTotal({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** The sheet's age buckets: everyone's open claims' figures by age (0-30, 31-60, 61+ days) added up (not trimmed). */
+function AgedTotal({ sheetId }: { sheetId: string }) {
+  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
+  const aged = people.map((p) => agedDue(p, people, claims, rates, today, floor, late));
+  return (
+    <p data-testid="rollup-aged">
+      0–30 <strong data-testid="rollup-aged-0-30">{sumDue(aged.map(([y]) => y))}</strong>
+      {' '}· 31–60 <strong data-testid="rollup-aged-31-60">{sumDue(aged.map(([, m]) => m))}</strong>
+      {' '}· 61+ <strong data-testid="rollup-aged-61">{sumDue(aged.map(([, , o]) => o))}</strong>
+    </p>
+  );
+}
+
 /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
 export function useSheetDueTotal(sheetId: string) {
   const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
@@ -131,4 +144,5 @@ export const contributions = [
   PersonCells.fill({ order: 22, Component: (ctx) => <ColumnShown column="backing"><PersonBacking {...ctx} /></ColumnShown> }),
   SheetPanel.fill({ order: 25, Component: DueTotal }),
   SheetPanel.fill({ order: 25.5, Component: SettledOpenTotal }),
+  SheetPanel.fill({ order: 25.55, Component: AgedTotal }),
 ];

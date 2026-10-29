@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { statementsQuery } from './statementsQuery';
 
-/** The person's statement lines (see `Statements.lines`): one per statement still standing, oldest first. */
+/** The person's statement lines (see `Statements.lines`): one per statement still standing, in the order taken. */
 function PersonStatementLines({ sheetId, personId }: { sheetId: string; personId: number }) {
   const shown = (useQuery(statementsQuery(sheetId)).data ?? []).find((s) => s.personId === personId);
   return (
