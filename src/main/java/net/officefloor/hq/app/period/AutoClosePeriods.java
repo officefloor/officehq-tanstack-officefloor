@@ -25,7 +25,8 @@ public class AutoClosePeriods {
             if (period.closed() || period.soft() || !period.to().plusDays(grace).isBefore(today)) {
                 continue;
             }
-            Period closed = period.closedAt(rollup.personDueTotals(sheetId, period.from(), period.to()));
+            Period closed = period.closedAt(rollup.personDueTotals(sheetId, period.from(), period.to()),
+                rollup.personCarried(sheetId, period, periods.list(sheetId)));
             if (periods.close(closed)) {
                 audit.record(Audit.line("PERIOD_CLOSED", sheetId, Audit.user(connection), "period=" + closed.name(),
                         "total=" + closed.closedTotal().toPlainString(), "auto=yes"));

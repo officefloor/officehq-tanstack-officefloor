@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
@@ -123,6 +124,37 @@ public class Rollup {
             totals.put(person.id(), total);
         }
         return totals;
+    }
+
+    /**
+     * Each person's carried figure for the period, by person id in sheet order: the figures (as shown now) of their claims
+     * belonging (by due-by) to one of {@code periods} ending before it starts that were still OPEN or PENDING by the
+     * status their log records at the end of its last day (a hold leaving out only a claim that is open now), those without
+     * one skipped.
+     */
+    public Map<Long, BigDecimal> personCarried(String sheetId, Period period, List<Period> periods) {
+        LocalDate today = sheets.today(sheetId);
+        Map<Long, ClaimStatus> ended = claims.statusesOn(sheetId, period.to());
+        List<Claim> earlier = claims.list(sheetId).stream()
+                .filter(c -> periods.stream().anyMatch(p -> p.contains(c.dueBy()) && p.to().isBefore(period.from()))).toList();
+        Map<Long, BigDecimal> carried = new LinkedHashMap<>();
+        for (Person person : people.list(sheetId)) {
+            BigDecimal total = ZERO;
+            for (Claim claim : earlier) {
+                Claim then = claim.withStatus(ended.getOrDefault(claim.id(), claim.status()), claim.number(),
+                        claim.settledDue(), claim.openedBy());
+                boolean left = claim.status().isOpen() ? !counts(then, person, today) : then.deferredOn(today);
+                if (claim.personId() != person.id() || !then.status().isOpen() || left) {
+                    continue;
+                }
+                BigDecimal figure = figure(claim, person, today);
+                if (figure != null) {
+                    total = total.add(figure);
+                }
+            }
+            carried.put(person.id(), total);
+        }
+        return carried;
     }
 
     /** The claim's figure as the screen shows it on the sheet's today (null: n/a), whatever its status. */

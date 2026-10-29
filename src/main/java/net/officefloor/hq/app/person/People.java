@@ -304,10 +304,10 @@ public class People {
             }
         }
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, from);
-        for (Map<String, Object> m : jdbc.queryForList("SELECT period_name, total FROM period_person_total WHERE sheet_id = ? AND person_id = ?",
+        for (Map<String, Object> m : jdbc.queryForList("SELECT period_name, total, carried FROM period_person_total WHERE sheet_id = ? AND person_id = ?",
                 sheetId, from)) {
-            if (jdbc.update("UPDATE period_person_total SET total = total + ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
-                    m.get("total"), sheetId, m.get("period_name"), into) == 0) {
+            if (jdbc.update("UPDATE period_person_total SET total = total + ?, carried = carried + ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                    m.get("total"), m.get("carried"), sheetId, m.get("period_name"), into) == 0) {
                 jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
                         into, sheetId, m.get("period_name"), from);
             }

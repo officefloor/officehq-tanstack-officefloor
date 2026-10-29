@@ -10,7 +10,8 @@ import type { DatedValue } from '../settings/dated';
 /**
  * A sheet's period: a name unique on the sheet, `from` and `to` (yyyy-mm-dd) inclusive. Periods never overlap.
  * A closed period's due-total was fixed when it was closed (`closedTotal`; null while open), and so was each
- * person's due-total for it (`personTotals`, by person id; empty while open, and a person added later has none).
+ * person's due-total for it (`personTotals`, by person id; empty while open, and a person added later has none), and
+ * each person's carried figure for it (`personCarried`, the same way; a period fixed before carried figures were has none).
  * A soft-closed period (`soft`, not `closed`) has its figures fixed the same way, while its claims can still change.
  */
 export type Period = {
@@ -20,6 +21,7 @@ export type Period = {
   closed: boolean;
   closedTotal: string | null;
   personTotals: Record<string, string>;
+  personCarried: Record<string, string>;
   soft: boolean;
   /** How many OPEN or PENDING claims each person may have in the period; null for no cap. */
   cap: number | null;
@@ -88,6 +90,7 @@ export function personPeriodDue(
 /**
  * A person's carried figure for a period: the figures (as shown now) of their claims that count which belong (by due-by)
  * to a period ending before this one starts and were still OPEN or PENDING at the end of its last day, by their log.
+ * While the period is closed or soft-closed it is the figure fixed then (0.00 for a person added since).
  */
 export function personPeriodCarried(
   period: Period,
@@ -99,6 +102,11 @@ export function personPeriodCarried(
   floor: DatedValue[],
   late: Late,
 ): string {
+  if (isFixed(period)) {
+    const id = String(person.id);
+    if (id in period.personCarried) return period.personCarried[id];
+    if (!(id in period.personTotals)) return '0.00';
+  }
   return sumDue(
     claims
       .filter((c) => {

@@ -18,7 +18,7 @@ public class Periods {
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), Map.of(),
             rs.getBoolean("soft"), rs.getObject("claim_cap", Integer.class));
 
     private final JdbcTemplate jdbc;
@@ -27,15 +27,22 @@ public class Periods {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's periods, by from-date, each closed one with its people's fixed figures. */
+    /** The sheet's periods, by from-date, each closed one with its people's fixed figures and carried figures. */
     public List<Period> list(String sheetId) {
         Map<String, Map<Long, BigDecimal>> totals = new HashMap<>();
+        Map<String, Map<Long, BigDecimal>> carried = new HashMap<>();
         jdbc.query("SELECT * FROM " + AsOf.table("period_person_total") + " WHERE sheet_id = ? ORDER BY person_id", rs -> {
             totals.computeIfAbsent(rs.getString("period_name"), k -> new LinkedHashMap<>())
                     .put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+            // A row fixed before carried figures were fixed has none.
+            if (rs.getBigDecimal("carried") != null) {
+                carried.computeIfAbsent(rs.getString("period_name"), k -> new LinkedHashMap<>())
+                        .put(rs.getLong("person_id"), rs.getBigDecimal("carried"));
+            }
         }, sheetId);
         return jdbc.query("SELECT * FROM " + AsOf.table("period") + " WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId).stream()
-                .map(p -> p.withPersonTotals(totals.getOrDefault(p.name(), Map.of()))).toList();
+                .map(p -> p.withPersonTotals(totals.getOrDefault(p.name(), Map.of()), carried.getOrDefault(p.name(), Map.of())))
+                .toList();
     }
 
     /** The sheet's period of that name, or null when there is none. */
@@ -88,11 +95,12 @@ public class Periods {
 
     private void insertPersonTotals(Period closed) {
         closed.personTotals().forEach((personId, total) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
-                closed.sheetId(), closed.name(), personId, total));
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                closed.sheetId(), closed.name(), personId, total,
+                closed.personCarried().getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
     }
 
-    /** Reopens the (soft-)closed period, dropping its fixed total; false when it was not closed (someone else reopened it). */
+    /** Reopens the (soft-)closed period, dropping its fixed total and its people's fixed figures; false when it was not closed (someone else reopened it). */
     public boolean reopen(Period period) {
         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
                 period.sheetId(), period.name()) != 1) {
