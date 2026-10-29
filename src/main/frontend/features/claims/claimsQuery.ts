@@ -1,5 +1,5 @@
 import { getJson } from '../../api/http';
-import { heldOn, type Person } from '../people/peopleQuery';
+import { type Person } from '../people/peopleQuery';
 import { sheetKey } from '../sheet/sheetQuery';
 
 /** REVIEW: opened with a due above the review threshold in force on its date; unnumbered and counting in no total until a steward's review makes it OPEN. */
@@ -30,7 +30,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `reviewOn` (yyyy-mm-dd) is the sheet's today it last went to REVIEW (null when it never did);
  * `lines` are its lines, in the order added, each "<label> <qty> x <unit>" (a DRAFT's amount is then their sum);
  * `waived` is whether a steward waived its late charge: it bears none from then on;
- * `held` is whether it is held: while open and not bound by a statement it counts in no due figure (it still counts in claimed), as a held person's claims do.
+ * `held` is whether it is held: it still counts in every total, as a held person's claims do.
  */
 export type Claim = {
   id: number;
@@ -85,24 +85,22 @@ export const isDeferred = (c: Claim, today: string) =>
 
 /**
  * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts, voided and
- * deleted ones do not, nor do a held open claim and a person's open claims dated within one of their holds, or once the sheet's `today` reaches
- * their retirement date, unless a statement bound them, nor an OPEN claim deferred on the sheet's `today`.
+ * deleted ones do not, nor do a person's open claims once the sheet's `today` reaches their retirement date, unless a
+ * statement bound them, nor an OPEN claim deferred on the sheet's `today`. A hold (the claim's or its person's) does
+ * not leave a claim out of any total: it only takes the person's cut out of the pools.
  */
 export const counts = (c: Claim, people: Person[], today: string) =>
   !isDeferred(c, today) &&
   (c.status === 'SETTLED' ||
   (isOpen(c) &&
-    (c.stated || (!c.held && !leftOut(people.find((p) => p.id === c.personId), c.date, today)))));
+    (c.stated || !leftOut(people.find((p) => p.id === c.personId), today))));
 
-/** Whether the claim counts toward claimed: as `counts`, except that a hold (the claim's or its person's) does not leave it out. */
-export const countsClaimed = (c: Claim, people: Person[], today: string) => {
-  const person = people.find((p) => p.id === c.personId);
-  return counts({ ...c, held: false }, person ? [{ ...person, holds: [], held: false }] : [], today);
-};
+/** Whether the claim counts toward claimed: as `counts`. */
+export const countsClaimed = (c: Claim, people: Person[], today: string) => counts(c, people, today);
 
-/** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
-const leftOut = (person: Person | undefined, date: string, today: string) =>
-  heldOn(person, date) || (!!person?.retiredFrom && !!today && person.retiredFrom <= today);
+/** Whether the person's unbound open claims are left out: retired by `today`. */
+const leftOut = (person: Person | undefined, today: string) =>
+  !!person?.retiredFrom && !!today && person.retiredFrom <= today;
 
 /** The first day (yyyy-mm-dd) of the 30 days up to and including the sheet's `today`. */
 const activeFrom = (today: string) => new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);

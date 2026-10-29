@@ -9,7 +9,7 @@ import net.officefloor.hq.app.setting.Settings;
  * from the beginning of time; {@code dated} are the grades given since, each from its date on, by date.
  * {@code version} is raised on every edit. {@code retiredFrom} is the date they are retired from (null when
  * not retired); a person with one set is retired at once, whatever the date. {@code holds} are their holds, by
- * from-date: their OPEN claims dated within one, unless bound by a statement, count in no live total.
+ * from-date: their claims still count in every total, but while held on the sheet's today they get no cut in a pool.
  * {@code terms} are their own terms in days recorded from the beginning of time, which come before those of their grade
  * and of the sheet (null for none); {@code datedTerms} are their own terms recorded since, each from its date on, by date.
  * {@code contact} is their contact, trimmed and lower-cased (null for none); no two people on a sheet share one.

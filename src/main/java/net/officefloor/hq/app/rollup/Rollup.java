@@ -66,7 +66,6 @@ public class Rollup {
                 if (claim.corrects() == null) {
                     claimed = claimed.add(claim.amount());
                 }
-                // A held claim counts in claimed, but not in the due figures.
                 if (!counts(claim, person, today)) {
                     continue;
                 }
@@ -172,16 +171,17 @@ public class Rollup {
     }
 
     /**
-     * Whether the (OPEN, PENDING or SETTLED) claim counts: a held open claim, and a person's open claims dated within one
-     * of their holds, count in no live total, unless a statement bound them, nor do they once {@code today} reaches their retirement date;
-     * nor does an OPEN claim deferred on {@code today}.
+     * Whether the (OPEN, PENDING or SETTLED) claim counts: a person's open claims count in no live total once
+     * {@code today} reaches their retirement date, unless a statement bound them; nor does an OPEN claim deferred on
+     * {@code today}. A hold (the claim's or its person's) does not leave a claim out: it only takes the person's cut
+     * out of the pools.
      */
     public static boolean counts(Claim claim, Person person, LocalDate today) {
         if (claim.deferredOn(today)) {
             return false;
         }
         boolean bound = claim.stated();
-        return !(claim.status().isOpen() && !bound && (claim.held() || person.heldOn(claim.date()) || person.retiredOn(today)));
+        return !(claim.status().isOpen() && !bound && person.retiredOn(today));
     }
 
     /**

@@ -7,8 +7,8 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 /**
  * `version` is raised on every edit; an edit names the version it loaded. `retiredFrom` (yyyy-mm-dd) is
  * set once the person is retired, which they are at once, whatever the date; null otherwise. `held` is whether
- * they have any hold; `holds` are their holds by from-date: their OPEN claims dated within one, unless bound by a
- * statement, count in no live total. `terms` are their own terms in days in force on the sheet's today, which come
+ * they have any hold; `holds` are their holds by from-date: their claims still count in every total, but while
+ * held on the sheet's today they get no cut in a pool. `terms` are their own terms in days in force on the sheet's today, which come
  * before those of their grade and of the sheet; null for none. `termses` are all their own terms recorded, by from-date
  * (null for those from the beginning of time); a claim is due by the ones in force on its date. `contact` is their contact, trimmed and lower-cased, unique on the sheet; null
  * for none. `aliases` are their aliases, sorted as names are compared (ignoring case); the quick-add bar and the
