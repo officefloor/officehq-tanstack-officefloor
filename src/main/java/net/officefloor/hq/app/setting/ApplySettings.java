@@ -69,6 +69,9 @@ public class ApplySettings {
         if (settings.reviewSla() != null) {
             store.set(settings.sheetId(), Settings.REVIEW_SLA, settings.reviewSla());
         }
+        if (settings.proofKinds() != null) {
+            store.set(settings.sheetId(), Settings.PROOF_KINDS, settings.proofKinds());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

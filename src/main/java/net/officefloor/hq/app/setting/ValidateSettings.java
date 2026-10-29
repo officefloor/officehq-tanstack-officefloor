@@ -38,6 +38,7 @@ public class ValidateSettings {
     // The pot is like the cap, but not dated: missing is left as it is, blank is none.
     // The alert threshold is like the pot: missing is left as it is, blank is off.
     // The escalation gap is like the grace days: missing is left as it is, blank is off, otherwise a whole number of days, 0 or more (not dated).
+    // The proof kinds are not dated: missing is left as they are, blank is none, otherwise receipt or photo, separated by commas.
     // The parent is a sheet id, not dated: missing is left as it is, blank is none. It may not be the sheet itself, nor a
     // sheet that has this one as an ancestor, and it must be a sheet that has been loaded.
     // The rounding mode is dated: missing is left as it is, blank is none (the policy date decides), otherwise half-up or half-even.
@@ -228,6 +229,20 @@ public class ValidateSettings {
         if (rounding != null && !rounding.isEmpty() && !Settings.ROUNDING_MODES.contains(rounding)) {
             throw new InvalidSettingException("The rounding mode must be half-up or half-even.");
         }
+        String proofKinds = body == null || body.proofKinds() == null ? null : body.proofKinds().trim();
+        if (proofKinds != null && !proofKinds.isEmpty()) {
+            java.util.List<String> kinds = new java.util.ArrayList<>();
+            for (String kind : proofKinds.split(",")) {
+                String k = kind.trim();
+                if (!net.officefloor.hq.app.claim.ProofRequest.KINDS.contains(k)) {
+                    throw new InvalidSettingException("The proof kinds must be receipt or photo, separated by commas.");
+                }
+                if (!kinds.contains(k)) {
+                    kinds.add(k);
+                }
+            }
+            proofKinds = String.join(",", kinds);
+        }
         Map<String, LocalDate> from = new java.util.HashMap<>();
         if (body != null && body.from() != null) {
             for (Map.Entry<String, String> entry : body.from().entrySet()) {
@@ -275,7 +290,7 @@ public class ValidateSettings {
         }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
-                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null;
+                || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -283,7 +298,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds));
     }
 
     private static String twoDecimals(String amount) {

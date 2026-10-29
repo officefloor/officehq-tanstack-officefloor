@@ -30,7 +30,7 @@ public class Claims {
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"),
+            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getInt("proofs_photo"),
             rs.getString("split_from"), rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class),
             rs.getString("ref"), tags(rs.getString("tags")), rs.getBoolean("waived"));
 
@@ -140,7 +140,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0, null, late, null, ref, tags, false);
+                false, null, corrects, dueBy, null, 0, 0, null, late, null, ref, tags, false);
     }
 
     /** Whether a claim made now, due by {@code dueBy}, is a late entry: its due-by is in a soft-closed period. */
@@ -256,7 +256,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null, null, claim.tags(), false);
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, 0, claim.number(), late, null, null, claim.tags(), false);
     }
 
     /**
@@ -327,15 +327,16 @@ public class Claims {
     }
 
     /**
-     * Raises the claim's proofs count by one if it still has its loaded status and count, and returns it as raised; null when
-     * it has since changed.
+     * Raises the claim's proofs count by one, a proof of the kind (receipt or photo), if it still has its loaded status and
+     * count, and returns it as raised; null when it has since changed.
      */
-    public Claim addProof(Claim claim) {
-        if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND status = ? AND proofs = ?", claim.id(),
-                claim.status().name(), claim.proofs()) != 1) {
+    public Claim addProof(Claim claim, String kind) {
+        int photo = "photo".equals(kind) ? 1 : 0;
+        if (jdbc.update("UPDATE claim SET proofs = proofs + 1, proofs_photo = proofs_photo + ? WHERE id = ? AND status = ? AND proofs = ?",
+                photo, claim.id(), claim.status().name(), claim.proofs()) != 1) {
             return null;
         }
-        return claim.withProofs(claim.proofs() + 1);
+        return claim.withProofs(claim.proofs() + 1, claim.proofsPhoto() + photo);
     }
 
     /**

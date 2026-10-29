@@ -383,10 +383,10 @@ public class People {
             jdbc.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
                         "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, "
-                                + "opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, escalated, waived, tags, "
+                                + "opened_by, corrects, due_by, deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, escalated, waived, tags, "
                                 + "void_reason, edited_by, due_terms, stated, stated_due, listed) "
                                 + "SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, corrects, due_by, "
-                                + "deferred_until, proofs, split_from, late_entry, reminded_on, escalated, waived, tags, void_reason, edited_by, due_terms, "
+                                + "deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, escalated, waived, tags, void_reason, edited_by, due_terms, "
                                 + "stated, stated_due, "
                                 + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) FROM claim WHERE id = ?",
                         new String[] { "id" });

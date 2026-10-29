@@ -5,7 +5,7 @@ import { putJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
-import { PERM_ACTIONS, ROLES, ROUNDING_MODES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
+import { PERM_ACTIONS, PROOF_KINDS, ROLES, ROUNDING_MODES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, valueOn } from './dated';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { PermAction, Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
@@ -58,10 +58,11 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [alertThreshold, setAlertThreshold] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [proofKinds, setProofKinds] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -96,6 +97,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setAlertThreshold('');
       setEscalateAfter('');
       setReviewSla('');
+      setProofKinds('');
       setParent('');
       setFiscalStartMonth('');
       setPerms({});
@@ -225,6 +227,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The review SLA must be a whole number of days, 0 or more.');
       return;
     }
+    const pk = proofKinds.trim();
+    if (pk !== '' && !pk.split(',').every((k) => PROOF_KINDS.includes(k.trim()))) {
+      setError('The proof kinds must be receipt or photo, separated by commas.');
+      return;
+    }
     const pa = parent.trim();
     if (pa === sheetId.trim()) {
       setError('A sheet cannot be its own parent.');
@@ -268,7 +275,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     // A blank review threshold is none likewise.
     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
     const body: SettingsChange = {};
-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
@@ -283,6 +290,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (at !== '' || (none && blank === 'alertThreshold')) body.alertThreshold = at;
     if (ea !== '' || (none && blank === 'escalateAfter')) body.escalateAfter = ea;
     if (rs !== '' || (none && blank === 'reviewSla')) body.reviewSla = rs;
+    if (pk !== '' || (none && blank === 'proofKinds')) body.proofKinds = pk;
     if (pa !== '' || (none && blank === 'parent')) body.parent = pa;
     if (fm !== '') body.fiscalStartMonth = fm;
     for (const grade of GRADES) {
@@ -721,6 +729,19 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Proof kinds{' '}
+          <input
+            data-testid="setting-proof-kinds"
+            placeholder="none"
+            value={proofKinds}
+            onFocus={() => setBlank('proofKinds')}
+            onChange={(e) => {
+              setProofKinds(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Parent sheet{' '}
           <input
             data-testid="setting-parent"
@@ -836,6 +857,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Review SLA (days): <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Proof kinds: <span data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</span>
       </p>
       <p>
         Parent sheet: <span data-testid="setting-parent-current">{settings.data?.parent ?? ''}</span>

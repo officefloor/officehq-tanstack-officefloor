@@ -15,9 +15,10 @@ package net.officefloor.hq.app.setting;
  * {@code reviewThreshold} is the review threshold being saved, with two decimals, "" for none (dated).
  * {@code escalateAfter} is the escalation gap being saved, as a whole number of days, "" for off (not dated).
  * {@code reviewSla} is the review SLA being saved, as a whole number of days, "" for none (not dated).
+ * {@code proofKinds} are the proof kinds being saved, receipt or photo, comma separated without repeats, "" for none (not dated).
  * {@code from} is the from-date given for a dated setting, by setting key (a key left out is saved from the sheet's today, and audited without one).
  */
 public record SheetSettings(String sheetId, String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, String cap, String proofThreshold, String graceDays, String noteThreshold, String entryDate,
         java.util.SortedMap<String, String> gradeTerms, java.util.SortedMap<String, String> gradeGrace, java.util.Map<String, java.time.LocalDate> from,
-        java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
+        java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
 }

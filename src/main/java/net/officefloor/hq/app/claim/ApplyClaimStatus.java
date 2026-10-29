@@ -144,11 +144,16 @@ public class ApplyClaimStatus {
                 : settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
         // A claim whose due is above the proof threshold in force on its date (its person's grade's, else the sheet's) is settled or approved only once it has a
         // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
-        if (next == ClaimStatus.SETTLED && claim.proofs() == 0 && due != null) {
-            BigDecimal threshold = settings.proofThreshold(claim);
+        // While the sheet has proof kinds, such a claim needs at least one proof of each of them instead.
+        if (next == ClaimStatus.SETTLED && due != null) {
+            java.util.List<String> kinds = settings.proofKinds(claim.sheetId());
+            java.util.List<String> missing = kinds.isEmpty() ? (claim.proofs() == 0 ? java.util.List.of("") : java.util.List.of())
+                    : kinds.stream().filter(kind -> claim.proofsOf(kind) == 0).toList();
+            BigDecimal threshold = missing.isEmpty() ? null : settings.proofThreshold(claim);
             if (threshold != null && due.compareTo(threshold) > 0) {
                 throw new ClaimProofNeededException("The claim's due is above the proof threshold (" + threshold.toPlainString()
-                        + "): add a proof before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));
+                        + "): add " + (kinds.isEmpty() ? "a proof" : "a " + String.join(" and a ", missing))
+                        + " before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));
             }
         }
         // A claim whose due is above the note threshold in force on its date is opened only once it has a note (a due

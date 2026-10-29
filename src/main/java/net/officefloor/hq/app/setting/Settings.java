@@ -52,6 +52,8 @@ public class Settings {
     public static final String ESCALATE_AFTER = "escalate-after";
     /** The review SLA, in days (not dated; blank: none): a REVIEW claim is late once its review day plus these is before the sheet's today. */
     public static final String REVIEW_SLA = "review-sla";
+    /** The proof kinds a claim above the proof threshold needs one proof of each of (not dated; blank: none), comma separated. */
+    public static final String PROOF_KINDS = "proof-kinds";
     /** How a claim's live figures round (dated): half-up or half-even; blank is none, so the policy date decides. */
     public static final String ROUNDING = "rounding";
     public static final List<String> ROUNDING_MODES = List.of("half-up", "half-even");
@@ -294,6 +296,12 @@ public class Settings {
     public Integer escalateAfter(String sheetId) {
         String value = get(sheetId, ESCALATE_AFTER);
         return value.isEmpty() ? null : Integer.valueOf(value);
+    }
+
+    /** The proof kinds a claim above the proof threshold needs at least one proof of each of; empty when none are set. */
+    public List<String> proofKinds(String sheetId) {
+        String value = get(sheetId, PROOF_KINDS);
+        return value.isEmpty() ? List.of() : List.of(value.split(","));
     }
 
     /** The review SLA, in days; null when there is none. */

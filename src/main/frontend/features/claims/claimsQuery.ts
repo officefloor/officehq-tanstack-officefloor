@@ -17,7 +17,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from its person's own terms, else the terms of their grade on its date, counted in business days after its date (skipping Saturdays, Sundays and the sheet's holidays as they then were), and kept when they or its date change;
  * `log` is its status log, oldest first, one line per status it has had: "<STATUS> by <user> on <date> due=<due>";
  * `deferredUntil` (yyyy-mm-dd) is the date an OPEN claim was deferred to (null when never deferred), see `isDeferred`;
- * `proofs` is how many proofs it has been given: one above the sheet's proof threshold is settled or approved only with one;
+ * `proofs` is how many proofs it has been given: one above the sheet's proof threshold is settled or approved only with one (of each of the sheet's proof kinds, while it has them);
+ * `proofsReceipt` and `proofsPhoto` are how many of them are receipts and photos;
  * `splitFrom` is the number of the claim it was split off (null for any other claim);
  * `lockedBy` is the user whose open editor locks it for everyone else (null when not locked);
  * `lateEntry` is whether it was added while the period its due-by falls in was soft-closed;
@@ -47,6 +48,8 @@ export type Claim = {
   log: string[];
   deferredUntil: string | null;
   proofs: number;
+  proofsReceipt: number;
+  proofsPhoto: number;
   splitFrom: string | null;
   lockedBy: string | null;
   lateEntry: boolean;
