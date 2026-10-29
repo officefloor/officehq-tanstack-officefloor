@@ -2,20 +2,30 @@ import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
-import { useSheetDueTotal } from '../rates/due.slot';
-import { useSheetOverdue } from '../rates/overdue.slot';
+import { usePersonDueTotal, useSheetDueTotal } from '../rates/due.slot';
+import { usePersonOverdueTotal, useSheetOverdue } from '../rates/overdue.slot';
+import { useUser } from '../session/useUser';
 import { STATUSES, statusCount } from '../summary/summary.slot';
 
 /**
  * Counters shown at the top of the sheet at all times. Each repeats a figure shown elsewhere and is
  * worked out the same way: people on the sheet (retired included), claims per status as in the
- * summary, and the sheet's due- and overdue-totals.
+ * summary, and the sheet's due- and overdue-totals. Then the signed-in user's own figures: the due- and
+ * overdue-total of the person whose name or alias is the user's name (as names are compared: trimmed, ignoring
+ * case); blank when there is no such person.
  */
+const nameKey = (name: string) => name.trim().toLowerCase();
+
 function Header({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
   const dueTotal = useSheetDueTotal(sheetId);
   const { total: overdueTotal } = useSheetOverdue(sheetId);
+  const [user] = useUser();
+  const me = nameKey(user);
+  const mine = me ? people.find((p) => [p.name, ...p.aliases].some((n) => nameKey(n) === me)) : undefined;
+  const myDue = usePersonDueTotal(sheetId, mine?.id);
+  const myOverdue = usePersonOverdueTotal(sheetId, mine?.id);
 
   return (
     <header data-testid="header">
@@ -27,6 +37,8 @@ function Header({ sheetId }: { sheetId: string }) {
       ))}
       {' '}· Due <strong data-testid="header-due-total">{dueTotal}</strong>
       {' '}· Overdue <strong data-testid="header-overdue-total">{overdueTotal}</strong>
+      {' '}· Mine due <strong data-testid="my-due-total">{myDue ?? ''}</strong>
+      {' '}· Mine overdue <strong data-testid="my-overdue-total">{myOverdue ?? ''}</strong>
     </header>
   );
 }
