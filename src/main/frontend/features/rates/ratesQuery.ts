@@ -153,7 +153,7 @@ function addDays(date: string, days: number): string {
 
 /**
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise its rate figure — the one its
- * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
+ * person's last statement bound it to, otherwise its amount times the rate, on the claim's date, of
  * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`). An overdue claim's late charge — for every full 30 days overdue, the late
  * percent in force on that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of that rate figure plus the charges of the boundaries before it (compounding), each rounded like the claim, added up — is added on top: a statement
  * never binds it, so it follows the sheet's today. Last, the sum is raised to the sheet's `floor` in force on the claim's date (two decimals).
@@ -162,7 +162,7 @@ function addDays(date: string, days: number): string {
 export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: DatedValue[], late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
   const halfUp = roundsHalfUp(claim, late);
-  const bound = claim.stated && claim.status !== 'PENDING'
+  const bound = claim.stated
     ? (claim.statedDue ?? 'n/a')
     : due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date, claim.id), halfUp);
   if (isCorrection(claim) || bound === 'n/a') return bound;

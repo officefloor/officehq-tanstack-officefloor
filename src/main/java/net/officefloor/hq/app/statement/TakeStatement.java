@@ -89,7 +89,7 @@ public class TakeStatement {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
+        if (claim.stated()) {
             return claim.statedDue();
         }
         BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));

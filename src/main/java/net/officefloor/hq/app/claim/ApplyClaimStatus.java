@@ -212,11 +212,11 @@ public class ApplyClaimStatus {
 
     /**
      * The claim's due now, before its late charge: the figure its person's last statement bound it to (a PENDING
-     * claim is not bound: its figure is live), otherwise its amount times its
+     * claim too), otherwise its amount times its
      * person's grade's rate on the claim's date, rounded by the policy date (not yet floored); null when none applies.
      */
     private static BigDecimal due(Claim claim, People people, Rates rates, Settings settings) {
-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
+        if (claim.stated()) {
             return claim.statedDue();
         }
         Person person = people.find(claim.sheetId(), claim.personId());

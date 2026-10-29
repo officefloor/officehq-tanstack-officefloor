@@ -172,7 +172,7 @@ public class Rollup {
         if (claim.deferredOn(today)) {
             return false;
         }
-        boolean bound = claim.stated() && claim.status() != ClaimStatus.PENDING;
+        boolean bound = claim.stated();
         return !(claim.status().isOpen() && !bound && (person.heldOn(claim.date()) || person.retiredOn(today)));
     }
 
@@ -190,10 +190,10 @@ public class Rollup {
 
     /**
      * The claim's figure before any late charge: the one its person's last statement bound, else its live rate figure (not floored).
-     * A PENDING claim is not bound: it shows its live figure until approved or rejected.
+     * A PENDING claim is bound like any other claim that counts.
      */
     private BigDecimal bound(Claim claim, Person person) {
-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
+        if (claim.stated()) {
             return claim.statedDue();
         }
         BigDecimal rate = rates.forClaim(claim, person.gradeOn(claim.date()));

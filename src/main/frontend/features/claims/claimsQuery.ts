@@ -12,7 +12,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening and kept when voided (null for a draft);
  * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date);
  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
- * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim is not bound while PENDING;
+ * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim too;
  * a negative `amount` is a correction, and `corrects` is the number of the settled claim it corrects (null for any other claim);
  * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from its person's own terms, else the terms of their grade on its date, counted in business days after its date (skipping Saturdays, Sundays and the sheet's holidays as they then were), and kept when they or its date change;
  * `log` is its status log, oldest first, one line per status it has had: "<STATUS> by <user> on <date> due=<due>";
@@ -85,7 +85,7 @@ export const counts = (c: Claim, people: Person[], today: string) =>
   !isDeferred(c, today) &&
   (c.status === 'SETTLED' ||
   (isOpen(c) &&
-    ((c.stated && c.status !== 'PENDING') || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
+    (c.stated || !leftOut(people.find((p) => p.id === c.personId), c.date, today))));
 
 /** Whether the person's unbound open claim dated `date` is left out: within a hold, or retired by `today`. */
 const leftOut = (person: Person | undefined, date: string, today: string) =>
