@@ -13,7 +13,7 @@ const dashboardQuery = (sheetId: string, user: string) => ({
 });
 
 /**
- * The steward's dashboard: how many of the sheet's claims are PENDING, how many REVIEW, and how many that count are
+ * The steward's dashboard: how many of the claims over the sheet and its descendants are PENDING, how many REVIEW, and how many that count are
  * overdue. A user who is not a steward (a delegation included) sees the cells empty; as of a date, the counts and the
  * role are as they stood then.
  */
