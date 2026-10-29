@@ -1,0 +1,324 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 0a2c455f..ab802f31 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -23,7 +23,7 @@ const PERM_ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
+ 
+ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
+ 
+-/** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
++/** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit; each grade may have its own, dated like the floor, blank: none, so the sheet's, the one in force on the sheet's today for a claim's person's grade) and the floor a
+  *  claim's live due is at least, and the terms (days after its date a claim is due by) and the late percent (what an overdue claim gains per full 30 days) — and the form
+  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
+  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
+@@ -44,6 +44,7 @@ function Settings({ sheetId }: { sheetId: string }) {
+   const [gradeTerms, setGradeTerms] = useState<Partial<Record<Grade, string>>>({});
+   const [gradeGrace, setGradeGrace] = useState<Partial<Record<Grade, string>>>({});
+   const [gradeProof, setGradeProof] = useState<Partial<Record<Grade, string>>>({});
++  const [gradeLimit, setGradeLimit] = useState<Partial<Record<Grade, string>>>({});
+   const [latePct, setLatePct] = useState('');
+   const [policyDate, setPolicyDate] = useState('');
+   const [numberingFrom, setNumberingFrom] = useState('');
+@@ -63,7 +64,7 @@ function Settings({ sheetId }: { sheetId: string }) {
+   const [parent, setParent] = useState('');
+   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
+   const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
+-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | PermAction>('clerkLimit');
++  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | 'noteThreshold' | 'reviewThreshold' | 'rounding' | 'graceDays' | 'entryDate' | 'pot' | 'alertThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'parent' | `grace-${Grade}` | `proof-threshold-${Grade}` | `clerk-limit-${Grade}` | PermAction>('clerkLimit');
+   const [from, setFrom] = useState<Record<string, string>>({});
+   const [error, setError] = useState('');
+   const today = useSheetToday(sheetId);
+@@ -84,6 +85,7 @@ function Settings({ sheetId }: { sheetId: string }) {
+       setGradeTerms({});
+       setGradeGrace({});
+       setGradeProof({});
++      setGradeLimit({});
+       setLatePct('');
+       setPolicyDate('');
+       setNumberingFrom('');
+@@ -121,6 +123,15 @@ function Settings({ sheetId }: { sheetId: string }) {
+       setError('The clerk limit must be an amount of 0.00 or more, with up to two decimals.');
+       return;
+     }
++    const gl: Partial<Record<Grade, string>> = {};
++    for (const grade of GRADES) {
++      const amount = (gradeLimit[grade] ?? '').trim();
++      if (amount !== '' && !AMOUNT.test(amount)) {
++        setError(`The clerk limit of grade ${grade} must be an amount of 0.00 or more, with up to two decimals.`);
++        return;
++      }
++      if (amount !== '') gl[grade] = amount;
++    }
+     const f = floor.trim();
+     if (f !== '' && !AMOUNT.test(f)) {
+       setError('The floor must be an amount of 0.00 or more, with up to two decimals.');
+@@ -277,12 +288,16 @@ function Settings({ sheetId }: { sheetId: string }) {
+     for (const grade of GRADES) {
+       if (gp[grade] === undefined && (froms[`proof-threshold-${grade}`] ?? '') !== '') gp[grade] = '';
+     }
++    // A blank grade's clerk limit is none likewise.
++    for (const grade of GRADES) {
++      if (gl[grade] === undefined && (froms[`clerk-limit-${grade}`] ?? '') !== '') gl[grade] = '';
++    }
+     // A blank rounding mode is none likewise: saved when its from-date is given, or when it was the last field worked in.
+     const roundingSaved = rm !== '' || (froms['rounding'] ?? '') !== '';
+     // A blank review threshold is none likewise.
+     const reviewSaved = rt !== '' || (froms['review-threshold'] ?? '') !== '';
+     const body: SettingsChange = {};
+-    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
++    const none = !roundingSaved && !reviewSaved && l === '' && f === '' && t === '' && Object.keys(g).length === 0 && Object.keys(gg).length === 0 && Object.keys(gp).length === 0 && Object.keys(gl).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && nt === '' && gd === '' && ed === '' && pt2 === '' && at === '' && ea === '' && rs === '' && pk === '' && dg === '' && pa === '' && fm === '' && Object.keys(pm).length === 0;
+     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
+     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
+     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
+@@ -309,6 +324,10 @@ function Settings({ sheetId }: { sheetId: string }) {
+       if (none && blank === `proof-threshold-${grade}`) gp[grade] = '';
+     }
+     if (Object.keys(gp).length > 0) body.gradeProof = gp;
++    for (const grade of GRADES) {
++      if (none && blank === `clerk-limit-${grade}`) gl[grade] = '';
++    }
++    if (Object.keys(gl).length > 0) body.gradeClerkLimit = gl;
+     for (const action of PERM_ACTIONS) {
+       if (pm[action] !== undefined || (none && blank === action)) body.perms = { ...body.perms, [action]: pm[action] ?? '' };
+     }
+@@ -349,6 +368,35 @@ function Settings({ sheetId }: { sheetId: string }) {
+             }}
+           />
+         </label>{' '}
++        {GRADES.map((grade) => (
++          <span key={grade}>
++            <label>
++              Clerk limit {grade}{' '}
++              <input
++                data-testid={`setting-clerk-limit-${grade}`}
++                placeholder="sheet's"
++                value={gradeLimit[grade] ?? ''}
++                onFocus={() => setBlank(`clerk-limit-${grade}`)}
++                onChange={(e) => {
++                  setGradeLimit({ ...gradeLimit, [grade]: e.target.value });
++                  setError('');
++                }}
++              />
++            </label>{' '}
++            <label>
++              from{' '}
++              <input
++                data-testid={`setting-clerk-limit-${grade}-from`}
++                placeholder="sheet's today"
++                value={from[`clerk-limit-${grade}`] ?? ''}
++                onChange={(e) => {
++                  setFrom({ ...from, [`clerk-limit-${grade}`]: e.target.value });
++                  setError('');
++                }}
++              />
++            </label>{' '}
++          </span>
++        ))}
+         <label>
+           Floor{' '}
+           <input
+@@ -813,6 +861,12 @@ function Settings({ sheetId }: { sheetId: string }) {
+       <p>
+         Clerk limit in force: <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
+       </p>
++      {GRADES.map((grade) => (
++        <p key={grade}>
++          Clerk limit of grade {grade} in force:{' '}
++          <span data-testid={`setting-clerk-limit-${grade}-current`}>{current(`clerk-limit-${grade}`)}</span>
++        </p>
++      ))}
+       <p>
+         Floor in force: <span data-testid="setting-floor-current">{current('floor', DEFAULT_FLOOR)}</span>
+       </p>
+diff --git a/src/main/frontend/features/settings/settingsQuery.ts b/src/main/frontend/features/settings/settingsQuery.ts
+index 162e1733..59f26765 100644
+--- a/src/main/frontend/features/settings/settingsQuery.ts
++++ b/src/main/frontend/features/settings/settingsQuery.ts
+@@ -14,7 +14,7 @@ import type { DatedValue } from './dated';
+  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
+  *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none; `graceDays` is a whole number of days (not dated), or "" when closing periods by today is off; `entryDate` is yyyy-mm-dd, or "" when it is off (a new claim left undated takes the sheet's today); `pot` has two decimals (not dated), or is "" when there is none; `alertThreshold` has two decimals (not dated), or is "" when alerts are off; `escalateAfter` is a whole number of days (not dated), or "" when escalation is off; `reviewSla` is a whole number of days (not dated), or "" when there is none; `proofKinds` are the proof kinds, comma separated (not dated), or "" when there are none; `parent` is the id of the sheet whose rates are used where this one has none (not dated), or "" when there is none; `fiscalStartMonth` is the month (1 to 12) the sheet's fiscal year starts on (not dated; "1" unless set).
+  *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
+- *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
++ *  (clerk-limit, clerk-limit-<grade>, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
+  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
+  *  by clerk and steward; reassign and reopen by steward). */
+ export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
+@@ -28,6 +28,8 @@ export type PermAction = (typeof PERM_ACTIONS)[number];
+  *  `perms` are the roles each action is allowed to, by action: left out is left as it is, blank is the standing rule. */
+ export type SettingsChange = {
+   clerkLimit?: string;
++  /** A grade's own clerk limit, by grade: left out is left as it is, blank is none (the sheet's is in force). */
++  gradeClerkLimit?: Partial<Record<Grade, string>>;
+   floor?: string;
+   terms?: string;
+   latePct?: string;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index a6547db6..37b2403e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -179,7 +179,7 @@ public class ApplyClaimStatus {
+         // A clerk settles only a claim whose due is at or below the clerk limit (a due of n/a is within any
+         // limit); above it the claim goes PENDING, for a steward to approve. A steward settles anything.
+         if (next == ClaimStatus.SETTLED && claim.status() == ClaimStatus.OPEN && due != null && !steward) {
+-            BigDecimal limit = settings.clerkLimit(claim.sheetId());
++            BigDecimal limit = settings.clerkLimit(claim);
+             if (limit != null && due.compareTo(limit) > 0) {
+                 next = ClaimStatus.PENDING;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index 2f4d95fe..9432be9f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -11,6 +11,7 @@ public class ApplySettings {
+         if (settings.clerkLimit() != null) {
+             dated(settings, store, today, Settings.CLERK_LIMIT, settings.clerkLimit());
+         }
++        settings.gradeClerkLimit().forEach((grade, amount) -> dated(settings, store, today, Settings.gradeClerkLimitKey(grade), amount));
+         if (settings.floor() != null) {
+             dated(settings, store, today, Settings.FLOOR, settings.floor());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index bd8efcf7..a4f9fdf0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -5,12 +5,14 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ 
+ public class AuditSettingChanged {
+-    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then each grade's proof threshold by grade, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order, then the pot, then the parent, then the fiscal year start month, then the alert threshold, then the rounding mode, then the review threshold, then the escalation gap, then the review SLA, then the proof kinds, then the default grade. A dated setting saved with a from-date ends with from=<date>.
++    // One line per setting saved: the clerk limit, then each grade's clerk limit by grade, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then each grade's proof threshold by grade, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order, then the pot, then the parent, then the fiscal year start month, then the alert threshold, then the rounding mode, then the review threshold, then the escalation gap, then the review SLA, then the proof kinds, then the default grade. A dated setting saved with a from-date ends with from=<date>.
+     public void audit(@Val SheetSettings settings, ServerHttpConnection connection, Audit audit) {
+         if (settings.clerkLimit() != null) {
+             audit.record(dated(settings, connection,
+                     "key=" + Settings.CLERK_LIMIT, "value=" + settings.clerkLimit(), from(settings, Settings.CLERK_LIMIT)));
+         }
++        settings.gradeClerkLimit().forEach((grade, amount) -> audit.record(dated(settings, connection,
++                "key=" + Settings.gradeClerkLimitKey(grade), "value=" + amount, from(settings, Settings.gradeClerkLimitKey(grade)))));
+         if (settings.floor() != null) {
+             audit.record(dated(settings, connection,
+                     "key=" + Settings.FLOOR, "value=" + settings.floor(), from(settings, Settings.FLOOR)));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 5ec193f1..e12280ce 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -62,7 +62,8 @@ public class Settings {
+     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
+     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
+             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
+-            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"), ROUNDING, REVIEW_THRESHOLD);
++            gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"), ROUNDING, REVIEW_THRESHOLD,
++            gradeClerkLimitKey("A"), gradeClerkLimitKey("B"), gradeClerkLimitKey("C"));
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
+     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
+@@ -155,6 +156,20 @@ public class Settings {
+         return value.isEmpty() ? null : new BigDecimal(value);
+     }
+ 
++    /** The key a grade's own clerk limit is kept under: clerk-limit-<grade>. */
++    public static String gradeClerkLimitKey(String grade) {
++        return CLERK_LIMIT + "-" + grade;
++    }
++
++    /** The clerk limit in force for the claim: its person's grade's own on the sheet's today when one is set (blank is none), else the sheet's; null when there is none. */
++    public BigDecimal clerkLimit(Claim claim) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        LocalDate today = sheets.today(claim.sheetId());
++        String grade = person == null ? null : person.gradeOn(today);
++        String value = grade == null ? "" : on(claim.sheetId(), gradeClerkLimitKey(grade), today);
++        return value.isEmpty() ? clerkLimit(claim.sheetId()) : new BigDecimal(value);
++    }
++
+     /** The cap in force on the sheet's today, with two decimals: what a person's due-total is at most; null when there is none. */
+     public BigDecimal cap(String sheetId) {
+         String value = current(sheetId, CAP);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 495cd783..5898c6bf 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -1,8 +1,9 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** The body of the settings being saved, as typed: the clerk limit (blank: no limit) and the floor, the terms and the late percent (each null or blank: left as it is), and the policy date (null: left as it is; blank: none, so the sheet's today), and the period numbering from-date (null: left as it is; blank: off), and the cap, the proof threshold and the note threshold (each null: left as it is; blank: none), and the grace days (null: left as it is; blank: off), and the entry date (null: left as it is; blank: off, so the sheet's today), and the terms of a grade's own, by grade (each left out, null or blank: left as it is), and the grace days of a grade, by grade (each left out or null: left as it is; blank: none), and the from-date (yyyy-mm-dd) each dated setting saved is recorded from, by setting key (left out or blank: the sheet's today), and the roles each action is permitted to, by action, as a comma separated list (left out or null: left as it is; blank: the standing rule), and the proof threshold of a grade, by grade (each left out or null: left as it is; blank: none, so the sheet's), and the pot (null: left as it is; blank: none), and the parent sheet's id (null: left as it is; blank: none), and the fiscal year start month (null or blank: left as it is), and the alert threshold (null: left as it is; blank: off), and the rounding mode (null: left as it is; blank: none, so the policy date decides), and the review threshold (null: left as it is; blank: none), and the escalation gap in days (null: left as it is; blank: off), and the review SLA in days (null: left as it is; blank: none), and the proof kinds, comma separated (null: left as it is; blank: none), and the default grade (null: left as it is; blank: none, so A). */
++/** The body of the settings being saved, as typed: the clerk limit (blank: no limit) and the floor, the terms and the late percent (each null or blank: left as it is), and the policy date (null: left as it is; blank: none, so the sheet's today), and the period numbering from-date (null: left as it is; blank: off), and the cap, the proof threshold and the note threshold (each null: left as it is; blank: none), and the grace days (null: left as it is; blank: off), and the entry date (null: left as it is; blank: off, so the sheet's today), and the terms of a grade's own, by grade (each left out, null or blank: left as it is), and the grace days of a grade, by grade (each left out or null: left as it is; blank: none), and the from-date (yyyy-mm-dd) each dated setting saved is recorded from, by setting key (left out or blank: the sheet's today), and the roles each action is permitted to, by action, as a comma separated list (left out or null: left as it is; blank: the standing rule), and the proof threshold of a grade, by grade (each left out or null: left as it is; blank: none, so the sheet's), and the pot (null: left as it is; blank: none), and the parent sheet's id (null: left as it is; blank: none), and the fiscal year start month (null or blank: left as it is), and the alert threshold (null: left as it is; blank: off), and the rounding mode (null: left as it is; blank: none, so the policy date decides), and the review threshold (null: left as it is; blank: none), and the escalation gap in days (null: left as it is; blank: off), and the review SLA in days (null: left as it is; blank: none), and the proof kinds, comma separated (null: left as it is; blank: none), and the default grade (null: left as it is; blank: none, so A), and the clerk limit of a grade, by grade (each left out or null: left as it is; blank: none, so the sheet's). */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         String cap, String proofThreshold, String graceDays, String noteThreshold, String entryDate,
+         java.util.Map<String, String> gradeTerms, java.util.Map<String, String> gradeGrace, java.util.Map<String, String> from, java.util.Map<String, String> perms,
+-        java.util.Map<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
++        java.util.Map<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
++        java.util.Map<String, String> gradeClerkLimit) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SheetSettings.java b/src/main/java/net/officefloor/hq/app/setting/SheetSettings.java
+index 7d447667..6304bab9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SheetSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SheetSettings.java
+@@ -6,6 +6,7 @@ package net.officefloor.hq.app.setting;
+  * {@code gradeTerms} are the terms of a grade's own being saved, as a whole number of days, by grade (a grade left out is left as it is).
+  * {@code gradeGrace} are the grace days of a grade being saved, as a whole number of days, "" for none, by grade (a grade left out is left as it is).
+  * {@code gradeProof} are the proof thresholds of a grade being saved, with two decimals, "" for none (the sheet's is in force), by grade (a grade left out is left as it is).
++ * {@code gradeClerkLimit} are the clerk limits of a grade being saved, with two decimals, "" for none (the sheet's is in force), by grade (a grade left out is left as it is).
+  * {@code perms} are the roles each action is permitted to being saved, by action in {@link Settings#PERM_ACTIONS} order, as a comma separated list, "" for the standing rule.
+  * {@code pot} is the pot being saved, with two decimals, "" for none (not dated).
+  * {@code parent} is the id of the parent sheet being saved, "" for none (not dated).
+@@ -21,5 +22,6 @@ package net.officefloor.hq.app.setting;
+  */
+ public record SheetSettings(String sheetId, String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, String cap, String proofThreshold, String graceDays, String noteThreshold, String entryDate,
+         java.util.SortedMap<String, String> gradeTerms, java.util.SortedMap<String, String> gradeGrace, java.util.Map<String, java.time.LocalDate> from,
+-        java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
++        java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
++        java.util.SortedMap<String, String> gradeClerkLimit) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 28e450a1..54e37ce8 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -33,6 +33,7 @@ public class ValidateSettings {
+     // The proof threshold is like the cap: missing is left as it is, blank is none, otherwise an amount of 0.00 or more with up to two decimals.
+     // A grade's proof threshold is dated like it: blank is none (the sheet's is in force), otherwise an amount like it, and only for a grade (A, B or C).
+     // The note threshold is like the cap too.
++    // A grade's clerk limit is dated like the clerk limit: blank is none (the sheet's is in force), otherwise an amount like it, and only for a grade (A, B or C).
+     // The grace days are missing: left as they are, blank: off, otherwise a whole number of days, 0 or more (not dated).
+     // The entry date is like the period numbering from-date: missing is left as it is, blank is off (the sheet's today), otherwise a yyyy-MM-dd date.
+     // The pot is like the cap, but not dated: missing is left as it is, blank is none.
+@@ -111,6 +112,23 @@ public class ValidateSettings {
+                 gradeProof.put(grade, amount.isEmpty() ? "" : twoDecimals(amount));
+             }
+         }
++        SortedMap<String, String> gradeClerkLimit = new TreeMap<>();
++        if (body != null && body.gradeClerkLimit() != null) {
++            for (Map.Entry<String, String> entry : body.gradeClerkLimit().entrySet()) {
++                String grade = entry.getKey() == null ? "" : entry.getKey().trim();
++                if (entry.getValue() == null) {
++                    continue;
++                }
++                String amount = entry.getValue().trim();
++                if (!Settings.GRADES.contains(grade)) {
++                    throw new InvalidSettingException("A clerk limit can be set only for grade A, B or C.");
++                }
++                if (!amount.isEmpty() && !AMOUNT.matcher(amount).matches()) {
++                    throw new InvalidSettingException("The clerk limit of grade " + grade + " must be an amount of 0.00 or more, with up to two decimals.");
++                }
++                gradeClerkLimit.put(grade, amount.isEmpty() ? "" : twoDecimals(amount));
++            }
++        }
+         String latePct = body == null || body.latePct() == null ? "" : body.latePct().trim();
+         if (!latePct.isEmpty() && !AMOUNT.matcher(latePct).matches()) {
+             throw new InvalidSettingException("The late percent must be a percent of 0.00 or more, with up to two decimals.");
+@@ -293,7 +311,7 @@ public class ValidateSettings {
+                 perms.put(action, String.join(",", roles));
+             }
+         }
+-        boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !latePct.isEmpty() || policyDate != null
++        boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !gradeClerkLimit.isEmpty() || !latePct.isEmpty() || policyDate != null
+                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
+                 || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null;
+         if (typed == null && !others) {
+@@ -303,7 +321,7 @@ public class ValidateSettings {
+                 : typed.isEmpty() ? "" : twoDecimals(typed);
+         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
+                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
+-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade));
++                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit));
+     }
+ 
+     private static String twoDecimals(String amount) {
