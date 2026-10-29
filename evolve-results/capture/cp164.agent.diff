@@ -1,0 +1,92 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 84c1505d..992305ea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -63,6 +63,17 @@ public class Claims {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /**
++     * How much of the person's claim numbered {@code number} its corrections other than {@code exceptId} (0: none)
++     * already take back, as a positive amount; VOID and DELETED corrections left out.
++     */
++    public BigDecimal corrected(String sheetId, long personId, String number, long exceptId) {
++        BigDecimal sum = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM " + AsOf.table("claim")
++                + " WHERE sheet_id = ? AND person_id = ? AND corrects = ? AND id <> ? AND status NOT IN ('VOID', 'DELETED')",
++                BigDecimal.class, sheetId, personId, number, exceptId);
++        return sum == null ? BigDecimal.ZERO : sum.negate();
++    }
++
+     /**
+      * Whether a claim of the sheet other than {@code exceptId} (0: none) carries the reference {@code ref}, compared
+      * without regard to case.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrection.java b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrection.java
+index b3adbfe9..6c3374e1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrection.java
+@@ -1,12 +1,23 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The check, shared by an add and an edit, that a correction names a SETTLED claim of the same person. */
++import java.math.BigDecimal;
++
++/**
++ * The check, shared by an add and an edit, that a correction names a SETTLED claim of the same person and takes back
++ * no more than remains of it: its amount less the corrections already made against it (VOID or DELETED ones left out).
++ */
+ final class RefuseInvalidCorrection {
+ 
+     private RefuseInvalidCorrection() {
+     }
+ 
+     static void refuse(ClaimInput input, String sheetId, long personId, Claims claims) throws InvalidClaimException {
++        refuse(input, sheetId, personId, 0, claims);
++    }
++
++    /** As {@link #refuse(ClaimInput, String, long, Claims)}, leaving the claim {@code exceptId} (0: none) out of the corrections already made. */
++    static void refuse(ClaimInput input, String sheetId, long personId, long exceptId, Claims claims)
++            throws InvalidClaimException {
+         if (input.corrects() == null) {
+             return;
+         }
+@@ -15,5 +26,10 @@ final class RefuseInvalidCorrection {
+             throw new InvalidClaimException(
+                     "A correction must name a settled claim of the same person: " + input.corrects() + " is not one.");
+         }
++        BigDecimal remains = corrected.amount().subtract(claims.corrected(sheetId, personId, input.corrects(), exceptId));
++        if (input.amount().negate().compareTo(remains) > 0) {
++            throw new InvalidClaimException("A correction of " + input.corrects() + " may take back at most "
++                    + remains.max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + ".");
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionClaim.java b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionClaim.java
+index 1602c67d..b0faeff6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionClaim.java
+@@ -3,8 +3,9 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class RefuseInvalidCorrectionClaim {
+-    // A claim edited into a correction must name, by number, a SETTLED claim of its own person.
++    // A claim edited into a correction must name, by number, a SETTLED claim of its own person, and take
++    // back no more than remains of it, its own earlier amount left out.
+     public void refuse(@Val ClaimInput input, @Val Claim claim, Claims claims) throws InvalidClaimException {
+-        RefuseInvalidCorrection.refuse(input, claim.sheetId(), claim.personId(), claims);
++        RefuseInvalidCorrection.refuse(input, claim.sheetId(), claim.personId(), claim.id(), claims);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionInput.java b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionInput.java
+index d7aac66f..c3a9c464 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionInput.java
+@@ -4,7 +4,8 @@ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class RefuseInvalidCorrectionInput {
+-    // A correction being added must name, by number, a SETTLED claim of the person it is added to.
++    // A correction being added must name, by number, a SETTLED claim of the person it is added to, and take
++    // back no more than remains of it.
+     public void refuse(@Val ClaimInput input, @Val Person person, Claims claims) throws InvalidClaimException {
+         RefuseInvalidCorrection.refuse(input, person.sheetId(), person.id(), claims);
+     }
