@@ -1,0 +1,133 @@
+diff --git a/src/main/frontend/features/treeSearch/treeSearch.slot.tsx b/src/main/frontend/features/treeSearch/treeSearch.slot.tsx
+new file mode 100644
+index 00000000..36516c91
+--- /dev/null
++++ b/src/main/frontend/features/treeSearch/treeSearch.slot.tsx
+@@ -0,0 +1,65 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++
++/** The tree search: every person on this sheet and the other sheets of its tree whose name or an alias contains the
++ *  typed text (case ignored), one line each as `<sheet id> <name> <due-total>`: this sheet's people first in list
++ *  order, then the other sheets' by sheet id. */
++function TreeSearch({ sheetId }: { sheetId: string }) {
++  const [text, setText] = useState('');
++  const [lines, setLines] = useState<string[] | null>(null);
++  const [error, setError] = useState('');
++
++  const search = useMutation({
++    mutationFn: (typed: string) =>
++      getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/search?text=${encodeURIComponent(typed)}`),
++    onSuccess: (found) => setLines(found),
++    onError: (e: Error) => setError(e.message || 'The search could not be run.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    setLines(null);
++    search.mutate(text);
++  };
++
++  return (
++    <section data-testid="tree-search">
++      <h3>Search the tree</h3>
++      <form onSubmit={submit}>
++        <label>
++          Name{' '}
++          <input
++            data-testid="search-name"
++            value={text}
++            onChange={(e) => {
++              setText(e.target.value);
++              setError('');
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="search" disabled={search.isPending}>
++          Search
++        </button>{' '}
++        {lines && <span>Found <strong data-testid="search-count">{lines.length}</strong></span>}
++        {error && <p data-testid="search-error">{error}</p>}
++      </form>
++      <ol data-testid="search-lines">
++        {(lines ?? []).map((line, i) => (
++          <li key={i} data-testid="search-line">
++            {line}
++          </li>
++        ))}
++      </ol>
++    </section>
++  );
++}
++
++// Keyed by sheet, so the text or the lines shown never carry over to another sheet.
++export const contribution = SheetPanel.fill({
++  order: 39,
++  Component: ({ sheetId }) => <TreeSearch key={`tree-search-${sheetId}`} sheetId={sheetId} />,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RespondWithTreeSearch.java b/src/main/java/net/officefloor/hq/app/rollup/RespondWithTreeSearch.java
+new file mode 100644
+index 00000000..4e10ef79
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RespondWithTreeSearch.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.rollup;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++import java.util.Set;
++import java.util.TreeSet;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class RespondWithTreeSearch {
++    // This sheet's matches first in list order, then each other sheet of its tree by id; due-totals as the screen shows them.
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "text", required = false) String text, People people, Rollup rollup,
++            ObjectResponse<List<String>> response) {
++        String sheet = sheetId.trim();
++        String key = text == null ? "" : text.toLowerCase(Locale.ROOT);
++        Set<String> others = new TreeSet<>(people.tree(sheet));
++        others.remove(sheet);
++        List<String> sheets = new ArrayList<>(List.of(sheet));
++        sheets.addAll(others);
++        List<String> lines = new ArrayList<>();
++        for (String at : sheets) {
++            Figures figures = rollup.figures(at);
++            for (Person person : people.list(at)) {
++                if (matches(person, key)) {
++                    Figures.PersonFigures f = figures.people().get(person.id());
++                    lines.add(at + " " + person.name() + " " + (f == null ? "n/a" : f.dueTotal()));
++                }
++            }
++        }
++        response.send(lines);
++    }
++
++    private static boolean matches(Person person, String key) {
++        if (person.name().toLowerCase(Locale.ROOT).contains(key)) {
++            return true;
++        }
++        return person.aliases().stream().anyMatch(a -> a.toLowerCase(Locale.ROOT).contains(key));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/search.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/search.GET.yml
+new file mode 100644
+index 00000000..77f39b24
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/search.GET.yml
+@@ -0,0 +1,6 @@
++# GET /api/sheets/{sheetId}/search?text= — every person on the sheet's tree whose name or an alias contains the text
++# (case ignored; empty matches everyone), one line each as "<sheet id> <name> <due-total>": this sheet's people first
++# in list order, then the other sheets' by sheet id.
++respond:
++  class: net.officefloor.hq.app.rollup.RespondWithTreeSearch
++  govern: [ readonly-transaction ]
