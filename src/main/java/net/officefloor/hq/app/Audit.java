@@ -170,6 +170,22 @@ public class Audit {
 
     private static final Pattern NAME_FIELD = Pattern.compile(" (?:name|person)=(.*?)(?= [A-Za-z][\\w-]*=|$)");
 
+    /**
+     * The sheet's activity: for every user (by=) and every event the sheet's lines hold, one line
+     * {@code <user> <EVENT> <count>}, sorted by user then event.
+     */
+    public synchronized List<String> activity(String sheetId) {
+        java.util.TreeMap<String, java.util.TreeMap<String, Integer>> counts = new java.util.TreeMap<>();
+        for (String line : lines(sheetId, null)) {
+            String[] parts = line.split(" ", 4);
+            String user = parts.length >= 3 && parts[2].startsWith("by=") ? parts[2].substring("by=".length()) : "";
+            counts.computeIfAbsent(user, k -> new java.util.TreeMap<>()).merge(parts[0], 1, Integer::sum);
+        }
+        List<String> activity = new ArrayList<>();
+        counts.forEach((user, events) -> events.forEach((event, n) -> activity.add(user + " " + event + " " + n)));
+        return activity;
+    }
+
     /** Remove the audit file. */
     public synchronized void clear() {
         try {
