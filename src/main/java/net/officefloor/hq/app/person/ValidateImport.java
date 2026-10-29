@@ -10,17 +10,19 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateImport {
-    // Every line is checked before any is added, by the person form's rules: name,grade,terms,contact (the last two may be
-    // absent or blank). A name already used on the sheet's tree as a name or alias, or a contact already on the sheet, is
-    // refused, as is a name or contact repeated in the import (ignoring case). Blank lines are skipped; an import with no
-    // line is refused.
+    // Every line is checked before any is stored, by the person form's rules: name,grade,terms,contact (the last two may be
+    // absent or blank). A line whose name matches a person on the sheet (by name or alias, as names are compared) updates
+    // them, checked as their edit form would be; any other line adds, and is refused when its name is used on the sheet's
+    // tree as a name or alias. A contact already used by someone else on the sheet is refused, as is a name, contact or
+    // matched person repeated in the import (ignoring case). Blank lines are skipped; an import with no line is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRequest body, People people,
             Out<ImportedPeople> out) throws InvalidPersonException {
         String sheet = sheetId.trim();
         String text = body == null || body.text() == null ? "" : body.text();
-        List<PersonRequest> lines = new ArrayList<>();
+        List<ImportedPeople.Line> lines = new ArrayList<>();
         Set<String> names = new HashSet<>();
         Set<String> contacts = new HashSet<>();
+        Set<Long> matched = new HashSet<>();
         int n = 0;
         for (String line : text.split("\\r?\\n")) {
             n++;
@@ -40,13 +42,22 @@ public class ValidateImport {
                 if (request.contact() != null && !contacts.add(request.contact())) {
                     throw new InvalidPersonException("The contact " + request.contact() + " is given twice in the import.");
                 }
-                if (people.nameTaken(sheet, request.name(), -1)) {
+                Person existing = people.findByName(sheet, request.name());
+                if (existing != null) {
+                    if (!matched.add(existing.id())) {
+                        throw new InvalidPersonException(existing.name() + " is given twice in the import.");
+                    }
+                    if (people.aliasClashes(existing)) {
+                        throw new InvalidPersonException("An alias of theirs is already in use on the sheet's tree.");
+                    }
+                } else if (people.nameTaken(sheet, request.name(), -1)) {
                     throw new InvalidPersonException("The name is already in use.");
                 }
-                if (request.contact() != null && people.contactTaken(sheet, request.contact(), -1)) {
+                if (request.contact() != null
+                        && people.contactTaken(sheet, request.contact(), existing == null ? -1 : existing.id())) {
                     throw new InvalidPersonException("The contact is already in use.");
                 }
-                lines.add(request);
+                lines.add(new ImportedPeople.Line(request, existing));
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + n + ": " + e.getMessage());
             }
