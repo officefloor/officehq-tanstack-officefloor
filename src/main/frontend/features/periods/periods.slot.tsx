@@ -350,7 +350,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   );
 }
 
-/** Makes a period per calendar month — or per month of the fiscal year typed — from the from-date's month to the to-date's month (a blank date is the
+/** Makes a period per calendar month — or per month of the fiscal year typed, or per quarter of the year typed — from the from-date's month to the to-date's month (a blank date is the
  *  sheet's today), leaving out a month whose name is taken or whose days overlap a period, and shows how many
  *  were made. A to-date before the from-date is refused. */
 function GeneratePeriods({ sheetId }: { sheetId: string }) {
@@ -360,6 +360,7 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [year, setYear] = useState('');
+  const [quartersYear, setQuartersYear] = useState('');
   const [error, setError] = useState('');
   const [made, setMade] = useState<number | undefined>();
   const once = useSubmitOnce();
@@ -381,6 +382,15 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
     },
     onError: () => setError('The fiscal year could not be generated: the year must be a year (yyyy).'),
   });
+  const generateQuarters = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-quarters`, body, user),
+    onSuccess: async (r) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      setMade(r.made);
+    },
+    onError: () => setError('The quarters could not be generated: the year must be a year (yyyy).'),
+  });
 
   // The fiscal year FY<yyyy> starts on the first of the sheet's fiscal start month in that year; its twelve
   // months are made as the generator makes them.
@@ -393,6 +403,19 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
       return;
     }
     once(() => generateFy.mutateAsync({ year: y }));
+  };
+
+  // The four calendar quarters of the year typed, named <yyyy>-Q1 to <yyyy>-Q4, each made as the period form
+  // would add it.
+  const submitQuarters = () => {
+    setError('');
+    setMade(undefined);
+    const y = quartersYear.trim();
+    if (!YEAR.test(y)) {
+      setError('The year must be a year (yyyy).');
+      return;
+    }
+    once(() => generateQuarters.mutateAsync({ year: y }));
   };
 
   const submit = (e: FormEvent) => {
@@ -433,6 +456,12 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
       </label>{' '}
       <button type="button" data-testid="period-generate-fy" disabled={generateFy.isPending} onClick={submitFy}>
         Generate fiscal year
+      </button>{' '}
+      <label>
+        Year <input data-testid="period-generate-quarters-year" placeholder="yyyy" value={quartersYear} onChange={edit(setQuartersYear)} />
+      </label>{' '}
+      <button type="button" data-testid="period-generate-quarters" disabled={generateQuarters.isPending} onClick={submitQuarters}>
+        Generate quarters
       </button>
       {made !== undefined && (
         <>
