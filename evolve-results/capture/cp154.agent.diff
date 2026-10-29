@@ -1,0 +1,84 @@
+diff --git a/src/main/frontend/features/periods/periodsQuery.ts b/src/main/frontend/features/periods/periodsQuery.ts
+index 08facf72..f3588e71 100644
+--- a/src/main/frontend/features/periods/periodsQuery.ts
++++ b/src/main/frontend/features/periods/periodsQuery.ts
+@@ -89,3 +89,17 @@ export function personPeriodDue(
+ export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
+   return sumDue(people.map((p) => personPeriodDue(period, p, claims, people, rates, floor, late)));
+ }
++
++/**
++ * A period's classic due-total: the figures (as shown now) of its claims (by due-by) that count by their status now
++ * (OPEN, SETTLED and PENDING; a hold or retirement leaves out an open claim as everywhere else). While the period is
++ * closed or soft-closed it is the figure fixed then.
++ */
++export function classicPeriodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
++  if (isFixed(period)) return period.closedTotal ?? sumDue(Object.values(period.personTotals));
++  return sumDue(
++    claims
++      .filter((c) => period.from <= c.dueBy && c.dueBy <= period.to && counts(c, people, late.today))
++      .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)),
++  );
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index c708e0dc..13174d99 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -3,7 +3,7 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { claimsQuery, isActive } from '../claims/claimsQuery';
+ import type { Claim, ClaimStatus } from '../claims/claimsQuery';
+ import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+-import { periodDue, periodsQuery } from '../periods/periodsQuery';
++import { classicPeriodDue, periodDue, periodsQuery } from '../periods/periodsQuery';
+ import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+@@ -123,4 +123,47 @@ function Summary({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
+-export const contribution = SheetPanel.fill({ order: 30, Component: Summary });
++/**
++ * The classic summary, beside the summary: per period, its due-total counting each claim by its status now (a closed
++ * period shows the figure fixed when it closed), and the sheet's due-total with no trimming (everyone's added up).
++ */
++function ClassicSummary({ sheetId }: { sheetId: string }) {
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const rates = useQuery(ratesQuery(sheetId)).data ?? [];
++  const periods = useQuery(periodsQuery(sheetId)).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const cap = useCap(sheetId);
++
++  return (
++    <section data-testid="classic-summary">
++      <h3>Classic summary</h3>
++      <table data-testid="classic-periods">
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name} data-testid={`classic-period-${p.name}`}>
++              <td>{p.name}</td>
++              <td data-testid={`classic-period-${p.name}-due-total`}>{classicPeriodDue(p, claims, people, rates, floor, late)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p>
++        Due <strong data-testid="classic-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}</strong>
++      </p>
++    </section>
++  );
++}
++
++export const contributions = [
++  SheetPanel.fill({ order: 30, Component: Summary }),
++  SheetPanel.fill({ order: 31, Component: ClassicSummary }),
++];
