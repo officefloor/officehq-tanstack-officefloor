@@ -1,0 +1,62 @@
+diff --git a/src/main/frontend/features/rates/overdue.slot.tsx b/src/main/frontend/features/rates/overdue.slot.tsx
+index 525ce991..60f6a37b 100644
+--- a/src/main/frontend/features/rates/overdue.slot.tsx
++++ b/src/main/frontend/features/rates/overdue.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import type { Person } from '../people/peopleQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useFloor, useLate } from '../settings/settingsQuery';
+-import { figure, isOverdue, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
++import { figure, isOverdue, ratesQuery, score, settledAndOpen, sumDue, trimmedSum } from './ratesQuery';
+ import { useColumnsShown } from '../people/useColumns';
+ 
+ function useOverdueData(sheetId: string) {
+@@ -66,6 +66,15 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
++/** A person's score: their settled-total / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
++function PersonScore({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const data = useOverdueData(sheetId);
++  const person = data.people.find((p) => p.id === personId);
++  const { count } = person ? overdue(data, person) : { count: 0 };
++  const [settled] = settledAndOpen(person, data.people, data.claims, data.rates, data.today, data.floor, data.late);
++  return <td data-testid="person-score">{score(settled, count)}</td>;
++}
++
+ /** The sheet's overdue claims that count: how many, and their total (every person's, trimmed of the highest and lowest). */
+ export function useSheetOverdue(sheetId: string) {
+   const data = useOverdueData(sheetId);
+@@ -100,5 +109,7 @@ export const contributions = [
+   ClaimCells.fill({ order: 12, Component: ClaimDueBy }),
+   PersonHeaders.fill({ order: 16, Component: OverdueHeader }),
+   PersonCells.fill({ order: 16, Component: PersonOverdue }),
++  PersonHeaders.fill({ order: 16.5, Component: () => <th>Score</th> }),
++  PersonCells.fill({ order: 16.5, Component: PersonScore }),
+   SheetPanel.fill({ order: 26, Component: OverdueTotal }),
+ ];
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 42526999..b3838084 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -253,6 +253,20 @@ export function settledAndOpen(person: Person | undefined, people: Person[], cla
+   return [sumDue(settled), sumDue(open)];
+ }
+ 
++/**
++ * A person's score: their settled-total (two decimals) divided by 100, minus 5 for each of their overdue claims that
++ * count, rounded half to even to a whole number.
++ */
++export function score(settled: string, overdueCount: number): string {
++  const n = hundredths(settled) - 50000n * BigInt(overdueCount);
++  const negative = n < 0n;
++  const abs = negative ? -n : n;
++  const whole = abs / 10000n;
++  const rest = abs % 10000n;
++  const rounded = rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
++  return (negative && rounded !== 0n ? -rounded : rounded).toString();
++}
++
+ /**
+  * What setting the grade's rate to `pct` on every date would change: of the OPEN and PENDING claims of people on the
+  * grade (the grade they had on the claim's date), how many would show a different figure, and the sum of the new
