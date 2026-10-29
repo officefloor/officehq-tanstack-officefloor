@@ -40,13 +40,22 @@ public class RespondWithPools {
     // For every period whose to-date is on or before the sheet's today, each member also shows its cut as it stood at the
     // end of that period: figured as above from the store as of the to-date (the pools, their members, the pot and the
     // holds as they were then, with that day as the sheet's today); "" when it had none, or was not a member then.
+    // A closed or soft-closed period instead shows the cuts fixed when it was closed (whatever its to-date): each member's
+    // cut as it stood at that moment; "" for a member that was not one then. Reopening makes it live again.
     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
-            Crews crews, Periods periods, ObjectResponse<List<PoolResponse>> response) {
+            Crews crews, Periods periods, PoolCuts poolCuts, ObjectResponse<List<PoolResponse>> response) {
         String sheet = sheetId.trim();
         LocalDate today = sheets.today(sheet);
-        List<Period> ended = periods.list(sheet).stream().filter(p -> !p.to().isAfter(today)).toList();
+        Map<String, Map<String, String>> fixed = poolCuts.fixed(sheet);
+        List<Period> shown = periods.list(sheet).stream()
+                .filter(p -> !p.to().isAfter(today) || ((p.closed() || p.soft()) && fixed.containsKey(p.name())))
+                .toList();
         Map<String, Map<String, String>> cutsThen = new LinkedHashMap<>();
-        for (Period period : ended) {
+        for (Period period : shown) {
+            if ((period.closed() || period.soft()) && fixed.containsKey(period.name())) {
+                cutsThen.put(period.name(), fixed.get(period.name()));
+                continue;
+            }
             Map<String, String> byMember = new HashMap<>();
             for (PoolResponse pool : AsOf.on(period.to(), () -> figure(sheet, pools, people, settings, sheets, crews,
                     Map.of(), List.of()))) {
@@ -57,16 +66,21 @@ public class RespondWithPools {
             cutsThen.put(period.name(), byMember);
         }
         response.send(figure(sheet, pools, people, settings, sheets, crews, cutsThen,
-                ended.stream().map(Period::name).toList()));
+                shown.stream().map(Period::name).toList()));
     }
 
     /** Names a member of a pool the same way at every date. */
-    private static String key(String pool, PoolResponse.Member m) {
-        return pool + "\n" + (m.pool() != null ? "pool:" + m.pool() : String.valueOf(m.personId()));
+    static String key(String pool, PoolResponse.Member m) {
+        return pool + "\n" + member(m);
+    }
+
+    /** Names a member within its pool: pool:<name> for a pool, else the person's id. */
+    static String member(PoolResponse.Member m) {
+        return m.pool() != null ? "pool:" + m.pool() : String.valueOf(m.personId());
     }
 
     /** The sheet's pools as the store is read now; each member with its cut at the end of each named period. */
-    private static List<PoolResponse> figure(String sheet, Pools pools, People people, Settings settings, Sheets sheets,
+    static List<PoolResponse> figure(String sheet, Pools pools, People people, Settings settings, Sheets sheets,
             Crews crews, Map<String, Map<String, String>> cutsThen, List<String> ended) {
         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         List<Pools.Membership> members = new ArrayList<>(pools.members(sheet));

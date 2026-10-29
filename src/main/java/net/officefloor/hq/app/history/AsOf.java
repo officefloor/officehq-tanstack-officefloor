@@ -30,6 +30,7 @@ public final class AsOf {
             Map.entry("period", List.of("sheet_id", "name")),
             Map.entry("period_person_total", List.of("sheet_id", "period_name", "person_id")),
             Map.entry("period_person_opening", List.of("sheet_id", "period_name", "person_id")),
+            Map.entry("period_pool_cut", List.of("sheet_id", "period_name", "pool_name", "member")),
             Map.entry("claim_log", List.of("id")),
             Map.entry("claim_comment", List.of("id")),
             Map.entry("claim_line", List.of("id")),
