@@ -1,0 +1,312 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index 9a6caa87..bb1eed94 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -11,11 +11,12 @@ import { useUser } from '../session/useUser';
+ import { plansKey, plansQuery } from './plansQuery';
+ import type { Plan } from './plansQuery';
+ 
+-type PlanBody = { amount: string; start: string; every: string; end: string };
++type PlanBody = { amount: string; start: string; every: string; day: string; end: string };
+ 
+ /**
+  * The person's plans, each with how many claims it has made so far, and the form a plan is added through: an amount,
+- * a start date, every N days (a whole number, at least 1) and an end date (a blank date is the sheet's today). An end
++ * a start date, every N days (a whole number, at least 1) or a day of the month (1 to 31, a day beyond the month's length
++ * on its last day) and an end date (a blank date is the sheet's today). An end
+  * before the start, or a bad amount or interval, is refused with the row's `plan-error`.
+  */
+ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number }) {
+@@ -25,6 +26,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number
+   const [amount, setAmount] = useState('');
+   const [start, setStart] = useState('');
+   const [every, setEvery] = useState('');
++  const [day, setDay] = useState('');
+   const [end, setEnd] = useState('');
+   const [error, setError] = useState('');
+   const once = useSubmitOnce();
+@@ -35,6 +37,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number
+       setAmount('');
+       setStart('');
+       setEvery('');
++      setDay('');
+       setEnd('');
+       await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+     },
+@@ -45,7 +48,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+     setError('');
+-    once(() => add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), end: end.trim() }));
++    once(() => add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim() }));
+   };
+ 
+   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {
+@@ -61,7 +64,8 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number
+             <tr key={p.id} data-testid={`plan-row-${p.id}`}>
+               <td data-testid="plan-amount-shown">{p.amount}</td>
+               <td data-testid="plan-start">{p.start}</td>
+-              <td data-testid="plan-every">{p.every}</td>
++              <td data-testid="plan-every">{p.day > 0 ? '' : p.every}</td>
++              <td data-testid="plan-day">{p.day > 0 ? p.day : ''}</td>
+               <td data-testid="plan-end">{p.end}</td>
+               <td>
+                 made <span data-testid="plan-generated">{p.generated}</span>
+@@ -73,7 +77,8 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number
+       <form onSubmit={submit}>
+         <input data-testid="plan-form-amount" placeholder="Amount" value={amount} onChange={edit(setAmount)} />{' '}
+         <input data-testid="plan-form-start" type="date" value={start} onChange={edit(setStart)} />{' '}
+-        every <input data-testid="plan-form-every" placeholder="days" size={4} value={every} onChange={edit(setEvery)} /> days to{' '}
++        every <input data-testid="plan-form-every" placeholder="days" size={4} value={every} onChange={edit(setEvery)} /> days or monthly on day{' '}
++        <input data-testid="plan-form-day" placeholder="1-31" size={3} value={day} onChange={edit(setDay)} /> to{' '}
+         <input data-testid="plan-form-end" type="date" value={end} onChange={edit(setEnd)} />{' '}
+         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
+           Add plan
+diff --git a/src/main/frontend/features/plans/plansQuery.ts b/src/main/frontend/features/plans/plansQuery.ts
+index 07d0d5a8..35231b72 100644
+--- a/src/main/frontend/features/plans/plansQuery.ts
++++ b/src/main/frontend/features/plans/plansQuery.ts
+@@ -1,9 +1,9 @@
+ import { getJson } from '../../api/http';
+ import { claimsKey } from '../claims/claimsQuery';
+ 
+-/** A person's plan: `amount` with two decimals, `start` and `end` yyyy-mm-dd, a DRAFT claim every `every` days;
+- *  `generated` is how many claims it has made so far. */
+-export type Plan = { id: number; personId: number; amount: string; start: string; every: number; end: string; generated: number };
++/** A person's plan: `amount` with two decimals, `start` and `end` yyyy-mm-dd, a DRAFT claim every `every` days, or (`every` 0)
++ *  on day `day` (1 to 31) of every month; `generated` is how many claims it has made so far. */
++export type Plan = { id: number; personId: number; amount: string; start: string; every: number; end: string; generated: number; day: number };
+ 
+ /** Under the claims' key, so whatever re-reads the claims (a generate, a re-load of the sheet) re-reads the plans too. */
+ export const plansKey = (sheetId: string) => [...claimsKey(sheetId), 'plans'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/plan/AddPlan.java b/src/main/java/net/officefloor/hq/app/plan/AddPlan.java
+index 0c1d102b..780252d0 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/AddPlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/AddPlan.java
+@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
+ public class AddPlan {
+     public void add(@Val PlanRequestChecked checked, @Val Person person, Plans plans, Out<Plan> planOut) {
+         planOut.set(plans.add(new Plan(0, person.sheetId(), person.id(), checked.amount(), checked.start(),
+-                checked.every(), checked.end())));
++                checked.every(), checked.end(), checked.day())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java b/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java
+index fccc0296..a8088ebf 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java
++++ b/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java
+@@ -8,7 +8,6 @@ import net.officefloor.server.http.ServerHttpConnection;
+ public class AuditPlanAdded {
+     public void audit(@Val Plan plan, @Val Person person, ServerHttpConnection connection, Audit audit) {
+         audit.record(Audit.line("PLAN_ADDED", plan.sheetId(), Audit.user(connection), "name=" + person.name(),
+-                "amount=" + plan.amount().toPlainString(), "start=" + plan.start(), "every=" + plan.every(),
+-                "end=" + plan.end()));
++                "amount=" + plan.amount().toPlainString(), "start=" + plan.start(), plan.monthly() ? "day=" + plan.day() : "every=" + plan.every(), "end=" + plan.end()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index 84242200..ca9507f5 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -23,7 +23,7 @@ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class GeneratePlanClaims {
+-    // For every plan of the sheet, in the order they were added, and each of its dates (the start, then every N days) up to
++    // For every plan of the sheet, in the order they were added, and each of its dates (the start, then every N days; or the day of every month) up to
+     // its end and the sheet's today that it has not made a claim for yet: a DRAFT claim of the plan's amount dated that day
+     // with an empty note, added as the claim form adds one and recorded as CLAIM_ADDED. A date the claim form refuses
+     // (due by inside a closed period, after the person's retirement) is skipped, and tried again next time.
+@@ -41,7 +41,7 @@ public class GeneratePlanClaims {
+             }
+             Set<LocalDate> done = new HashSet<>(plans.made(plan.id()));
+             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
+-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
++            for (LocalDate date : plan.dates(last)) {
+                 if (done.contains(date)) {
+                     continue;
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index c95b896f..c2a69c3e 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -3,6 +3,34 @@ package net.officefloor.hq.app.plan;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A person's plan: a DRAFT claim of {@code amount} on the start date, then every {@code every} days, up to the end date. */
+-public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, int every, LocalDate end) {
++import java.util.ArrayList;
++import java.util.List;
++
++/** A person's plan: a DRAFT claim of {@code amount} on the start date, then every {@code every} days, up to the end date;
++ *  or, when {@code day} is 1 to 31 (and {@code every} 0), on that day of every month from the start's month (a day beyond
++ *  the month's length on its last day), dates before the start left out. */
++public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, int every, LocalDate end,
++        int day) {
++
++    public boolean monthly() {
++        return day > 0;
++    }
++
++    /** The plan's dates up to and including {@code last}, in order. */
++    public List<LocalDate> dates(LocalDate last) {
++        List<LocalDate> dates = new ArrayList<>();
++        if (monthly()) {
++            for (LocalDate month = start.withDayOfMonth(1); !month.isAfter(last); month = month.plusMonths(1)) {
++                LocalDate date = month.withDayOfMonth(Math.min(day, month.lengthOfMonth()));
++                if (!date.isBefore(start) && !date.isAfter(last)) {
++                    dates.add(date);
++                }
++            }
++        } else {
++            for (LocalDate date = start; !date.isAfter(last); date = date.plusDays(every)) {
++                dates.add(date);
++            }
++        }
++        return dates;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRefusedException.java b/src/main/java/net/officefloor/hq/app/plan/PlanRefusedException.java
+index fed2b576..b37658c5 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRefusedException.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRefusedException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.plan;
+ 
+-/** A plan that may not be added: an amount the claim form would refuse, an interval that is not a whole number of at least 1, a bad date or an end before the start. */
++/** A plan that may not be added: an amount the claim form would refuse, an interval that is not a whole number of at least 1, a day of the month not 1 to 31, a bad date or an end before the start. */
+ public class PlanRefusedException extends Exception {
+ 
+     public PlanRefusedException(String message) {
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java b/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
+index ac9e0998..9316da2a 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.plan;
+ 
+-/** The body of a new plan, as typed: the amount, the start date (yyyy-mm-dd, blank for the sheet's today), every N days and the end date. */
+-public record PlanRequest(String amount, String start, String every, String end) {
++/** The body of a new plan, as typed: the amount, the start date (yyyy-mm-dd, blank for the sheet's today), every N days or a day of the month (1 to 31) and the end date. */
++public record PlanRequest(String amount, String start, String every, String end, String day) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRequestChecked.java b/src/main/java/net/officefloor/hq/app/plan/PlanRequestChecked.java
+index 2f6af980..298f7a8e 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRequestChecked.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRequestChecked.java
+@@ -4,5 +4,5 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+ /** A validated plan body. */
+-public record PlanRequestChecked(BigDecimal amount, LocalDate start, int every, LocalDate end) {
++public record PlanRequestChecked(BigDecimal amount, LocalDate start, int every, LocalDate end, int day) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index f3475e4b..b84e2f5f 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -1,10 +1,10 @@
+ package net.officefloor.hq.app.plan;
+ 
+ /** A plan as the screen shows it: the amount with two decimals, the dates yyyy-mm-dd and how many claims it has made so far. */
+-public record PlanResponse(long id, long personId, String amount, String start, int every, String end, int generated) {
++public record PlanResponse(long id, long personId, String amount, String start, int every, String end, int generated, int day) {
+ 
+     public static PlanResponse from(Plan plan, int generated) {
+         return new PlanResponse(plan.id(), plan.personId(), plan.amount().toPlainString(), plan.start().toString(),
+-                plan.every(), plan.end().toString(), generated);
++                plan.every(), plan.end().toString(), generated, plan.day());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plans.java b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+index 51757d9f..491bb52f 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+@@ -22,11 +22,11 @@ public class Plans {
+ 
+     /** The sheet's plans, in the order they were added. */
+     public List<Plan> list(String sheetId) {
+-        return jdbc.query("SELECT id, sheet_id, person_id, amount, start_date, every_days, end_date FROM plan "
++        return jdbc.query("SELECT id, sheet_id, person_id, amount, start_date, every_days, end_date, day_of_month FROM plan "
+                 + "WHERE sheet_id = ? ORDER BY id",
+                 (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
+                         rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(),
+-                        rs.getInt("every_days"), rs.getDate("end_date").toLocalDate()),
++                        rs.getInt("every_days"), rs.getDate("end_date").toLocalDate(), rs.getInt("day_of_month")),
+                 sheetId);
+     }
+ 
+@@ -34,18 +34,19 @@ public class Plans {
+     public Plan add(Plan plan) {
+         KeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+-            var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date) "
+-                    + "VALUES (?, ?, ?, ?, ?, ?)", new String[] { "id" });
++            var ps = con.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date, day_of_month) "
++                    + "VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+             ps.setString(1, plan.sheetId());
+             ps.setLong(2, plan.personId());
+             ps.setBigDecimal(3, plan.amount());
+             ps.setDate(4, Date.valueOf(plan.start()));
+             ps.setInt(5, plan.every());
+             ps.setDate(6, Date.valueOf(plan.end()));
++            ps.setInt(7, plan.day());
+             return ps;
+         }, key);
+         return new Plan(key.getKey().longValue(), plan.sheetId(), plan.personId(), plan.amount(), plan.start(),
+-                plan.every(), plan.end());
++                plan.every(), plan.end(), plan.day());
+     }
+ 
+     /** The dates the plan has made its claim for. */
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java b/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java
+index 16027c39..8bdf1157 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidatePlan.java
+@@ -19,7 +19,7 @@ public class ValidatePlan {
+             .withResolverStyle(ResolverStyle.STRICT);
+ 
+     // The amount must be one the claim form takes for a claim with no correction or reference; every N days a whole
+-    // number of at least 1; the dates real dates (a blank start or end is the sheet's today), the end not before the start.
++    // number of at least 1, or instead (every left blank) a day of the month from 1 to 31; the dates real dates (a blank start or end is the sheet's today), the end not before the start.
+     // The person is filled in once loaded.
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PlanRequest body, Sheets sheets,
+             Out<PlanRequestChecked> checked) throws PlanRefusedException {
+@@ -31,7 +31,15 @@ public class ValidatePlan {
+             throw new PlanRefusedException(e.getMessage());
+         }
+         String every = body.every() == null ? "" : body.every().trim();
+-        if (!every.matches("\\d{1,6}") || Integer.parseInt(every) < 1) {
++        String day = body.day() == null ? "" : body.day().trim();
++        if (!day.isEmpty()) {
++            if (!every.isEmpty()) {
++                throw new PlanRefusedException("A plan runs either every N days or on a day of the month, not both.");
++            }
++            if (!day.matches("\\d{1,2}") || Integer.parseInt(day) < 1 || Integer.parseInt(day) > 31) {
++                throw new PlanRefusedException("The day of the month must be a whole number from 1 to 31.");
++            }
++        } else if (!every.matches("\\d{1,6}") || Integer.parseInt(every) < 1) {
+             throw new PlanRefusedException("Every N days must be a whole number of at least 1.");
+         }
+         LocalDate today = sheets.today(sheet);
+@@ -40,7 +48,8 @@ public class ValidatePlan {
+         if (end.isBefore(start)) {
+             throw new PlanRefusedException("The end date must be on or after the start date.");
+         }
+-        checked.set(new PlanRequestChecked(input.amount(), start, Integer.parseInt(every), end));
++        checked.set(new PlanRequestChecked(input.amount(), start, day.isEmpty() ? Integer.parseInt(every) : 0, end,
++                day.isEmpty() ? 0 : Integer.parseInt(day)));
+     }
+ 
+     private static LocalDate date(String typed, LocalDate today) throws PlanRefusedException {
+diff --git a/src/main/resources/db/migration/V67__plan_day.sql b/src/main/resources/db/migration/V67__plan_day.sql
+new file mode 100644
+index 00000000..c0a2656f
+--- /dev/null
++++ b/src/main/resources/db/migration/V67__plan_day.sql
+@@ -0,0 +1,4 @@
++-- A plan may instead run monthly on a day of the month (1 to 31): its dates are that day in every month from the start's
++-- month (a day beyond the month's length falling on its last day), dates before the start left out. A monthly plan
++-- keeps every_days 0; a plan of every N days keeps day_of_month 0.
++ALTER TABLE plan ADD COLUMN day_of_month INT DEFAULT 0 NOT NULL;
