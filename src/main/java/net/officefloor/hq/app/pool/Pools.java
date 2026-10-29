@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,8 +13,17 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Pools {
 
-    /** A stored member: the pool's name, the person's id (0 for a pool), the share and the member pool (null for a person). */
-    public record Membership(String pool, long personId, BigDecimal share, String memberPool) {
+    /**
+     * A stored member: the pool's name, the person's id (0 for a pool), the share, the member pool (null for a person),
+     * and the from-date and to-date, both inclusive, each null when open-ended.
+     */
+    public record Membership(String pool, long personId, BigDecimal share, String memberPool, LocalDate from,
+            LocalDate to) {
+
+        /** Whether the membership's dates include the day. */
+        public boolean on(LocalDate day) {
+            return (from == null || !day.isBefore(from)) && (to == null || !day.isAfter(to));
+        }
     }
 
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM (SELECT listed FROM pool_member "
@@ -42,11 +52,12 @@ public class Pools {
 
     /** The sheet's pool members, people and pools, in the order they were added. */
     public List<Membership> members(String sheetId) {
-        return jdbc.query("SELECT pool_name, person_id, share, CAST(NULL AS VARCHAR(255)) AS member_pool, listed "
-                + "FROM pool_member WHERE sheet_id = ? UNION ALL SELECT pool_name, 0, share, member_pool, listed "
-                + "FROM pool_nested WHERE sheet_id = ? ORDER BY listed",
+        return jdbc.query("SELECT pool_name, person_id, share, CAST(NULL AS VARCHAR(255)) AS member_pool, from_date, "
+                + "to_date, listed FROM pool_member WHERE sheet_id = ? UNION ALL SELECT pool_name, 0, share, member_pool, "
+                + "from_date, to_date, listed FROM pool_nested WHERE sheet_id = ? ORDER BY listed",
                 (rs, n) -> new Membership(rs.getString("pool_name"), rs.getLong("person_id"),
-                        rs.getBigDecimal("share").setScale(2), rs.getString("member_pool")),
+                        rs.getBigDecimal("share").setScale(2), rs.getString("member_pool"),
+                        rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)),
                 sheetId, sheetId);
     }
 
@@ -67,13 +78,13 @@ public class Pools {
 
     public void addMember(PoolMember member) {
         if (member.memberPool() != null) {
-            jdbc.update("INSERT INTO pool_nested (sheet_id, pool_name, member_pool, share, listed) VALUES (?, ?, ?, ?, "
-                    + NEXT_LISTED + ")", member.sheetId(), member.pool(), member.memberPool(), member.share(),
-                    member.sheetId(), member.sheetId());
+            jdbc.update("INSERT INTO pool_nested (sheet_id, pool_name, member_pool, share, from_date, to_date, listed) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", member.sheetId(), member.pool(),
+                    member.memberPool(), member.share(), member.from(), member.to(), member.sheetId(), member.sheetId());
             return;
         }
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, share, listed) VALUES (?, ?, ?, ?, "
-                + NEXT_LISTED + ")", member.sheetId(), member.pool(), member.personId(), member.share(),
-                member.sheetId(), member.sheetId());
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, share, from_date, to_date, listed) "
+                + "VALUES (?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", member.sheetId(), member.pool(), member.personId(),
+                member.share(), member.from(), member.to(), member.sheetId(), member.sheetId());
     }
 }

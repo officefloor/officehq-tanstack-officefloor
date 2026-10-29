@@ -26,7 +26,8 @@ public class RespondWithPools {
     // total the pot. A member held on the sheet's today (a retired member too) has no cut: the pot is spread over the
     // members with a cut, each the pot times their share / the shares of the members with a cut added up (all 0.00 when
     // none has a cut); the total share and balance are unchanged by a hold. A pool that is a member of none has the sheet's pot; a pool that is a member of another has its cut
-    // there as its pot (none when the pool above has no cuts).
+    // there as its pot (none when the pool above has no cuts). A member whose dates do not include the sheet's today is
+    // left out entirely: listed with its share, but not in the total share or the balance, and with no cut ("").
     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
             ObjectResponse<List<PoolResponse>> response) {
         String sheet = sheetId.trim();
@@ -44,6 +45,10 @@ public class RespondWithPools {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (Pools.Membership m : members) {
                 if (!m.pool().equals(name)) {
+                    continue;
+                }
+                if (!m.on(today)) {
+                    in.add(m);
                     continue;
                 }
                 if (m.memberPool() == null) {
@@ -76,7 +81,7 @@ public class RespondWithPools {
             List<PoolResponse.Member> shown = new ArrayList<>();
             for (int i = 0; i < in.size(); i++) {
                 Pools.Membership m = in.get(i);
-                String cut = cuts == null ? "" : cuts.get(i).toPlainString();
+                String cut = cuts == null || !m.on(today) ? "" : cuts.get(i).toPlainString();
                 if (m.memberPool() != null) {
                     shown.add(new PoolResponse.Member(0, m.memberPool(), m.share().toPlainString(), false, cut,
                             m.memberPool()));
@@ -106,7 +111,7 @@ public class RespondWithPools {
             if (above != null) {
                 List<Pools.Membership> in = inByPool.get(parent);
                 for (int i = 0; i < in.size(); i++) {
-                    if (name.equals(in.get(i).memberPool())) {
+                    if (name.equals(in.get(i).memberPool()) && in.get(i).on(today)) {
                         pot = above.get(i);
                     }
                 }
@@ -118,8 +123,14 @@ public class RespondWithPools {
         return cuts;
     }
 
-    /** Whether the member gets no cut: a person who is retired or held on the sheet's today. */
+    /**
+     * Whether the member gets no cut: one whose dates do not include the sheet's today, or a person who is retired or held
+     * on it.
+     */
     private static boolean noCut(Pools.Membership m, Map<Long, Person> byId, LocalDate today) {
+        if (!m.on(today)) {
+            return true;
+        }
         if (m.memberPool() != null) {
             return false;
         }

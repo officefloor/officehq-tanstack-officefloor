@@ -2,7 +2,8 @@ import { getJson } from '../../api/http';
 import { peopleKey } from '../people/peopleQuery';
 
 /** A member of a pool: the person's id and name, their share percent with two decimals, whether they are retired, and their
- *  cut of the pool's pot with two decimals ("" when the pool is not balanced or there is no pot). A member that is
+ *  cut of the pool's pot with two decimals ("" when the pool is not balanced, there is no pot, or the member's dates do
+ *  not include the sheet's today). A member that is
  *  another pool has its name as pool (null for a person) and personId 0; its cut is that pool's pot. */
 export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string; pool: string | null };
 

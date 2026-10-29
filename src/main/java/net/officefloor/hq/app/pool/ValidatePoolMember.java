@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.person.People;
@@ -17,7 +19,8 @@ public class ValidatePoolMember {
 
     // The pool and the person must be of the sheet, the person not already in the pool; the share has at most two
     // decimals, more than 0.00 and at most 100.00. A member pool (memberPool) must be of the sheet, not the pool itself nor
-    // one containing it through any chain, not already a member of a pool, and the chain it makes at most three deep.
+    // one containing it through any chain, not already a member of a pool, and the chain it makes at most three deep. The
+    // from-date and to-date are optional (yyyy-mm-dd); a to-date before the from-date is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolMemberRequest body, Pools pools,
             People people, Out<PoolMember> member) throws PoolRefusedException {
         String sheet = sheetId.trim();
@@ -46,8 +49,26 @@ public class ValidatePoolMember {
         if (share.signum() <= 0 || share.compareTo(HUNDRED) > 0) {
             throw new PoolRefusedException("The share must be more than 0.00 and at most 100.00.");
         }
-        member.set(person == null ? new PoolMember(sheet, pool, 0, memberPool, share, memberPool)
-                : new PoolMember(sheet, pool, person.id(), person.name(), share, null));
+        LocalDate from = date(body.from(), "from");
+        LocalDate to = date(body.to(), "to");
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new PoolRefusedException("The to-date must be on or after the from-date.");
+        }
+        member.set(person == null ? new PoolMember(sheet, pool, 0, memberPool, share, memberPool, from, to)
+                : new PoolMember(sheet, pool, person.id(), person.name(), share, null, from, to));
+    }
+
+    /** The typed date (yyyy-mm-dd), null when blank. */
+    private static LocalDate date(String typed, String which) throws PoolRefusedException {
+        String value = typed == null ? "" : typed.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException e) {
+            throw new PoolRefusedException("The " + which + "-date must be a date (yyyy-mm-dd).");
+        }
     }
 
     private static final int DEEPEST = 3;

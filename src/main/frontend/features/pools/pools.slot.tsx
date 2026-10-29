@@ -12,22 +12,26 @@ import type { Pool } from './poolsQuery';
 
 /** One pool's row: its total share and whether it is balanced, its members with their shares, and the form a member is
  *  added through. A member is a person, or another pool chosen as pool:<name>. A person already in the pool, a pool
- *  already in a pool, a chain that loops or is more than three deep, or a bad share, is refused with an error on the pool. */
+ *  already in a pool, a chain that loops or is more than three deep, a bad share, or a to-date before the from-date, is refused with an error on the pool. */
 function PoolRow({ sheetId, pool, people, poolNames }: { sheetId: string; pool: Pool; people: Person[]; poolNames: string[] }) {
   const queryClient = useQueryClient();
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
 
   const [user] = useUser();
   const once = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: { pool: string; personId: number | null; memberPool: string | null; share: string }) =>
+    mutationFn: (body: { pool: string; personId: number | null; memberPool: string | null; share: string; from: string; to: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/pool-members`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setPersonId('');
       setShare('');
+      setFrom('');
+      setTo('');
     },
     onError: (e: Error) => setError(e instanceof RefusedError ? e.message : 'The member could not be added.'),
   });
@@ -37,7 +41,7 @@ function PoolRow({ sheetId, pool, people, poolNames }: { sheetId: string; pool: 
     setError('');
     const memberPool = personId.startsWith('pool:') ? personId.slice('pool:'.length) : null;
     const person = personId === '' || memberPool !== null ? null : Number(personId);
-    once(() => add.mutateAsync({ pool: pool.name, personId: person, memberPool, share: share.trim() }));
+    once(() => add.mutateAsync({ pool: pool.name, personId: person, memberPool, share: share.trim(), from: from.trim(), to: to.trim() }));
   };
 
   const edit = (set: (v: string) => void) => (v: string) => {
@@ -76,6 +80,8 @@ function PoolRow({ sheetId, pool, people, poolNames }: { sheetId: string; pool: 
           ))}
         </select>{' '}
         <input data-testid="pool-member-share" placeholder="Share %" value={share} onChange={(e) => edit(setShare)(e.target.value)} />{' '}
+        <input data-testid="pool-member-from" type="date" title="From" value={from} onChange={(e) => edit(setFrom)(e.target.value)} />{' '}
+        <input data-testid="pool-member-to" type="date" title="To" value={to} onChange={(e) => edit(setTo)(e.target.value)} />{' '}
         <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
           Add member
         </button>
