@@ -11,6 +11,7 @@ import type { SortKey } from './useSortBy';
 import { usePeopleDueTotals } from '../rates/due.slot';
 import { ColumnChooser, ColumnShown } from './useColumns';
 import { useSheetToday } from '../sheet/useSheetToday';
+import { useListedFor } from './useListedFor';
 
 function People({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId));
@@ -28,7 +29,9 @@ function People({ sheetId }: { sheetId: string }) {
     'due-total': (a, b) => compareDue(dues.get(a.id) ?? 'n/a', dues.get(b.id) ?? 'n/a'),
   };
   const compare = byKey[sortBy];
-  const filtered = (people.data ?? []).filter((p) => showRetired || !p.retiredFrom);
+  // A restricted user's list has only their crews' people and themselves (useListedFor).
+  const listedFor = useListedFor(sheetId, people.data ?? []);
+  const filtered = (people.data ?? []).filter((p) => (showRetired || !p.retiredFrom) && listedFor(p));
   const listed = compare ? [...filtered].sort(compare) : filtered;
 
   return (

@@ -991,7 +991,7 @@ function Roles({ sheetId }: { sheetId: string }) {
       return;
     }
     if (!ROLES.includes(r as RoleName)) {
-      setError('The role must be clerk, steward or viewer.');
+      setError('The role must be clerk, steward, viewer or restricted.');
       return;
     }
     once(() => save.mutateAsync({ user: n, role: r as RoleName }));

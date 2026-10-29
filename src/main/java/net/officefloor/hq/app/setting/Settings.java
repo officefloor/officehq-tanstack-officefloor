@@ -68,6 +68,8 @@ public class Settings {
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
     public static final String VIEWER = "viewer";
+    /** A role that sees on the people list only the people of their crews and themselves; otherwise acts as a clerk. */
+    public static final String RESTRICTED = "restricted";
     /** The roles a sheet gives user names. */
     public static final List<String> ROLES = List.of(CLERK, STEWARD);
     /** The actions the permission matrix decides, each kept (undated) under {@link #permKey}. */
@@ -436,7 +438,9 @@ public class Settings {
     public boolean permits(String sheetId, String action, String user) {
         String saved = perm(sheetId, action);
         List<String> roles = saved.isEmpty() ? standing(action) : List.of(saved.split(","));
-        return roles.contains(role(sheetId, user));
+        String role = role(sheetId, user);
+        // A restricted user may do what a clerk may: the role narrows only the people list they see.
+        return roles.contains(RESTRICTED.equals(role) ? CLERK : role);
     }
 
     /** The sheet's roles, by user name. */

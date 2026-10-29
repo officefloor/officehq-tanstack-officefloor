@@ -7,9 +7,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateRole {
 
-    private static final Set<String> ROLES = Set.of(Settings.CLERK, Settings.STEWARD, Settings.VIEWER);
+    private static final Set<String> ROLES = Set.of(Settings.CLERK, Settings.STEWARD, Settings.VIEWER, Settings.RESTRICTED);
 
-    // A user name must not be blank, and the role must be clerk, steward or viewer.
+    // A user name must not be blank, and the role must be clerk, steward, viewer or restricted.
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("user") String user,
             @RequestBody RoleRequest body, Out<Role> roleOut) throws InvalidSettingException {
         String name = user == null ? "" : user.trim();
@@ -18,7 +18,7 @@ public class ValidateRole {
             throw new InvalidSettingException("A user name is needed.");
         }
         if (!ROLES.contains(role)) {
-            throw new InvalidSettingException("The role must be clerk, steward or viewer.");
+            throw new InvalidSettingException("The role must be clerk, steward, viewer or restricted.");
         }
         roleOut.set(new Role(sheetId.trim(), name, role));
     }

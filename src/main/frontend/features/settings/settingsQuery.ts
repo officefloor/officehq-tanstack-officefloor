@@ -75,12 +75,13 @@ export const PROOF_KINDS = ['receipt', 'photo'];
 /** The rounding modes a sheet may have in force (dated); blank is none. */
 export const ROUNDING_MODES = ['half-up', 'half-even'];
 
-export type RoleName = 'clerk' | 'steward' | 'viewer';
+export type RoleName = 'clerk' | 'steward' | 'viewer' | 'restricted';
 
 /** The role a sheet gives a user name; a name with no entry is a clerk. */
 export type Role = { user: string; role: RoleName };
 
-export const ROLES: RoleName[] = ['clerk', 'steward', 'viewer'];
+/** A restricted user sees on the people list only the people of the crews they lead or belong to, and themselves. */
+export const ROLES: RoleName[] = ['clerk', 'steward', 'viewer', 'restricted'];
 
 /** Under the sheet's key, so re-loading the sheet re-reads its settings and roles. */
 export const settingsKey = (sheetId: string) => [...sheetKey(sheetId), 'settings'] as const;
