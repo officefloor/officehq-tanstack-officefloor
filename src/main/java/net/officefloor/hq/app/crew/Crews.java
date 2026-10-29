@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.AsOf;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
@@ -21,10 +22,10 @@ public class Crews {
     /** The sheet's crews, in the order they were added, each with its members' ids in the order they were added. */
     public List<CrewResponse> list(String sheetId) {
         Map<String, Long> leads = new LinkedHashMap<>();
-        jdbc.query("SELECT name, lead_id FROM crew WHERE sheet_id = ? ORDER BY listed",
+        jdbc.query("SELECT name, lead_id FROM " + AsOf.table("crew") + " WHERE sheet_id = ? ORDER BY listed",
                 (RowCallbackHandler) rs -> leads.put(rs.getString("name"), rs.getLong("lead_id")), sheetId);
         Map<String, List<Long>> members = new LinkedHashMap<>();
-        jdbc.query("SELECT crew_name, person_id FROM crew_member WHERE sheet_id = ? ORDER BY listed",
+        jdbc.query("SELECT crew_name, person_id FROM " + AsOf.table("crew_member") + " WHERE sheet_id = ? ORDER BY listed",
                 (RowCallbackHandler) rs -> members.computeIfAbsent(rs.getString("crew_name"), k -> new ArrayList<>())
                         .add(rs.getLong("person_id")),
                 sheetId);

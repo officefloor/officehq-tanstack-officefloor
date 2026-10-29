@@ -5,12 +5,16 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.crew.CrewResponse;
 import net.officefloor.hq.app.crew.Crews;
+import net.officefloor.hq.app.history.AsOf;
+import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Settings;
@@ -33,9 +37,37 @@ public class RespondWithPools {
     // (whose dates include the sheet's today) is retired has no cuts. A pool that is a member of none has the sheet's pot; a pool that is a member of another has its cut
     // there as its pot (none when the pool above has no cuts). A member whose dates do not include the sheet's today is
     // left out entirely: listed with its share, but not in the total share or the balance, and with no cut ("").
+    // For every period whose to-date is on or before the sheet's today, each member also shows its cut as it stood at the
+    // end of that period: figured as above from the store as of the to-date (the pools, their members, the pot and the
+    // holds as they were then, with that day as the sheet's today); "" when it had none, or was not a member then.
     public void respond(@PathVariable("sheetId") String sheetId, Pools pools, People people, Settings settings, Sheets sheets,
-            Crews crews, ObjectResponse<List<PoolResponse>> response) {
+            Crews crews, Periods periods, ObjectResponse<List<PoolResponse>> response) {
         String sheet = sheetId.trim();
+        LocalDate today = sheets.today(sheet);
+        List<Period> ended = periods.list(sheet).stream().filter(p -> !p.to().isAfter(today)).toList();
+        Map<String, Map<String, String>> cutsThen = new LinkedHashMap<>();
+        for (Period period : ended) {
+            Map<String, String> byMember = new HashMap<>();
+            for (PoolResponse pool : AsOf.on(period.to(), () -> figure(sheet, pools, people, settings, sheets, crews,
+                    Map.of(), List.of()))) {
+                for (PoolResponse.Member m : pool.members()) {
+                    byMember.put(key(pool.name(), m), m.cut());
+                }
+            }
+            cutsThen.put(period.name(), byMember);
+        }
+        response.send(figure(sheet, pools, people, settings, sheets, crews, cutsThen,
+                ended.stream().map(Period::name).toList()));
+    }
+
+    /** Names a member of a pool the same way at every date. */
+    private static String key(String pool, PoolResponse.Member m) {
+        return pool + "\n" + (m.pool() != null ? "pool:" + m.pool() : String.valueOf(m.personId()));
+    }
+
+    /** The sheet's pools as the store is read now; each member with its cut at the end of each named period. */
+    private static List<PoolResponse> figure(String sheet, Pools pools, People people, Settings settings, Sheets sheets,
+            Crews crews, Map<String, Map<String, String>> cutsThen, List<String> ended) {
         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         List<Pools.Membership> members = new ArrayList<>(pools.members(sheet));
         Map<String, String> parents = pools.parents(sheet);
@@ -89,19 +121,26 @@ public class RespondWithPools {
             for (int i = 0; i < in.size(); i++) {
                 Pools.Membership m = in.get(i);
                 String cut = cuts == null || !m.on(today) ? "" : cuts.get(i).toPlainString();
+                PoolResponse.Member member;
                 if (m.memberPool() != null) {
-                    shown.add(new PoolResponse.Member(0, m.memberPool(), m.share().toPlainString(), false, cut,
-                            m.memberPool()));
+                    member = new PoolResponse.Member(0, m.memberPool(), m.share().toPlainString(), false, cut,
+                            m.memberPool(), List.of());
                 } else {
                     Person person = byId.get(m.personId());
-                    shown.add(new PoolResponse.Member(person.id(), person.name(), m.share().toPlainString(),
-                            person.retiredFrom() != null, cut, null));
+                    member = new PoolResponse.Member(person.id(), person.name(), m.share().toPlainString(),
+                            person.retiredFrom() != null, cut, null, List.of());
                 }
+                List<PoolResponse.PeriodCut> then = new ArrayList<>();
+                for (String period : ended) {
+                    then.add(new PoolResponse.PeriodCut(period,
+                            cutsThen.getOrDefault(period, Map.of()).getOrDefault(key(name, member), "")));
+                }
+                shown.add(member.withPeriodCuts(then));
             }
             BigDecimal total = totals.get(name);
             out.add(new PoolResponse(name, shown, total.toPlainString(), total.compareTo(HUNDRED) == 0));
         }
-        response.send(out);
+        return out;
     }
 
     /** The crew as a pool's members: its lead then its members (people of the sheet), at equal shares of 100.00. */

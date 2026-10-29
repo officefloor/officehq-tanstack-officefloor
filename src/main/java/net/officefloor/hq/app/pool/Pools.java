@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.AsOf;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
@@ -37,7 +38,7 @@ public class Pools {
 
     /** The sheet's pool names, in the order they were added. */
     public List<String> names(String sheetId) {
-        return jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY listed", String.class, sheetId);
+        return jdbc.queryForList("SELECT name FROM " + AsOf.table("pool") + " WHERE sheet_id = ? ORDER BY listed", String.class, sheetId);
     }
 
     public boolean has(String sheetId, String name) {
@@ -53,8 +54,8 @@ public class Pools {
     /** The sheet's pool members, people and pools, in the order they were added. */
     public List<Membership> members(String sheetId) {
         return jdbc.query("SELECT pool_name, person_id, share, CAST(NULL AS VARCHAR(255)) AS member_pool, from_date, "
-                + "to_date, listed FROM pool_member WHERE sheet_id = ? UNION ALL SELECT pool_name, 0, share, member_pool, "
-                + "from_date, to_date, listed FROM pool_nested WHERE sheet_id = ? ORDER BY listed",
+                + "to_date, listed FROM " + AsOf.table("pool_member") + " WHERE sheet_id = ? UNION ALL SELECT pool_name, 0, share, member_pool, "
+                + "from_date, to_date, listed FROM " + AsOf.table("pool_nested") + " WHERE sheet_id = ? ORDER BY listed",
                 (rs, n) -> new Membership(rs.getString("pool_name"), rs.getLong("person_id"),
                         rs.getBigDecimal("share").setScale(2), rs.getString("member_pool"),
                         rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)),
@@ -64,7 +65,7 @@ public class Pools {
     /** Each pool that is a member of another, to the pool it is a member of. */
     public Map<String, String> parents(String sheetId) {
         Map<String, String> out = new HashMap<>();
-        jdbc.query("SELECT pool_name, member_pool FROM pool_nested WHERE sheet_id = ?",
+        jdbc.query("SELECT pool_name, member_pool FROM " + AsOf.table("pool_nested") + " WHERE sheet_id = ?",
                 (RowCallbackHandler) rs -> out.put(rs.getString("member_pool"), rs.getString("pool_name")), sheetId);
         return out;
     }

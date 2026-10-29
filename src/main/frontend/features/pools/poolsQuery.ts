@@ -4,8 +4,17 @@ import { peopleKey } from '../people/peopleQuery';
 /** A member of a pool: the person's id and name, their share percent with two decimals, whether they are retired, and their
  *  cut of the pool's pot with two decimals ("" when the pool is not balanced, there is no pot, every member is retired, or the member's dates do
  *  not include the sheet's today). A member that is
- *  another pool has its name as pool (null for a person) and personId 0; its cut is that pool's pot. */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string; pool: string | null };
+ *  another pool has its name as pool (null for a person) and personId 0; its cut is that pool's pot. periodCuts are its cut
+ *  as it stood at the end of each period whose to-date is on or before the sheet's today ("" when it had none). */
+export type PoolMember = {
+  personId: number;
+  name: string;
+  share: string;
+  retired: boolean;
+  cut: string;
+  pool: string | null;
+  periodCuts: { period: string; cut: string }[];
+};
 
 /** A pool of the sheet: its name, its members, its total share (a retired member's counting as given) with two decimals,
  *  and whether that total is exactly 100.00. */
