@@ -102,6 +102,10 @@ public class Claim {
     private LocalDate remindedOn;
     public LocalDate getRemindedOn() { return remindedOn; }
     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** Whether a steward has waived the claim's late charge (once ever): it bears no late charge from then on. */
+    private boolean waived;
+    public boolean isWaived() { return waived; }
+    public void setWaived(boolean waived) { this.waived = waived; }
     /** Whether the claim has been escalated (once ever); set on a reminder that escalates it. */
     private boolean escalated;
     public boolean isEscalated() { return escalated; }

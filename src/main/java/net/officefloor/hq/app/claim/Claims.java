@@ -40,6 +40,7 @@ public class Claims {
         java.sql.Date remindedOn = rs.getDate("reminded_on");
         claim.setRemindedOn(remindedOn == null ? null : remindedOn.toLocalDate());
         claim.setEscalated(rs.getBoolean("escalated"));
+        claim.setWaived(rs.getBoolean("waived"));
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
@@ -76,10 +77,10 @@ public class Claims {
     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
     private void history(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
-                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark)"
+                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark, waived)"
                 + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
-                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark"
+                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark, c.waived"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
@@ -265,10 +266,10 @@ public class Claims {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
                             + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq,"
-                            + " rate_mark)"
+                            + " rate_mark, waived)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
                             + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ?, " + NEXT_RATE_MARK
-                            + " FROM claim WHERE sheet_id = ? AND id = ?",
+                            + ", waived FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, personId);
@@ -301,9 +302,9 @@ public class Claims {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
                             + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
-                            + " listed_seq, rate_mark)"
+                            + " listed_seq, rate_mark, waived)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
-                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark"
+                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived"
                             + " FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
@@ -391,6 +392,12 @@ public class Claims {
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
+    }
+
+    /** Records that the claim's late charge is waived. */
+    public void waive(Claim claim) {
+        jdbc.update("UPDATE claim SET waived = ? WHERE sheet_id = ? AND id = ?", claim.isWaived(), claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
     }
 

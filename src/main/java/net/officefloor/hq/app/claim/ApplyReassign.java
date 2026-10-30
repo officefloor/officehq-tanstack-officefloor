@@ -39,6 +39,9 @@ public class ApplyReassign {
         if (to.getId() == claim.getPersonId()) {
             throw new ClaimStatusRefusedException("The claim is already that person's");
         }
+        if (!to.allowsClaimOn(claim.getDate())) {
+            throw new ClaimStatusRefusedException("No claim can move to a person who may not have a claim on its date");
+        }
         Person from = people.find(claim.getSheetId(), claim.getPersonId());
         claim.setPersonId(to.getId());
         claim.setStated(false);

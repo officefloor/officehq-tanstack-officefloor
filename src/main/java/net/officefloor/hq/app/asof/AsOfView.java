@@ -212,6 +212,7 @@ public class AsOfView {
             then.setProofs(rs.wasNull() ? current.getProofs() : proofs);
             then.setSplitFrom(rs.getString("split_from"));
             then.setLateEntry(rs.getBoolean("late_entry"));
+            then.setWaived(rs.getBoolean("waived"));
             int batch = rs.getInt("settle_batch");
             then.setSettleBatch(rs.wasNull() ? null : batch);
             // A claim's ref and tags are not kept in its history: they show as they are now.

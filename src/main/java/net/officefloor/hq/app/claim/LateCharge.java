@@ -12,7 +12,8 @@ import net.officefloor.hq.app.rate.Rates;
  * the sheet's today gains, for each full 30 days it is overdue, the sheet's late percent in force on that
  * boundary date (its due-by plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it
  * (compounding), each rounded like due, the charges added up
- * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction has no late charge. The charge is never bound by a statement; settling freezes it in.
+ * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction, or a claim whose late
+ * charge a steward waived, has no late charge (a waived claim may still be overdue). The charge is never bound by a statement; settling freezes it in.
  * The charge is worked on the rate figure alone (or the figure a statement bound); the floor is applied last.
  * With grace days (those of its person's grade in force on its date) the claim is overdue only once its due-by plus them is
  * before today, and the 30-day boundaries are counted from its due-by plus them.
@@ -49,7 +50,7 @@ public final class LateCharge {
     public static BigDecimal asOpen(Claim claim, BigDecimal figure, Function<LocalDate, BigDecimal> pct, LocalDate today,
             RoundingMode rounding, int grace) {
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.isCorrection()) {
+        if (figure == null || claim.isCorrection() || claim.isWaived()) {
             return charge;
         }
         LocalDate lateFrom = lateFrom(claim, grace);

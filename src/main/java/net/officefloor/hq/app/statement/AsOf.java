@@ -178,6 +178,7 @@ public class AsOf {
                     claim.setDeferredUntil(local(rs.getDate("deferred_until")));
                     claim.setCorrects(rs.getString("corrects"));
                     claim.setRateMark(rs.getLong("rate_mark"));
+                    claim.setWaived(rs.getBoolean("waived"));
                     latest.put(claim.getId(), claim);
                 }, sheetId, end);
         List<Claim> own = new ArrayList<>();

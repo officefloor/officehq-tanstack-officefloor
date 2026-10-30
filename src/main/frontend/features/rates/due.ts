@@ -77,9 +77,10 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
 /** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
  *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
  *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
- *  before it (compounding), each rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
-export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
-  if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
+ *  before it (compounding), each rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due.
+ *  A claim whose late charge a steward waived gains none, whatever its overdue state. */
+export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string; waived?: boolean }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
+  if (late === undefined || late.today === undefined || !claim.dueBy || claim.waived || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
   const from = lateFrom(claim, late.grace);
   const days = Math.round((Date.parse(late.today) - Date.parse(from)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
@@ -98,7 +99,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
  *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
  *  figures round by the sheet's rounding mode or policy date (see roundsHalfUp). */
 export function claimDue(
-  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string },
+  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string; waived?: boolean },
   rate: string | undefined,
   floor: On,
   late?: Late,

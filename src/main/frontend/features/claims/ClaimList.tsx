@@ -34,6 +34,9 @@ import { peopleKey, type Person } from '../people/usePeople';
 // not after today or a claim dated inside a closed period is refused with the claim's error): until the sheet's today reaches
 // that date it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. Each claim shows
 // deferred (yes while it is deferred) and the date it was deferred until.
+// A steward waives an OPEN or PENDING claim's late charge with the waive button: it bears no late charge from then on,
+// whatever its overdue state. Waiving by anyone else, a claim in any other status, or one already waived is refused with
+// the claim's error. Each claim shows waived (yes or no).
 // An OPEN or PENDING claim is reminded with the remind button, once per sheet-today: it shows the sheet's today as its reminded
 // date (the last day a reminder was written, blank if never). A second reminder the same day, or a claim in any other status,
 // is refused with the claim's error.
@@ -150,6 +153,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
       ]);
     },
+  });
+
+  const waive = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/waive`,
+        { user },
+      ),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]),
   });
 
   const remind = useMutation({
@@ -287,6 +303,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     reassign.reset();
     resettle.reset();
     defer.reset();
+    waive.reset();
     remind.reset();
     redate.reset();
     proof.reset();
@@ -340,6 +357,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
       <span data-testid="claim-deferred">{deferredShown(c, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+      <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -466,6 +484,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-defer" onClick={() => act(() => defer.mutate(deferUntil))}>
         Defer
       </button>{' '}
+      <button type="button" data-testid="claim-waive" onClick={() => act(() => waive.mutate())}>
+        Waive late charge
+      </button>{' '}
       <button type="button" data-testid="claim-remind" onClick={() => act(() => remind.mutate())}>
         Remind
       </button>{' '}
@@ -557,6 +578,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one whose due-by is inside a closed period.
+        </span>
+      )}
+      {waive.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a steward can waive a claim's late charge, only an OPEN or PENDING claim's, and only once.
         </span>
       )}
       {remind.isError && (

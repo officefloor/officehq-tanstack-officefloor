@@ -33,6 +33,8 @@ export type Claim = {
   dueBy: string;
   /** The claim's status log, oldest first: "<STATUS> by <user> on <date> due=<due>" per status it has had. */
   log: string[];
+  /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
+  waived?: boolean;
   /** The date the claim was last deferred until, "" if it was never deferred. */
   deferredUntil: string;
   /** The claim's proofs count. */
