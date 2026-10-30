@@ -1,0 +1,76 @@
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 98807033..41b12158 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.grade;
+ 
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.ApplyPerson;
+ import net.officefloor.hq.app.person.AuditPersonEdited;
+@@ -21,7 +23,10 @@ import net.officefloor.server.http.ServerHttpConnection;
+ public class MergeGrade {
+     // GRADE_MERGED, then every person whose grade in force on the sheet's today is the merged grade, in list order, is
+     // given the other from the sheet's today, each exactly as the person form saves it: the same edit, its PERSON_EDITED
+-    // line and its ROLLUP lines. A person the edit refuses refuses the whole merge: nothing is stored or recorded.
++    // line and its ROLLUP lines. The merge is retroactive: then every grade record of each person moved on the merged
++    // grade becomes the other, so all their claims, whatever their date, use the other's rates, terms and thresholds
++    // (AuditRollup records the lines for the merge as a whole). A person the edit refuses refuses the whole merge:
++    // nothing is stored or recorded.
+     public void merge(@Val MergedGrade merge, @Val Figures before, People people, Sheets sheets, Grades grades,
+             Rollup rollup, ServerHttpConnection connection, Audit audit, Out<MergeResponse> out) throws GradeRefusedException {
+         Audit.Buffer held = new Audit.Buffer(audit);
+@@ -30,6 +35,7 @@ public class MergeGrade {
+         LocalDate today = sheets.today(merge.sheetId());
+         Figures figures = before;
+         int merged = 0;
++        List<Long> moved = new ArrayList<>();
+         for (Person person : people.list(merge.sheetId())) {
+             if (!merge.from().equals(person.gradeOn(today))) {
+                 continue;
+@@ -46,8 +52,12 @@ public class MergeGrade {
+             }
+             new AuditPersonEdited().audit(person, edited[0], connection, held);
+             figures = RollupLines.record(merge.sheetId(), user, figures, rollup, held);
++            moved.add(person.id());
+             merged++;
+         }
++        for (long id : moved) {
++            people.regrade(id, merge.from(), merge.into());
++        }
+         held.flush();
+         out.set(new MergeResponse(merge.from(), merge.into(), merged));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index aac8227f..e4ee93a6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -262,6 +262,12 @@ public class People {
+                 grade);
+     }
+ 
++    /** Make every grade record of the person on {@code from} (their first grade and any given since) {@code into}. */
++    public void regrade(long id, String from, String into) {
++        jdbc.update("UPDATE person SET grade = ? WHERE id = ? AND grade = ?", into, id, from);
++        jdbc.update("UPDATE person_grade SET grade = ? WHERE person_id = ? AND grade = ?", into, id, from);
++    }
++
+     /** Record the person's own terms from the date on (null: none), replacing any recorded from that same date. */
+     public void termsFrom(long id, LocalDate from, Integer terms) {
+         jdbc.update("DELETE FROM person_terms WHERE person_id = ? AND from_date = ?", id, Date.valueOf(from));
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+index b5df6c74..ccf3599a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -1,6 +1,7 @@
+ # POST /api/sheets/{sheetId}/grades/merge — merges a grade into another. Body {"from":"A|B|C","into":"A|B|C"}. Only a
+ # steward merges; the same grade twice, or a retired grade to merge into, is refused with 422 and nothing is stored or
+-# recorded. Records GRADE_MERGED, then each person on the merged grade today is edited as the person form would, then
++# recorded. Records GRADE_MERGED, then each person on the merged grade today is edited as the person form would, and
++# (retroactively) every grade record of theirs on the merged grade becomes the other; then
+ # the ROLLUP lines for the merge as a whole. Responds with the grades and how many people were given the other grade.
+ viewer:
+   class: net.officefloor.hq.app.setting.RefuseViewer
