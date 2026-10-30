@@ -26,8 +26,15 @@ public class AuditClaimStatus {
             };
         };
         net.officefloor.hq.app.person.Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        // Read before this change's own line is logged.
+        boolean voidedSettled = claim.getStatus() == ClaimStatus.VOID
+                && ClaimStatus.SETTLED.name().equals(log.lastStatus(claim));
         log.record(claim, person, request.user());
         String line = ClaimAudit.line(event, request.user(), person, claim, number.value());
+        if (voidedSettled) {
+            // A voided SETTLED claim reverses its frozen figure out of every total.
+            line += " reversed=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+        }
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
         }

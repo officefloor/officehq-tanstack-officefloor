@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.rate.Rates;
@@ -12,15 +13,15 @@ import net.officefloor.plugin.variable.Val;
 
 public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
-            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, Out<ClaimNumber> number)
+            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
-        number.set(change(request, claim, sheets, people, rates, periods, settings, numbering));
+        number.set(change(request, claim, sheets, people, rates, periods, settings, numbering, log));
     }
 
     /** Applies a status change to the claim by the rules of a single change, returning its number;
      *  throws, leaving the claim as it is, when the change is refused. Bulk settle uses it too. */
     static ClaimNumber change(ValidClaimStatus request, Claim claim, Sheets sheets, People people,
-            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering)
+            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log)
             throws ClaimStatusRefusedException {
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()));
         if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
@@ -56,6 +57,16 @@ public class ApplyClaimStatus {
         }
         if (request.target() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until its deferred-until date");
+        }
+        if (request.target() == ClaimStatus.VOID && claim.getStatus() == ClaimStatus.SETTLED) {
+            // Only a steward voids a SETTLED claim, and only within 7 days of its settlement by the sheet's today.
+            if (!steward) {
+                throw new ClaimStatusRefusedException("Only a steward can void a SETTLED claim");
+            }
+            LocalDate settledOn = log.settledOn(claim);
+            if (settledOn == null || sheets.today(claim.getSheetId()).isAfter(settledOn.plusDays(7))) {
+                throw new ClaimStatusRefusedException("A SETTLED claim can be voided only within 7 days of its settlement");
+            }
         }
         ClaimStatus target = request.target();
         if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {

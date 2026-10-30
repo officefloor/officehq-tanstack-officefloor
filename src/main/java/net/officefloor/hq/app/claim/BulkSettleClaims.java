@@ -41,7 +41,7 @@ public class BulkSettleClaims {
                 RollupFigures before = rollup.figures(sheetId);
                 ClaimNumber number;
                 try {
-                    number = ApplyClaimStatus.change(settle, claim, sheets, people, rates, periods, settings, numbering);
+                    number = ApplyClaimStatus.change(settle, claim, sheets, people, rates, periods, settings, numbering, log);
                 } catch (ClaimStatusRefusedException refused) {
                     continue;
                 }
