@@ -18,6 +18,8 @@ public class Person {
     private LocalDate statementDate;
     private LocalDate retiredFrom;
     private boolean held;
+    private java.util.List<Long> patronIds = new java.util.ArrayList<>();
+    private java.util.List<String> patronNames = new java.util.ArrayList<>();
 
     public Person(long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -53,6 +55,14 @@ public class Person {
     /** Whether the claim counts in the live totals: OPEN or SETTLED, but not OPEN while the person is held. */
     public boolean countsLive(Claim claim) {
         return claim.getStatus().counts() && !(held && claim.getStatus() == ClaimStatus.OPEN);
+    }
+    /** The ids of the people the person has named as patrons, in the order they were named. */
+    public java.util.List<Long> getPatronIds() { return patronIds; }
+    /** The names of the person's patrons, sorted. */
+    public java.util.List<String> getPatronNames() { return patronNames; }
+    public void setPatrons(java.util.List<Long> ids, java.util.List<String> names) {
+        this.patronIds = ids;
+        this.patronNames = names;
     }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public void setStatementCount(int statementCount) { this.statementCount = statementCount; }

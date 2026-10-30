@@ -25,6 +25,10 @@ public class People {
         return person;
     };
 
+    /** Patron names sorted without regard to case, then by case. */
+    private static final java.util.Comparator<String> BY_NAME =
+            String.CASE_INSENSITIVE_ORDER.thenComparing(java.util.Comparator.naturalOrder());
+
     private final JdbcTemplate jdbc;
 
     public People(JdbcTemplate jdbc) {
@@ -33,11 +37,42 @@ public class People {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        return withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
+    }
+
+    /** Fills in each person's patrons (ids in the order named, names sorted). */
+    private List<Person> withPatrons(String sheetId, List<Person> found) {
+        if (found.isEmpty()) {
+            return found;
+        }
+        java.util.Map<Long, java.util.List<Long>> ids = new java.util.HashMap<>();
+        java.util.Map<Long, java.util.List<String>> names = new java.util.HashMap<>();
+        jdbc.query("SELECT pp.person_id, pp.patron_id, p.name FROM person_patron pp"
+                + " JOIN person p ON p.sheet_id = pp.sheet_id AND p.id = pp.patron_id"
+                + " WHERE pp.sheet_id = ? ORDER BY pp.seq", rs -> {
+                    long person = rs.getLong("person_id");
+                    ids.computeIfAbsent(person, k -> new java.util.ArrayList<>()).add(rs.getLong("patron_id"));
+                    names.computeIfAbsent(person, k -> new java.util.ArrayList<>()).add(rs.getString("name"));
+                }, sheetId);
+        for (Person person : found) {
+            java.util.List<String> sorted = new java.util.ArrayList<>(names.getOrDefault(person.getId(), List.of()));
+            sorted.sort(BY_NAME);
+            person.setPatrons(new java.util.ArrayList<>(ids.getOrDefault(person.getId(), List.of())), sorted);
+        }
+        return found;
+    }
+
+    /** Records the patron as one of the person's patrons. The person's version is left as it is. */
+    public void addPatron(Person person, Person patron) {
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
+                person.getSheetId(), person.getId(), patron.getId());
+        person.getPatronIds().add(patron.getId());
+        person.getPatronNames().add(patron.getName());
+        person.getPatronNames().sort(BY_NAME);
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+        List<Person> found = withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id));
         return found.isEmpty() ? null : found.get(0);
     }
 

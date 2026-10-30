@@ -9,6 +9,7 @@ import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
 import { HoldControl } from './HoldControl';
+import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
 import { ShowRetired, useShowRetired } from './ShowRetired';
@@ -19,7 +20,8 @@ import { usePeople } from './usePeople';
 // sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // whether they are retired and from when, whether they are on hold (a held person's OPEN claims count
 // in neither their figures nor the sheet's totals; their SETTLED claims still do), their overdue count and
-// overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+// patrons (names, sorted) and backing (their patrons' due-totals added up, skipping n/a; 0.00 with no patrons),
+// their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
 export function PeopleList() {
@@ -44,6 +46,13 @@ export function PeopleList() {
       floor,
       late,
     );
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const backing = (p: (typeof people)[number]) =>
+    formatCents(p.patronIds.reduce((sum, id) => {
+      const patron = byId.get(id);
+      const due = patron ? totalOf(patron.id, patron.grade) : null;
+      return due === null ? sum : sum + due;
+    }, 0n));
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
   const overdue = live.filter((c) => isOverdue(c, terms, today));
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
@@ -60,6 +69,8 @@ export function PeopleList() {
             <th>Grade</th>
             <th>Claimed</th>
             <th>Due</th>
+            <th>Patrons</th>
+            <th>Backing</th>
             <th>Overdue</th>
             <th>Overdue due</th>
             <th />
@@ -81,6 +92,8 @@ export function PeopleList() {
                 <td data-testid="person-grade">{p.grade}</td>
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p.id, p.grade))}</td>
+                <td data-testid="person-patrons">{p.patrons.join(', ')}</td>
+                <td data-testid="person-backing">{backing(p)}</td>
                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
                 <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>
                 <td>
@@ -89,7 +102,8 @@ export function PeopleList() {
                   </button>{' '}
                   <StatementButton personId={p.id} />{' '}
                   <RetireControl personId={p.id} />{' '}
-                  <HoldControl personId={p.id} held={p.held} />
+                  <HoldControl personId={p.id} held={p.held} />{' '}
+                  <PatronControl personId={p.id} people={people} />
                 </td>
                 <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>
                 <td data-testid="person-retired-from">{p.retiredFrom}</td>

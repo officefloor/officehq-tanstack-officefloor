@@ -6,7 +6,8 @@ import { getJson } from '../../api/http';
  *  `statedTotal` is the last one's due-total ("n/a" possible, "" when none) and `statementDate` the
  *  sheet's today when it was taken ("" when none). `retired` is whether a retirement date is set
  *  (retired at once, whatever the date) and `retiredFrom` is that date ("" when none). `held` is
- *  whether the person is on hold: their OPEN claims then count in no live total. */
+ *  whether the person is on hold: their OPEN claims then count in no live total. `patrons` are the
+ *  names of the people they named as patrons, sorted, and `patronIds` those people's ids. */
 export type Person = {
   id: string;
   name: string;
@@ -18,6 +19,8 @@ export type Person = {
   retired: boolean;
   retiredFrom: string;
   held: boolean;
+  patrons: string[];
+  patronIds: string[];
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;
