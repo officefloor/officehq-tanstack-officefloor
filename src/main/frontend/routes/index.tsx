@@ -9,6 +9,7 @@ import { RatePanel } from '../features/rates/RatePanel';
 import { HolidayPanel } from '../features/holidays/HolidayPanel';
 import { VoidReasonPanel } from '../features/voidreasons/VoidReasonPanel';
 import { PoolPanel } from '../features/pools/PoolPanel';
+import { CrewPanel } from '../features/crews/CrewPanel';
 import { TemplatePanel } from '../features/templates/TemplatePanel';
 import { SettingsPanel } from '../features/settings/SettingsPanel';
 import { PeriodPanel } from '../features/periods/PeriodPanel';
@@ -49,6 +50,7 @@ function Home() {
           <PersonForm />
           <PeopleList />
           <PoolPanel />
+          <CrewPanel />
           <TreeSearch />
           <AuditViewer />
         </div>
