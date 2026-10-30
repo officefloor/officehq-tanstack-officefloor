@@ -13,9 +13,9 @@ import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { usePeople } from './usePeople';
+import { gradeOn, usePeople, type Person } from './usePeople';
 
-// Every person on the sheet in the order they were added, with their name, grade, claimed (the
+// Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
 // sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // whether they are retired and from when, whether they are on hold (a held person's OPEN claims count
@@ -38,11 +38,12 @@ export function PeopleList() {
   const late = { pct: useLatePct(sheet), terms, today };
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   const live = claims.filter((c) => heldOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!));
-  const totalOf = (personId: string, grade: string) =>
+  // A claim is worked at the grade in force on its date; the row shows the one in force today.
+  const totalOf = (person: Person) =>
     dueTotal(
-      live.filter((c) => c.personId === personId),
-      (date) => rateOn(rates, grade, date),
-      rateOn(rates, grade, today),
+      live.filter((c) => c.personId === person.id),
+      (date) => rateOn(rates, gradeOn(person, date), date),
+      rateOn(rates, gradeOn(person, today), today),
       floor,
       late,
     );
@@ -50,14 +51,14 @@ export function PeopleList() {
   const backing = (p: (typeof people)[number]) =>
     formatCents(p.patronIds.reduce((sum, id) => {
       const patron = byId.get(id);
-      const due = patron ? totalOf(patron.id, patron.grade) : null;
+      const due = patron ? totalOf(patron) : null;
       return due === null ? sum : sum + due;
     }, 0n));
-  const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+
   const overdue = live.filter((c) => isOverdue(c, terms, today));
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   const overdueTotal = (cs: typeof overdue) =>
-    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor, late) ?? 0n), 0n));
+    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n));
   return (
     <>
       <QuickAdd />
@@ -89,9 +90,9 @@ export function PeopleList() {
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
-                <td data-testid="person-grade">{p.grade}</td>
+                <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
-                <td data-testid="person-due-total">{showDue(totalOf(p.id, p.grade))}</td>
+                <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
                 <td data-testid="person-patrons">{p.patrons.join(', ')}</td>
                 <td data-testid="person-backing">{backing(p)}</td>
                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
@@ -112,7 +113,7 @@ export function PeopleList() {
                 <td data-testid="person-stated-total">{p.statedTotal}</td>
                 <td data-testid="person-statement-date">{p.statementDate}</td>
                 <td>
-                  <ClaimList claims={own} rateOn={(date) => rateOn(rates, p.grade, date)} />
+                  <ClaimList claims={own} rateOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
                   <ClaimForm personId={p.id} claims={own} />
                 </td>
               </tr>
@@ -125,7 +126,7 @@ export function PeopleList() {
       </p>
       <p>
         Due total: <span data-testid="rollup-due-total">{formatCents(people.reduce((sum, p) => {
-          const due = totalOf(p.id, p.grade);
+          const due = totalOf(p);
           return due === null ? sum : sum + due;
         }, 0n))}</span>
       </p>

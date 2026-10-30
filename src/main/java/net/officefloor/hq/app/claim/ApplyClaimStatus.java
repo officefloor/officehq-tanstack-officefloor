@@ -29,7 +29,7 @@ public class ApplyClaimStatus {
             // A clerk settles only within the sheet's clerk limit, judged on the claim's due as shown;
             // a due of n/a is within any limit.
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
-            String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
+            String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
             BigDecimal figure = fixed != null || claim.isStated() ? fixed
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
@@ -50,7 +50,7 @@ public class ApplyClaimStatus {
             // Settling fixes the due: the figure a statement bound it to, else its amount (raised to the floor)
             // at the rate in force on the claim's date, with its late charge as of today frozen in; with no
             // figure it stays live (n/a until a rate is set).
-            String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
+            String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             BigDecimal figure = claim.isStated() && claim.getStatedDue() != null ? claim.getStatedDue()
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
                     settings.floor(claim.getSheetId()));

@@ -7,7 +7,8 @@ import { getJson } from '../../api/http';
  *  sheet's today when it was taken ("" when none). `retired` is whether a retirement date is set
  *  (retired at once, whatever the date) and `retiredFrom` is that date ("" when none). `held` is
  *  whether the person is on hold: their OPEN claims then count in no live total. `patrons` are the
- *  names of the people they named as patrons, sorted, and `patronIds` those people's ids. */
+ *  names of the people they named as patrons, sorted, and `patronIds` those people's ids. `grade`
+ *  is the grade in force on the sheet's today when loaded and `grades` every grade recorded. */
 export type Person = {
   id: string;
   name: string;
@@ -21,7 +22,22 @@ export type Person = {
   held: boolean;
   patrons: string[];
   patronIds: string[];
+  grades: GradeFrom[];
 };
+
+/** A grade in force from a date (YYYY-MM-DD; "" for the beginning of time). */
+export type GradeFrom = { from: string; grade: string };
+
+/** The person's grade in force on a date: the one with the latest from-date on or before it (with
+ *  no date yet, the one in force on the sheet's today as loaded). */
+export function gradeOn(person: Person, date: string | undefined): string {
+  if (date === undefined) return person.grade;
+  let found: GradeFrom | undefined;
+  for (const g of person.grades) {
+    if (g.from <= date && (found === undefined || g.from >= found.from)) found = g;
+  }
+  return found?.grade ?? person.grade;
+}
 
 export const GRADES = ['A', 'B', 'C'] as const;
 

@@ -32,7 +32,7 @@ public class TakeStatement {
         int terms = settings.terms(sheetId);
         List<Claim> own = claims.ofPerson(sheetId, person.getId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        boolean anyFixed = false;
+        boolean anyFigure = false;
         int counted = 0;
         for (Claim claim : own) {
             if (!person.countsLive(claim)) {
@@ -42,9 +42,10 @@ public class TakeStatement {
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date.
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
-                anyFixed |= fixed != null;
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
+                anyFigure |= fixed != null;
                 if (figure != null) {
+                    anyFigure = true;
                     total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today));
                 }
                 claim.setStated(true);
@@ -53,7 +54,8 @@ public class TakeStatement {
             }
             claims.bind(claim);
         }
-        boolean na = !anyFixed && rates.find(sheetId, person.getGrade(), today) == null;
+        // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
+        boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
         BigDecimal dueTotal = na ? null : total;
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);

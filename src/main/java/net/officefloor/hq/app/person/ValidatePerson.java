@@ -17,6 +17,14 @@ public class ValidatePerson {
         if (!GRADES.contains(grade)) {
             throw new InvalidPersonException("Grade must be A, B or C");
         }
-        body.set(new PersonRequest(name, grade, request.user(), request.version()));
+        String gradeFrom = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
+        if (!gradeFrom.isEmpty()) {
+            try {
+                java.time.LocalDate.parse(gradeFrom);
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new InvalidPersonException("The grade's from-date must be a date");
+            }
+        }
+        body.set(new PersonRequest(name, grade, request.user(), request.version(), gradeFrom));
     }
 }

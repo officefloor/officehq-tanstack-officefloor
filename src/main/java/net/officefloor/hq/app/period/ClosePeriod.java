@@ -46,7 +46,7 @@ public class ClosePeriod {
                 }
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
                 if (figure != null) {
                     total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today));
                 }

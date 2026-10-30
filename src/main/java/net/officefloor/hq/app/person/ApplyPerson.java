@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
 import net.officefloor.plugin.variable.Val;
 
 public class ApplyPerson {
@@ -12,6 +13,13 @@ public class ApplyPerson {
             throw new InvalidPersonException("The name is already in use");
         }
         person.setName(request.name());
-        person.setGrade(request.grade());
+        // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the
+        // grades already recorded; a save leaving the grade as the row showed it with no from-date
+        // records nothing.
+        if (request.gradeFrom().isEmpty() && request.grade().equals(person.getGrade())) {
+            return;
+        }
+        LocalDate from = request.gradeFrom().isEmpty() ? person.getToday() : LocalDate.parse(request.gradeFrom());
+        person.recordGrade(from, request.grade());
     }
 }

@@ -59,21 +59,23 @@ public class Rollup {
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
-            boolean anyFixed = false;
+            boolean anyFigure = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsLive(claim)) {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
-                anyFixed |= fixed != null;
+                anyFigure |= fixed != null;
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
                 if (figure != null) {
+                    anyFigure = true;
                     due = due.add(LateCharge.withCharge(claim, figure, latePct, terms, today));
                 }
             }
-            boolean na = !anyFixed && rates.find(sheetId, person.getGrade(), today) == null;
+            // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
+            boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dueTotal = dueTotal.add(due);

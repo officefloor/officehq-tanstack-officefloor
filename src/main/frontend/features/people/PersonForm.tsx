@@ -3,11 +3,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
+import { useSheetToday } from '../sheet/useSheetToday';
+import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
 
 // Adds a person, or — while a person's editor is open (`editPerson` in the URL) — saves that
 // person. Opening the editor fills the form with the person's values and remembers the version it
 // loaded; a save over someone else's newer save is refused and the form shows the current values.
+// The grade is dated: a save records the form's grade from its from-date (the sheet's today when
+// blank), except that leaving the grade as the row showed it with a blank from-date records nothing.
+// A person's first grade applies from the beginning of time, so an add takes no from-date.
 export function PersonForm() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -18,18 +22,21 @@ export function PersonForm() {
   const editing = edited?.id ?? '';
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
+  const [gradeFrom, setGradeFrom] = useState('');
+  const today = useSheetToday(sheet);
   const [version, setVersion] = useState<number | undefined>(undefined);
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: string }) =>
+    mutationFn: (body: { name: string; grade: string; gradeFrom: string }) =>
       editing !== ''
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(editing)}`, { ...body, user, version })
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people`, { ...body, user }),
     onSuccess: () => {
       setName('');
       setGrade('A');
+      setGradeFrom('');
       if (editing !== '') setEditing(undefined);
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
@@ -44,7 +51,7 @@ export function PersonForm() {
       const current = fresh.find((p) => p.id === editing);
       if (current) {
         setName(current.name);
-        setGrade(current.grade);
+        setGrade(gradeOn(current, today));
         setVersion(current.version);
       }
     },
@@ -56,7 +63,8 @@ export function PersonForm() {
     save.reset();
     if (edited) {
       setName(edited.name);
-      setGrade(edited.grade);
+      setGrade(gradeOn(edited, today));
+      setGradeFrom('');
       setVersion(edited.version);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +77,7 @@ export function PersonForm() {
         e.preventDefault();
         submitOnce(() => {
           save.reset();
-          return save.mutateAsync({ name, grade });
+          return save.mutateAsync({ name, grade, gradeFrom });
         });
       }}
     >
@@ -94,6 +102,16 @@ export function PersonForm() {
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}
+      <input
+        type="date"
+        data-testid="person-form-grade-from"
+        title="Grade from (blank: the sheet's today)"
+        value={gradeFrom}
+        onChange={(e) => {
+          setGradeFrom(e.target.value);
+          save.reset();
+        }}
+      />{' '}
       <button type="submit" data-testid="person-form-submit">{editing !== '' ? 'Save' : 'Add person'}</button>
       {editing !== '' && (
         <button
@@ -103,6 +121,7 @@ export function PersonForm() {
             setEditing(undefined);
             setName('');
             setGrade('A');
+            setGradeFrom('');
             save.reset();
           }}
         >
@@ -113,7 +132,7 @@ export function PersonForm() {
         <span data-testid="person-form-error" role="alert">
           {save.error instanceof HttpError && save.error.status === 409
             ? ' Not saved: someone else changed this person since you opened it. The form now shows their values.'
-            : ' Could not save: a name is required and must not already be in use.'}
+            : ' Could not save: a name is required and must not already be in use, and a from-date must be a date.'}
         </span>
       )}
     </form>

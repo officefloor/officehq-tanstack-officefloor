@@ -8,10 +8,18 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 
 public class Person {
 
+    /** The from-date standing for the beginning of time (stored as a null from-date). */
+    public static final LocalDate BEGINNING = LocalDate.MIN;
+
     private final long id;
     private final String sheetId;
     private String name;
-    private String grade;
+    /** The person's grades by the date each is in force from; {@link #BEGINNING} is the beginning of time. */
+    private final java.util.TreeMap<LocalDate, String> grades = new java.util.TreeMap<>();
+    /** The sheet's today when the person was loaded: the grade in force on it is the one shown. */
+    private LocalDate today;
+    /** A grade recorded by this edit and not yet written: its from-date and grade. */
+    private java.util.Map.Entry<LocalDate, String> recorded;
     private int version;
     private int statementCount;
     private BigDecimal statedTotal;
@@ -29,14 +37,38 @@ public class Person {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
-        this.grade = grade;
+        this.grades.put(BEGINNING, grade);
         this.version = version;
     }
 
     public long getId() { return id; }
     public String getSheetId() { return sheetId; }
     public String getName() { return name; }
-    public String getGrade() { return grade; }
+    /** The grade in force on the sheet's today. */
+    public String getGrade() { return gradeOn(today); }
+    /** The grade in force on a date: the one with the latest from-date on or before it; with no date, the first. */
+    public String gradeOn(LocalDate date) {
+        java.util.Map.Entry<LocalDate, String> found = date == null ? null : grades.floorEntry(date);
+        return found == null ? grades.firstEntry().getValue() : found.getValue();
+    }
+    /** The person's grades by from-date ({@link #BEGINNING} for the first), earliest first. */
+    public java.util.SortedMap<LocalDate, String> getGrades() { return java.util.Collections.unmodifiableSortedMap(grades); }
+    public void setGrades(java.util.Map<LocalDate, String> loaded) {
+        if (!loaded.isEmpty()) {
+            grades.clear();
+            grades.putAll(loaded);
+        }
+    }
+    /** Records the grade from the date (replacing one recorded from that same date), to be written on save. */
+    public void recordGrade(LocalDate from, String grade) {
+        grades.put(from, grade);
+        recorded = java.util.Map.entry(from, grade);
+    }
+    /** The grade this edit recorded and has not written yet; null when none. */
+    public java.util.Map.Entry<LocalDate, String> getRecordedGrade() { return recorded; }
+    public void clearRecordedGrade() { recorded = null; }
+    public LocalDate getToday() { return today; }
+    public void setToday(LocalDate today) { this.today = today; }
     public int getVersion() { return version; }
     /** How many statements have been taken for the person. */
     public int getStatementCount() { return statementCount; }
@@ -69,6 +101,5 @@ public class Person {
     public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }
     public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
     public void setName(String name) { this.name = name; }
-    public void setGrade(String grade) { this.grade = grade; }
     public void setVersion(int version) { this.version = version; }
 }

@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { countsLive, useClaims } from '../claims/useClaims';
-import { usePeople } from '../people/usePeople';
+import { gradeOn, usePeople } from '../people/usePeople';
 import { claimDue, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
@@ -47,12 +47,12 @@ export function PeriodPanel() {
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved),
   });
-  const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+  const personOf = new Map(people.map((p) => [p.id, p]));
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   const dueTotalOf = (period: Period) =>
     period.closed ? toCents(period.closedTotal) : claims
-      .filter((c) => gradeOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date) === period)
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor, late) ?? 0n), 0n);
+      .filter((c) => personOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date) === period)
+      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n);
   return (
     <>
       <table data-testid="periods">

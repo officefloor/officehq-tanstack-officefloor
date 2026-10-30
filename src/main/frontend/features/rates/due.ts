@@ -75,8 +75,9 @@ export function claimDue(
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. With no rate for their
- *  grade today it is n/a, unless a settled claim keeps a figure; then it is the sum of the figures
- *  there are. A claim whose figure is n/a adds nothing. */
+ *  grade today it is n/a, unless a claim keeps a figure (a settled one, or one worked at the grade
+ *  in force on its date); then it is the sum of the figures there are. A claim whose figure is n/a
+ *  adds nothing. */
 export function dueTotal(
   claims: { amount: string; due: string; date: string; status?: string; stated?: boolean }[],
   rateOn: (date: string) => string | undefined,
@@ -84,6 +85,7 @@ export function dueTotal(
   floor: string,
   late?: Late,
 ): bigint | null {
-  if (rateToday === undefined && !claims.some((c) => c.due !== '')) return null;
-  return claims.reduce((sum, c) => sum + (claimDue(c, rateOn(c.date), floor, late) ?? 0n), 0n);
+  const figures = claims.map((c) => claimDue(c, rateOn(c.date), floor, late));
+  if (rateToday === undefined && figures.every((f) => f === null)) return null;
+  return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
 }
