@@ -9,7 +9,8 @@ import { NA } from './due';
 import { rateOn, ratesKey, useRates, type Rate } from './useRates';
 
 // The rate in force on the sheet's today for each grade (n/a where none applies), every rate set with
-// the date it applies from, and the form that sets one (a blank from-date: from the beginning of time).
+// the dates it applies from and through, and the form that sets one (a blank from-date: from the
+// beginning of time; a blank to-date: no end).
 export function RatePanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -18,14 +19,16 @@ export function RatePanel() {
   const today = useSheetToday(sheet);
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { grade: string; rate: string; from: string }) =>
+    mutationFn: (body: { grade: string; rate: string; from: string; to: string }) =>
       postJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...body, user }),
     onSuccess: (saved) => {
       setPct('');
       setFrom('');
+      setTo('');
       queryClient.setQueryData(ratesKey(sheet), saved);
     },
   });
@@ -52,6 +55,7 @@ export function RatePanel() {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -60,6 +64,7 @@ export function RatePanel() {
             <tr key={`${r.grade}-${r.from}`} data-testid={`rate-row-${r.grade}-${r.from || 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from || 'start'}</td>
+              <td data-testid="rate-to">{r.to}</td>
               <td data-testid="rate-pct">{r.rate}</td>
             </tr>
           ))}
@@ -71,7 +76,7 @@ export function RatePanel() {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ grade, rate: pct.trim(), from: from.trim() });
+            return save.mutateAsync({ grade, rate: pct.trim(), from: from.trim(), to: to.trim() });
           });
         }}
       >
@@ -105,8 +110,17 @@ export function RatePanel() {
             save.reset();
           }}
         />{' '}
+        <input
+          data-testid="rate-form-to"
+          value={to}
+          placeholder="To (YYYY-MM-DD, blank: no end)"
+          onChange={(e) => {
+            setTo(e.target.value);
+            save.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="rate-form-submit">Set rate</button>
-        {save.isError && <span data-testid="rate-form-error" role="alert"> Could not set the rate: it must be a percent of 0.00 or more with at most two decimals, from a valid date (YYYY-MM-DD) or none.</span>}
+        {save.isError && <span data-testid="rate-form-error" role="alert"> Could not set the rate: it must be a percent of 0.00 or more with at most two decimals, from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.</span>}
       </form>
     </>
   );

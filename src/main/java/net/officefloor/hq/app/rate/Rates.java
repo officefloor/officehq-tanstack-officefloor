@@ -20,21 +20,26 @@ public class Rates {
 
     /** The sheet's rates, by grade then from-date (from the beginning of time first). */
     public List<RateResponse> list(String sheetId) {
-        return jdbc.query("SELECT grade, rate, from_date FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
+        return jdbc.query("SELECT grade, rate, from_date, to_date FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
                 (rs, i) -> {
                     Date from = rs.getDate("from_date");
+                    Date to = rs.getDate("to_date");
                     return new RateResponse(rs.getString("grade"), rs.getBigDecimal("rate").setScale(2).toPlainString(),
-                            from == null ? "" : from.toLocalDate().toString());
+                            from == null ? "" : from.toLocalDate().toString(), to == null ? "" : to.toLocalDate().toString());
                 },
                 sheetId);
     }
 
     /** The rate for a grade on the sheet in force on a date: the one with the latest from-date on or
-     *  before it; null when none applies. */
+     *  before it; null when none applies, or when that one's to-date is before the date. */
     public BigDecimal find(String sheetId, String grade, LocalDate date) {
-        List<BigDecimal> found = jdbc.query("SELECT rate FROM rate WHERE sheet_id = ? AND grade = ?"
+        Date on = Date.valueOf(date);
+        List<BigDecimal> found = jdbc.query("SELECT rate, to_date FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1",
-                (rs, i) -> rs.getBigDecimal("rate"), sheetId, grade, Date.valueOf(date));
+                (rs, i) -> {
+                    Date to = rs.getDate("to_date");
+                    return to != null && to.before(on) ? null : rs.getBigDecimal("rate");
+                }, sheetId, grade, on);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -50,15 +55,16 @@ public class Rates {
         return due == null || floor == null || amount.signum() < 0 || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
     }
 
-    /** Set the grade's rate from a date (null: from the beginning of time), replacing one already there. */
-    public void set(String sheetId, String grade, LocalDate from, BigDecimal rate) {
+    /** Set the grade's rate from a date (null: from the beginning of time) through a date (null: no
+     *  end), replacing one already there from the same date. */
+    public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal rate) {
         Date fromDate = from == null ? null : Date.valueOf(from);
         if (fromDate == null) {
             jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NULL", sheetId, grade);
         } else {
             jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date = ?", sheetId, grade, fromDate);
         }
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date) VALUES (?, ?, ?, ?)",
-                sheetId, grade, rate, fromDate);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to));
     }
 }

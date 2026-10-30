@@ -38,6 +38,18 @@ public class ValidateRate {
                 throw new InvalidRateException("The from-date must be a date (YYYY-MM-DD)");
             }
         }
-        body.set(new ValidRate(grade, new BigDecimal(raw).setScale(2), from, request.user()));
+        String rawTo = request.to() == null ? "" : request.to().trim();
+        LocalDate to = null;
+        if (!rawTo.isEmpty()) {
+            try {
+                to = LocalDate.parse(rawTo, DATE);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The to-date must be a date (YYYY-MM-DD)");
+            }
+            if (from != null && to.isBefore(from)) {
+                throw new InvalidRateException("The to-date must not be before the from-date");
+            }
+        }
+        body.set(new ValidRate(grade, new BigDecimal(raw).setScale(2), from, to, request.user()));
     }
 }
