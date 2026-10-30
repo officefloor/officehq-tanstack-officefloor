@@ -36,9 +36,9 @@ public class SheetCloner {
         copyRows("sheet_role", "user_name, role", "", from, to);
         copyRows("sheet_permission", "action, roles", "", from, to);
         copyRows("sheet_delegation", "user_name, from_date, to_date, delegated_by, set_on", " ORDER BY seq", from, to);
-        copyRows("rate", "grade, rate, from_date, to_date, version", "", from, to);
-        copyRows("rate_version", "grade, from_date, version, rate, to_date", "", from, to);
-        copyRows("rate_history", "set_on, grade, rate, from_date, to_date", " ORDER BY seq", from, to);
+        copyRows("rate", "grade, rate, from_date, to_date, version, after_mark", "", from, to);
+        copyRows("rate_version", "grade, from_date, version, rate, to_date, after_mark", "", from, to);
+        copyRows("rate_history", "set_on, grade, rate, from_date, to_date, after_mark", " ORDER BY seq", from, to);
         copyRows("holiday", "holiday_date", "", from, to);
         copyRows("void_reason", "reason", " ORDER BY seq", from, to);
         copyRows("claim_template", "name, amount, note", "", from, to);

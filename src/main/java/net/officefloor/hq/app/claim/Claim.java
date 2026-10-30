@@ -134,6 +134,12 @@ public class Claim {
     public String getVoidReason() { return voidReason; }
     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
 
+    /** The mark drawn when the claim arrived on its sheet: a forward-only rate applies to it only when saved before
+     *  (its mark lower; see Rates). 0 for a claim from before marks were kept. */
+    private long rateMark;
+    public long getRateMark() { return rateMark; }
+    public void setRateMark(long rateMark) { this.rateMark = rateMark; }
+
     /** The user whose open editor locks the claim; null when unlocked. */
     private String lockedBy;
     public String getLockedBy() { return lockedBy; }

@@ -2,7 +2,7 @@ import { countsAtEnd, countsLive, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { useGrace } from '../claims/useGrace';
-import { rateOn, useRates } from '../rates/useRates';
+import { claimRate, useRates } from '../rates/useRates';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { periodOf, usePeriods, type Period } from './usePeriods';
@@ -25,7 +25,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
     if (!person) return 0n;
     return claims
       .filter((c) => c.personId === personId && countsAtEnd(c, period.to, (date) => heldOn(person, date) || retiredOn(person, late.today), late.today) && periodOf(periods, c.dueBy)?.name === period.name)
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
+      .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
   };
 }
 
@@ -53,7 +53,7 @@ export function useClassicPeriodDueTotal(sheet: string): (period: Period) => big
       const held = (date: string) => heldOn(person, date) || retiredOn(person, late.today);
       return claims
         .filter((c) => c.personId === person.id && countsLive(c, held, late.today) && periodOf(periods, c.dueBy)?.name === period.name)
-        .reduce((s, c) => s + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), sum);
+        .reduce((s, c) => s + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), sum);
     }, 0n);
   };
 }

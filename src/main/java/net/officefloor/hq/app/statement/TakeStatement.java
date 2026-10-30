@@ -53,7 +53,7 @@ public class TakeStatement {
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
             // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date (unfloored).
             BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                    : Rates.due(claim.getAmount(), view.rate().apply(then.gradeOn(claim.getDate()), claim.getDate()), rounding);
+                    : Rates.due(claim.getAmount(), view.rate().rate(then.gradeOn(claim.getDate()), claim.getDate(), claim.getRateMark()), rounding);
             if (figure != null) {
                 anyFigure = true;
                 total = total.add(LateCharge.due(claim, figure, view.floor().apply(claim.getDate()), view.latePct(),
@@ -68,7 +68,7 @@ public class TakeStatement {
             claims.bind(claim);
         }
         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
-        boolean na = !anyFigure && view.rate().apply(then.getGrade(), today) == null;
+        boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;
         BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap());
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);

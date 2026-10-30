@@ -31,7 +31,7 @@ public class ApplyResettle {
         }
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on));
         String grade = people.find(sheetId, claim.getPersonId()).gradeOn(claim.getDate());
-        BigDecimal figure = Rates.due(claim.getAmount(), rates.find(sheetId, grade, claim.getDate()), rounding);
+        BigDecimal figure = Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
         BigDecimal due = figure == null ? null
                 : LateCharge.floored(claim, figure.add(LateCharge.asOpen(claim, figure, on -> settings.latePct(sheetId, on),
                         sheets.today(sheetId), rounding, settings.grace(sheetId, grade, claim.getDate()))), settings.floor(sheetId, claim.getDate()));

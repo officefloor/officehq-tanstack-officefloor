@@ -63,12 +63,12 @@ export function ClaimList({
 }: {
   claims: Claim[];
   people: Person[];
-  rateOn: (date: string) => string | undefined;
+  rateOn: (claim: Claim) => string | undefined;
 }) {
   return (
     <ul data-testid="claims">
       {claims.map((c) => (
-        <ClaimRow key={c.id} claim={c} people={people} rate={rateOn(c.date)} />
+        <ClaimRow key={c.id} claim={c} people={people} rate={rateOn(c)} />
       ))}
     </ul>
   );

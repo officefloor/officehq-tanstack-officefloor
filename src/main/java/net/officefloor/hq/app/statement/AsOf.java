@@ -34,11 +34,11 @@ public class AsOf {
     /** A person and their claims, with the date standing for the sheet's today and the figures in force then
      *  (the rounding mode in force on a date: null for none). */
     public record View(LocalDate today, LocalDate policyDate, BigDecimal cap, Person person, List<Claim> claims,
-            BiFunction<String, LocalDate, BigDecimal> rate, Function<LocalDate, BigDecimal> floor,
+            Rates.Lookup rate, Function<LocalDate, BigDecimal> floor,
             Function<LocalDate, BigDecimal> latePct, Function<LocalDate, java.math.RoundingMode> rounding) {
     }
 
-    private record RateRow(BigDecimal rate, LocalDate from, LocalDate to) {
+    private record RateRow(BigDecimal rate, LocalDate from, LocalDate to, long afterMark) {
     }
 
     private final JdbcTemplate jdbc;
@@ -59,7 +59,7 @@ public class AsOf {
     public View now(Person person) {
         String sheetId = person.getSheetId();
         return new View(sheets.today(sheetId), settings.policyDate(sheetId), settings.cap(sheetId), person,
-                claims.ofPerson(sheetId, person.getId()), (grade, on) -> rates.find(sheetId, grade, on),
+                claims.ofPerson(sheetId, person.getId()), (grade, on, mark) -> rates.find(sheetId, grade, on, mark),
                 on -> settings.floor(sheetId, on), on -> settings.latePct(sheetId, on), on -> settings.roundingMode(sheetId, on));
     }
 
@@ -70,14 +70,14 @@ public class AsOf {
         String upTo = " AND (set_on IS NULL OR set_on <= ?) ORDER BY seq";
 
         // The rates: the sheet's own, then (for a grade it has none in force for) its ancestors', each as set by the end of the date.
-        List<BiFunction<String, LocalDate, BigDecimal>> levels = new ArrayList<>();
+        List<Rates.Lookup> levels = new ArrayList<>();
         levels.add(ratesAt(sheetId, end));
         for (String ancestor : rates.ancestors(sheetId)) {
             levels.add(ratesAt(ancestor, end));
         }
-        BiFunction<String, LocalDate, BigDecimal> rate = (grade, on) -> {
-            for (BiFunction<String, LocalDate, BigDecimal> level : levels) {
-                BigDecimal found = level.apply(grade, on);
+        Rates.Lookup rate = (grade, on, mark) -> {
+            for (Rates.Lookup level : levels) {
+                BigDecimal found = level.rate(grade, on, mark);
                 if (found != null) return found;
             }
             return null;
@@ -113,23 +113,28 @@ public class AsOf {
                 on -> net.officefloor.hq.app.claim.Rounding.mode(setting.apply(ValidateSetting.ROUNDING, on)));
     }
 
-    /** A sheet's own rates as set by the end of a date: for a grade and a date, the latest set for the latest from-date on or
-     *  before it; null when none applies, or when that one's to-date is before the date. */
-    private BiFunction<String, LocalDate, BigDecimal> ratesAt(String sheetId, Date end) {
-        Map<String, Map<LocalDate, RateRow>> rateRows = new HashMap<>();
-        jdbc.query("SELECT grade, rate, from_date, to_date FROM rate_history WHERE sheet_id = ? AND (set_on IS NULL OR set_on <= ?) ORDER BY seq",
+    /** A sheet's own rates as set by the end of a date: for a grade, a date and a claim's mark, of the rates set that apply
+     *  to the claim (see {@link Rates#applies}), the latest set for the latest from-date on or before the date; null when
+     *  none applies, or when that one's to-date is before the date. */
+    private Rates.Lookup ratesAt(String sheetId, Date end) {
+        Map<String, Map<LocalDate, List<RateRow>>> rateRows = new HashMap<>();
+        jdbc.query("SELECT grade, rate, from_date, to_date, after_mark FROM rate_history WHERE sheet_id = ? AND (set_on IS NULL OR set_on <= ?) ORDER BY seq",
                 (RowCallbackHandler) rs -> {
                     LocalDate from = local(rs.getDate("from_date"));
                     rateRows.computeIfAbsent(rs.getString("grade").trim(), g -> new HashMap<>())
-                            .put(from == null ? LocalDate.MIN : from,
-                                    new RateRow(rs.getBigDecimal("rate"), from, local(rs.getDate("to_date"))));
+                            .computeIfAbsent(from == null ? LocalDate.MIN : from, f -> new ArrayList<>())
+                            .add(0, new RateRow(rs.getBigDecimal("rate"), from, local(rs.getDate("to_date")), rs.getLong("after_mark")));
                 }, sheetId, end);
-        return (grade, on) -> {
-            TreeMap<LocalDate, RateRow> byFrom = new TreeMap<>(rateRows.getOrDefault(grade, Map.of()));
-            Map.Entry<LocalDate, RateRow> found = byFrom.floorEntry(on);
-            if (found == null) return null;
-            RateRow row = found.getValue();
-            return row.to() != null && row.to().isBefore(on) ? null : row.rate();
+        return (grade, on, mark) -> {
+            TreeMap<LocalDate, List<RateRow>> byFrom = new TreeMap<>(rateRows.getOrDefault(grade, Map.of()));
+            for (List<RateRow> versions : byFrom.headMap(on, true).descendingMap().values()) {
+                for (RateRow row : versions) {
+                    if (Rates.applies(row.afterMark(), mark)) {
+                        return row.to() != null && row.to().isBefore(on) ? null : row.rate();
+                    }
+                }
+            }
+            return null;
         };
     }
 
@@ -172,6 +177,7 @@ public class AsOf {
                     claim.setDueBy(local(rs.getDate("due_by")));
                     claim.setDeferredUntil(local(rs.getDate("deferred_until")));
                     claim.setCorrects(rs.getString("corrects"));
+                    claim.setRateMark(rs.getLong("rate_mark"));
                     latest.put(claim.getId(), claim);
                 }, sheetId, end);
         List<Claim> own = new ArrayList<>();

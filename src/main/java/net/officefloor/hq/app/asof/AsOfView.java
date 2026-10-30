@@ -207,6 +207,7 @@ public class AsOfView {
             // A claim's ref and tags are not kept in its history: they show as they are now.
             then.setRef(current.getRef());
             then.setTags(current.getTags());
+            then.setRateMark(current.getRateMark());
             // Nor is its void reason: a claim void by then shows the reason it was voided with.
             if (then.getStatus() == ClaimStatus.VOID) then.setVoidReason(current.getVoidReason());
             latest.put(then.getId(), then);
@@ -233,7 +234,7 @@ public class AsOfView {
     /** The rates set by the end of the date, by grade then from-date (from the beginning of time first). */
     public List<RateResponse> rates(String sheetId, LocalDate date) {
         Map<String, TreeMap<LocalDate, RateResponse>> byGrade = new TreeMap<>();
-        jdbc.query("SELECT grade, rate, from_date, to_date FROM rate_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+        jdbc.query("SELECT grade, rate, from_date, to_date, after_mark FROM rate_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> {
                     LocalDate from = local(rs.getDate(3));
                     LocalDate to = local(rs.getDate(4));
@@ -241,9 +242,14 @@ public class AsOfView {
                     TreeMap<LocalDate, RateResponse> byFrom = byGrade.computeIfAbsent(grade, g -> new TreeMap<>());
                     LocalDate key = from == null ? LocalDate.MIN : from;
                     RateResponse replaced = byFrom.get(key);
+                    List<RateResponse.Earlier> earlier = new ArrayList<>();
+                    if (replaced != null) {
+                        earlier.add(new RateResponse.Earlier(replaced.rate(), replaced.to(), replaced.afterMark()));
+                        earlier.addAll(replaced.earlier());
+                    }
                     byFrom.put(key, new RateResponse(grade, rs.getBigDecimal(2).setScale(2).toPlainString(),
                             from == null ? "" : from.toString(), to == null ? "" : to.toString(),
-                            replaced == null ? 1 : replaced.version() + 1));
+                            replaced == null ? 1 : replaced.version() + 1, rs.getLong(5), earlier));
                 }, sheetId, Date.valueOf(date));
         List<RateResponse> rates = new ArrayList<>();
         byGrade.values().forEach(byFrom -> rates.addAll(byFrom.values()));

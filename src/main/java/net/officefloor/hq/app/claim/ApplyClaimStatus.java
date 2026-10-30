@@ -144,7 +144,7 @@ public class ApplyClaimStatus {
             // with no figure it stays live (n/a until a rate is set).
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             BigDecimal figure = claim.isBound() && claim.getStatedDue() != null ? claim.getStatedDue()
-                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
+                    : Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
             claim.setSettledDue(LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
                     on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding,
                     settings.grace(claim.getSheetId(), grade, claim.getDate())));
@@ -212,7 +212,7 @@ public class ApplyClaimStatus {
         String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
         BigDecimal fixed = ClaimResponse.fixedDue(claim);
         BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
+                : Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
         return LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
                 on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding,
                 settings.grace(claim.getSheetId(), grade, claim.getDate()));

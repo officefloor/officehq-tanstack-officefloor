@@ -2,7 +2,7 @@ import { countsLive, hasTag, isOpen, useClaims, useTags } from '../claims/useCla
 import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
-import { rateOn, useRates } from '../rates/useRates';
+import { claimRate, rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
@@ -32,7 +32,7 @@ export function useSheetFigures(sheet: string) {
   const uncappedOf = (person: Person) =>
     dueTotal(
       live.filter((c) => c.personId === person.id),
-      (date) => rateOn(rates, gradeOn(person, date), date),
+      (c) => claimRate(rates, gradeOn(person, c.date), c),
       rateOn(rates, gradeOn(person, today), today),
       floor,
       late,
@@ -48,7 +48,7 @@ export function useSheetFigures(sheet: string) {
   const dueSumOf = (person: Person, which: (c: (typeof live)[number]) => boolean) =>
     live
       .filter((c) => c.personId === person.id && which(c))
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
+      .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
   const settledTotalOf = (person: Person) => dueSumOf(person, (c) => c.status === 'SETTLED');
   const openTotalOf = (person: Person) => dueSumOf(person, isOpen);
   // The sheet's settled-total and open-total: everyone's figure added up, not trimmed.
@@ -56,7 +56,7 @@ export function useSheetFigures(sheet: string) {
   const sheetOpenTotal = formatCents(people.reduce((sum, p) => sum + openTotalOf(p), 0n));
   const overdue = live.filter((c) => isOverdue(c, today, grace));
   const overdueSum = (cs: typeof overdue) =>
-    cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n);
+    cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
   // The sheet's due-total: the people's due-totals added up, skipping n/a, trimmed.
   const sheetDueTotal = formatCents(trimmedSum(people.map(totalOf).filter((due): due is bigint => due !== null)));
@@ -83,7 +83,7 @@ export function useSheetFigures(sheet: string) {
     for (const c of live) {
       if (c.personId !== person.id || !isOpen(c)) continue;
       const age = daysBetween(c.date, today);
-      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n;
+      const due = claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n;
       buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;
     }
     return buckets;
@@ -95,7 +95,7 @@ export function useSheetFigures(sheet: string) {
     total: formatCents(
       live
         .filter((c) => hasTag(c, tag) || hasTag(byId.get(c.personId)!, tag))
-        .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
+        .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n),
     ),
   }));
   const onSheet = new Set(people.map((p) => p.id));
@@ -107,7 +107,7 @@ export function useSheetFigures(sheet: string) {
     total: formatCents(
       live
         .filter((c) => c.date.slice(0, 7) === month)
-        .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
+        .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n),
     ),
   }));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;

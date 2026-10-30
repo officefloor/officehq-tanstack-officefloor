@@ -4,7 +4,7 @@ import { BulkOpenButton, BulkReassignButton, BulkRedateButton, BulkSettleButton,
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts, tagList } from '../claims/useClaims';
 import { claimDue, formatCents, showDue, toCents } from '../rates/due';
-import { rateOn } from '../rates/useRates';
+import { claimRate } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
@@ -129,7 +129,7 @@ export function PeopleList() {
           c.number,
           c.date,
           c.amount,
-          showDue(claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, { pct: latePct, today, grace }, policy)),
+          showDue(claimDue(c, claimRate(rates, gradeOn(p, c.date), c), floor, { pct: latePct, today, grace }, policy)),
           c.status,
           periodOf(periods, dueBy(c))?.name ?? '',
         ]),
@@ -291,7 +291,7 @@ export function PeopleList() {
                 <td data-testid="person-statement-date">{p.statementDate}</td>
                 <td>
                   <PlanControl personId={p.id} />
-                  <ClaimList claims={own} people={people} rateOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
+                  <ClaimList claims={own} people={people} rateOn={(c) => claimRate(rates, gradeOn(p, c.date), c)} />
                   <ClaimForm personId={p.id} claims={own} />
                 </td>
               </tr>

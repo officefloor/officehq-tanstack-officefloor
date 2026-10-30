@@ -6,7 +6,7 @@ import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, formatCents } from './due';
-import { rateOn, useRates } from './useRates';
+import { claimRate, useRates } from './useRates';
 
 const PCT = /^\d+(\.\d{1,2})?$/;
 
@@ -44,7 +44,7 @@ export function RatePreview() {
     for (const c of claims) {
       const person = byId.get(c.personId);
       if (person === undefined || !isOpen(c) || gradeOn(person, c.date) !== grade) continue;
-      const current = claimDue(c, rateOn(rates, grade, c.date), floor, late, policy);
+      const current = claimDue(c, claimRate(rates, grade, c), floor, late, policy);
       const next = claimDue(c, candidate, floor, late, policy);
       if (current === next) continue;
       count++;

@@ -49,12 +49,16 @@ public class Claims {
         claim.setVoidReason(rs.getString("void_reason"));
         int batch = rs.getInt("settle_batch");
         claim.setSettleBatch(rs.wasNull() ? null : batch);
+        claim.setRateMark(rs.getLong("rate_mark"));
         return claim;
     };
 
     /** A claim with the date of the claim it corrects (same sheet, same person, by number). */
     private static final String SELECT = "SELECT c.*, k.claim_date AS corrected_date FROM claim c LEFT JOIN claim k"
             + " ON k.sheet_id = c.sheet_id AND k.person_id = c.person_id AND k.claim_number = c.corrects";
+
+    /** A new mark for a claim arriving on a sheet (see Rates). */
+    private static final String NEXT_RATE_MARK = "NEXT VALUE FOR rate_mark_seq";
 
     /** The listed_seq after every claim's: a new or moved claim is listed first. */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed_seq), 0) + 1 FROM claim)";
@@ -71,10 +75,10 @@ public class Claims {
     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
     private void history(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
-                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch)"
+                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark)"
                 + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
-                + " c.split_from, c.late_entry, c.settle_batch"
+                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
@@ -153,8 +157,8 @@ public class Claims {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, terms, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                            + NEXT_LISTED + ")",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, terms, listed_seq, rate_mark)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ", " + NEXT_RATE_MARK + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -169,6 +173,7 @@ public class Claims {
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        claim.setRateMark(jdbc.queryForObject("SELECT rate_mark FROM claim WHERE id = ?", Long.class, claim.getId()));
         history(sheetId, claim.getId());
         claim.setCorrects(corrects);
         claim.setDueBy(dueBy);
@@ -247,9 +252,11 @@ public class Claims {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
-                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq)"
+                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq,"
+                            + " rate_mark)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
-                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ? FROM claim WHERE sheet_id = ? AND id = ?",
+                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ?, " + NEXT_RATE_MARK
+                            + " FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, personId);
@@ -282,9 +289,9 @@ public class Claims {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
                             + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
-                            + " listed_seq)"
+                            + " listed_seq, rate_mark)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
-                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?"
+                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark"
                             + " FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);

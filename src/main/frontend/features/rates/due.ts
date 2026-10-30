@@ -116,14 +116,14 @@ export function claimDue(
  *  in force on its date); then it is the sum of the figures there are. A claim whose figure is n/a
  *  adds nothing. */
 export function dueTotal(
-  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; personId?: string }[],
-  rateOn: (date: string) => string | undefined,
+  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; personId?: string; rateMark?: number }[],
+  rateOf: (claim: { date: string; rateMark?: number }) => string | undefined,
   rateToday: string | undefined,
   floor: On,
   late?: Late,
   policy?: Policy,
 ): bigint | null {
-  const figures = claims.map((c) => claimDue(c, rateOn(c.date), floor, late, policy));
+  const figures = claims.map((c) => claimDue(c, rateOf(c), floor, late, policy));
   if (rateToday === undefined && figures.every((f) => f === null)) return null;
   return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
 }

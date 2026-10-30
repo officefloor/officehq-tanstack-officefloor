@@ -53,6 +53,8 @@ export type Claim = {
   lines?: string[];
   /** The number of the bulk settle batch that settled the claim, "" when it was settled one at a time or never. */
   batch?: string;
+  /** The mark drawn when the claim arrived on the sheet: a forward-only rate applies to it only when its mark is lower. */
+  rateMark?: number;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold
