@@ -143,7 +143,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
         Add from template
       </button>
       {(save.isError || fromTemplate.isError) && (
-        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim whose due-by falls inside a closed period can be added or changed, none after the person's retirement date, and no reference already used on the sheet.</span>
+        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim whose due-by falls inside a closed period can be added or changed, none after the person's retirement date,, no reference already used on the sheet, and a claim with lines takes its amount from them.</span>
       )}
     </form>
   );

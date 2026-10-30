@@ -147,6 +147,10 @@ public class Claim {
     /** The claim's comments, oldest first (empty unless listed). */
     public java.util.List<ClaimComment> getComments() { return comments; }
     public void setComments(java.util.List<ClaimComment> comments) { this.comments = comments; }
+    private java.util.List<ClaimLine> lines = java.util.List.of();
+    /** The claim's lines, oldest first (empty unless listed). */
+    public java.util.List<ClaimLine> getLines() { return lines; }
+    public void setLines(java.util.List<ClaimLine> lines) { this.lines = lines; }
     /** The status the claim had at the end of the day, as its status log records it (each line dated the sheet's
      *  today when the change was made); null when it was added after that day. */
     public ClaimStatus statusAt(LocalDate end) {

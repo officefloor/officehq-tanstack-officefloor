@@ -96,6 +96,12 @@ public class Claims {
                     rs.getString("by_user"), rs.getDate("comment_date").toLocalDate(), rs.getString("text")));
         }, sheetId);
         claims.forEach(claim -> claim.setComments(comments.getOrDefault(claim.getId(), List.of())));
+        Map<Long, List<ClaimLine>> lines = new HashMap<>();
+        jdbc.query("SELECT claim_id, label, qty, unit FROM claim_line WHERE sheet_id = ? ORDER BY id", rs -> {
+            lines.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>()).add(new ClaimLine(
+                    rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit")));
+        }, sheetId);
+        claims.forEach(claim -> claim.setLines(lines.getOrDefault(claim.getId(), List.of())));
         return claims;
     }
 
@@ -241,6 +247,8 @@ public class Claims {
                 + " FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text) SELECT ?, ?, by_user, comment_date, text"
                 + " FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
+                + " FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
         recordTags(toSheet, claim.getTags());
         history(toSheet, id);
         return id;
@@ -275,6 +283,8 @@ public class Claims {
                 + " FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text) SELECT ?, ?, by_user, comment_date, text"
                 + " FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
+                + " FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
         return id;
     }
 
@@ -306,8 +316,9 @@ public class Claims {
         history(sheetId, id);
     }
 
-    /** Removes the claim, its log and its comments from its sheet (its history is kept for the as-of view). */
+    /** Removes the claim, its log, its comments and its lines from its sheet (its history is kept for the as-of view). */
     public void remove(Claim claim) {
+        jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
@@ -317,6 +328,19 @@ public class Claims {
     public void comment(Claim claim, String user, String text) {
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text)"
                 + " SELECT s.id, ?, ?, s.today, ? FROM sheet s WHERE s.id = ?", claim.getId(), user, text, claim.getSheetId());
+    }
+
+    /** The claim's lines, oldest first. */
+    public List<ClaimLine> lines(Claim claim) {
+        return jdbc.query("SELECT label, qty, unit FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                (rs, n) -> new ClaimLine(rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit")),
+                claim.getSheetId(), claim.getId());
+    }
+
+    /** Keeps a line on the claim, after its others. */
+    public void addLine(Claim claim, ClaimLine line) {
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) VALUES (?, ?, ?, ?, ?)",
+                claim.getSheetId(), claim.getId(), line.label(), line.qty(), line.unit());
     }
 
     /** Records the claim's reminded date. */

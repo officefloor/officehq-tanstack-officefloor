@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import java.util.List;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
@@ -28,6 +29,10 @@ public class ApplyClaim {
         }
         ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claims);
         ValidateClaim.checkRef(request.ref(), claim.getSheetId(), claim.getId(), claims);
+        List<ClaimLine> lines = claims.lines(claim);
+        if (!lines.isEmpty() && request.amount().compareTo(ClaimLine.sum(lines)) != 0) {
+            throw new InvalidClaimException("A claim with lines takes its amount from its lines");
+        }
         claim.setAmount(request.amount());
         claim.setRef(request.ref());
         claim.setTags(request.tags());

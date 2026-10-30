@@ -49,6 +49,8 @@ export type Claim = {
   voidReason?: string;
   /** The claim's comments, oldest first: "<user> on <date>: <text>" each, the date the sheet's today when it was written. */
   comments?: string[];
+  /** The claim's lines, oldest first: "<label> <qty> x <unit>" each; with lines, its amount is their amounts added up. */
+  lines?: string[];
   /** The number of the bulk settle batch that settled the claim, "" when it was settled one at a time or never. */
   batch?: string;
 };

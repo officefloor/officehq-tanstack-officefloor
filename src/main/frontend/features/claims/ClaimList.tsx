@@ -48,6 +48,10 @@ import { peopleKey, type Person } from '../people/usePeople';
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 // A claim is commented with the comment text and button (an empty comment is refused with the claim's error); its comments
 // are shown oldest first, each as "<user> on <date>: <text>", the date being the sheet's today when it was written.
+// A DRAFT claim takes lines with the line label, quantity and unit amount and the add-line button; its amount is then the
+// quantities times the unit amounts added up, and its lines are shown oldest first as "<label> <qty> x <unit>". Adding a line
+// counts as editing the claim: a claim that is not a DRAFT, in a closed period or locked by another user is refused with
+// the claim's error, as is a blank label, a quantity that is not a whole number of at least 1, or a unit with more than two decimals.
 // A DRAFT claim is deleted with the delete button (any other status, or a claim whose due-by is inside a closed period, is
 // refused with the claim's error): it is DELETED, counts nowhere and cannot be edited, opened or voided. On the same
 // sheet-today it was deleted the restore button makes it a DRAFT again; on a later day that is refused with the claim's error.
@@ -211,6 +215,27 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineQty, setLineQty] = useState('');
+  const [lineUnit, setLineUnit] = useState('');
+
+  const line = useMutation({
+    mutationFn: (l: { label: string; qty: string; unit: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/line`,
+        { ...l, user },
+      ),
+    onSuccess: () => {
+      setLineLabel('');
+      setLineQty('');
+      setLineUnit('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   const lock = useMutation({
     mutationFn: () =>
       postJson<Claim>(
@@ -264,6 +289,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     proof.reset();
     split.reset();
     comment.reset();
+    line.reset();
     lock.reset();
     inline.reset();
     setEditRefused(false);
@@ -337,6 +363,40 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       />{' '}
       <button type="button" data-testid="claim-comment-add" onClick={() => act(() => comment.mutate(commentText))}>
         Comment
+      </button>{' '}
+      <ol data-testid="claim-lines">
+        {(c.lines ?? []).map((l, i) => (
+          <li key={i} data-testid="claim-lines-line">
+            {l}
+          </li>
+        ))}
+      </ol>{' '}
+      <input
+        data-testid="claim-line-label"
+        value={lineLabel}
+        placeholder="Line label"
+        onChange={(e) => act(() => setLineLabel(e.target.value))}
+      />{' '}
+      <input
+        data-testid="claim-line-qty"
+        value={lineQty}
+        placeholder="Qty"
+        inputMode="numeric"
+        onChange={(e) => act(() => setLineQty(e.target.value))}
+      />{' '}
+      <input
+        data-testid="claim-line-unit"
+        value={lineUnit}
+        placeholder="Unit amount"
+        inputMode="decimal"
+        onChange={(e) => act(() => setLineUnit(e.target.value))}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-line-add"
+        onClick={() => act(() => line.mutate({ label: lineLabel, qty: lineQty, unit: lineUnit }))}
+      >
+        Add line
       </button>{' '}
       <button type="button" data-testid="claim-proof" onClick={() => act(() => proof.mutate())}>
         Add proof
@@ -507,6 +567,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: a comment needs some text, and a viewer cannot comment a claim.
+        </span>
+      )}
+      {line.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a DRAFT claim outside any closed period can take a line, not by a viewer and not while another user's editor has it open; a line needs a label, a whole quantity of at least 1 and a unit amount with at most two decimals.
         </span>
       )}
       {split.isError && (
