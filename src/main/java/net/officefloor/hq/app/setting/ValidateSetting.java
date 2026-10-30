@@ -58,6 +58,9 @@ public class ValidateSetting {
     /** Not dated: reminding a claim whose previous reminder was at least this many days before the sheet's today escalates it; blank: off. */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** Not dated: a REVIEW claim whose review day plus this many days is before the sheet's today is review-late; blank: none. */
+    public static final String REVIEW_SLA = "review-sla";
+
     /** Not dated: each member of a balanced pool shows their cut of it; blank: none. */
     public static final String POT = "pot";
 
@@ -89,7 +92,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
@@ -127,6 +130,17 @@ public class ValidateSetting {
             }
             if (!DAYS.matcher(raw).matches()) {
                 throw new InvalidSettingException("The escalation gap must be a whole number of days, 0 or more, or blank for off");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
+            return;
+        }
+        if (REVIEW_SLA.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
+                return;
+            }
+            if (!DAYS.matcher(raw).matches()) {
+                throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank for none");
             }
             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
             return;

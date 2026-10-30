@@ -70,7 +70,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -354,7 +354,7 @@ export function PeopleList() {
           </li>
         ))}
       </ul>
-      <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} voidReasonCount={voidReasonCount} />
+      <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} reviewLateCount={reviewLateCount} voidReasonCount={voidReasonCount} />
       </PersonSelection>
     </ClaimSelection>
   );

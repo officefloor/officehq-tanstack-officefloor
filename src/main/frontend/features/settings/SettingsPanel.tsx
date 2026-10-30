@@ -88,6 +88,9 @@ export function SettingsPanel() {
   // The escalation gap in days (not dated); likewise may be saved blank (off).
   const [escalateAfter, setEscalateAfter] = useState('');
   const escalateChosen = useRef(false);
+  // The review SLA in days (not dated); likewise may be saved blank (none).
+  const [reviewSla, setReviewSla] = useState('');
+  const reviewSlaChosen = useRef(false);
   // The entry date (not dated); likewise may be saved blank (off).
   const [entryDate, setEntryDate] = useState('');
   const entryChosen = useRef(false);
@@ -136,6 +139,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     graceChosen.current = true;
   };
   // Entering the escalation gap marks it as the one to save, as it is.
@@ -148,7 +152,21 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     escalateChosen.current = true;
+  };
+  // Entering the review SLA marks it as the one to save, as it is.
+  const focusReviewSla = () => {
+    if (entryDate.trim() === '') entryChosen.current = false;
+    unchoosePerms();
+    if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (cap.trim() === '') capChosen.current = false;
+    if (proofThreshold.trim() === '') proofChosen.current = false;
+    if (noteThreshold.trim() === '') noteChosen.current = false;
+    if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
+    reviewSlaChosen.current = true;
   };
   // Entering the entry date marks it as the one to save, as it is.
   const focusEntry = () => {
@@ -160,6 +178,7 @@ export function SettingsPanel() {
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     entryChosen.current = true;
   };
   // Entering the review threshold (or its from-date) marks it as the one to save, as it is.
@@ -208,6 +227,7 @@ export function SettingsPanel() {
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     unchoosePerms(action);
     permsChosen.current.add(action);
@@ -222,6 +242,7 @@ export function SettingsPanel() {
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
   };
   // Each dated setting's from-date, by key, as typed.
@@ -248,6 +269,7 @@ export function SettingsPanel() {
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     capChosen.current = true;
   };
@@ -259,6 +281,7 @@ export function SettingsPanel() {
     if (cap.trim() === '') capChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     proofChosen.current = true;
@@ -272,6 +295,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
     if (escalateAfter.trim() === '') escalateChosen.current = false;
+    if (reviewSla.trim() === '') reviewSlaChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     noteChosen.current = true;
   };
@@ -319,6 +343,10 @@ export function SettingsPanel() {
       else if (body.key === 'escalate-after') {
         setEscalateAfter('');
         escalateChosen.current = false;
+      }
+      else if (body.key === 'review-sla') {
+        setReviewSla('');
+        reviewSlaChosen.current = false;
       }
       else if (body.key === 'pot') {
         setPot('');
@@ -402,6 +430,7 @@ export function SettingsPanel() {
             const reviewed = reviewThreshold.trim() !== '' || reviewChosen.current;
             const graced = graceDays.trim() !== '' || graceChosen.current;
             const escalated = escalateAfter.trim() !== '' || escalateChosen.current;
+            const slaed = reviewSla.trim() !== '' || reviewSlaChosen.current;
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const potted = pot.trim() !== '' || potChosen.current;
             const alerted = alertThreshold.trim() !== '' || alertChosen.current;
@@ -411,7 +440,7 @@ export function SettingsPanel() {
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || rounded || reviewed || graced || escalated || entered || potted || alerted || parented || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -430,6 +459,7 @@ export function SettingsPanel() {
                 ...(reviewed ? [{ key: 'review-threshold', value: reviewThreshold.trim() }] : []),
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
                 ...(escalated ? [{ key: 'escalate-after', value: escalateAfter.trim() }] : []),
+                ...(slaed ? [{ key: 'review-sla', value: reviewSla.trim() }] : []),
                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
                 ...(potted ? [{ key: 'pot', value: pot.trim() }] : []),
                 ...(alerted ? [{ key: 'alert-threshold', value: alertThreshold.trim() }] : []),
@@ -553,6 +583,7 @@ export function SettingsPanel() {
             if (noteThreshold.trim() === '') noteChosen.current = false;
             if (graceDays.trim() === '') graceChosen.current = false;
             if (escalateAfter.trim() === '') escalateChosen.current = false;
+            if (reviewSla.trim() === '') reviewSlaChosen.current = false;
             if (entryDate.trim() === '') entryChosen.current = false;
             policyChosen.current = true;
           }}
@@ -575,6 +606,7 @@ export function SettingsPanel() {
             if (noteThreshold.trim() === '') noteChosen.current = false;
             if (graceDays.trim() === '') graceChosen.current = false;
             if (escalateAfter.trim() === '') escalateChosen.current = false;
+            if (reviewSla.trim() === '') reviewSlaChosen.current = false;
             if (entryDate.trim() === '') entryChosen.current = false;
             numberingChosen.current = true;
           }}
@@ -688,6 +720,18 @@ export function SettingsPanel() {
           onChange={(e) => {
             setEscalateAfter(e.target.value);
             escalateChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Review SLA (days): <span data-testid="setting-review-sla-current">{settings?.reviewSla ?? ''}</span>{' '}
+        <input
+          data-testid="setting-review-sla"
+          value={reviewSla}
+          placeholder="Review SLA days (blank: none)"
+          onFocus={focusReviewSla}
+          onChange={(e) => {
+            setReviewSla(e.target.value);
+            reviewSlaChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}

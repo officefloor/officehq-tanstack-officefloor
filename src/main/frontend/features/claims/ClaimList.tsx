@@ -12,6 +12,7 @@ import { dueBy, isOverdue } from './overdue';
 import { useGrace } from './useGrace';
 import { ClaimSelect } from './BulkOpen';
 import { ClaimTimeline } from './ClaimTimeline';
+import { isReviewLate } from './reviewLate';
 import { peopleKey, type Person } from '../people/usePeople';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
@@ -331,6 +332,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today, grace }, policy))}</span>{' '}
       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+      <span data-testid="claim-review-late">{isReviewLate(c, today, settings?.reviewSla) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-overdue">{isOverdue(c, today, grace) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}

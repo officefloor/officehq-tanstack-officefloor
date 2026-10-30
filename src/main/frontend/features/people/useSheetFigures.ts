@@ -1,9 +1,10 @@
 import { countsLive, hasTag, isOpen, useClaims, useTags } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
+import { isReviewLate } from '../claims/reviewLate';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
 import { claimRate, rateOn, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
 
@@ -22,6 +23,7 @@ export function useSheetFigures(sheet: string) {
   const late = { pct: useLatePct(sheet), today, grace };
   const policy = usePolicy(sheet);
   const cap = useCap(sheet);
+  const reviewSla = useSettings(sheet)?.reviewSla;
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
@@ -111,8 +113,10 @@ export function useSheetFigures(sheet: string) {
     ),
   }));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
+  // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
+  const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
