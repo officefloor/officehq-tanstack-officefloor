@@ -18,7 +18,7 @@ public class SaveClaimCreated {
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         String sheetId = person.getSheetId();
         LocalDate date = request.date() != null ? request.date() : settings.claimDate(sheetId);
-        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));
+        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person));
         if (periods.isClosed(sheetId, dueBy)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }

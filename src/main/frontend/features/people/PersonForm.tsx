@@ -15,7 +15,7 @@ import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople'
 // blank), except that leaving the grade as the row showed it with a blank from-date records nothing.
 // A person's first grade applies from the beginning of time, so an add takes no from-date.
 // A person's own terms (whole days, blank for none) come first in fixing a new claim's due-by: those
-// in force on the claim's date. Terms with a from-date are recorded from it, keeping those already
+// in force on the day the claim is created (the sheet's today). Terms with a from-date are recorded from it, keeping those already
 // recorded; with a blank from-date they are the terms from the beginning of time, which the editor
 // opens with (the row shows those in force on the sheet's today).
 // A contact (blank for none) is stored trimmed and lower-cased; one another person on the sheet

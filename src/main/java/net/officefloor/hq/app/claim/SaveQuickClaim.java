@@ -31,8 +31,8 @@ public class SaveQuickClaim {
         Person person = people.findByName(sheetId, request.name());
         // Refuse before anything is written: the claim's period goes by the due-by it would be fixed with.
         LocalDate dueBy = holidays.dueBy(sheetId, date, person != null
-                ? settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)
-                : settings.termsFor(sheetId, GRADE, date));
+                ? settings.termsOnCreation(sheetId, person)
+                : settings.termsFor(sheetId, GRADE, sheets.today(sheetId)));
         if (periods.isClosed(sheetId, dueBy)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }

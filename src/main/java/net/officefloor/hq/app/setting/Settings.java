@@ -151,6 +151,13 @@ public class Settings {
         return personTerms != null ? personTerms : termsFor(sheetId, grade, on);
     }
 
+    /** The terms a claim of the person created now takes: the terms in force on the day it is created (the sheet's
+     *  today), not on its date — the person's own terms then, else the terms of the grade they had then, else the sheet's then. */
+    public int termsOnCreation(String sheetId, net.officefloor.hq.app.person.Person person) {
+        LocalDate today = sheets.today(sheetId);
+        return termsFor(sheetId, person.termsOn(today), person.gradeOn(today), today);
+    }
+
     /** A grade's grace days in force on a date (a claim's: its date); 0 when it has none then. */
     public int grace(String sheetId, String grade, LocalDate on) {
         if (grade == null) {

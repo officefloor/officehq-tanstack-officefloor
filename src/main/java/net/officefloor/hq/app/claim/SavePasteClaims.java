@@ -48,7 +48,7 @@ public class SavePasteClaims {
                 throw new InvalidClaimException("Claim " + number + ": only a steward can open a claim of a flagged person");
             }
             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
-            LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));
+            LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person));
             if (periods.isClosed(sheetId, dueBy)) {
                 throw new InvalidClaimException("Claim " + number + ": no claim can be added inside a closed period");
             }
@@ -76,7 +76,7 @@ public class SavePasteClaims {
             Claim claim = matched.get(i);
             if (claim == null) {
                 claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(), null,
-                        holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date)), valid.ref());
+                        holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person)), valid.ref());
                 log.record(claim, person, request.user());
                 audit.recordOnCommit(ClaimAudit.added(request.user(), person, claim));
                 LateEntry.mark(claim, person, request.user(), claims, periods, audit);
