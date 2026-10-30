@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 
 public class SaveClaimCreated {
     public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets, Audit audit, @Val RollupFigures before, Rollup rollup, Periods periods,
+            net.officefloor.hq.app.setting.Settings settings,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         String sheetId = person.getSheetId();
         LocalDate date = request.date() != null ? request.date() : sheets.today(sheetId);
@@ -24,7 +25,8 @@ public class SaveClaimCreated {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
         }
         ValidateClaim.checkCorrects(request, sheetId, person.getId(), claims);
-        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects());
+        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects(),
+                date.plusDays(settings.termsFor(sheetId, person.gradeOn(date))));
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), before);
         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));

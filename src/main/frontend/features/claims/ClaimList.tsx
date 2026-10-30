@@ -5,14 +5,14 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, type Claim } from './useClaims';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 import { ClaimSelect } from './BulkOpen';
 import { peopleKey, type Person } from '../people/usePeople';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
-// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies; an overdue claim gains the sheet's late percent of that figure for every full 30 days overdue), due-by (its date plus the sheet's terms), overdue (yes when it is OPEN or PENDING and its due-by is before the sheet's today), the status buttons (open, settle, void —
+// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies; an overdue claim gains the sheet's late percent of that figure for every full 30 days overdue), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's), overdue (yes when it is OPEN or PENDING and its due-by is before the sheet's today), the status buttons (open, settle, void —
 // one the claim's status does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
 // claim to PENDING, which shows its live due unbound by any statement), approve and reject with a reason (a steward's decision
 // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener cannot approve it) and an edit button that
@@ -45,7 +45,6 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const queryClient = useQueryClient();
   const period = periodOf(usePeriods(sheet), c.date);
   const floor = useFloor(sheet);
-  const terms = useTerms(sheet);
   const today = useSheetToday(sheet);
   const latePct = useLatePct(sheet);
   const policy = usePolicyDate(sheet);
@@ -104,9 +103,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
-      <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, terms, today }, policy))}</span>{' '}
-      <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
-      <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today }, policy))}</span>{' '}
+      <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

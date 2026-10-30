@@ -25,6 +25,8 @@ public class Claims {
         claim.setCorrects(rs.getString("corrects"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
+        java.sql.Date dueBy = rs.getDate("due_by");
+        claim.setDueBy(dueBy == null ? null : dueBy.toLocalDate());
         return claim;
     };
 
@@ -56,15 +58,17 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
-        return add(sheetId, personId, amount, date, note, null);
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, LocalDate dueBy) {
+        return add(sheetId, personId, amount, date, note, null, dueBy);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+    /** Adds a DRAFT claim with its due-by fixed as given. */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed_seq) VALUES (?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
@@ -73,10 +77,12 @@ public class Claims {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setString(6, corrects);
+            ps.setDate(7, Date.valueOf(dueBy));
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
         claim.setCorrects(corrects);
+        claim.setDueBy(dueBy);
         claim.setCorrectedDate(correctedDate(sheetId, personId, corrects));
         return claim;
     }

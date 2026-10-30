@@ -53,7 +53,6 @@ public class Rollup {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
         BigDecimal latePct = settings.latePct(sheetId);
-        int terms = settings.terms(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
@@ -75,7 +74,7 @@ public class Rollup {
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 if (figure != null) {
                     anyFigure = true;
-                    due = due.add(LateCharge.withCharge(claim, figure, latePct, terms, today, rounding));
+                    due = due.add(LateCharge.withCharge(claim, figure, latePct, today, rounding));
                 }
             }
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).

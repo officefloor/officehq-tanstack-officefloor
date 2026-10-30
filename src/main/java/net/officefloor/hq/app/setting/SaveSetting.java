@@ -29,6 +29,9 @@ public class SaveSetting {
             settings.setLatePct(sheetId, setting.value());
         } else if (ValidateSetting.TERMS.equals(setting.key())) {
             settings.setTerms(sheetId, setting.value().intValueExact());
+        } else if (setting.key().startsWith(ValidateSetting.GRADE_TERMS)) {
+            settings.setGradeTerms(sheetId, setting.key().substring(ValidateSetting.GRADE_TERMS.length()),
+                    setting.value().intValueExact());
         } else {
             settings.setClerkLimit(sheetId, setting.value());
         }

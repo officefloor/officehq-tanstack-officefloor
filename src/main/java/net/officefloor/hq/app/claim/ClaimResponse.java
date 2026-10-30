@@ -6,10 +6,11 @@ import java.util.List;
  *  due is the due fixed when the claim was settled, else (unless PENDING) the figure its person's last statement bound
  *  it to, "" while it is live (or bound to n/a); openedBy is "" when never opened; stated is whether
  *  the last statement bound it; corrects is the number a correction corrects, "" for any other claim;
- *  roundingDate is the date its rounding goes by (a correction's: the date of the claim it corrects). */
+ *  roundingDate is the date its rounding goes by (a correction's: the date of the claim it corrects);
+ *  dueBy is the due-by fixed when the claim was created. */
 public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String corrects,
-        String roundingDate) {
+        String roundingDate, String dueBy) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
@@ -18,7 +19,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 fixedDue(claim) == null ? "" : fixedDue(claim).setScale(2).toPlainString(),
                 claim.getOpenedBy() == null ? "" : claim.getOpenedBy(), claim.isStated(),
                 claim.getCorrects() == null ? "" : claim.getCorrects(),
-                claim.getRoundingDate().toString());
+                claim.getRoundingDate().toString(), claim.getDueBy().toString());
     }
 
     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */

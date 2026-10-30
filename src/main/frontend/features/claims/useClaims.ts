@@ -24,6 +24,8 @@ export type Claim = {
   corrects: string;
   /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects. */
   roundingDate: string;
+  /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on that date. */
+  dueBy: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

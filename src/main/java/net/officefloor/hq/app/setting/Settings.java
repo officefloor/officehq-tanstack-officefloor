@@ -53,6 +53,24 @@ public class Settings {
         return jdbc.queryForObject("SELECT terms_days FROM sheet WHERE id = ?", Integer.class, sheetId);
     }
 
+    /** A grade's own terms in days; null when it has none (it uses the sheet's terms). */
+    public Integer gradeTerms(String sheetId, String grade) {
+        List<Integer> found = jdbc.query("SELECT terms_days FROM sheet_grade_terms WHERE sheet_id = ? AND grade = ?",
+                (rs, i) -> rs.getInt(1), sheetId, grade);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setGradeTerms(String sheetId, String grade, int days) {
+        jdbc.update("MERGE INTO sheet_grade_terms (sheet_id, grade, terms_days) KEY (sheet_id, grade) VALUES (?, ?, ?)",
+                sheetId, grade, days);
+    }
+
+    /** The terms a claim of a person of this grade takes: the grade's own, else the sheet's. */
+    public int termsFor(String sheetId, String grade) {
+        Integer own = grade == null ? null : gradeTerms(sheetId, grade);
+        return own != null ? own : terms(sheetId);
+    }
+
     public void setTerms(String sheetId, int days) {
         sheets.today(sheetId);
         jdbc.update("UPDATE sheet SET terms_days = ? WHERE id = ?", days, sheetId);
@@ -112,7 +130,7 @@ public class Settings {
                 sheetId, user, role);
     }
 
-    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent, the policy date ("" for blank), the period numbering from ("" for off) and every role set, by user name. */
+    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent, the policy date ("" for blank), the period numbering from ("" for off), every role set, by user name, and each grade's own terms. */
     public SettingsResponse load(String sheetId) {
         BigDecimal limit = clerkLimit(sheetId);
         LocalDate policy = policyDateSet(sheetId);
@@ -120,9 +138,12 @@ public class Settings {
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
+        java.util.Map<String, String> gradeTerms = new java.util.TreeMap<>();
+        jdbc.query("SELECT grade, terms_days FROM sheet_grade_terms WHERE sheet_id = ?",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> gradeTerms.put(rs.getString(1).trim(), String.valueOf(rs.getInt(2))), sheetId);
         return new SettingsResponse(limit == null ? "" : limit.setScale(2).toPlainString(),
                 floor(sheetId).setScale(2).toPlainString(), String.valueOf(terms(sheetId)),
                 latePct(sheetId).setScale(2).toPlainString(), policy == null ? "" : policy.toString(),
-                numbering == null ? "" : numbering.toString(), roles);
+                numbering == null ? "" : numbering.toString(), roles, gradeTerms);
     }
 }

@@ -46,7 +46,7 @@ public class ApplyClaimStatus {
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
                     settings.floor(claim.getSheetId()), rounding);
             BigDecimal due = LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
-                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId()), rounding);
+                    sheets.today(claim.getSheetId()), rounding);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 // Above the clerk limit the claim awaits a steward's approval.
                 target = ClaimStatus.PENDING;
@@ -67,7 +67,7 @@ public class ApplyClaimStatus {
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
                     settings.floor(claim.getSheetId()), rounding);
             claim.setSettledDue(LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
-                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId()), rounding));
+                    sheets.today(claim.getSheetId()), rounding));
         }
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
         claim.setStatus(target);

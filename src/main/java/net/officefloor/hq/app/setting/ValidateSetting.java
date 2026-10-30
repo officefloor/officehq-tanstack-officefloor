@@ -15,6 +15,11 @@ public class ValidateSetting {
 
     public static final String TERMS = "terms";
 
+    /** A grade's own terms: terms-<grade>. */
+    public static final String GRADE_TERMS = "terms-";
+
+    private static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
+
     public static final String LATE_PCT = "late-pct";
 
     public static final String POLICY_DATE = "policy-date";
@@ -33,7 +38,8 @@ public class ValidateSetting {
     public void validate(@RequestBody SettingRequest request, Out<ValidSetting> body) throws InvalidSettingException {
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)) {
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
@@ -61,7 +67,7 @@ public class ValidateSetting {
             }
             return;
         }
-        if (TERMS.equals(key)) {
+        if (TERMS.equals(key) || key.startsWith(GRADE_TERMS)) {
             if (!DAYS.matcher(raw).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");
             }

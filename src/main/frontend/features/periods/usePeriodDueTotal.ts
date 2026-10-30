@@ -2,7 +2,7 @@ import { countsLive, useClaims } from '../claims/useClaims';
 import { gradeOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { periodOf, usePeriods, type Period } from './usePeriods';
 
@@ -15,7 +15,7 @@ export function usePeriodDueTotal(sheet: string): (period: Period) => bigint {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const floor = useFloor(sheet);
-  const late = { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
+  const late = { pct: useLatePct(sheet), today: useSheetToday(sheet) };
   const policy = usePolicyDate(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
   const heldOf = new Map(people.map((p) => [p.id, p.held]));

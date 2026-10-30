@@ -31,7 +31,6 @@ public class TakeStatement {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
         BigDecimal latePct = settings.latePct(sheetId);
-        int terms = settings.terms(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
         List<Claim> own = claims.ofPerson(sheetId, person.getId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -50,7 +49,7 @@ public class TakeStatement {
                 anyFigure |= fixed != null;
                 if (figure != null) {
                     anyFigure = true;
-                    total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today, rounding));
+                    total = total.add(LateCharge.withCharge(claim, figure, latePct, today, rounding));
                 }
                 claim.setStated(true);
                 claim.setStatedDue(figure);

@@ -20,6 +20,7 @@ public class Claim {
     private BigDecimal statedDue;
     private String corrects;
     private LocalDate correctedDate;
+    private LocalDate dueBy;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
@@ -71,6 +72,9 @@ public class Claim {
     public void setCorrectedDate(LocalDate correctedDate) { this.correctedDate = correctedDate; }
     /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects, any other claim's its own. */
     public LocalDate getRoundingDate() { return correctedDate != null ? correctedDate : date; }
+    /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on that date. */
+    public LocalDate getDueBy() { return dueBy; }
+    public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     /** A correction is a claim with a negative amount: its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

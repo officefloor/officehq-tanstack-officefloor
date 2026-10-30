@@ -1,4 +1,3 @@
-import { addDays } from '../claims/overdue';
 import { isOpen } from '../claims/useClaims';
 
 // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
@@ -48,8 +47,8 @@ export function floored(due: bigint | null, floor: string): bigint | null {
   return due < min ? min : due;
 }
 
-/** What a late charge needs: the sheet's late percent ("10.00"), its terms in days and its today. */
-export type Late = { pct: string; terms: number; today: string | undefined };
+/** What a late charge needs: the sheet's late percent ("10.00") and its today. */
+export type Late = { pct: string; today: string | undefined };
 
 const DAY_MS = 86_400_000;
 
@@ -61,13 +60,12 @@ export const roundsHalfUp = (claim: { roundingDate?: string; date: string }, pol
 /** A claim with a negative amount is a correction: its due has no floor and no late charge. */
 export const isCorrection = (claim: { amount?: string }) => claim.amount !== undefined && toCents(claim.amount) < 0n;
 
-/** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (its date plus the terms) is
+/** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
  *  before today gains the late percent of its figure for every full 30 days it is overdue, rounded
  *  like due. Never bound by a statement; settling freezes it into the settled due. */
-export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
-  if (late === undefined || late.today === undefined || !isOpen(claim) || isCorrection(claim)) return 0n;
-  const dueBy = addDays(claim.date, late.terms);
-  const days = Math.round((Date.parse(late.today) - Date.parse(dueBy)) / DAY_MS);
+export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
+  if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isCorrection(claim)) return 0n;
+  const days = Math.round((Date.parse(late.today) - Date.parse(claim.dueBy)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
   return dueCents(figure * BigInt(periods), late.pct, roundsHalfUp(claim, policy)) ?? 0n;
 }
@@ -77,7 +75,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
  *  late charge is added on top. A correction is never floored and gains no late charge. Live figures
  *  round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
-  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string },
+  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string },
   rate: string | undefined,
   floor: string,
   late?: Late,
@@ -93,7 +91,7 @@ export function claimDue(
  *  in force on its date); then it is the sum of the figures there are. A claim whose figure is n/a
  *  adds nothing. */
 export function dueTotal(
-  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string }[],
+  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string }[],
   rateOn: (date: string) => string | undefined,
   rateToday: string | undefined,
   floor: string,

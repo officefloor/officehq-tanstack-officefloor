@@ -37,7 +37,6 @@ public class ClosePeriod {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         BigDecimal floor = settings.floor(sheetId);
         BigDecimal latePct = settings.latePct(sheetId);
-        int terms = settings.terms(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
@@ -52,7 +51,7 @@ public class ClosePeriod {
                 BigDecimal figure = fixed != null || claim.isBound() ? fixed
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 if (figure != null) {
-                    total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today, rounding));
+                    total = total.add(LateCharge.withCharge(claim, figure, latePct, today, rounding));
                 }
             }
         }

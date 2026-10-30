@@ -3,12 +3,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { GRADES } from '../people/usePeople';
 import { settingsKey, useSettings, type Settings } from './useSettings';
 
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
 // a blank floor field leaves it as it is and saves the clerk limit), the terms (whole days; a claim's
-// due-by is its date plus them; saved when its field is filled, together with any other field filled), the late percent
+// due-by is its date plus them, fixed when the claim is created; saved when its field is filled, together with any other field filled),
+// each grade's own terms (whole days; a new claim whose person's grade on its date has them uses them instead; saved like the terms; none: the sheet's terms), the late percent
 // (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms), the policy date (a claim dated
 // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
 // filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
@@ -23,6 +25,8 @@ export function SettingsPanel() {
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  // Each grade's own terms, by grade, as typed.
+  const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
@@ -43,6 +47,7 @@ export function SettingsPanel() {
     onSuccess: (saved, body) => {
       if (body.key === 'floor') setFloor('');
       else if (body.key === 'terms') setTerms('');
+      else if (body.key.startsWith('terms-')) setGradeTerms((t) => ({ ...t, [body.key.slice('terms-'.length)]: '' }));
       else if (body.key === 'late-pct') setLatePct('');
       else if (body.key === 'policy-date') {
         setPolicyDate('');
@@ -75,11 +80,13 @@ export function SettingsPanel() {
             saveSetting.reset();
             const policy = policyDate.trim() !== '' || policyChosen.current;
             const numbering = numberingFrom.trim() !== '' || numberingChosen.current;
-            if (terms.trim() !== '' || latePct.trim() !== '' || policy || numbering) {
+            const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
+                ...ownTerms.map((g) => ({ key: `terms-${g}`, value: gradeTerms[g].trim() })),
                 ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
                 ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
@@ -127,6 +134,22 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        {GRADES.map((g) => (
+          <span key={g}>
+            Terms for grade {g} (days): <span data-testid={`setting-terms-${g}-current`}>{settings?.gradeTerms?.[g] ?? ''}</span>{' '}
+            <input
+              data-testid={`setting-terms-${g}`}
+              onFocus={unchoosePolicy}
+              value={gradeTerms[g] ?? ''}
+              placeholder={`Grade ${g} terms in days (blank: unchanged)`}
+              onChange={(e) => {
+                const value = e.target.value;
+                setGradeTerms((t) => ({ ...t, [g]: value }));
+                saveSetting.reset();
+              }}
+            />{' '}
+          </span>
+        ))}
         Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>{' '}
         <input
           data-testid="setting-late-pct"
@@ -169,7 +192,7 @@ export function SettingsPanel() {
           }}
         />{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off.</span>}
       </form>
       <table data-testid="role-list">
         <thead>
