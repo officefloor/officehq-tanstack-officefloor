@@ -28,6 +28,8 @@ export type Person = {
   grades: GradeFrom[];
   /** The person's own terms in days; "" for none. */
   terms: string;
+  /** The person's contact, trimmed and lower-cased; "" for none. */
+  contact: string;
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */

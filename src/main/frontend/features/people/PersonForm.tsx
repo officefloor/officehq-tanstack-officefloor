@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -13,6 +13,8 @@ import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople'
 // blank), except that leaving the grade as the row showed it with a blank from-date records nothing.
 // A person's first grade applies from the beginning of time, so an add takes no from-date.
 // A person's own terms (whole days, blank for none) come first in fixing a new claim's due-by.
+// A contact (blank for none) is stored trimmed and lower-cased; one another person on the sheet
+// already has is refused.
 // Terms that are not a whole number are refused here, before anything is sent: the error shows and
 // the editor (if one was open) closes, so the form is back to adding.
 export function PersonForm() {
@@ -23,10 +25,14 @@ export function PersonForm() {
   const edited = people.find((p) => p.id === editParam);
   // A person not on this sheet (an id left from another sheet) has no editor open.
   const editing = edited?.id ?? '';
+  // The editor open now, read when a save answers: another opened meanwhile is left as it is.
+  const editingNow = useRef(editing);
+  editingNow.current = editing;
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
+  const [contact, setContact] = useState('');
   const [termsRefused, setTermsRefused] = useState(false);
   const today = useSheetToday(sheet);
   const [version, setVersion] = useState<number | undefined>(undefined);
@@ -34,17 +40,19 @@ export function PersonForm() {
   const submitOnce = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string }) =>
+    mutationFn: ({ editing, ...body }: { editing: string; name: string; grade: string; gradeFrom: string; terms: string; contact: string }) =>
       editing !== ''
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(editing)}`, { ...body, user, version })
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people`, { ...body, user }),
-    onSuccess: () => {
+    onSuccess: (_saved, { editing }) => {
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      if (editing !== editingNow.current) return;
       setName('');
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setContact('');
       if (editing !== '') setEditing(undefined);
-      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
     onError: async (error) => {
       if (!(error instanceof HttpError) || error.status !== 409 || editing === '') return;
@@ -59,6 +67,7 @@ export function PersonForm() {
         setName(current.name);
         setGrade(gradeOn(current, today));
         setTerms(current.terms);
+        setContact(current.contact);
         setVersion(current.version);
       }
     },
@@ -79,6 +88,7 @@ export function PersonForm() {
       setGrade(gradeOn(edited, today));
       setGradeFrom('');
       setTerms(edited.terms);
+      setContact(edited.contact);
       setVersion(edited.version);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,12 +108,13 @@ export function PersonForm() {
             setGrade('A');
             setGradeFrom('');
             setTerms('');
+            setContact('');
           }
           return;
         }
         submitOnce(() => {
           clearError();
-          return save.mutateAsync({ name, grade, gradeFrom, terms });
+          return save.mutateAsync({ editing, name, grade, gradeFrom, terms, contact });
         });
       }}
     >
@@ -148,6 +159,15 @@ export function PersonForm() {
           clearError();
         }}
       />{' '}
+      <input
+        data-testid="person-form-contact"
+        value={contact}
+        placeholder="Contact"
+        onChange={(e) => {
+          setContact(e.target.value);
+          clearError();
+        }}
+      />{' '}
       <button type="submit" data-testid="person-form-submit">{editing !== '' ? 'Save' : 'Add person'}</button>
       {editing !== '' && (
         <button
@@ -158,7 +178,8 @@ export function PersonForm() {
             setName('');
             setGrade('A');
             setGradeFrom('');
-      setTerms('');
+            setTerms('');
+            setContact('');
             clearError();
           }}
         >
@@ -171,7 +192,7 @@ export function PersonForm() {
             ? ' Not saved: terms must be a whole number of days, or blank for none.'
             : save.error instanceof HttpError && save.error.status === 409
             ? ' Not saved: someone else changed this person since you opened it. The form now shows their values.'
-            : ' Could not save: a name is required and must not already be in use, a from-date must be a date, and terms must be a whole number of days.'}
+            : ' Could not save: a name is required and must not already be in use, a contact must not already be in use, a from-date must be a date, and terms must be a whole number of days.'}
         </span>
       )}
     </form>

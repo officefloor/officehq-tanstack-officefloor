@@ -91,15 +91,17 @@ public class AsOfView {
             Person then = new Person(now.getId(), sheetId, now.getName(), now.getGrades().get(now.getGrades().firstKey()),
                     now.getVersion());
             then.setTerms(now.getTerms());
+            then.setContact(now.getContact());
             byId.put(now.getId(), then);
         }
-        jdbc.query("SELECT person_id, name, terms FROM person_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+        jdbc.query("SELECT person_id, name, terms, contact FROM person_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> {
                     Person then = byId.get(rs.getLong(1));
                     if (then == null) return;
                     then.setName(rs.getString(2));
                     int terms = rs.getInt(3);
                     then.setTerms(rs.wasNull() ? null : terms);
+                    then.setContact(rs.getString(4));
                 }, sheetId, end);
         Map<Long, Map<LocalDate, String>> grades = new HashMap<>();
         jdbc.query("SELECT person_id, from_date, grade FROM grade_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
@@ -175,6 +177,11 @@ public class AsOfView {
             then.setLateEntry(rs.getBoolean("late_entry"));
             int batch = rs.getInt("settle_batch");
             then.setSettleBatch(rs.wasNull() ? null : batch);
+            // A claim's ref and tags are not kept in its history: they show as they are now.
+            then.setRef(current.getRef());
+            then.setTags(current.getTags());
+            // Nor is its void reason: a claim void by then shows the reason it was voided with.
+            if (then.getStatus() == ClaimStatus.VOID) then.setVoidReason(current.getVoidReason());
             latest.put(then.getId(), then);
         }, sheetId, end);
         List<ClaimResponse> shown = new ArrayList<>();

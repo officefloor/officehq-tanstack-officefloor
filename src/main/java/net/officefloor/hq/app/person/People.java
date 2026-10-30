@@ -18,6 +18,7 @@ public class People {
         person.setStatementCount(rs.getInt("statement_count"));
         int terms = rs.getInt("terms");
         person.setTerms(rs.wasNull() ? null : terms);
+        person.setContact(rs.getString("contact"));
         person.setStatedTotal(rs.getBigDecimal("stated_total"));
         java.sql.Date stated = rs.getDate("statement_date");
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
@@ -98,10 +99,10 @@ public class People {
         person.clearRecordedGrade();
     }
 
-    /** Records the person's name and own terms as they now stand in their history, dated the sheet's today. */
+    /** Records the person's name, own terms and contact as they now stand in their history, dated the sheet's today. */
     private void writeHistory(Person person) {
-        jdbc.update("INSERT INTO person_history (sheet_id, person_id, set_on, name, terms) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)",
-                person.getSheetId(), person.getId(), person.getSheetId(), person.getName(), person.getTerms());
+        jdbc.update("INSERT INTO person_history (sheet_id, person_id, set_on, name, terms, contact) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?)",
+                person.getSheetId(), person.getId(), person.getSheetId(), person.getName(), person.getTerms(), person.getContact());
     }
 
     /** The sheet's people in the order they were added. */
@@ -161,26 +162,37 @@ public class People {
         return count != null && count > 0;
     }
 
-    public Person add(String sheetId, String name, String grade) {
-        return add(sheetId, name, grade, null);
+    /** Whether another person on the sheet already has this contact. */
+    public boolean contactTaken(String sheetId, String contact, Long exceptId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ?"
+                        + (exceptId == null ? "" : " AND id <> " + exceptId.longValue()),
+                Integer.class, sheetId, contact);
+        return count != null && count > 0;
     }
 
-    /** Adds a person with their own terms in days (null for none). */
-    public Person add(String sheetId, String name, String grade, Integer terms) {
+    public Person add(String sheetId, String name, String grade) {
+        return add(sheetId, name, grade, null, null);
+    }
+
+    /** Adds a person with their own terms in days (null for none) and contact (null for none). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, added_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on) VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
             ps.setObject(4, terms, java.sql.Types.INTEGER);
-            ps.setString(5, sheetId);
+            ps.setString(5, contact);
+            ps.setString(6, sheetId);
             return ps;
         }, keys);
         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
         person.setTerms(terms);
+        person.setContact(contact);
         writeHistory(person);
         // The first grade a person is given applies from the beginning of time.
         person.recordGrade(Person.BEGINNING, grade);
@@ -250,8 +262,8 @@ public class People {
      *  edit recorded; false (nothing written) when someone else has saved the person since. */
     public boolean save(Person person) {
         int updated = jdbc.update(
-                "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getContact(), person.getSheetId(), person.getId(), person.getVersion());
         if (updated == 0) {
             return false;
         }

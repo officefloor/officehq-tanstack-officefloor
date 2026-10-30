@@ -84,6 +84,18 @@ public class Person {
         this.terms = terms;
     }
     public boolean isTermsChanged() { return termsChanged; }
+    /** The person's contact, trimmed and lower-cased; null when none. */
+    private String contact;
+    /** Whether this edit changed the person's contact from the one loaded. */
+    private boolean contactChanged;
+    public String getContact() { return contact; }
+    public void setContact(String contact) { this.contact = contact; }
+    /** Sets the contact the form gave, noting whether it differs from the one the person had. */
+    public void editContact(String contact) {
+        contactChanged = !java.util.Objects.equals(this.contact, contact);
+        this.contact = contact;
+    }
+    public boolean isContactChanged() { return contactChanged; }
     /** How many statements have been taken for the person. */
     public int getStatementCount() { return statementCount; }
     /** The last statement's due-total; null when none was taken or it was n/a. */

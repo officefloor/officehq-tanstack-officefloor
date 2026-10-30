@@ -37,6 +37,7 @@ public class ValidatePerson {
         if (!terms.isEmpty()) {
             terms = String.valueOf(Integer.parseInt(terms));
         }
-        body.set(new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms));
+        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
+        body.set(new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms, contact));
     }
 }

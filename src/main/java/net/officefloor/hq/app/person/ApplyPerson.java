@@ -12,8 +12,12 @@ public class ApplyPerson {
         if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidPersonException("The name is already in use");
         }
+        if (!request.contact().isEmpty() && people.contactTaken(person.getSheetId(), request.contact(), person.getId())) {
+            throw new InvalidPersonException("The contact is already in use");
+        }
         person.setName(request.name());
         person.editTerms(request.terms().isEmpty() ? null : Integer.valueOf(request.terms()));
+        person.editContact(request.contact().isEmpty() ? null : request.contact());
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the
         // grades already recorded; a save leaving the grade as the row showed it with no from-date
         // records nothing.

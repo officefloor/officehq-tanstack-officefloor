@@ -88,6 +88,7 @@ export function PeopleList() {
             <th>Name</th>
             <th>Grade</th>
             <th>Terms</th>
+            <th>Contact</th>
             <th>Claimed</th>
             <th>Due</th>
             <th>Excess</th>
@@ -127,6 +128,7 @@ export function PeopleList() {
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-terms">{p.terms}</td>
+                <td data-testid="person-contact">{p.contact}</td>
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
                 <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
