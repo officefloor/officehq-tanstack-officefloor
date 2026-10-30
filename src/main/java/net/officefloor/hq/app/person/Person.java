@@ -3,6 +3,8 @@ package net.officefloor.hq.app.person;
 /** A person on a sheet. Mutable so an Apply step can change it in place. */
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 
 public class Person {
 
@@ -15,6 +17,7 @@ public class Person {
     private BigDecimal statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
+    private boolean held;
 
     public Person(long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -44,6 +47,13 @@ public class Person {
     public boolean isRetired() { return retiredFrom != null; }
     /** Whether a claim may be dated on this date: never after the person's retirement date. */
     public boolean allowsClaimOn(LocalDate date) { return retiredFrom == null || !date.isAfter(retiredFrom); }
+    /** Whether the person is on hold: their OPEN claims then count in no live total. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
+    /** Whether the claim counts in the live totals: OPEN or SETTLED, but not OPEN while the person is held. */
+    public boolean countsLive(Claim claim) {
+        return claim.getStatus().counts() && !(held && claim.getStatus() == ClaimStatus.OPEN);
+    }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public void setStatementCount(int statementCount) { this.statementCount = statementCount; }
     public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }

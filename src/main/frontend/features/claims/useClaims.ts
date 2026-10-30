@@ -24,6 +24,9 @@ export type Claim = {
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
+/** Whether a claim counts in the live totals: it counts, and is not OPEN while its person is held. */
+export const countsLive = (c: Claim, held: boolean) => counts(c) && !(held && c.status === 'OPEN');
+
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
 
 /** The sheet's claims, newest first. */

@@ -54,7 +54,7 @@ public class Rollup {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             boolean anyFixed = false;
             for (Claim claim : all) {
-                if (claim.getPersonId() != person.getId() || !claim.getStatus().counts()) {
+                if (claim.getPersonId() != person.getId() || !person.countsLive(claim)) {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());

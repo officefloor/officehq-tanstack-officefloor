@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
  *  someone else's newer one is refused. `statementCount` is how many statements were taken;
  *  `statedTotal` is the last one's due-total ("n/a" possible, "" when none) and `statementDate` the
  *  sheet's today when it was taken ("" when none). `retired` is whether a retirement date is set
- *  (retired at once, whatever the date) and `retiredFrom` is that date ("" when none). */
+ *  (retired at once, whatever the date) and `retiredFrom` is that date ("" when none). `held` is
+ *  whether the person is on hold: their OPEN claims then count in no live total. */
 export type Person = {
   id: string;
   name: string;
@@ -16,6 +17,7 @@ export type Person = {
   statementDate: string;
   retired: boolean;
   retiredFrom: string;
+  held: boolean;
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;

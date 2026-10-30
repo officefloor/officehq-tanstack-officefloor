@@ -21,6 +21,7 @@ public class People {
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
         java.sql.Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired == null ? null : retired.toLocalDate());
+        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -84,6 +85,13 @@ public class People {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
                 person.getRetiredFrom() == null ? null : java.sql.Date.valueOf(person.getRetiredFrom()),
                 person.getSheetId(), person.getId());
+    }
+
+    /** Records whether the person is on hold. The person's version is left as it is — holding is
+     *  not an edit of the person form. */
+    public void saveHeld(Person person) {
+        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?",
+                person.isHeld(), person.getSheetId(), person.getId());
     }
 
     /** Saves the person over the version it was loaded at, moving it on by one; false (nothing
