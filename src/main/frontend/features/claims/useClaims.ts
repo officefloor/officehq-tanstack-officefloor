@@ -109,13 +109,14 @@ export function useClaims(sheet: string): Claim[] {
   return data ?? [];
 }
 
-export const settleBatchKey = (sheet: string) => ['sheet', sheet, 'settle-batch'] as const;
+export const settleBatchKey = (sheet: string, asOf = '') => ['sheet', sheet, 'settle-batch', asOf] as const;
 
 /** The number of the sheet's last bulk settle batch, "" when there has been none. */
 export function useLastSettleBatch(sheet: string): string {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: settleBatchKey(sheet),
-    queryFn: () => getJson<{ last: string }>(`/api/sheets/${encodeURIComponent(sheet)}/settle-batch`),
+    queryKey: settleBatchKey(sheet, asOf),
+    queryFn: () => getJson<{ last: string }>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/settle-batch`, asOf)),
     enabled: sheet !== '',
   });
   return data?.last ?? '';

@@ -11,12 +11,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SaveRate {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidRate rate, Rates rates, Audit audit, @Val RollupFigures before, Rollup rollup,
             ObjectResponse<List<RateResponse>> response) {
-        rates.set(sheetId, rate.grade(), rate.from(), rate.to(), rate.rate());
-        audit.recordOnCommit("RATE_SET sheet=" + sheetId + " by=" + rate.user()
-                + " grade=" + rate.grade() + " rate=" + rate.rate().toPlainString()
-                + (rate.from() == null ? "" : " from=" + rate.from())
-                + (rate.to() == null ? "" : " to=" + rate.to()));
+        SetRate.apply(sheetId, rate, rates, audit);
         rollup.recordChanges(sheetId, rate.user(), before);
         response.send(rates.list(sheetId));
     }
+
 }

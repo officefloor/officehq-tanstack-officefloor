@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { NA } from './due';
+import { ImportRates } from './ImportRates';
 import { RatePreview } from './RatePreview';
 import { rateOn, ratesKey, useRates, type Rate } from './useRates';
 
@@ -123,6 +124,7 @@ export function RatePanel() {
         <button type="submit" data-testid="rate-form-submit">Set rate</button>
         {save.isError && <span data-testid="rate-form-error" role="alert"> Could not set the rate: it must be a percent of 0.00 or more with at most two decimals, from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.</span>}
       </form>
+      <ImportRates />
       <RatePreview />
     </>
   );

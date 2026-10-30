@@ -26,6 +26,12 @@ public class ValidateRate {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<ValidRate> body, Settings settings)
             throws InvalidRateException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
+        body.set(check(request));
+    }
+
+    /** The rate form's rules: a grade A, B or C, a percent, an optional from-date and an optional
+     *  to-date not before it. */
+    static ValidRate check(RateRequest request) throws InvalidRateException {
         String grade = request.grade() == null ? "" : request.grade().trim();
         if (!GRADES.contains(grade)) {
             throw new InvalidRateException("Grade must be A, B or C");
@@ -55,6 +61,6 @@ public class ValidateRate {
                 throw new InvalidRateException("The to-date must not be before the from-date");
             }
         }
-        body.set(new ValidRate(grade, new BigDecimal(raw).setScale(2), from, to, request.user()));
+        return new ValidRate(grade, new BigDecimal(raw).setScale(2), from, to, request.user());
     }
 }
