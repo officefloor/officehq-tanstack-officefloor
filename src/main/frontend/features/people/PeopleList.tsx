@@ -11,6 +11,7 @@ import { SummaryPanel } from '../summary/SummaryPanel';
 import { AliasControl } from './AliasControl';
 import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
+import { MergeControl } from './MergeControl';
 import { PasteClaims } from './PasteClaims';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
@@ -160,6 +161,7 @@ export function PeopleList() {
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
                   <PatronControl personId={p.id} people={people} />{' '}
                   <AliasControl personId={p.id} />{' '}
+                  <MergeControl personId={p.id} people={people} />{' '}
                   <WatchControl personId={p.id} watched={watched.includes(p.id)} />
                 </td>
                 <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>

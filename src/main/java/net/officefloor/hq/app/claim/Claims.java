@@ -208,6 +208,14 @@ public class Claims {
         history(claim.getSheetId(), claim.getId());
     }
 
+    /** Moves the claim to the person its person was merged into, listed as their newest claim, its number and date
+     *  kept, and leaves it unbound from any statement. */
+    public void merge(Claim claim, long intoId) {
+        jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed_seq = " + NEXT_LISTED
+                + " WHERE sheet_id = ? AND id = ?", intoId, claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
+    }
+
     /** Keeps a comment on the claim, written by the user on the sheet's today. */
     public void comment(Claim claim, String user, String text) {
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text)"

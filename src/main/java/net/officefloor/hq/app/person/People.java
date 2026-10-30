@@ -167,6 +167,62 @@ public class People {
         person.getPatronNames().sort(BY_NAME);
     }
 
+    /** Merges the person into another (their claims already moved): their name and aliases become the other's
+     *  aliases; their patrons are added to the other's and whoever named them names the other instead (never
+     *  themselves, never twice); their pool memberships move to the other, shares added where the other is already
+     *  a member; their fixed period figures add to the other's. Their statements, holds, watchers and contact go
+     *  with them as they leave the sheet. */
+    public void merge(Person from, Person into) {
+        String sheetId = from.getSheetId();
+        long fromId = from.getId();
+        long intoId = into.getId();
+        // Names.
+        java.util.List<String> names = new java.util.ArrayList<>();
+        names.add(from.getName());
+        names.addAll(jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                String.class, sheetId, fromId));
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        for (String name : names) {
+            addAlias(into, name);
+        }
+        // Patrons the merged person named.
+        for (Long patron : from.getPatronIds()) {
+            if (patron != intoId && !into.getPatronIds().contains(patron)) {
+                jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                        sheetId, intoId, patron, sheetId);
+                into.getPatronIds().add(patron);
+            }
+        }
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        // Whoever named the merged person names the other instead.
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND patron_id = ? AND (person_id = ? OR person_id IN"
+                + " (SELECT person_id FROM person_patron WHERE sheet_id = ? AND patron_id = ?))",
+                sheetId, fromId, intoId, sheetId, intoId);
+        jdbc.update("UPDATE person_patron SET patron_id = ? WHERE sheet_id = ? AND patron_id = ?", intoId, sheetId, fromId);
+        // Pool memberships.
+        jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f WHERE f.sheet_id = m.sheet_id"
+                + " AND f.pool_name = m.pool_name AND f.person_id = ?) WHERE m.sheet_id = ? AND m.person_id = ? AND EXISTS"
+                + " (SELECT 1 FROM pool_member f WHERE f.sheet_id = m.sheet_id AND f.pool_name = m.pool_name AND f.person_id = ?)",
+                fromId, sheetId, intoId, fromId);
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ? AND pool_name IN"
+                + " (SELECT pool_name FROM pool_member WHERE sheet_id = ? AND person_id = ?)", sheetId, fromId, sheetId, intoId);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+        // Fixed period figures.
+        jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f WHERE f.sheet_id = t.sheet_id"
+                + " AND f.period_name = t.period_name AND f.person_id = ?) WHERE t.sheet_id = ? AND t.person_id = ? AND EXISTS"
+                + " (SELECT 1 FROM period_person_total f WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?)",
+                fromId, sheetId, intoId, fromId);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ? AND period_name IN"
+                + " (SELECT period_name FROM period_person_total WHERE sheet_id = ? AND person_id = ?)", sheetId, fromId, sheetId, intoId);
+        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+        // What is dropped with them.
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, fromId);
+    }
+
     public Person find(String sheetId, long id) {
         List<Person> found = withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))));
         return found.isEmpty() ? null : found.get(0);
