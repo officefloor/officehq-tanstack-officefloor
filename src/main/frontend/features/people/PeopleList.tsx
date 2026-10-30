@@ -30,7 +30,7 @@ import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, useSortBy } from './SortBy';
 import { ColumnChooser, useColumns } from './ColumnChooser';
 import { gradeOn, patronShares, sharedCents } from './usePeople';
-import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
+import { usePersonPeriodCarried, usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useSheetFigures } from './useSheetFigures';
 import { dueBy } from '../claims/overdue';
@@ -74,6 +74,7 @@ export function PeopleList() {
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
+  const periodCarriedOf = usePersonPeriodCarried(sheet);
   const pools = usePools(sheet);
   const cutOf = (personId: string) =>
     pools.reduce(
@@ -197,6 +198,9 @@ export function PeopleList() {
             {periods.map((period) => (
               <th key={period.name}>Due {period.name}</th>
             ))}
+            {periods.map((period) => (
+              <th key={period.name}>Carried {period.name}</th>
+            ))}
             <th>Cut</th>
             {shown('patrons') && <th>Patrons</th>}
             {shown('backing') && <th>Backing</th>}
@@ -244,6 +248,11 @@ export function PeopleList() {
                 {periods.map((period) => (
                   <td key={period.name} data-testid={`person-period-${period.name}-due-total`}>
                     {formatCents(periodDueOf(period, p.id))}
+                  </td>
+                ))}
+                {periods.map((period) => (
+                  <td key={period.name} data-testid={`person-period-${period.name}-carried`}>
+                    {formatCents(periodCarriedOf(period, p.id))}
                   </td>
                 ))}
                 <td data-testid="person-cut-total">{formatCents(cutOf(p.id))}</td>

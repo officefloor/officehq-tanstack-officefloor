@@ -1,4 +1,4 @@
-import { countsAtEnd, countsLive, useClaims } from '../claims/useClaims';
+import { countsAtEnd, countsLive, statusAt, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { useGrace } from '../claims/useGrace';
@@ -25,6 +25,34 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
     if (!person) return 0n;
     return claims
       .filter((c) => c.personId === personId && countsAtEnd(c, period.to, (date) => heldOn(person, date) || retiredOn(person, late.today), late.today) && periodOf(periods, c.dueBy)?.name === period.name)
+      .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
+  };
+}
+
+/** A person's carried figure for a period: the dues as shown now, late charges included, of their claims whose due-by
+ *  falls in a period ending before this one starts that counted at the end of this period's last day (see countsAtEnd)
+ *  and were then still OPEN or PENDING by the status log; 0 when nothing is carried. */
+export function usePersonPeriodCarried(sheet: string): (period: Period, personId: string) => bigint {
+  const periods = usePeriods(sheet);
+  const people = usePeople(sheet);
+  const claims = useClaims(sheet);
+  const rates = useRates(sheet);
+  const floor = useFloor(sheet);
+  const late = { pct: useLatePct(sheet), today: useSheetToday(sheet), grace: useGrace(sheet) };
+  const policy = usePolicy(sheet);
+  const personOf = new Map(people.map((p) => [p.id, p]));
+  return (period: Period, personId: string) => {
+    const person = personOf.get(personId);
+    if (!person) return 0n;
+    return claims
+      .filter((c) => {
+        if (c.personId !== personId) return false;
+        const from = periodOf(periods, c.dueBy);
+        if (!from || from.to >= period.from) return false;
+        const then = statusAt(c, period.to);
+        return (then === 'OPEN' || then === 'PENDING')
+          && countsAtEnd(c, period.to, (date) => heldOn(person, date) || retiredOn(person, late.today), late.today);
+      })
       .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
   };
 }
