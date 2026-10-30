@@ -7,10 +7,11 @@ import { countsLive, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { claimDue, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor } from '../settings/useSettings';
+import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
+import { useSheetToday } from '../sheet/useSheetToday';
 import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
-// The sheet's periods, each with its dates and due-total (the dues of the claims that count whose
+// The sheet's periods, each with its dates and due-total (the dues, late charges included, of the claims that count whose
 // date falls in it, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
 // already on the sheet, a from-date on or before the to-date, not overlapping another period). A
 // closed period shows the due-total fixed when it was closed, whatever the rates do later.
@@ -22,6 +23,7 @@ export function PeriodPanel() {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const floor = useFloor(sheet);
+  const late = { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -50,7 +52,7 @@ export function PeriodPanel() {
   const dueTotalOf = (period: Period) =>
     period.closed ? toCents(period.closedTotal) : claims
       .filter((c) => gradeOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date) === period)
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor) ?? 0n), 0n);
+      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor, late) ?? 0n), 0n);
   return (
     <>
       <table data-testid="periods">

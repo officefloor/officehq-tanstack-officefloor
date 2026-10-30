@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The settings store: the sheet's clerk limit, its floor, its terms and the role each user name holds on it. */
+/** The settings store: the sheet's clerk limit, its floor, its terms, its late percent and the role each user name holds on it. */
 @Repository
 public class Settings {
 
@@ -56,6 +56,17 @@ public class Settings {
         jdbc.update("UPDATE sheet SET terms_days = ? WHERE id = ?", days, sheetId);
     }
 
+    /** The sheet's late percent: an overdue claim gains it of its figure for every full 30 days overdue. */
+    public BigDecimal latePct(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the late percent
+        return jdbc.queryForObject("SELECT late_pct FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
+    }
+
+    public void setLatePct(String sheetId, BigDecimal pct) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
+    }
+
     /** The role the user name holds on the sheet; a clerk unless set otherwise. */
     public String role(String sheetId, String user) {
         List<String> found = jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
@@ -68,13 +79,14 @@ public class Settings {
                 sheetId, user, role);
     }
 
-    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms and every role set, by user name. */
+    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent and every role set, by user name. */
     public SettingsResponse load(String sheetId) {
         BigDecimal limit = clerkLimit(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
         return new SettingsResponse(limit == null ? "" : limit.setScale(2).toPlainString(),
-                floor(sheetId).setScale(2).toPlainString(), String.valueOf(terms(sheetId)), roles);
+                floor(sheetId).setScale(2).toPlainString(), String.valueOf(terms(sheetId)),
+                latePct(sheetId).setScale(2).toPlainString(), roles);
     }
 }

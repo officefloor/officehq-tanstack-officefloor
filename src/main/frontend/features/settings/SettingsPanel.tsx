@@ -8,7 +8,8 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
 // a blank floor field leaves it as it is and saves the clerk limit), the terms (whole days; a claim's
-// due-by is its date plus them; saved when its field is filled, together with any other field filled) and the role each user name holds (clerk unless set to steward).
+// due-by is its date plus them; saved when its field is filled, together with any other field filled), the late percent
+// (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms) and the role each user name holds (clerk unless set to steward).
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -19,6 +20,7 @@ export function SettingsPanel() {
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [latePct, setLatePct] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const saveSetting = useMutation({
@@ -27,6 +29,7 @@ export function SettingsPanel() {
     onSuccess: (saved, body) => {
       if (body.key === 'floor') setFloor('');
       else if (body.key === 'terms') setTerms('');
+      else if (body.key === 'late-pct') setLatePct('');
       else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
@@ -48,11 +51,12 @@ export function SettingsPanel() {
           e.preventDefault();
           submitSetting(() => {
             saveSetting.reset();
-            if (terms.trim() !== '') {
+            if (terms.trim() !== '' || latePct.trim() !== '') {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
-                { key: 'terms', value: terms.trim() },
+                ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
+                ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => saveSetting.mutateAsync(body)), Promise.resolve());
             }
@@ -94,8 +98,18 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>{' '}
+        <input
+          data-testid="setting-late-pct"
+          value={latePct}
+          placeholder="Late percent (blank: unchanged)"
+          onChange={(e) => {
+            setLatePct(e.target.value);
+            saveSetting.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

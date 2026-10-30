@@ -5,7 +5,7 @@ import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
 import { claimDue, dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useTerms } from '../settings/useSettings';
+import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
 import { HoldControl } from './HoldControl';
@@ -19,7 +19,7 @@ import { usePeople } from './usePeople';
 // sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // whether they are retired and from when, whether they are on hold (a held person's OPEN claims count
 // in neither their figures nor the sheet's totals; their SETTLED claims still do), their overdue count and
-// overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+// overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
 export function PeopleList() {
@@ -33,6 +33,7 @@ export function PeopleList() {
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const terms = useTerms(sheet);
+  const late = { pct: useLatePct(sheet), terms, today };
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   const live = claims.filter((c) => heldOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!));
   const totalOf = (personId: string, grade: string) =>
@@ -41,12 +42,13 @@ export function PeopleList() {
       (date) => rateOn(rates, grade, date),
       rateOn(rates, grade, today),
       floor,
+      late,
     );
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
   const overdue = live.filter((c) => isOverdue(c, terms, today));
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   const overdueTotal = (cs: typeof overdue) =>
-    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor) ?? 0n), 0n));
+    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor, late) ?? 0n), 0n));
   return (
     <>
       <QuickAdd />

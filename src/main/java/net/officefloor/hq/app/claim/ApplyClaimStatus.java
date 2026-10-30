@@ -31,9 +31,11 @@ public class ApplyClaimStatus {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
-            BigDecimal due = fixed != null || claim.isStated() ? fixed
+            BigDecimal figure = fixed != null || claim.isStated() ? fixed
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
                     settings.floor(claim.getSheetId()));
+            BigDecimal due = LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
+                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId()));
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 throw new ClaimStatusRefusedException("A clerk cannot settle a claim whose due is above the clerk limit");
             }
@@ -45,10 +47,15 @@ public class ApplyClaimStatus {
         // A voided claim keeps its number; numbers are never reused.
         number.set(new ClaimNumber(claim.getNumber()));
         if (request.target() == ClaimStatus.SETTLED) {
-            // Settling fixes the due (raised to the floor) at the rate in force on the claim's date; with no rate it stays live (n/a until one is set).
+            // Settling fixes the due: the figure a statement bound it to, else its amount (raised to the floor)
+            // at the rate in force on the claim's date, with its late charge as of today frozen in; with no
+            // figure it stays live (n/a until a rate is set).
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
-            claim.setSettledDue(Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId())));
+            BigDecimal figure = claim.isStated() && claim.getStatedDue() != null ? claim.getStatedDue()
+                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
+                    settings.floor(claim.getSheetId()));
+            claim.setSettledDue(LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
+                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId())));
         }
         claim.setStatus(request.target());
     }

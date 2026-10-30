@@ -6,8 +6,9 @@ export type Role = { user: string; role: string };
 
 /** The sheet's settings: the clerk limit with two decimals ("" for no limit), the floor with two
  *  decimals (a claim's live due is at least it), the terms in days (a claim's due-by is its date
- *  plus them) and the roles set. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; roles: Role[] };
+ *  plus them), the late percent with two decimals (an overdue claim gains it of its figure for every
+ *  full 30 days overdue) and the roles set. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; roles: Role[] };
 
 /** The floor a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_FLOOR = '1.00';
@@ -34,4 +35,12 @@ export function useFloor(sheet: string): string {
 /** The sheet's terms in days. */
 export function useTerms(sheet: string): number {
   return Number(useSettings(sheet)?.terms ?? DEFAULT_TERMS);
+}
+
+/** The late percent a sheet starts with, used until its settings have loaded. */
+export const DEFAULT_LATE_PCT = '0.00';
+
+/** The sheet's late percent. */
+export function useLatePct(sheet: string): string {
+  return useSettings(sheet)?.latePct ?? DEFAULT_LATE_PCT;
 }

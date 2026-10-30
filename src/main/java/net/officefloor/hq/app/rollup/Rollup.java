@@ -10,6 +10,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimResponse;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
@@ -49,6 +50,8 @@ public class Rollup {
     public RollupFigures figures(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        BigDecimal latePct = settings.latePct(sheetId);
+        int terms = settings.terms(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -67,7 +70,7 @@ public class Rollup {
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
-                    due = due.add(figure);
+                    due = due.add(LateCharge.withCharge(claim, figure, latePct, terms, today));
                 }
             }
             boolean na = !anyFixed && rates.find(sheetId, person.getGrade(), today) == null;
