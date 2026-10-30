@@ -314,6 +314,7 @@ public class AsOfView {
         BigDecimal cap = on.apply(ValidateSetting.CAP);
         BigDecimal threshold = on.apply(ValidateSetting.PROOF_THRESHOLD);
         BigDecimal noteThreshold = on.apply(ValidateSetting.NOTE_THRESHOLD);
+        BigDecimal reviewThreshold = on.apply(ValidateSetting.REVIEW_THRESHOLD);
         BigDecimal floor = on.apply(ValidateSetting.FLOOR);
         BigDecimal terms = on.apply(ValidateSetting.TERMS);
         BigDecimal latePct = on.apply(ValidateSetting.LATE_PCT);
@@ -354,7 +355,8 @@ public class AsOfView {
                 plain.getOrDefault(Settings.ENTRY, ""), plain.getOrDefault(Settings.POT, ""),
                 Objects.toString(sheets.parent(sheetId), ""), // the parent is not dated: as it is now
                 plain.getOrDefault(Settings.FISCAL, "1"), plain.getOrDefault(Settings.ALERT, ""),
-                net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)));
+                net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)),
+                reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString());
     }
 
     private static LocalDate local(Date date) {

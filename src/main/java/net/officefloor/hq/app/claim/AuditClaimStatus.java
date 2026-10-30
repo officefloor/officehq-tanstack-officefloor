@@ -17,6 +17,7 @@ public class AuditClaimStatus {
         String event = switch (request.decision()) {
             case APPROVE -> "CLAIM_APPROVED";
             case REJECT -> "CLAIM_REJECTED";
+            case REVIEW -> "CLAIM_OPENED";
             case NONE -> switch (claim.getStatus()) {
                 case OPEN -> "CLAIM_OPENED";
                 case PENDING -> "CLAIM_PENDING";
@@ -24,6 +25,7 @@ public class AuditClaimStatus {
                 case VOID -> "CLAIM_VOIDED";
                 case DELETED -> "CLAIM_DELETED";
                 case DRAFT -> "CLAIM_RESTORED";
+                case REVIEW -> "CLAIM_REVIEW";
             };
         };
         net.officefloor.hq.app.person.Person person = people.find(claim.getSheetId(), claim.getPersonId());
@@ -31,6 +33,10 @@ public class AuditClaimStatus {
         boolean voidedSettled = claim.getStatus() == ClaimStatus.VOID
                 && ClaimStatus.SETTLED.name().equals(log.lastStatus(claim));
         log.record(claim, person, request.user());
+        if (request.decision() == ValidClaimStatus.Decision.REVIEW) {
+            // A steward's review: the review line, then the claim's opening with its number.
+            audit.recordOnCommit(ClaimAudit.line("CLAIM_REVIEWED", request.user(), person, claim, null));
+        }
         String line = ClaimAudit.line(event, request.user(), person, claim, number.value());
         if (voidedSettled) {
             // A voided SETTLED claim reverses its frozen figure out of every total.

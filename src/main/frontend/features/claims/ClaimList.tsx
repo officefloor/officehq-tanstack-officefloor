@@ -18,7 +18,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 // one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
 // claim to PENDING, which shows its live due unbound by any statement; a steward may void a SETTLED claim within 7 days of
 // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
-// on a PENDING claim: approve settles it, reject returns it to OPEN; the opener or last editor cannot approve it) and an edit button that
+// on a PENDING claim: approve settles it, reject returns it to OPEN; the opener or last editor cannot approve it), review (a steward's
+// decision on a REVIEW claim — one whose due was above the review threshold in force on its date when opened — making it OPEN with its number) and an edit button that
 // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one whose due-by is inside a closed
 // period, or one another user's open editor locks, is refused with the claim's error — to change an open claim, void it and
 // add a new one. An open editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes. A steward (or the roles the sheet's
@@ -87,7 +88,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const settings = useSettings(sheet);
 
   const status = useMutation({
-    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore'; reason?: string }) =>
+    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review'; reason?: string }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/status`,
         { action, user, reason },
@@ -436,6 +437,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       </button>{' '}
       <button type="button" data-testid="claim-restore" onClick={() => act(() => status.mutate({ action: 'restore' }))}>
         Restore
+      </button>{' '}
+      <button type="button" data-testid="claim-review" onClick={() => act(() => status.mutate({ action: 'review' }))}>
+        Review
       </button>{' '}
       <button type="button" data-testid="claim-approve" onClick={() => act(() => status.mutate({ action: 'approve' }))}>
         Approve

@@ -17,8 +17,9 @@ public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, Claims claims,
             Out<ClaimNumber> number) throws ClaimStatusRefusedException {
-        if (request.target() == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE
-                && claim.getStatus().canBecome(ClaimStatus.OPEN)) {
+        if (request.target() == ClaimStatus.OPEN && (request.decision() == ValidClaimStatus.Decision.NONE
+                && claim.getStatus().canBecome(ClaimStatus.OPEN)
+                || request.decision() == ValidClaimStatus.Decision.REVIEW && claim.getStatus() == ClaimStatus.REVIEW)) {
             refuseOverCap(claim, periods, claims.list(claim.getSheetId()));
         }
         number.set(change(request, claim, sheets, people, rates, periods, settings, numbering, log));
@@ -47,7 +48,15 @@ public class ApplyClaimStatus {
                 throw new ClaimStatusRefusedException("Your role may not " + action + " a claim on this sheet");
             }
         }
-        if (request.decision() != ValidClaimStatus.Decision.NONE) {
+        if (request.decision() == ValidClaimStatus.Decision.REVIEW) {
+            // Only a steward reviews, and only a REVIEW claim.
+            if (claim.getStatus() != ClaimStatus.REVIEW) {
+                throw new ClaimStatusRefusedException(claim.getStatus(), request.target());
+            }
+            if (!steward) {
+                throw new ClaimStatusRefusedException("Only a steward can review a REVIEW claim");
+            }
+        } else if (request.decision() != ValidClaimStatus.Decision.NONE) {
             // Only a steward approves or rejects, and only a PENDING claim.
             if (claim.getStatus() != ClaimStatus.PENDING) {
                 throw new ClaimStatusRefusedException(claim.getStatus(), request.target());
@@ -91,6 +100,12 @@ public class ApplyClaimStatus {
         ClaimStatus target = request.target();
         if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
             refuseNoteless(claim, sheets, people, rates, settings, rounding);
+            if (needsReview(claim, sheets, people, rates, settings, rounding)) {
+                // Above the review threshold the claim awaits a steward's review, unnumbered; who opened it is kept.
+                claim.setOpenedBy(request.user());
+                claim.setStatus(ClaimStatus.REVIEW);
+                return new ClaimNumber(claim.getNumber());
+            }
         }
         if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {
             // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
@@ -112,6 +127,10 @@ public class ApplyClaimStatus {
                 // Above the clerk limit the claim awaits a steward's approval.
                 target = ClaimStatus.PENDING;
             }
+        }
+        if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.REVIEW) {
+            // Reviewed: numbered as it opens; its opener stays the user who opened it.
+            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
         }
         if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
             claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
@@ -173,6 +192,18 @@ public class ApplyClaimStatus {
         if (due != null && due.compareTo(threshold) > 0) {
             throw new ClaimStatusRefusedException("A claim whose due is above the note threshold needs a note to be opened");
         }
+    }
+
+    /** Whether opening the claim sends it to REVIEW: its due as shown is above the review threshold in force on its
+     *  date; a due of n/a is within any threshold. Bulk open uses it too. */
+    static boolean needsReview(Claim claim, Sheets sheets, People people, Rates rates, Settings settings,
+            RoundingMode rounding) {
+        BigDecimal threshold = settings.reviewThreshold(claim.getSheetId(), claim.getDate());
+        if (threshold == null) {
+            return false;
+        }
+        BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
+        return due != null && due.compareTo(threshold) > 0;
     }
 
     /** The claim's due as shown: fixed (settled or bound), else its live figure with its late charge as of today; null for n/a. */

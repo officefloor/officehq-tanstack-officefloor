@@ -105,6 +105,12 @@ public class Settings {
         return found == null ? null : found.value();
     }
 
+    /** The sheet's review threshold in force on a date (a claim's: its date); null for none. */
+    public BigDecimal reviewThreshold(String sheetId, LocalDate on) {
+        InForce found = on(sheetId, ValidateSetting.REVIEW_THRESHOLD, on);
+        return found == null ? null : found.value();
+    }
+
     /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
@@ -374,6 +380,7 @@ public class Settings {
         BigDecimal cap = cap(sheetId);
         BigDecimal threshold = proofThreshold(sheetId, today);
         BigDecimal noteThreshold = noteThreshold(sheetId, today);
+        BigDecimal reviewThreshold = reviewThreshold(sheetId, today);
         InForce rounding = on(sheetId, ValidateSetting.ROUNDING, today);
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
@@ -408,6 +415,7 @@ public class Settings {
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
                 noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString(),
                 parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)),
-                alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()));
+                alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()),
+                reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString());
     }
 }

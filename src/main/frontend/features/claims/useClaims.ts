@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { readPath, useAsOf } from '../asof/useAsOf';
 
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
  *  opened (a voided claim keeps it), "" for a draft; `due` is the due fixed when it was settled, else the

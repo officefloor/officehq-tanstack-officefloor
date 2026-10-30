@@ -97,6 +97,9 @@ export function SettingsPanel() {
   // The rounding mode (dated); likewise may be saved blank (none).
   const [rounding, setRounding] = useState('');
   const roundingChosen = useRef(false);
+  // The review threshold (dated); likewise may be saved blank (none).
+  const [reviewThreshold, setReviewThreshold] = useState('');
+  const reviewChosen = useRef(false);
   // The parent sheet (not dated); likewise may be saved blank (none).
   const [parent, setParent] = useState('');
   const parentChosen = useRef(false);
@@ -142,6 +145,11 @@ export function SettingsPanel() {
     if (graceDays.trim() === '') graceChosen.current = false;
     entryChosen.current = true;
   };
+  // Entering the review threshold (or its from-date) marks it as the one to save, as it is.
+  const focusReview = () => {
+    unchoosePolicy();
+    reviewChosen.current = true;
+  };
   // Each action's permission, by action, as typed; each may be saved blank (the standing rule).
   const [perms, setPerms] = useState<Record<string, string>>({});
   const permsChosen = useRef(new Set<string>());
@@ -154,6 +162,7 @@ export function SettingsPanel() {
     if (alertThreshold.trim() === '') alertChosen.current = false;
     if (parent.trim() === '') parentChosen.current = false;
     if (rounding.trim() === '') roundingChosen.current = false;
+    if (reviewThreshold.trim() === '') reviewChosen.current = false;
     unchooseGradeGrace();
   };
   // Entering another field leaves a blank grade's grace days as they are.
@@ -316,6 +325,10 @@ export function SettingsPanel() {
         setNoteThreshold('');
         noteChosen.current = false;
       }
+      else if (body.key === 'review-threshold') {
+        setReviewThreshold('');
+        reviewChosen.current = false;
+      }
       else if (body.key === 'rounding') {
         setRounding('');
         roundingChosen.current = false;
@@ -360,6 +373,7 @@ export function SettingsPanel() {
             const proofed = proofThreshold.trim() !== '' || proofChosen.current;
             const noted = noteThreshold.trim() !== '' || noteChosen.current;
             const rounded = rounding.trim() !== '' || roundingChosen.current;
+            const reviewed = reviewThreshold.trim() !== '' || reviewChosen.current;
             const graced = graceDays.trim() !== '' || graceChosen.current;
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const potted = pot.trim() !== '' || potChosen.current;
@@ -370,7 +384,7 @@ export function SettingsPanel() {
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || rounded || graced || entered || potted || alerted || parented || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || entered || potted || alerted || parented || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -386,6 +400,7 @@ export function SettingsPanel() {
                 ...ownProof.map((g) => ({ key: `proof-threshold-${g}`, value: (gradeProof[g] ?? '').trim() })),
                 ...(noted ? [{ key: 'note-threshold', value: noteThreshold.trim() }] : []),
                 ...(rounded ? [{ key: 'rounding', value: rounding.trim() }] : []),
+                ...(reviewed ? [{ key: 'review-threshold', value: reviewThreshold.trim() }] : []),
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
                 ...(potted ? [{ key: 'pot', value: pot.trim() }] : []),
@@ -609,6 +624,19 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('rounding', focusRounding)}{' '}
+        Review threshold: <span data-testid="setting-review-threshold-current">{settings?.reviewThreshold ?? ''}</span>{' '}
+        <input
+          data-testid="setting-review-threshold"
+          value={reviewThreshold}
+          placeholder="Review threshold (blank: none)"
+          onFocus={focusReview}
+          onChange={(e) => {
+            setReviewThreshold(e.target.value);
+            reviewChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        {fromField('review-threshold', focusReview)}{' '}
         Grace days: <span data-testid="setting-grace-days-current">{settings?.graceDays ?? ''}</span>{' '}
         <input
           data-testid="setting-grace-days"

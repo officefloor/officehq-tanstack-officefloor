@@ -7,7 +7,7 @@ import { useCap, useFloor, useLatePct, usePolicy } from '../settings/useSettings
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
 
-export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
 // The figures the people list, its totals, the summary and the header are all worked from, so
 // every place that repeats a figure shows the same one.

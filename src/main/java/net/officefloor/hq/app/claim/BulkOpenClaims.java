@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Opens the selected claims in list order (people in the order they were added, newest claim first
  * within a person), numbering each as it opens and auditing it as a single open would be. A selected
  * claim that cannot be opened (not DRAFT, its due-by inside a closed period, the user's role may not open, its note is empty while its due is above the note threshold, or its person already has as many OPEN or PENDING claims in its period as the period's cap) is left as it is and counted
- * as refused; so is a selected id that is not a claim on the sheet.
+ * as refused; so is a selected id that is not a claim on the sheet. A claim whose due is above the review threshold goes to
+ * REVIEW instead and counts as opened.
  */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
@@ -40,11 +41,21 @@ public class BulkOpenClaims {
                         || periods.isClosed(sheetId, claim.getPeriodDate())) {
                     continue;
                 }
+                java.math.RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on));
                 try {
-                    ApplyClaimStatus.refuseNoteless(claim, sheets, people, rates, settings,
-                            Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on)));
+                    ApplyClaimStatus.refuseNoteless(claim, sheets, people, rates, settings, rounding);
                     ApplyClaimStatus.refuseOverCap(claim, periods, all);
                 } catch (ClaimStatusRefusedException e) {
+                    continue;
+                }
+                if (ApplyClaimStatus.needsReview(claim, sheets, people, rates, settings, rounding)) {
+                    // Above the review threshold it goes to REVIEW, unnumbered, and counts as opened.
+                    claim.setOpenedBy(request.user());
+                    claim.setStatus(ClaimStatus.REVIEW);
+                    claims.save(claim);
+                    log.record(claim, person, request.user());
+                    audit.recordOnCommit(ClaimAudit.line("CLAIM_REVIEW", request.user(), person, claim, null));
+                    opened++;
                     continue;
                 }
                 RollupFigures before = rollup.figures(sheetId);
