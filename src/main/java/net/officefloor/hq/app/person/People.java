@@ -105,9 +105,17 @@ public class People {
             grades.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.HashMap<>())
                     .put(from == null ? Person.BEGINNING : from.toLocalDate(), rs.getString("grade"));
         }, sheetId);
+        java.util.Map<Long, java.util.Map<java.time.LocalDate, Integer>> terms = new java.util.HashMap<>();
+        jdbc.query("SELECT person_id, from_date, terms FROM person_terms WHERE sheet_id = ? ORDER BY seq", rs -> {
+            int days = rs.getInt("terms");
+            Integer value = rs.wasNull() ? null : days;
+            terms.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.HashMap<>())
+                    .put(rs.getDate("from_date").toLocalDate(), value);
+        }, sheetId);
         withHolds(sheetId, found);
         for (Person person : found) {
             person.setGrades(grades.getOrDefault(person.getId(), java.util.Map.of()));
+            person.setDatedTerms(terms.getOrDefault(person.getId(), java.util.Map.of()));
             person.setToday(today);
         }
         return found;
@@ -132,6 +140,20 @@ public class People {
         jdbc.update("INSERT INTO grade_history (sheet_id, person_id, set_on, from_date, grade) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)",
                 person.getSheetId(), person.getId(), person.getSheetId(), from, recorded.getValue());
         person.clearRecordedGrade();
+    }
+
+    /** Writes the terms the person's edit recorded from a date, replacing any recorded from the same date. */
+    private void writeRecordedTerms(Person person) {
+        java.time.LocalDate recorded = person.getRecordedTermsFrom();
+        if (recorded == null) {
+            return;
+        }
+        java.sql.Date from = java.sql.Date.valueOf(recorded);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date = ?",
+                person.getSheetId(), person.getId(), from);
+        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, from_date, terms) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), from, person.getDatedTerms().get(recorded));
+        person.clearRecordedTerms();
     }
 
     /** Records the person's name, own terms and contact as they now stand in their history, dated the sheet's today. */
@@ -363,6 +385,7 @@ public class People {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
                 sheetId, sheetId, fromId);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, fromId);
@@ -381,6 +404,10 @@ public class People {
                 person.recordGrade(on, grade);
                 writeRecordedGrade(person);
             }
+        });
+        from.getDatedTerms().forEach((on, terms) -> {
+            person.recordTerms(on, terms);
+            writeRecordedTerms(person);
         });
         for (String alias : jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
                 String.class, from.getSheetId(), from.getId())) {
@@ -438,6 +465,7 @@ public class People {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
                 sheetId, sheetId, id);
@@ -621,6 +649,7 @@ public class People {
             return false;
         }
         writeRecordedGrade(person);
+        writeRecordedTerms(person);
         writeHistory(person);
         recordTags(person.getSheetId(), person.getTags());
         person.setVersion(person.getVersion() + 1);

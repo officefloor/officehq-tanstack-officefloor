@@ -26,8 +26,10 @@ export type Person = {
   patrons: string[];
   patronIds: string[];
   grades: GradeFrom[];
-  /** The person's own terms in days; "" for none. */
+  /** The person's own terms in days in force on the sheet's today; "" for none. */
   terms: string;
+  /** The person's own terms in days from the beginning of time (before any dated terms); "" for none. */
+  baseTerms: string;
   /** The person's contact, trimmed and lower-cased; "" for none. */
   contact: string;
   /** The person's tags, lower-cased, sorted and comma separated ("a,b"); "" for none. */

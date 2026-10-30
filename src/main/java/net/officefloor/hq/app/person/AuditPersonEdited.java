@@ -9,7 +9,7 @@ public class AuditPersonEdited {
     public void audit(@Val PersonRequest request, @Val Person person, Audit audit, @Val RollupFigures before, Rollup rollup) {
         audit.recordOnCommit("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + request.user()
                 + " name=" + person.getName() + " grade=" + person.getGrade()
-                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
+                + (person.isTermsChanged() ? " terms=" + (person.getTermsShown() == null ? "" : person.getTermsShown()) : "")
                 + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : ""));
         rollup.recordChanges(person.getSheetId(), request.user(), before);
     }

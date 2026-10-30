@@ -35,8 +35,16 @@ public final class PersonRules {
         if (!terms.isEmpty()) {
             terms = String.valueOf(Integer.parseInt(terms));
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                java.time.LocalDate.parse(termsFrom);
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new InvalidPersonException("The terms' from-date must be a date");
+            }
+        }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         String tags = net.officefloor.hq.app.claim.Tags.normalise(request.tags());
-        return new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms, contact, tags == null ? "" : tags);
+        return new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms, contact, tags == null ? "" : tags, termsFrom);
     }
 }

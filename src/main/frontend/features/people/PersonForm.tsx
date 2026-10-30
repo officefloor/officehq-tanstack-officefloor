@@ -14,7 +14,10 @@ import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople'
 // The grade is dated: a save records the form's grade from its from-date (the sheet's today when
 // blank), except that leaving the grade as the row showed it with a blank from-date records nothing.
 // A person's first grade applies from the beginning of time, so an add takes no from-date.
-// A person's own terms (whole days, blank for none) come first in fixing a new claim's due-by.
+// A person's own terms (whole days, blank for none) come first in fixing a new claim's due-by: those
+// in force on the claim's date. Terms with a from-date are recorded from it, keeping those already
+// recorded; with a blank from-date they are the terms from the beginning of time, which the editor
+// opens with (the row shows those in force on the sheet's today).
 // A contact (blank for none) is stored trimmed and lower-cased; one another person on the sheet
 // already has is refused.
 // Tags are comma separated: each is trimmed and lower-cased, and repeats are dropped (by the server).
@@ -35,6 +38,7 @@ export function PersonForm() {
   const [grade, setGrade] = useState<string>('A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
+  const [termsFrom, setTermsFrom] = useState('');
   const [contact, setContact] = useState('');
   const [tags, setTags] = useState('');
   const [termsRefused, setTermsRefused] = useState(false);
@@ -44,7 +48,7 @@ export function PersonForm() {
   const submitOnce = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: ({ editing, ...body }: { editing: string; name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string }) =>
+    mutationFn: ({ editing, ...body }: { editing: string; name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string }) =>
       editing !== ''
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(editing)}`, { ...body, user, version })
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people`, { ...body, user }),
@@ -56,6 +60,7 @@ export function PersonForm() {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setTermsFrom('');
       setContact('');
       setTags('');
       if (editing !== '') setEditing(undefined);
@@ -72,7 +77,8 @@ export function PersonForm() {
       if (current) {
         setName(current.name);
         setGrade(gradeOn(current, today));
-        setTerms(current.terms);
+        setTerms(current.baseTerms);
+        setTermsFrom('');
         setContact(current.contact);
         setTags(tagList(current.tags));
         setVersion(current.version);
@@ -95,7 +101,8 @@ export function PersonForm() {
       setName(edited.name);
       setGrade(gradeOn(edited, today));
       setGradeFrom('');
-      setTerms(edited.terms);
+      setTerms(edited.baseTerms);
+      setTermsFrom('');
       setContact(edited.contact);
       setTags(tagList(edited.tags));
       setVersion(edited.version);
@@ -117,6 +124,7 @@ export function PersonForm() {
             setGrade('A');
             setGradeFrom('');
             setTerms('');
+            setTermsFrom('');
             setContact('');
             setTags('');
           }
@@ -124,7 +132,7 @@ export function PersonForm() {
         }
         submitOnce(() => {
           clearError();
-          return save.mutateAsync({ editing, name, grade, gradeFrom, terms, contact, tags });
+          return save.mutateAsync({ editing, name, grade, gradeFrom, terms, termsFrom, contact, tags });
         });
       }}
     >
@@ -170,6 +178,16 @@ export function PersonForm() {
         }}
       />{' '}
       <input
+        type="date"
+        data-testid="person-form-terms-from"
+        title="Terms from (blank: the beginning of time)"
+        value={termsFrom}
+        onChange={(e) => {
+          setTermsFrom(e.target.value);
+          clearError();
+        }}
+      />{' '}
+      <input
         data-testid="person-form-contact"
         value={contact}
         placeholder="Contact"
@@ -198,6 +216,7 @@ export function PersonForm() {
             setGrade('A');
             setGradeFrom('');
             setTerms('');
+            setTermsFrom('');
             setContact('');
             setTags('');
             clearError();

@@ -26,7 +26,7 @@ export function InlineGrade({ person, shown }: { person: Person; shown: string }
         name: person.name,
         grade: chosen,
         gradeFrom: '',
-        terms: person.terms,
+        terms: person.baseTerms,
         contact: person.contact,
         tags: tagList(person.tags),
         user,

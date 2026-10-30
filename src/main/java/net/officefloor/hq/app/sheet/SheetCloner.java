@@ -53,6 +53,7 @@ public class SheetCloner {
         for (Map.Entry<Long, Long> person : ids.entrySet()) {
             String[] personCols = {
                 "person_grade:from_date, grade",
+                "person_terms:from_date, terms",
                 "grade_history:set_on, from_date, grade",
                 "person_history:set_on, name, terms, contact",
                 "retire_history:set_on, retired_from",

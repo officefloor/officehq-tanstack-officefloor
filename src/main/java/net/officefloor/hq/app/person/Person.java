@@ -88,6 +88,33 @@ public class Person {
         this.terms = terms;
     }
     public boolean isTermsChanged() { return termsChanged; }
+    /** The person's terms dated from a from-date on (null terms: none from then), each until the next; before the
+     *  first, {@link #getTerms()} are in force. */
+    private final java.util.TreeMap<LocalDate, Integer> datedTerms = new java.util.TreeMap<>();
+    /** Terms recorded by this edit and not yet written: their from-date. */
+    private LocalDate recordedTermsFrom;
+    public java.util.SortedMap<LocalDate, Integer> getDatedTerms() { return java.util.Collections.unmodifiableSortedMap(datedTerms); }
+    public void setDatedTerms(java.util.Map<LocalDate, Integer> loaded) {
+        datedTerms.clear();
+        datedTerms.putAll(loaded);
+    }
+    /** Records the terms from the date (replacing those recorded from that same date), to be written on save. */
+    public void recordTerms(LocalDate from, Integer terms) {
+        termsChanged = !datedTerms.containsKey(from) || !java.util.Objects.equals(datedTerms.get(from), terms);
+        datedTerms.put(from, terms);
+        recordedTermsFrom = from;
+    }
+    /** The from-date of the terms this edit recorded and has not written yet; null when none. */
+    public LocalDate getRecordedTermsFrom() { return recordedTermsFrom; }
+    public void clearRecordedTerms() { recordedTermsFrom = null; }
+    /** The person's own terms in force on a date: those with the latest from-date on or before it, else those from
+     *  the beginning of time; null when none. */
+    public Integer termsOn(LocalDate date) {
+        java.util.Map.Entry<LocalDate, Integer> found = date == null ? null : datedTerms.floorEntry(date);
+        return found == null ? terms : found.getValue();
+    }
+    /** The person's own terms in force on the sheet's today; null when none. */
+    public Integer getTermsShown() { return termsOn(today); }
     /** The person's contact, trimmed and lower-cased; null when none. */
     private String contact;
     /** Whether this edit changed the person's contact from the one loaded. */

@@ -72,7 +72,7 @@ public class SaveImportPeople {
                 }
                 audit.recordOnCommit("PERSON_EDITED sheet=" + sheetId + " by=" + request.user()
                         + " name=" + person.getName() + " grade=" + person.getGrade()
-                        + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
+                        + (person.isTermsChanged() ? " terms=" + (person.getTermsShown() == null ? "" : person.getTermsShown()) : "")
                         + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : ""));
                 updated++;
             }

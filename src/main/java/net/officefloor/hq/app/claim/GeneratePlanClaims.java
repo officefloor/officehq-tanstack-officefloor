@@ -46,7 +46,7 @@ public class GeneratePlanClaims {
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
             for (LocalDate date : plan.dates(last)) {
                 if (plans.made(plan.id(), date)) continue;
-                LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+                LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));
                 if (periods.isClosed(sheetId, dueBy) || !person.allowsClaimOn(date)) continue;
                 Claim claim = claims.add(sheetId, person.getId(), plan.amount(), date, "", null, dueBy, null);
                 plans.recordMade(plan.id(), date, claim.getId());

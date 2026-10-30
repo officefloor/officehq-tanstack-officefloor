@@ -17,7 +17,14 @@ public class ApplyPerson {
             throw new InvalidPersonException("The contact is already in use");
         }
         person.setName(request.name());
-        person.editTerms(request.terms().isEmpty() ? null : Integer.valueOf(request.terms()));
+        // The form's terms are recorded from their from-date, keeping those already recorded; with no
+        // from-date they are the terms from the beginning of time (blank: none).
+        Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
+        if (request.termsFrom().isEmpty()) {
+            person.editTerms(terms);
+        } else {
+            person.recordTerms(LocalDate.parse(request.termsFrom()), terms);
+        }
         person.editContact(request.contact().isEmpty() ? null : request.contact());
         person.setTags(request.tags().isEmpty() ? null : request.tags());
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the
