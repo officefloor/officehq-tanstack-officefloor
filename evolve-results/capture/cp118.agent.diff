@@ -1,0 +1,334 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index d3bb4019..fd6db3a1 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -109,13 +109,14 @@ export function useClaims(sheet: string): Claim[] {
+   return data ?? [];
+ }
+ 
+-export const settleBatchKey = (sheet: string) => ['sheet', sheet, 'settle-batch'] as const;
++export const settleBatchKey = (sheet: string, asOf = '') => ['sheet', sheet, 'settle-batch', asOf] as const;
+ 
+ /** The number of the sheet's last bulk settle batch, "" when there has been none. */
+ export function useLastSettleBatch(sheet: string): string {
++  const asOf = useAsOf();
+   const { data } = useQuery({
+-    queryKey: settleBatchKey(sheet),
+-    queryFn: () => getJson<{ last: string }>(`/api/sheets/${encodeURIComponent(sheet)}/settle-batch`),
++    queryKey: settleBatchKey(sheet, asOf),
++    queryFn: () => getJson<{ last: string }>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/settle-batch`, asOf)),
+     enabled: sheet !== '',
+   });
+   return data?.last ?? '';
+diff --git a/src/main/frontend/features/rates/ImportRates.tsx b/src/main/frontend/features/rates/ImportRates.tsx
+new file mode 100644
+index 00000000..626350d5
+--- /dev/null
++++ b/src/main/frontend/features/rates/ImportRates.tsx
+@@ -0,0 +1,65 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { ratesKey } from './useRates';
++
++// The rate import box: one rate per line as grade,rate,from,to (the dates may be absent or blank).
++// Every line is checked first by the rate form's rules; one refused line sets nothing. Otherwise each
++// line is set in order as the rate form would, replacing a rate for the same grade and from-date. Then
++// shows how many were set; pressing again removes the old count until the new one is in.
++export function ImportRates() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const [text, setText] = useState('');
++  const queryClient = useQueryClient();
++  const submitOnce = useSubmitOnce();
++
++  const importRates = useMutation({
++    mutationFn: (pasted: string) =>
++      postJson<{ set: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-rates`, { text: pasted, user }),
++    onSuccess: () => {
++      setText('');
++      // Not awaited: the count shows as soon as the import is in.
++      void queryClient.invalidateQueries({ queryKey: ratesKey(sheet).slice(0, 3) });
++    },
++  });
++
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        submitOnce(() => {
++          importRates.reset();
++          return importRates.mutateAsync(text);
++        });
++      }}
++    >
++      <textarea
++        data-testid="import-rates"
++        value={text}
++        rows={3}
++        placeholder="grade,rate,from,to — one rate per line"
++        onChange={(e) => {
++          setText(e.target.value);
++          importRates.reset();
++        }}
++      />{' '}
++      <button type="submit" data-testid="import-rates-submit">Import rates</button>
++      {importRates.isSuccess && (
++        <>
++          {' '}
++          Set <span data-testid="import-rates-set">{importRates.data.set}</span>
++        </>
++      )}
++      {importRates.isError && (
++        <span data-testid="import-rates-error" role="alert">
++          {' '}
++          Nothing was set: every line needs a grade A, B or C, a percent of 0.00 or more with at most two decimals,
++          from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.
++        </span>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/rates/RatePanel.tsx b/src/main/frontend/features/rates/RatePanel.tsx
+index 95440ac9..bffa322b 100644
+--- a/src/main/frontend/features/rates/RatePanel.tsx
++++ b/src/main/frontend/features/rates/RatePanel.tsx
+@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { NA } from './due';
++import { ImportRates } from './ImportRates';
+ import { RatePreview } from './RatePreview';
+ import { rateOn, ratesKey, useRates, type Rate } from './useRates';
+ 
+@@ -123,6 +124,7 @@ export function RatePanel() {
+         <button type="submit" data-testid="rate-form-submit">Set rate</button>
+         {save.isError && <span data-testid="rate-form-error" role="alert"> Could not set the rate: it must be a percent of 0.00 or more with at most two decimals, from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.</span>}
+       </form>
++      <ImportRates />
+       <RatePreview />
+     </>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LoadSettleBatch.java b/src/main/java/net/officefloor/hq/app/claim/LoadSettleBatch.java
+index 8495c826..6c525dd3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/LoadSettleBatch.java
++++ b/src/main/java/net/officefloor/hq/app/claim/LoadSettleBatch.java
+@@ -1,14 +1,21 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.asof.AsOfView;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The number of the sheet's last bulk settle batch. */
++/** The number of the sheet's last bulk settle batch; with an as-of date, the last one made by the end of it. */
+ public class LoadSettleBatch {
+-    public void service(@PathVariable("sheetId") String sheetId, Sheets sheets,
++    public void service(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Sheets sheets, AsOfView view,
+             ObjectResponse<SettleBatchResponse> response) {
+-        int last = sheets.lastSettleBatch(sheetId);
++        LocalDate date = AsOfView.parse(asOf);
++        int last = date == null ? sheets.lastSettleBatch(sheetId)
++                : view.claims(sheetId, date).stream().map(ClaimResponse::batch).filter(b -> !b.isEmpty())
++                        .mapToInt(Integer::parseInt).max().orElse(0);
+         response.send(new SettleBatchResponse(last == 0 ? "" : String.valueOf(last)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ImportRatesRequest.java b/src/main/java/net/officefloor/hq/app/rate/ImportRatesRequest.java
+new file mode 100644
+index 00000000..a8722a86
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ImportRatesRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rate;
++
++/** Body of POST /api/sheets/{sheetId}/import-rates: lines of grade,rate,from,to (the dates may be absent or blank). */
++public record ImportRatesRequest(String text, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ImportRatesResponse.java b/src/main/java/net/officefloor/hq/app/rate/ImportRatesResponse.java
+new file mode 100644
+index 00000000..9c5ed07b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ImportRatesResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rate;
++
++/** How many rates an import set. */
++public record ImportRatesResponse(int set) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveImportRates.java b/src/main/java/net/officefloor/hq/app/rate/SaveImportRates.java
+new file mode 100644
+index 00000000..c82b90aa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveImportRates.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupFigures;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Sets the imported rates in order, each exactly as the rate form would: RATE_SET, then the figures it moved. */
++public class SaveImportRates {
++    public void save(@PathVariable("sheetId") String sheetId, @Val ValidImportRates request, Rates rates, Audit audit, Rollup rollup,
++            ObjectResponse<ImportRatesResponse> response) {
++        for (ValidRate rate : request.rates()) {
++            RollupFigures before = rollup.figures(sheetId);
++            SetRate.apply(sheetId, rate, rates, audit);
++            rollup.recordChanges(sheetId, request.user(), before);
++        }
++        response.send(new ImportRatesResponse(request.rates().size()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+index 0b91497a..8757412c 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+@@ -11,12 +11,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class SaveRate {
+     public void save(@PathVariable("sheetId") String sheetId, @Val ValidRate rate, Rates rates, Audit audit, @Val RollupFigures before, Rollup rollup,
+             ObjectResponse<List<RateResponse>> response) {
+-        rates.set(sheetId, rate.grade(), rate.from(), rate.to(), rate.rate());
+-        audit.recordOnCommit("RATE_SET sheet=" + sheetId + " by=" + rate.user()
+-                + " grade=" + rate.grade() + " rate=" + rate.rate().toPlainString()
+-                + (rate.from() == null ? "" : " from=" + rate.from())
+-                + (rate.to() == null ? "" : " to=" + rate.to()));
++        SetRate.apply(sheetId, rate, rates, audit);
+         rollup.recordChanges(sheetId, rate.user(), before);
+         response.send(rates.list(sheetId));
+     }
++
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SetRate.java b/src/main/java/net/officefloor/hq/app/rate/SetRate.java
+new file mode 100644
+index 00000000..b27db71f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/SetRate.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.rate;
++
++import net.officefloor.hq.app.Audit;
++
++/** Setting one valid rate, as the rate form and the rate import both do. */
++final class SetRate {
++    private SetRate() {
++    }
++
++    /** Set the rate, replacing one for the same grade and from-date, and audit it as RATE_SET (on commit). */
++    static void apply(String sheetId, ValidRate rate, Rates rates, Audit audit) {
++        rates.set(sheetId, rate.grade(), rate.from(), rate.to(), rate.rate());
++        audit.recordOnCommit("RATE_SET sheet=" + sheetId + " by=" + rate.user()
++                + " grade=" + rate.grade() + " rate=" + rate.rate().toPlainString()
++                + (rate.from() == null ? "" : " from=" + rate.from())
++                + (rate.to() == null ? "" : " to=" + rate.to()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidImportRates.java b/src/main/java/net/officefloor/hq/app/rate/ValidImportRates.java
+new file mode 100644
+index 00000000..f0a8bc65
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidImportRates.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.List;
++
++/** An import whose every line passed the rate form's rules, in the order pasted. */
++public record ValidImportRates(List<ValidRate> rates, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateImportRates.java b/src/main/java/net/officefloor/hq/app/rate/ValidateImportRates.java
+new file mode 100644
+index 00000000..27b0e151
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateImportRates.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * Splits the import into lines of grade,rate,from,to (the dates may be absent or blank) and checks
++ * each by the rate form's rules. Blank lines are skipped; an import with no rate in it is refused.
++ */
++public class ValidateImportRates {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRatesRequest request, Out<ValidImportRates> body, Settings settings)
++            throws InvalidRateException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
++        String text = request.text() == null ? "" : request.text();
++        List<ValidRate> rates = new ArrayList<>();
++        int number = 0;
++        for (String raw : text.split("\\r?\\n")) {
++            number++;
++            if (raw.isBlank()) continue;
++            String[] fields = raw.split(",", -1);
++            if (fields.length < 2 || fields.length > 4) {
++                throw new InvalidRateException("Line " + number + ": a line is grade,rate,from,to");
++            }
++            RateRequest rate = new RateRequest(fields[0], fields[1], fields.length > 2 ? fields[2] : "",
++                    fields.length > 3 ? fields[3] : "", request.user());
++            try {
++                rates.add(ValidateRate.check(rate));
++            } catch (InvalidRateException e) {
++                throw new InvalidRateException("Line " + number + ": " + e.getMessage());
++            }
++        }
++        if (rates.isEmpty()) {
++            throw new InvalidRateException("Nothing to import: give one rate per line");
++        }
++        body.set(new ValidImportRates(rates, request.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 6e4dca60..fdcc70e7 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -26,6 +26,12 @@ public class ValidateRate {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<ValidRate> body, Settings settings)
+             throws InvalidRateException, ViewerRefusedException {
+         settings.refuseViewer(sheetId, request.user());
++        body.set(check(request));
++    }
++
++    /** The rate form's rules: a grade A, B or C, a percent, an optional from-date and an optional
++     *  to-date not before it. */
++    static ValidRate check(RateRequest request) throws InvalidRateException {
+         String grade = request.grade() == null ? "" : request.grade().trim();
+         if (!GRADES.contains(grade)) {
+             throw new InvalidRateException("Grade must be A, B or C");
+@@ -55,6 +61,6 @@ public class ValidateRate {
+                 throw new InvalidRateException("The to-date must not be before the from-date");
+             }
+         }
+-        body.set(new ValidRate(grade, new BigDecimal(raw).setScale(2), from, to, request.user()));
++        return new ValidRate(grade, new BigDecimal(raw).setScale(2), from, to, request.user());
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-rates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-rates.POST.yml
+new file mode 100644
+index 00000000..28789402
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-rates.POST.yml
+@@ -0,0 +1,8 @@
++# The rate import box: lines of grade,rate,from,to, each set as the rate form would. Every line is
++# checked by the rate form's rules before any is set; one refused line sets nothing.
++validate:
++  class: net.officefloor.hq.app.rate.ValidateImportRates
++  next: save
++save:
++  class: net.officefloor.hq.app.rate.SaveImportRates
++  govern: [ transaction ]
