@@ -457,6 +457,15 @@ public class Claims {
         return on;
     }
 
+    /** The sheet's today on which each of the sheet's claims last went to PENDING, by claim id (a claim that never did is left out). */
+    public java.util.Map<Long, LocalDate> pendingOns(String sheetId) {
+        java.util.Map<Long, LocalDate> on = new java.util.HashMap<>();
+        jdbc.query("SELECT claim_id, logged_on FROM " + AsOf.table("claim_log") + " WHERE sheet_id = ? AND status = ? ORDER BY id", rs -> {
+            on.put(rs.getLong("claim_id"), rs.getObject("logged_on", LocalDate.class));
+        }, sheetId, ClaimStatus.PENDING.name());
+        return on;
+    }
+
     /** The status logs of the sheet's claims, by claim id, each oldest first as "STATUS by user on date due=due". */
     public java.util.Map<Long, List<String>> logs(String sheetId) {
         java.util.Map<Long, List<String>> logs = new java.util.HashMap<>();

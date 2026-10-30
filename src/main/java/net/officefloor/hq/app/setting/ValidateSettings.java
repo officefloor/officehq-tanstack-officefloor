@@ -202,6 +202,13 @@ public class ValidateSettings {
             }
             reviewSla = Integer.toString(Integer.parseInt(reviewSla));
         }
+        String pendingSla = body == null || body.pendingSla() == null ? null : body.pendingSla().trim();
+        if (pendingSla != null && !pendingSla.isEmpty()) {
+            if (!DAYS.matcher(pendingSla).matches()) {
+                throw new InvalidSettingException("The pending SLA must be a whole number of days, 0 or more.");
+            }
+            pendingSla = Integer.toString(Integer.parseInt(pendingSla));
+        }
         String maxOpen = body == null || body.maxOpen() == null ? null : body.maxOpen().trim();
         if (maxOpen != null && !maxOpen.isEmpty()) {
             if (!DAYS.matcher(maxOpen).matches()) {
@@ -331,7 +338,7 @@ public class ValidateSettings {
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !gradeProof.isEmpty() || !gradeClerkLimit.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty() || pot != null || parent != null
                 || fiscalStartMonth != null || alertThreshold != null || rounding != null || reviewThreshold != null || escalateAfter != null || reviewSla != null || proofKinds != null || defaultGrade != null
-                || scoreMid != null || scoreHigh != null || scoreLog != null || maxOpen != null;
+                || scoreMid != null || scoreHigh != null || scoreLog != null || maxOpen != null || pendingSla != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -339,7 +346,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh, scoreLog, maxOpen));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms, gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit, scoreMid, scoreHigh, scoreLog, maxOpen, pendingSla));
     }
 
     /** A score threshold as typed: null is left as it is, blank is none, otherwise a whole number (it may be negative). */

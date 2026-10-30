@@ -32,6 +32,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `waived` is whether a steward waived its late charge: it bears none from then on;
  * `held` is whether it is held: it still counts in every total, as a held person's claims do;
  * `shares` are the people it is shared with, in the order added: each holds that percent of its due (see `personPart`);
+ * `pendingOn` (yyyy-mm-dd) is the sheet's today it last went to PENDING (null when it never did);
  * `reviewUser` is the user a steward last assigned its review to (null when never), kept after it leaves REVIEW.
  */
 export type Claim = {
@@ -67,6 +68,7 @@ export type Claim = {
   held: boolean;
   shares: ClaimShare[];
   reviewUser: string | null;
+  pendingOn: string | null;
 };
 
 /** A share of a claim: the person on the sheet holding it and their percent (two decimals). */
@@ -76,6 +78,14 @@ export type ClaimShare = { personId: number; share: string };
 export const isReviewLate = (c: Claim, today: string, sla: string) => {
   if (c.status !== 'REVIEW' || c.reviewOn === null || sla === '' || today === '') return false;
   const due = new Date(`${c.reviewOn}T00:00:00Z`);
+  due.setUTCDate(due.getUTCDate() + Number(sla));
+  return due.toISOString().slice(0, 10) < today;
+};
+
+/** Whether a PENDING claim is late: its pending day plus the pending SLA's days (`sla`, "" for none) is before the sheet's `today`. */
+export const isPendingLate = (c: Claim, today: string, sla: string) => {
+  if (c.status !== 'PENDING' || c.pendingOn === null || sla === '' || today === '') return false;
+  const due = new Date(`${c.pendingOn}T00:00:00Z`);
   due.setUTCDate(due.getUTCDate() + Number(sla));
   return due.toISOString().slice(0, 10) < today;
 };

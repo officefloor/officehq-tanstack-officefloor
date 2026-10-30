@@ -52,6 +52,8 @@ public class Settings {
     public static final String ESCALATE_AFTER = "escalate-after";
     /** The review SLA, in days (not dated; blank: none): a REVIEW claim is late once its review day plus these is before the sheet's today. */
     public static final String REVIEW_SLA = "review-sla";
+    /** The pending SLA, in days (not dated; blank: none): a PENDING claim is late once its pending day plus these is before the sheet's today. */
+    public static final String PENDING_SLA = "pending-sla";
     /** The score a person's band is MID at or above (not dated; blank: none, so no bands). */
     public static final String SCORE_MID = "score-mid";
     /** The score a person's band is HIGH at or above (not dated; blank: none, so no bands). */

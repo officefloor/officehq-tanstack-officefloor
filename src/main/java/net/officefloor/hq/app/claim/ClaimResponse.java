@@ -1,12 +1,12 @@
 package net.officefloor.hq.app.claim;
 
-/** A claim as the screen sees it: the amount with two decimals, the date as yyyy-MM-dd, the status by name, the number (null when it has none), the due fixed on settling (null when it has none), who opened it (null when never opened), whether its person's last statement bound it, the figure it bound (null when it has none) the number a correction corrects (null for any other claim) and the date it is due by, as yyyy-MM-dd, its status log, oldest first (empty when not listed with it), and the date it was deferred to, as yyyy-MM-dd (null when never deferred), and how many proofs it has been given, and the number of the claim it was split off (null for any other claim), and the user whose open editor locks it (null when not locked), and whether it was added while its period was soft-closed, and the last day it was reminded, as yyyy-MM-dd (null when never reminded), and its external reference (null when it has none), and its tags, sorted (empty for none), and its comments, oldest first, as "user on date: text" (empty when not listed with them), and the number of the settle batch that settled it (null when none, or not listed with it), and its lines, in the order added, as "label qty x unit" (empty when not listed with them), and the sheet's today it last went to REVIEW, as yyyy-MM-dd (null when it never did, or not listed with it), and whether its late charge was waived, and how many of its proofs are receipts and how many photos, and whether it is held, and its shares, in the order added (empty when none, or not listed with them), and the user its review was last assigned to (null when never, or not listed with it). */
+/** A claim as the screen sees it: the amount with two decimals, the date as yyyy-MM-dd, the status by name, the number (null when it has none), the due fixed on settling (null when it has none), who opened it (null when never opened), whether its person's last statement bound it, the figure it bound (null when it has none) the number a correction corrects (null for any other claim) and the date it is due by, as yyyy-MM-dd, its status log, oldest first (empty when not listed with it), and the date it was deferred to, as yyyy-MM-dd (null when never deferred), and how many proofs it has been given, and the number of the claim it was split off (null for any other claim), and the user whose open editor locks it (null when not locked), and whether it was added while its period was soft-closed, and the last day it was reminded, as yyyy-MM-dd (null when never reminded), and its external reference (null when it has none), and its tags, sorted (empty for none), and its comments, oldest first, as "user on date: text" (empty when not listed with them), and the number of the settle batch that settled it (null when none, or not listed with it), and its lines, in the order added, as "label qty x unit" (empty when not listed with them), and the sheet's today it last went to REVIEW, as yyyy-MM-dd (null when it never did, or not listed with it), and whether its late charge was waived, and how many of its proofs are receipts and how many photos, and whether it is held, and its shares, in the order added (empty when none, or not listed with them), and the user its review was last assigned to (null when never, or not listed with it), and the sheet's today it last went to PENDING, as yyyy-MM-dd (null when it never did, or not listed with it). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
         String number, String settledDue, String openedBy, boolean stated, String statedDue,
         String corrects, String dueBy, java.util.List<String> log, String deferredUntil, int proofs,
         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, java.util.List<String> tags,
         java.util.List<String> comments, Integer batch, java.util.List<String> lines, String reviewOn, boolean waived,
-        int proofsReceipt, int proofsPhoto, boolean held, java.util.List<Share> shares, String reviewUser) {
+        int proofsReceipt, int proofsPhoto, boolean held, java.util.List<Share> shares, String reviewUser, String pendingOn) {
 
     /** A share of the claim as the screen sees it: the holder's person id and their percent with two decimals. */
     public record Share(long personId, String share) {
@@ -25,41 +25,41 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 claim.deferredUntil() == null ? null : claim.deferredUntil().toString(), claim.proofs(),
                 claim.splitFrom(), null, claim.lateEntry(),
                 claim.remindedOn() == null ? null : claim.remindedOn().toString(), claim.ref(), claim.tags(),
-                java.util.List.of(), null, java.util.List.of(), null, claim.waived(), claim.proofsOf("receipt"), claim.proofsOf("photo"), claim.held(), java.util.List.of(), null);
+                java.util.List.of(), null, java.util.List.of(), null, claim.waived(), claim.proofsOf("receipt"), claim.proofsOf("photo"), claim.held(), java.util.List.of(), null, null);
     }
 
     /** The claim as locked by {@code user} (null: not locked). */
     public ClaimResponse withLockedBy(String user) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
-                statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, user, lateEntry, remindedOn, ref, tags, comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser);
+                statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, user, lateEntry, remindedOn, ref, tags, comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser, pendingOn);
     }
 
     /** The claim with its comments, oldest first. */
     public ClaimResponse withComments(java.util.List<String> comments) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
-                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser);
+                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser, pendingOn);
     }
 
     /** The claim with the number of the settle batch that settled it (null: none). */
     public ClaimResponse withBatch(Integer batch) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
-                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser);
+                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser, pendingOn);
     }
 
     /** The claim with its lines, in the order added, each "label qty x unit". */
     public ClaimResponse withLines(java.util.List<String> lines) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
-                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser);
+                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser, pendingOn);
     }
 
     /** The claim with the sheet's today it last went to REVIEW (null: never). */
     public ClaimResponse withReviewOn(java.time.LocalDate on) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
-                comments, batch, lines, on == null ? null : on.toString(), waived, proofsReceipt, proofsPhoto, held, shares, reviewUser);
+                comments, batch, lines, on == null ? null : on.toString(), waived, proofsReceipt, proofsPhoto, held, shares, reviewUser, pendingOn);
     }
 
     /** The claim with its shares, in the order added. */
@@ -67,13 +67,21 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
                 comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held,
-                shares.stream().map(s -> new Share(s.personId(), s.share().toPlainString())).toList(), reviewUser);
+                shares.stream().map(s -> new Share(s.personId(), s.share().toPlainString())).toList(), reviewUser, pendingOn);
+    }
+
+    /** The claim with the sheet's today it last went to PENDING (null: never). */
+    public ClaimResponse withPendingOn(java.time.LocalDate on) {
+        return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
+                statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
+                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, reviewUser,
+                on == null ? null : on.toString());
     }
 
     /** The claim with the user its review was last assigned to (null: never). */
     public ClaimResponse withReviewUser(String user) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags,
-                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, user);
+                comments, batch, lines, reviewOn, waived, proofsReceipt, proofsPhoto, held, shares, user, pendingOn);
     }
 }

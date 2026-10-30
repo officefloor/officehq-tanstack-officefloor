@@ -13,6 +13,7 @@ public class RespondWithClaims {
         java.util.Map<Long, List<String>> lines = claims.lines(sheetId.trim());
         java.util.Map<Long, List<ClaimShare>> shared = shares.of(sheetId.trim());
         java.util.Map<Long, java.time.LocalDate> reviewOn = claims.reviewOns(sheetId.trim());
+        java.util.Map<Long, java.time.LocalDate> pendingOn = claims.pendingOns(sheetId.trim());
         java.util.Map<Long, String> reviewUsers = claims.reviewUsers(sheetId.trim());
         java.util.Map<Long, String> locked = locks.list(sheetId.trim());
         java.util.Map<Long, Integer> batched = batches.byClaim(sheetId.trim());
@@ -20,7 +21,8 @@ public class RespondWithClaims {
                 .map(c -> ClaimResponse.from(c, logs.getOrDefault(c.id(), List.of())).withLockedBy(locked.get(c.id()))
                         .withComments(comments.getOrDefault(c.id(), List.of())).withBatch(batched.get(c.id()))
                         .withLines(lines.getOrDefault(c.id(), List.of())).withReviewOn(reviewOn.get(c.id()))
-                        .withShares(shared.getOrDefault(c.id(), List.of())).withReviewUser(reviewUsers.get(c.id())))
+                        .withShares(shared.getOrDefault(c.id(), List.of())).withReviewUser(reviewUsers.get(c.id()))
+                        .withPendingOn(pendingOn.get(c.id())))
                 .toList());
     }
 }

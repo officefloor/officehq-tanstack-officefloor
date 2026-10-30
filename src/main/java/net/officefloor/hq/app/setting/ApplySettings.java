@@ -70,6 +70,9 @@ public class ApplySettings {
         if (settings.reviewSla() != null) {
             store.set(settings.sheetId(), Settings.REVIEW_SLA, settings.reviewSla());
         }
+        if (settings.pendingSla() != null) {
+            store.set(settings.sheetId(), Settings.PENDING_SLA, settings.pendingSla());
+        }
         if (settings.scoreMid() != null) {
             store.set(settings.sheetId(), Settings.SCORE_MID, settings.scoreMid());
         }

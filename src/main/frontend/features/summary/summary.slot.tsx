@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery, isActive, isReviewLate } from '../claims/claimsQuery';
+import { claimsQuery, isActive, isPendingLate, isReviewLate } from '../claims/claimsQuery';
 import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import { gradeOn, peopleQuery } from '../people/peopleQuery';
 import { useGrades } from '../grades/gradesQuery';
 import { classicPeriodDue, periodDue, periodsQuery } from '../periods/periodsQuery';
 import { useCapFor } from '../pools/poolsQuery';
 import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
-import { useFloor, useLate, useReviewSla } from '../settings/settingsQuery';
+import { useFloor, useLate, usePendingSla, useReviewSla } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
 
@@ -19,7 +19,7 @@ export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filt
 /**
  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
  * today (retired people excluded), their due-totals added up, skipping n/a, and how many of them are active. Per period: its
- * due-total, and its change from the period before it by from-date (none for the earliest). Per status: how many claims have it, and how many REVIEW claims are past the review SLA. Per void reason on the list: how many VOID claims were voided with it.
+ * due-total, and its change from the period before it by from-date (none for the earliest). Per status: how many claims have it, and how many REVIEW claims are past the review SLA, and how many PENDING claims past the pending SLA. Per void reason on the list: how many VOID claims were voided with it.
  */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
@@ -33,6 +33,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const capFor = useCapFor(sheetId);
   const reviewSla = useReviewSla(sheetId);
+  const pendingSla = usePendingSla(sheetId);
 
   const unretired = people.filter((p) => p.retiredFrom === null);
   const byFrom = [...periods].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
@@ -110,6 +111,10 @@ function Summary({ sheetId }: { sheetId: string }) {
       <p>
         Review late{' '}
         <strong data-testid="summary-review-late-count">{claims.filter((c) => isReviewLate(c, today, reviewSla)).length}</strong>
+      </p>
+      <p>
+        Pending late{' '}
+        <strong data-testid="summary-pending-late-count">{claims.filter((c) => isPendingLate(c, today, pendingSla)).length}</strong>
       </p>
       <table data-testid="summary-void-reasons">
         <thead>

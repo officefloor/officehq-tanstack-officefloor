@@ -21,10 +21,11 @@ package net.officefloor.hq.app.setting;
  * {@code scoreMid} and {@code scoreHigh} are the score thresholds being saved, as whole numbers, "" for none (not dated).
  * {@code scoreLog} is the score log switch being saved, "on" or "" for off (not dated).
  * {@code maxOpen} is the maximum of OPEN or PENDING claims a person may have, as a whole number, "" for none (not dated).
+ * {@code pendingSla} is the pending SLA being saved, as a whole number of days, "" for none (not dated).
  * {@code from} is the from-date given for a dated setting, by setting key (a key left out is saved from the sheet's today, and audited without one).
  */
 public record SheetSettings(String sheetId, String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, String cap, String proofThreshold, String graceDays, String noteThreshold, String entryDate,
         java.util.SortedMap<String, String> gradeTerms, java.util.SortedMap<String, String> gradeGrace, java.util.Map<String, java.time.LocalDate> from,
         java.util.Map<String, String> perms, java.util.SortedMap<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        java.util.SortedMap<String, String> gradeClerkLimit, String scoreMid, String scoreHigh, String scoreLog, String maxOpen) {
+        java.util.SortedMap<String, String> gradeClerkLimit, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla) {
 }
