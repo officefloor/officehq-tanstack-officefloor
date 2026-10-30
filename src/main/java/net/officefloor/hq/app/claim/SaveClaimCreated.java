@@ -14,7 +14,7 @@ public class SaveClaimCreated {
         String sheetId = person.getSheetId();
         Claim claim = claims.add(sheetId, person.getId(), request.amount(),
                 request.date() != null ? request.date() : sheets.today(sheetId), request.note());
-        audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim));
+        audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));
     }
 }

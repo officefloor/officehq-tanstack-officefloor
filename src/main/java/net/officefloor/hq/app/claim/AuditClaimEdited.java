@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
 public class AuditClaimEdited {
     public void audit(@Val ValidClaim request, @Val Claim claim, People people, Audit audit) {
         audit.recordOnCommit(ClaimAudit.line("CLAIM_EDITED", request.user(),
-                people.find(claim.getSheetId(), claim.getPersonId()), claim));
+                people.find(claim.getSheetId(), claim.getPersonId()), claim, claim.getNumber()));
     }
 }

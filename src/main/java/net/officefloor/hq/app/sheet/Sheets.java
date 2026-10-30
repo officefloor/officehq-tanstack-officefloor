@@ -37,6 +37,16 @@ public class Sheets {
                 (rs, i) -> rs.getDate(1).toLocalDate(), sheetId);
     }
 
+    /**
+     * The sheet's next claim number. The counter row stays locked until the transaction ends, so
+     * claims opened at the same moment get distinct numbers, and a rolled-back open gives none away.
+     */
+    public long nextClaimNumber(String sheetId) {
+        today(sheetId); // the sheet's row holds the counter
+        jdbc.update("UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?", sheetId);
+        return jdbc.queryForObject("SELECT last_claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
+    }
+
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }

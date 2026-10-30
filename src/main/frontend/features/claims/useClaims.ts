@@ -3,8 +3,17 @@ import { getJson } from '../../api/http';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim; `amount` is shown with two decimals ("10.25"). */
-export type Claim = { id: string; personId: string; amount: string; date: string; note: string; status: ClaimStatus };
+/** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
+ *  opened, "" for a draft or a voided claim. */
+export type Claim = {
+  id: string;
+  personId: string;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: string;
+};
 
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';

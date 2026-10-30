@@ -5,7 +5,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.plugin.variable.Val;
 
 public class AuditClaimStatus {
-    public void audit(@Val ValidClaimStatus request, @Val Claim claim, People people, Audit audit) {
+    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit) {
         String event = switch (request.target()) {
             case OPEN -> "CLAIM_OPENED";
             case SETTLED -> "CLAIM_SETTLED";
@@ -13,6 +13,6 @@ public class AuditClaimStatus {
             case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
         };
         audit.recordOnCommit(ClaimAudit.line(event, request.user(),
-                people.find(claim.getSheetId(), claim.getPersonId()), claim));
+                people.find(claim.getSheetId(), claim.getPersonId()), claim, number.value()));
     }
 }
