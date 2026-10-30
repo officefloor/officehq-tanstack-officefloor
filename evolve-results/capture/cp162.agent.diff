@@ -1,0 +1,155 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 6e45b611..162d0e1f 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -11,6 +11,7 @@ import { useSheetToday } from '../sheet/useSheetToday';
+ import { dueBy, isOverdue } from './overdue';
+ import { useGrace } from './useGrace';
+ import { ClaimSelect } from './BulkOpen';
++import { ClaimTimeline } from './ClaimTimeline';
+ import { peopleKey, type Person } from '../people/usePeople';
+ 
+ // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
+@@ -349,6 +350,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+           </li>
+         ))}
+       </ol>{' '}
++      <ClaimTimeline claimId={c.id} />{' '}
+       <ol data-testid="claim-comments">
+         {(c.comments ?? []).map((line, i) => (
+           <li key={i} data-testid="claim-comments-line">
+diff --git a/src/main/frontend/features/claims/ClaimTimeline.tsx b/src/main/frontend/features/claims/ClaimTimeline.tsx
+new file mode 100644
+index 00000000..0afa330f
+--- /dev/null
++++ b/src/main/frontend/features/claims/ClaimTimeline.tsx
+@@ -0,0 +1,38 @@
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// A claim's timeline: the audit lines about it exactly as the file holds them, newest first — those carrying its
++// number, or for a claim with no number those naming its person, amount and date together. It reads the file on
++// each show; a new show clears the old list first.
++export function ClaimTimeline({ claimId }: { claimId: string }) {
++  const [sheet] = useSearchParam('sheet', asString);
++  const show = useMutation({
++    mutationFn: () =>
++      getJson<string[]>(
++        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(claimId)}/timeline`,
++      ),
++  });
++  return (
++    <>
++      <button
++        type="button"
++        data-testid="claim-timeline"
++        onClick={() => {
++          show.reset();
++          show.mutate();
++        }}
++      >
++        Timeline
++      </button>
++      {show.isError && <span data-testid="claim-timeline-error" role="alert"> Could not read the timeline.</span>}
++      <ol data-testid="claim-timeline-list">
++        {(show.data ?? []).map((line, i) => (
++          <li key={i} data-testid="claim-timeline-line">
++            {line}
++          </li>
++        ))}
++      </ol>
++    </>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 322ff4ab..54d595c8 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -134,6 +134,46 @@ public class Audit {
+         return found;
+     }
+ 
++    /**
++     * A claim's timeline: the sheet's lines about it exactly as the file holds them, newest first. With a number,
++     * the lines carrying number=<it>; without one, the lines carrying no number that name its person (compared as
++     * names are), amount and date together. Read from the file: the timeline is not a second record.
++     */
++    public synchronized List<String> claimLines(String sheet, String number, String person, String amount,
++            String date) {
++        String wanted = person.trim().toLowerCase(Locale.ROOT);
++        List<String> found = new ArrayList<>();
++        if (!Files.exists(file)) {
++            return found;
++        }
++        List<String> all;
++        try {
++            all = Files.readAllLines(file, StandardCharsets.UTF_8);
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++        for (String line : all) {
++            List<String[]> fields = fields(line);
++            if (!has(fields, "sheet", sheet, false)) {
++                continue;
++            }
++            boolean about = number != null && !number.isEmpty()
++                    ? has(fields, "number", number, false)
++                    : !hasKey(fields, "number") && has(fields, "person", wanted, true)
++                            && has(fields, "amount", amount, false) && has(fields, "date", date, false);
++            if (about) {
++                found.add(line);
++            }
++        }
++        Collections.reverse(found);
++        return found;
++    }
++
++    /** Whether the line carries a field with the key. */
++    private static boolean hasKey(List<String[]> fields, String key) {
++        return fields.stream().anyMatch(field -> field[0].equals(key));
++    }
++
+     /** Whether a field key=value is among the line's fields (a name compared trimmed, case ignored). */
+     private static boolean has(List<String[]> fields, String key, String value, boolean asName) {
+         for (String[] field : fields) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+new file mode 100644
+index 00000000..99af8877
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * The claim's timeline: its audit lines as the file holds them, newest first — those carrying its number, or for a
++ * claim with no number those naming its person, amount and date together.
++ */
++public class RespondWithClaimTimeline {
++    public void respond(@Val Claim claim, People people, Audit audit, ObjectResponse<List<String>> response) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        ClaimResponse shown = ClaimResponse.from(claim);
++        response.send(audit.claimLines(claim.getSheetId(), claim.getNumber(),
++                person == null ? "" : person.getName(), String.valueOf(shown.amount()), String.valueOf(shown.date())));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 00000000..e035c52c
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,7 @@
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimTimeline
++  govern: [ readonly-transaction ]
