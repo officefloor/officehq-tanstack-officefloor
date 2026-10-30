@@ -5,14 +5,14 @@ import { claimDue, showDue } from '../rates/due';
 import { claimsKey, type Claim } from './useClaims';
 
 // A person's claims, newest first, each with its amount, date, note, status, number and due (fixed when it
-// was settled; otherwise its amount at the person's grade's rate, n/a when the grade has none), the status buttons (open, settle, void —
+// was settled; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
 // one the claim's status does not allow is refused with the claim's error) and an edit button that
 // opens the claim in the person's claim form (cancel closes it again).
-export function ClaimList({ claims, rate }: { claims: Claim[]; rate: string | undefined }) {
+export function ClaimList({ claims, rateOn }: { claims: Claim[]; rateOn: (date: string) => string | undefined }) {
   return (
     <ul data-testid="claims">
       {claims.map((c) => (
-        <ClaimRow key={c.id} claim={c} rate={rate} />
+        <ClaimRow key={c.id} claim={c} rate={rateOn(c.date)} />
       ))}
     </ul>
   );

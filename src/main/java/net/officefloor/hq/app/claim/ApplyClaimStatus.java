@@ -21,9 +21,9 @@ public class ApplyClaimStatus {
             claim.setNumber(null);
         }
         if (request.target() == ClaimStatus.SETTLED) {
-            // Settling fixes the due at the current rate; with no rate it stays live (n/a until one is set).
+            // Settling fixes the due at the rate in force on the claim's date; with no rate it stays live (n/a until one is set).
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
-            claim.setSettledDue(Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade)));
+            claim.setSettledDue(Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate())));
         }
         claim.setStatus(request.target());
     }

@@ -1,6 +1,10 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
@@ -13,6 +17,9 @@ public class ValidateRate {
     /** A percent: 0 or more, at most four whole digits and two decimals. */
     private static final Pattern PERCENT = Pattern.compile("\\d{1,4}(\\.\\d{1,2})?");
 
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
+            .withResolverStyle(ResolverStyle.STRICT);
+
     public void validate(@RequestBody RateRequest request, Out<ValidRate> body) throws InvalidRateException {
         String grade = request.grade() == null ? "" : request.grade().trim();
         if (!GRADES.contains(grade)) {
@@ -22,6 +29,15 @@ public class ValidateRate {
         if (!PERCENT.matcher(raw).matches()) {
             throw new InvalidRateException("The rate must be a percent of 0.00 or more with at most two decimals");
         }
-        body.set(new ValidRate(grade, new BigDecimal(raw).setScale(2), request.user()));
+        String rawFrom = request.from() == null ? "" : request.from().trim();
+        LocalDate from = null;
+        if (!rawFrom.isEmpty()) {
+            try {
+                from = LocalDate.parse(rawFrom, DATE);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The from-date must be a date (YYYY-MM-DD)");
+            }
+        }
+        body.set(new ValidRate(grade, new BigDecimal(raw).setScale(2), from, request.user()));
     }
 }
