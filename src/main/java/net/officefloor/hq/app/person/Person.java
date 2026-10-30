@@ -109,8 +109,23 @@ public class Person {
     /** The date the person is retired from; null when not retired. Set means retired, whatever the date. */
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
-    /** Whether a claim may be dated on this date: never after the person's retirement date. */
-    public boolean allowsClaimOn(LocalDate date) { return retiredFrom == null || !date.isAfter(retiredFrom); }
+    /** Whether a claim may be dated on this date: never after the person's retirement date, nor after the from-date
+     *  and before the to-date of a past retirement. */
+    public boolean allowsClaimOn(LocalDate date) {
+        return (retiredFrom == null || !date.isAfter(retiredFrom))
+                && retirements.stream().noneMatch(r -> r.excludes(date));
+    }
+    /** A past retirement: from its from-date to the day the person was unretired. */
+    public record Retirement(LocalDate from, LocalDate to) {
+        /** Whether a claim dated on the date falls within it: after the from-date and before the to-date. */
+        public boolean excludes(LocalDate date) {
+            return date != null && date.isAfter(from) && date.isBefore(to);
+        }
+    }
+    /** The person's past retirements, in the order they ended. */
+    private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
+    public java.util.List<Retirement> getRetirements() { return retirements; }
+    public void setRetirements(java.util.List<Retirement> retirements) { this.retirements = retirements; }
     /** A hold from a date to an optional to-date (null: open-ended), both days included. */
     public record Hold(LocalDate from, LocalDate to) {
         public boolean covers(LocalDate date) {

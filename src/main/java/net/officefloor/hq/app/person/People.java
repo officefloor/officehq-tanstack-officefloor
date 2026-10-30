@@ -58,6 +58,14 @@ public class People {
         for (Person person : found) {
             person.setHolds(new java.util.ArrayList<>(holds.getOrDefault(person.getId(), List.of())));
         }
+        java.util.Map<Long, java.util.List<Person.Retirement>> retirements = new java.util.HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? ORDER BY seq", rs -> {
+            retirements.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
+                    .add(new Person.Retirement(rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate()));
+        }, sheetId);
+        for (Person person : found) {
+            person.setRetirements(new java.util.ArrayList<>(retirements.getOrDefault(person.getId(), List.of())));
+        }
         return found;
     }
 
@@ -323,6 +331,7 @@ public class People {
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
         // What is dropped with them.
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
@@ -361,6 +370,7 @@ public class People {
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
@@ -506,6 +516,18 @@ public class People {
         jdbc.update("INSERT INTO retire_history (sheet_id, person_id, set_on, retired_from) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
                 person.getSheetId(), person.getId(), person.getSheetId(),
                 person.getRetiredFrom() == null ? null : java.sql.Date.valueOf(person.getRetiredFrom()));
+    }
+
+    /** Unretires the person on the date: their retirement is kept as a past one from its from-date to the date. The
+     *  person's version is left as it is — unretiring is not an edit of the person form. */
+    public void saveUnretired(Person person, java.time.LocalDate on) {
+        Person.Retirement past = new Person.Retirement(person.getRetiredFrom(), on);
+        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date, set_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), java.sql.Date.valueOf(past.from()), java.sql.Date.valueOf(past.to()),
+                person.getSheetId());
+        person.getRetirements().add(past);
+        person.setRetiredFrom(null);
+        saveRetired(person);
     }
 
     /** Adds a hold to the person. The person's version is left as it is — holding is not an edit of

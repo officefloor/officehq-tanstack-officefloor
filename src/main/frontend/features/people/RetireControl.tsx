@@ -64,3 +64,46 @@ export function RetireControl({ personId }: { personId: string }) {
     </>
   );
 }
+
+// Unretires a retired person on the sheet's today: their retirement is kept on the row as a past one.
+// Anyone not retired is refused, shown as the person's error.
+export function UnretireButton({ personId }: { personId: string }) {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+
+  const unretire = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/unretire`, {
+        user,
+      }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]),
+  });
+  const taken = usePersonAction(personId, () => unretire.reset());
+
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="person-unretire"
+        onClick={() => {
+          taken();
+          once(() => unretire.mutateAsync());
+        }}
+      >
+        Unretire
+      </button>
+      {unretire.isError && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          The person could not be unretired.
+        </span>
+      )}
+    </>
+  );
+}

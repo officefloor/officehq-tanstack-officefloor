@@ -18,7 +18,7 @@ import { PasteClaims } from './PasteClaims';
 import { ImportPeople } from './ImportPeople';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
-import { RetireControl } from './RetireControl';
+import { RetireControl, UnretireButton } from './RetireControl';
 import { TransferControl } from './TransferControl';
 import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
@@ -144,6 +144,7 @@ export function PeopleList() {
             <th>Watched</th>
             <th>Retired</th>
             <th>Retired from</th>
+            <th>Past retirements</th>
             <th>Hold</th>
             <th>Statements</th>
             <th>Last stated</th>
@@ -197,6 +198,7 @@ export function PeopleList() {
                   <StatementButton personId={p.id} />{' '}
                   <UnstateButton personId={p.id} />{' '}
                   <RetireControl personId={p.id} />{' '}
+                  <UnretireButton personId={p.id} />{' '}
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
                   <PatronControl personId={p.id} people={people} />{' '}
                   <AliasControl personId={p.id} />{' '}
@@ -207,6 +209,13 @@ export function PeopleList() {
                 <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>
                 <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>
                 <td data-testid="person-retired-from">{p.retiredFrom}</td>
+                <td>
+                  {(p.retirements ?? []).map((line, i) => (
+                    <div key={i} data-testid="person-retirement-line">
+                      {line}
+                    </div>
+                  ))}
+                </td>
                 <td data-testid="person-hold">{p.held ? 'yes' : 'no'}</td>
                 <td data-testid="person-statement-count">{p.statementCount}</td>
                 <td data-testid="person-stated-total">{p.statedTotal}</td>

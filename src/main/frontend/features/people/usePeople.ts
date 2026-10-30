@@ -36,6 +36,9 @@ export type Person = {
   clashing: boolean;
   /** The sheet the person was transferred from; "" for anyone else. */
   origin: string;
+  /** The person's past retirements, each "<from> to <the day unretired>", in the order they ended: no claim of
+   *  theirs may be dated after the from and before the to of one. */
+  retirements: string[];
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */

@@ -35,12 +35,20 @@ public class Pools {
      *  has the sheet's pot; a pool that is a member of another has its cut there as its pot. While a pool has a pot,
      *  each member of it, if balanced, has a cut of it (see {@link #cuts}); otherwise no cut (""). */
     public List<PoolResponse> list(String sheetId) {
+        return list(sheetId, null);
+    }
+
+    /** The sheet's pools as {@link #list(String)}, with memberships' dates and holds judged on the date standing for
+     *  the sheet's today (null: the sheet's today itself), as the as-of view shows them. */
+    public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
+        java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
         Map<String, List<PoolResponse.Member>> members = new LinkedHashMap<>();
         for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY seq", String.class, sheetId)) {
             members.put(name, new ArrayList<>());
         }
         jdbc.query("SELECT m.pool_name, m.person_id, p.name, m.share, p.retired_from, m.member_pool,"
-                + " (m.from_date IS NULL OR m.from_date <= s.today) AND (m.to_date IS NULL OR m.to_date >= s.today)"
+                + " (m.from_date IS NULL OR m.from_date <= COALESCE(CAST(? AS DATE), s.today))"
+                + " AND (m.to_date IS NULL OR m.to_date >= COALESCE(CAST(? AS DATE), s.today))"
                 + " FROM pool_member m"
                 + " LEFT JOIN person p ON p.id = m.person_id AND p.sheet_id = m.sheet_id"
                 + " JOIN sheet s ON s.id = m.sheet_id"
@@ -58,7 +66,7 @@ public class Pools {
                         list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3),
                                 share, rs.getDate(5) != null, current, ""));
                     }
-                }, sheetId);
+                }, day, day, sheetId);
         List<BigDecimal> pots = jdbc.queryForList("SELECT pot FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
         BigDecimal pot = pots.isEmpty() || pots.get(0) == null ? null : pots.get(0).setScale(2);
         Map<String, String> totals = new HashMap<>();
@@ -76,8 +84,8 @@ public class Pools {
             totals.put(name, total.toPlainString());
         });
         Set<String> held = new HashSet<>(jdbc.queryForList("SELECT DISTINCT CAST(h.person_id AS VARCHAR) FROM person_hold h"
-                + " JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ? AND h.from_date <= s.today"
-                + " AND (h.to_date IS NULL OR h.to_date >= s.today)", String.class, sheetId));
+                + " JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ? AND h.from_date <= COALESCE(CAST(? AS DATE), s.today)"
+                + " AND (h.to_date IS NULL OR h.to_date >= COALESCE(CAST(? AS DATE), s.today))", String.class, sheetId, day, day));
         Map<String, List<PoolResponse.Member>> shown = new HashMap<>(members);
         for (String name : members.keySet()) {
             if (!nested.contains(name)) {

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 
 /** A pool member: the person's id and name (or, for another pool that is a member, personId null and memberPool its
  *  name), their share percent (two decimals) and whether a retirement date is set (a retired member's share counts
@@ -11,13 +12,14 @@ export type PoolMember = { personId: string | null; memberPool: string | null; n
 /** A pool: its members in the order added, the total of their shares and whether that is exactly 100.00. */
 export type Pool = { name: string; totalShare: string; balanced: boolean; members: PoolMember[] };
 
-export const poolsKey = (sheet: string) => ['sheet', sheet, 'pools'] as const;
+export const poolsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'pools', asOf] as const;
 
-/** The sheet's pools, in the order added. */
+/** The sheet's pools, in the order added; with an as-of date, memberships and holds judged on it. */
 export function usePools(sheet: string): Pool[] {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: poolsKey(sheet),
-    queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pools`),
+    queryKey: poolsKey(sheet, asOf),
+    queryFn: () => getJson<Pool[]>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, asOf)),
     enabled: sheet !== '',
   });
   return data ?? [];
