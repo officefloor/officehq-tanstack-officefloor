@@ -5,7 +5,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 
 // The audit viewer: the sheet's audit lines exactly as the file holds them, newest first — or, with a
 // name in the filter, only the lines about that person (name= or person=, compared as names are). It
-// reads the file on each show; it is not a second record. A new show clears the old list first. For a person
+// reads the file on each show; it is not a second record. A new show clears the old list first. With a name,
+// the matching lines of the sheet's descendants follow (each sheet's newest first, sheets by id). For a person
 // transferred in, the lines about them from the sheet they came from follow, newest first.
 export function AuditViewer() {
   const [sheet] = useSearchParam('sheet', asString);
