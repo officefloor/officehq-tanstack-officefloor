@@ -60,10 +60,23 @@ export function useSheetFigures(sheet: string) {
       : claims
           .filter((c) => c.personId === person.id && c.status === 'SETTLED' && c.date >= settledFrom && c.date <= today! && /^-?\d+\.\d{2}$/.test(c.due))
           .reduce((sum, c) => sum + toCents(c.due), 0n);
+  // Aged: the dues of a person's OPEN and PENDING claims that count, split by the claim's age on
+  // today (days from its date): 0 to 30, 31 to 60, 61 or more; a claim dated after today is 0 to 30.
+  const agedOf = (person: Person) => {
+    const buckets = [0n, 0n, 0n];
+    if (today === undefined) return buckets;
+    for (const c of live) {
+      if (c.personId !== person.id || !isOpen(c)) continue;
+      const age = daysBetween(c.date, today);
+      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n;
+      buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;
+    }
+    return buckets;
+  };
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
@@ -81,4 +94,9 @@ function daysBefore(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0, 10);
+}
+
+// The whole days from one ISO date to a later one (negative when it is earlier).
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
