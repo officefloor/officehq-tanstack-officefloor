@@ -157,11 +157,11 @@ public class Person {
     }
     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
-     *  dated within one of the person's holds. */
+     *  dated within one of the person's holds or once their retirement date is reached. */
     public boolean countsAtEnd(Claim claim, LocalDate end, LocalDate today) {
         ClaimStatus then = claim.statusAt(end);
         return then != null && then.counts() && !claim.isDeferredOn(today)
-                && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
+                && !(claim.getStatus().isOpen() && !claim.isBound() && (heldOn(claim.getDate()) || retiredOn(today)));
     }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public java.util.List<Long> getPatronIds() { return patronIds; }
