@@ -12,8 +12,13 @@ export type Role = { user: string; role: string };
  *  a claim opened is numbered within its period), the roles set and each grade's own terms in days, by grade
  *  (a grade not listed uses the sheet's terms), the cap with two decimals ("" for none: a person's due-total is at most it) and the
  *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved)
- *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string };
+ *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule),
+ *  and every delegation of the steward role, in the order given. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[] };
+
+/** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
+ *  steward, and the audit lines of their changes end with for=<by>. */
+export type Delegation = { user: string; from: string; to: string; by: string };
 
 /** A value recorded for a dated setting (clerk-limit, floor, terms, terms-<grade>, late-pct, cap): the date
  *  it is in force from and the value ("" for none). The figures shown in Settings are those in force on the

@@ -24,6 +24,9 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
 // comma separated (blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward);
 // saved like the cap. The grace days (not dated; whole days; blank: off; saved like the cap): when the sheet's today is changed,
 // every open period whose to-date plus them is before the new today is closed.
+// A steward delegates the steward role to a user for a from-date and a to-date, inclusive (blank: the sheet's today): while the
+// sheet's today is inside them the user acts as a steward in every rule. Anyone but a steward (by the role set), or a to-date
+// before the from-date, is refused.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -31,6 +34,7 @@ export function SettingsPanel() {
   const queryClient = useQueryClient();
   const submitSetting = useSubmitOnce();
   const submitRole = useSubmitOnce();
+  const submitDelegate = useSubmitOnce();
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
@@ -124,6 +128,9 @@ export function SettingsPanel() {
   };
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
+  const [delegateUser, setDelegateUser] = useState('');
+  const [delegateFrom, setDelegateFrom] = useState('');
+  const [delegateTo, setDelegateTo] = useState('');
   const saveSetting = useMutation({
     mutationFn: (body: { key: string; value: string; from?: string }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`, { ...body, user }),
@@ -168,6 +175,16 @@ export function SettingsPanel() {
     onSuccess: (saved) => {
       setName('');
       setRole('');
+      queryClient.setQueryData(settingsKey(sheet), saved);
+    },
+  });
+  const saveDelegate = useMutation({
+    mutationFn: (body: { name: string; from: string; to: string }) =>
+      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/delegations`, { ...body, user }),
+    onSuccess: (saved) => {
+      setDelegateUser('');
+      setDelegateFrom('');
+      setDelegateTo('');
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
   });
@@ -421,6 +438,53 @@ export function SettingsPanel() {
         />{' '}
         <button type="submit" data-testid="role-form-submit">Set role</button>
         {saveRole.isError && <span data-testid="role-form-error" role="alert"> Could not set the role: it needs a user name and the role clerk, steward or viewer, and a viewer can change nothing.</span>}
+      </form>
+      <ul data-testid="delegate-list">
+        {(settings?.delegations ?? []).map((d, i) => (
+          <li key={i} data-testid="delegate-line">
+            {d.user} acts as a steward from {d.from} to {d.to}, for {d.by}
+          </li>
+        ))}
+      </ul>
+      <form
+        data-testid="delegate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitDelegate(() => {
+            saveDelegate.reset();
+            return saveDelegate.mutateAsync({ name: delegateUser.trim(), from: delegateFrom.trim(), to: delegateTo.trim() });
+          });
+        }}
+      >
+        <input
+          data-testid="delegate-user"
+          value={delegateUser}
+          placeholder="Delegate the steward role to"
+          onChange={(e) => {
+            setDelegateUser(e.target.value);
+            saveDelegate.reset();
+          }}
+        />{' '}
+        <input
+          data-testid="delegate-from"
+          value={delegateFrom}
+          placeholder="From (YYYY-MM-DD)"
+          onChange={(e) => {
+            setDelegateFrom(e.target.value);
+            saveDelegate.reset();
+          }}
+        />{' '}
+        <input
+          data-testid="delegate-to"
+          value={delegateTo}
+          placeholder="To (YYYY-MM-DD)"
+          onChange={(e) => {
+            setDelegateTo(e.target.value);
+            saveDelegate.reset();
+          }}
+        />{' '}
+        <button type="submit" data-testid="delegate-submit">Delegate</button>
+        {saveDelegate.isError && <span data-testid="delegate-error" role="alert"> Could not delegate: only a steward can delegate the steward role, it needs a user name, and the to-date cannot be before the from-date.</span>}
       </form>
     </>
   );

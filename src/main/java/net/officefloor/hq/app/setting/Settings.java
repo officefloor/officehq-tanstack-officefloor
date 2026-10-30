@@ -167,8 +167,14 @@ public class Settings {
         jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
     }
 
-    /** The role the user name holds on the sheet; a clerk unless set otherwise. */
+    /** The role the user name acts in on the sheet: a steward while a delegation to them covers the sheet's today,
+     *  else the role set for them. */
     public String role(String sheetId, String user) {
+        return delegator(sheetId, user) != null ? STEWARD : roleSet(sheetId, user);
+    }
+
+    /** The role set for the user name on the sheet; a clerk unless set otherwise. */
+    public String roleSet(String sheetId, String user) {
         List<String> found = jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 (rs, i) -> rs.getString(1), sheetId, user == null ? "" : user.trim());
         return found.isEmpty() ? CLERK : found.get(0);
@@ -184,6 +190,21 @@ public class Settings {
     public void setRole(String sheetId, String user, String role) {
         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
                 sheetId, user, role);
+    }
+
+    /** The steward whose delegation to the user covers the sheet's today (the latest given, when several do); null for none. */
+    public String delegator(String sheetId, String user) {
+        List<String> found = jdbc.query("SELECT d.delegated_by FROM sheet_delegation d JOIN sheet s ON s.id = d.sheet_id"
+                        + " WHERE d.sheet_id = ? AND d.user_name = ? AND s.today BETWEEN d.from_date AND d.to_date"
+                        + " ORDER BY d.seq DESC LIMIT 1",
+                (rs, i) -> rs.getString(1), sheetId, user == null ? "" : user.trim());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void delegate(String sheetId, String user, LocalDate from, LocalDate to, String by) {
+        sheets.today(sheetId);
+        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, from_date, to_date, delegated_by) VALUES (?, ?, ?, ?, ?)",
+                sheetId, user, Date.valueOf(from), Date.valueOf(to), by);
     }
 
     /** The roles set for an action ("" for the standing rule). */
@@ -220,7 +241,7 @@ public class Settings {
     /** The sheet's settings as shown: each dated one as in force on the sheet's today — the clerk limit ("" for none),
      *  the floor, the terms, the late percent, each grade's own terms (a grade with none then is left out) and the cap
      *  ("" for none) — the proof threshold ("" for none), the policy date ("" for blank), the period numbering from ("" for off), every role set, by user
-     *  name, every value recorded for the dated settings and each action's permission ("" for the standing rule), and the grace days ("" for off). */
+     *  name, every value recorded for the dated settings and each action's permission ("" for the standing rule), and the grace days ("" for off), and every delegation of the steward role, in the order given. */
     public SettingsResponse load(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal limit = clerkLimit(sheetId);
@@ -249,6 +270,9 @@ public class Settings {
                 numbering == null ? "" : numbering.toString(), roles, gradeTerms,
                 cap == null ? "" : cap.setScale(2).toPlainString(), dated(sheetId),
                 threshold == null ? "" : threshold.setScale(2).toPlainString(), perms,
-                grace == null ? "" : String.valueOf(grace));
+                grace == null ? "" : String.valueOf(grace), jdbc.query(
+                        "SELECT user_name, from_date, to_date, delegated_by FROM sheet_delegation WHERE sheet_id = ? ORDER BY seq",
+                        (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
+                                rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId));
     }
 }
