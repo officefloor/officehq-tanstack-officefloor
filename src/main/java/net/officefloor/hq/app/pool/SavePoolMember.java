@@ -10,9 +10,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SavePoolMember {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidPoolMember member, Pools pools, Audit audit,
             ObjectResponse<List<PoolResponse>> response) {
-        pools.addMember(sheetId, member.pool(), member.personId(), member.memberPool(), member.share());
+        pools.addMember(sheetId, member.pool(), member.personId(), member.memberPool(), member.share(),
+                member.from(), member.to());
         audit.recordOnCommit("POOL_MEMBER_ADDED sheet=" + sheetId + " by=" + member.user() + " pool=" + member.pool()
-                + " name=" + member.memberName() + " share=" + member.share().toPlainString());
+                + " name=" + member.memberName() + " share=" + member.share().toPlainString()
+                + (member.from() == null ? "" : " from=" + member.from())
+                + (member.to() == null ? "" : " to=" + member.to()));
         response.send(pools.list(sheetId));
     }
 }

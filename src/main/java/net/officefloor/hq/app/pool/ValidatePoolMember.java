@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -54,7 +56,26 @@ public class ValidatePoolMember {
         if (share.signum() <= 0 || share.compareTo(Pools.FULL) > 0) {
             throw new InvalidPoolException("A share is more than 0.00 and at most 100.00");
         }
-        body.set(new ValidPoolMember(pool, personId, memberPool.isEmpty() ? null : memberPool, memberName, share, request.user()));
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidPoolException("A to-date cannot be before the from-date");
+        }
+        body.set(new ValidPoolMember(pool, personId, memberPool.isEmpty() ? null : memberPool, memberName, share,
+                from, to, request.user()));
+    }
+
+    /** The date (yyyy-MM-dd), or null when blank. */
+    private static LocalDate date(String raw) throws InvalidPoolException {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException e) {
+            throw new InvalidPoolException("A date is yyyy-MM-dd");
+        }
     }
 
     /** Refuses the member pool when it is no pool of the sheet, is already a member of a pool, would contain the pool

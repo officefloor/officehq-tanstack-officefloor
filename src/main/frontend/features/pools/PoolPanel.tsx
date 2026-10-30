@@ -13,7 +13,9 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // pool shows their cut of its pot (empty while the pool is unbalanced or has no pot). A member may be another pool,
 // chosen as pool:<name>: a pool is a member of at most one pool, never contains itself through any chain, and a chain
 // of pools is at most three deep. A pool that is a member of none has the sheet's pot; a pool that is a member of
-// another has its cut there as its pot.
+// another has its cut there as its pot. A membership may carry an optional from-date and to-date (a to-date before
+// the from-date is refused); a member whose dates do not include the sheet's today is left out entirely: not in the
+// total share, not in the balance, no cut.
 export function PoolPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -66,14 +68,18 @@ export function PoolPanel() {
 function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool[]; people: Person[]; sheet: string; user: string }) {
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: { personId?: string; memberPool?: string; share: string }) =>
+    mutationFn: (body: { personId?: string; memberPool?: string; share: string; from: string; to: string }) =>
       postJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pool-members`, { ...body, pool: pool.name, user }),
     onSuccess: (saved) => {
       setPersonId('');
       setShare('');
+      setFrom('');
+      setTo('');
       queryClient.setQueryData(poolsKey(sheet), saved);
     },
   });
@@ -92,6 +98,7 @@ function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool
             <span data-testid="pool-share">{m.share}</span>{' '}
             cut <span data-testid="pool-cut">{m.cut}</span>
             {m.retired && ' (retired)'}
+            {!m.current && ' (not current)'}
           </li>
         ))}
       </ul>
@@ -101,7 +108,8 @@ function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool
           submitOnce(() => {
             add.reset();
             const memberPool = personId.startsWith('pool:') ? personId.slice('pool:'.length) : '';
-            return add.mutateAsync(memberPool ? { memberPool, share: share.trim() } : { personId, share: share.trim() });
+            const dates = { share: share.trim(), from: from.trim(), to: to.trim() };
+            return add.mutateAsync(memberPool ? { memberPool, ...dates } : { personId, ...dates });
           });
         }}
       >
@@ -130,8 +138,28 @@ function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool
             add.reset();
           }}
         />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-from"
+          value={from}
+          title="Member from (blank: unbounded)"
+          onChange={(e) => {
+            setFrom(e.target.value);
+            add.reset();
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-to"
+          value={to}
+          title="Member to (blank: unbounded)"
+          onChange={(e) => {
+            setTo(e.target.value);
+            add.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="pool-member-add">Add member</button>
-        {add.isError && <span data-testid="pool-error" role="alert"> Could not add the member: already in the pool, a pool already in a pool, containing this pool, or nesting more than three deep, or the share is not more than 0.00 and at most 100.00 with two decimals.</span>}
+        {add.isError && <span data-testid="pool-error" role="alert"> Could not add the member: already in the pool, a pool already in a pool, containing this pool, or nesting more than three deep, or the share is not more than 0.00 and at most 100.00 with two decimals, or the to-date is before the from-date.</span>}
       </form>
     </li>
   );

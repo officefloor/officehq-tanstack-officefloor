@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,7 +30,8 @@ public class Pools {
     public static final int MAX_DEPTH = 3;
 
     /** The sheet's pools, in the order added, each with its members (people and pools) in the order added. A retired
-     *  member (a retirement date set, whatever the date) counts 0.00 toward the total. A pool that is a member of none
+     *  member (a retirement date set, whatever the date) counts 0.00 toward the total; a member whose dates do not
+     *  include the sheet's today is left out of it entirely (and has no cut). A pool that is a member of none
      *  has the sheet's pot; a pool that is a member of another has its cut there as its pot. While a pool has a pot,
      *  each member of it, if balanced, has a cut of it (see {@link #cuts}); otherwise no cut (""). */
     public List<PoolResponse> list(String sheetId) {
@@ -37,8 +39,11 @@ public class Pools {
         for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY seq", String.class, sheetId)) {
             members.put(name, new ArrayList<>());
         }
-        jdbc.query("SELECT m.pool_name, m.person_id, p.name, m.share, p.retired_from, m.member_pool FROM pool_member m"
+        jdbc.query("SELECT m.pool_name, m.person_id, p.name, m.share, p.retired_from, m.member_pool,"
+                + " (m.from_date IS NULL OR m.from_date <= s.today) AND (m.to_date IS NULL OR m.to_date >= s.today)"
+                + " FROM pool_member m"
                 + " LEFT JOIN person p ON p.id = m.person_id AND p.sheet_id = m.sheet_id"
+                + " JOIN sheet s ON s.id = m.sheet_id"
                 + " WHERE m.sheet_id = ? ORDER BY m.seq", rs -> {
                     List<PoolResponse.Member> list = members.get(rs.getString(1));
                     String sub = rs.getString(6);
@@ -46,11 +51,12 @@ public class Pools {
                     if (list == null) {
                         return;
                     }
+                    boolean current = rs.getBoolean(7);
                     if (sub != null) {
-                        list.add(new PoolResponse.Member(null, sub, sub, share, false, ""));
+                        list.add(new PoolResponse.Member(null, sub, sub, share, false, current, ""));
                     } else if (rs.getString(3) != null) {
                         list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3),
-                                share, rs.getDate(5) != null, ""));
+                                share, rs.getDate(5) != null, current, ""));
                     }
                 }, sheetId);
         List<BigDecimal> pots = jdbc.queryForList("SELECT pot FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
@@ -60,7 +66,7 @@ public class Pools {
         members.forEach((name, list) -> {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolResponse.Member m : list) {
-                if (!m.retired()) {
+                if (!m.retired() && m.current()) {
                     total = total.add(new BigDecimal(m.share()));
                 }
                 if (m.memberPool() != null) {
@@ -94,7 +100,7 @@ public class Pools {
         List<PoolResponse.Member> withCuts = cuts(members.get(name), pot, held);
         shown.put(name, withCuts);
         for (PoolResponse.Member m : withCuts) {
-            if (m.memberPool() != null && members.containsKey(m.memberPool())) {
+            if (m.memberPool() != null && members.containsKey(m.memberPool()) && m.current()) {
                 share(m.memberPool(), new BigDecimal(m.cut()), members, totals, held, shown, depth + 1);
             }
         }
@@ -103,14 +109,15 @@ public class Pools {
     /** The members with their cuts of the pot: the pot times their share divided by the shares of the members with a
      *  cut added up, rounded half to even to two decimals (a retired member, or a person held on the sheet's today,
      *  cuts 0.00); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
-     *  (the earliest added on a tie), so the cuts total exactly the pot. With no member left with a cut, each cuts 0.00. */
+     *  (the earliest added on a tie), so the cuts total exactly the pot. With no member left with a cut, each cuts 0.00.
+     *  A member whose dates do not include the sheet's today has no cut at all (""). */
     static List<PoolResponse.Member> cuts(List<PoolResponse.Member> members, BigDecimal pot, Set<String> held) {
         BigDecimal[] cuts = new BigDecimal[members.size()];
         boolean[] cutting = new boolean[members.size()];
         BigDecimal shares = BigDecimal.ZERO;
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
-            cutting[i] = !m.retired() && (m.personId() == null || !held.contains(m.personId()));
+            cutting[i] = m.current() && !m.retired() && (m.personId() == null || !held.contains(m.personId()));
             if (cutting[i]) {
                 shares = shares.add(new BigDecimal(m.share()));
             }
@@ -120,9 +127,11 @@ public class Pools {
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
             BigDecimal share = new BigDecimal(m.share());
-            cuts[i] = !cutting[i] || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
+            cuts[i] = !m.current() ? null : !cutting[i] || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
                     : pot.multiply(share).divide(shares, 2, RoundingMode.HALF_EVEN);
-            sum = sum.add(cuts[i]);
+            if (cuts[i] != null) {
+                sum = sum.add(cuts[i]);
+            }
             if (cutting[i] && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
                 largest = i;
             }
@@ -133,7 +142,8 @@ public class Pools {
         List<PoolResponse.Member> withCuts = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
-            withCuts.add(new PoolResponse.Member(m.personId(), m.memberPool(), m.name(), m.share(), m.retired(), cuts[i].toPlainString()));
+            withCuts.add(new PoolResponse.Member(m.personId(), m.memberPool(), m.name(), m.share(), m.retired(), m.current(),
+                    cuts[i] == null ? "" : cuts[i].toPlainString()));
         }
         return withCuts;
     }
@@ -169,9 +179,11 @@ public class Pools {
                 + " AND member_pool IS NOT NULL ORDER BY seq", String.class, sheetId, pool);
     }
 
-    /** Adds the person (memberPool null) or the other pool (personId null) to the pool with the share. */
-    public void addMember(String sheetId, String pool, Long personId, String memberPool, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, member_pool, share) VALUES (?, ?, ?, ?, ?)",
-                sheetId, pool, personId, memberPool, share);
+    /** Adds the person (memberPool null) or the other pool (personId null) to the pool with the share and the optional from-
+     *  and to-dates of the membership. */
+    public void addMember(String sheetId, String pool, Long personId, String memberPool, BigDecimal share,
+            LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, member_pool, share, from_date, to_date)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, pool, personId, memberPool, share, from, to);
     }
 }
