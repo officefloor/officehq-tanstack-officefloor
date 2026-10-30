@@ -13,6 +13,8 @@ public class SaveToday {
     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today, Sheets sheets,
             @Val TodayRequest request, @Val RollupFigures before, Rollup rollup, PeriodCloser closer, Claims claims,
             ObjectResponse<TodayResponse> response) {
+        // Each person's due-total as it stood on the day being left, before the change takes effect.
+        rollup.recordSnapshots(sheetId, request.user(), before);
         sheets.setToday(sheetId, today);
         // A change of today releases every open editor's lock.
         claims.unlockAll(sheetId);

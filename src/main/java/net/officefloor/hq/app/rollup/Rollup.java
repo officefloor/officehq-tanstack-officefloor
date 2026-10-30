@@ -111,6 +111,13 @@ public class Rollup {
         return LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()), on -> settings.latePct(sheetId, on), today, rounding);
     }
 
+    /** Audit (on commit) one SNAPSHOT line per person, in list order, with their due-total in {@code before}. */
+    public void recordSnapshots(String sheetId, String user, RollupFigures before) {
+        String prefix = " sheet=" + sheetId + " by=" + user;
+        before.people().values().forEach(was -> audit.recordOnCommit("SNAPSHOT" + prefix
+                + " name=" + was.name() + " due-total=" + was.dueTotal()));
+    }
+
     /** Audit (on commit) the figures that moved since {@code before}, as taken by {@code user}. */
     public void recordChanges(String sheetId, String user, RollupFigures before) {
         RollupFigures after = figures(sheetId);
