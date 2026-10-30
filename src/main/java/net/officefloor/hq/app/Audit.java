@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Audit sink: appends one record per line to a KNOWN FILE (app.audit.file, default .run/audit.log)
@@ -38,6 +40,23 @@ public class Audit {
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.SYNC);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Append one audit record once the current transaction commits, so a change that is rolled back
+     * (refused by a later step) writes no line. Outside a transaction it is appended at once.
+     */
+    public void recordOnCommit(String entry) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    record(entry);
+                }
+            });
+        } else {
+            record(entry);
         }
     }
 

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
@@ -8,11 +9,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 public class SaveClaimCreated {
-    public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets,
+    public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets, Audit audit,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) {
         String sheetId = person.getSheetId();
         Claim claim = claims.add(sheetId, person.getId(), request.amount(),
                 request.date() != null ? request.date() : sheets.today(sheetId), request.note());
+        audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim));
         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));
     }
 }

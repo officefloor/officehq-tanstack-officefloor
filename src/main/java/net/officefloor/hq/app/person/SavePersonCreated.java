@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.Audit;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.http.HttpStatus;
@@ -7,12 +8,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class SavePersonCreated {
-    public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people,
+    public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people, Audit audit,
             ObjectResponse<ResponseEntity<PersonResponse>> response) throws InvalidPersonException {
         if (people.nameTaken(sheetId, request.name(), null)) {
             throw new InvalidPersonException("The name is already in use");
         }
         Person person = people.add(sheetId, request.name(), request.grade());
+        audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
+                + " name=" + person.getName() + " grade=" + person.getGrade());
         response.send(new ResponseEntity<>(PersonResponse.from(person), HttpStatus.CREATED));
     }
 }
