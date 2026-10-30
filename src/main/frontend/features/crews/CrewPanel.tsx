@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { formatCents } from '../rates/due';
 import type { Person } from '../people/usePeople';
 import { useSheetFigures } from '../people/useSheetFigures';
-import { crewsKey, useCrews, type Crew } from './useCrews';
+import { crewDueCents, crewsKey, useCrews, type Crew } from './useCrews';
 
 // The sheet's crews and the form that adds one: a name (a blank name, or one already a crew, is refused)
 // and a lead chosen from the people. Each crew shows its lead and its due-total — the lead's and the
@@ -30,14 +30,7 @@ export function CrewPanel() {
       queryClient.setQueryData(crewsKey(sheet), saved);
     },
   });
-  const dueTotalOf = (crew: Crew) =>
-    formatCents(
-      [crew.leadId, ...crew.members.map((m) => m.personId)].reduce((sum, id) => {
-        const person = byId.get(id);
-        const due = person === undefined ? null : totalOf(person);
-        return due === null ? sum : sum + due;
-      }, 0n),
-    );
+  const dueTotalOf = (crew: Crew) => formatCents(crewDueCents(crew, byId, totalOf));
   return (
     <>
       <ul data-testid="crew-list">
