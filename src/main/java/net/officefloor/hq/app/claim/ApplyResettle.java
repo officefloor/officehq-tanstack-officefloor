@@ -34,7 +34,7 @@ public class ApplyResettle {
         BigDecimal figure = Rates.due(claim.getAmount(), rates.find(sheetId, grade, claim.getDate()), rounding);
         BigDecimal due = figure == null ? null
                 : LateCharge.floored(claim, figure.add(LateCharge.asOpen(claim, figure, on -> settings.latePct(sheetId, on),
-                        sheets.today(sheetId), rounding)), settings.floor(sheetId, claim.getDate()));
+                        sheets.today(sheetId), rounding, settings.grace(sheetId, grade, claim.getDate()))), settings.floor(sheetId, claim.getDate()));
         BigDecimal old = claim.getSettledDue();
         claim.setSettledDue(due);
         resettle.set(new ClaimResettle(old, due));

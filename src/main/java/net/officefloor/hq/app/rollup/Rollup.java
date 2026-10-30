@@ -74,7 +74,7 @@ public class Rollup {
                 if (figure != null) {
                     anyFigure = true;
                     due = due.add(figure);
-                    if (isOverdue(claim, today)) {
+                    if (isOverdue(claim, grace(claim, person), today)) {
                         overdue = overdue.add(figure);
                     }
                 }
@@ -108,7 +108,8 @@ public class Rollup {
         BigDecimal fixed = ClaimResponse.fixedDue(claim);
         BigDecimal figure = fixed != null || claim.isBound() ? fixed
                 : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate()), rounding);
-        return LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()), on -> settings.latePct(sheetId, on), today, rounding);
+        return LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()), on -> settings.latePct(sheetId, on), today, rounding,
+                grace(claim, person));
     }
 
     /** Audit (on commit) one SNAPSHOT line per person, in list order, with their due-total in {@code before}. */
@@ -138,9 +139,14 @@ public class Rollup {
         }
     }
 
-    /** A claim is overdue when it is OPEN (or PENDING) and its due-by is before the sheet's today. */
-    private static boolean isOverdue(Claim claim, LocalDate today) {
-        return claim.getStatus().isOpen() && claim.getDueBy() != null && claim.getDueBy().isBefore(today);
+    /** The grace days of the claim's person's grade in force on its date, as in force on that date (0 for none). */
+    private int grace(Claim claim, Person person) {
+        return settings.grace(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+    }
+
+    /** A claim is overdue when it is OPEN (or PENDING) and its due-by plus its grace days is before the sheet's today. */
+    private static boolean isOverdue(Claim claim, int grace, LocalDate today) {
+        return claim.getStatus().isOpen() && claim.getDueBy() != null && LateCharge.lateFrom(claim, grace).isBefore(today);
     }
 
     /** People's figures added up, leaving out the single highest and the single lowest when there are three or more. */

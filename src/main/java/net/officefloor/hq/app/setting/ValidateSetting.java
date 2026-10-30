@@ -28,6 +28,9 @@ public class ValidateSetting {
     /** A grade's own terms: terms-<grade>. */
     public static final String GRADE_TERMS = "terms-";
 
+    /** A grade's grace days: grace-<grade>; dated; blank: none. */
+    public static final String GRADE_GRACE = "grace-";
+
     static final List<String> GRADES = List.of("A", "B", "C");
 
     public static final String LATE_PCT = "late-pct";
@@ -63,7 +66,8 @@ public class ValidateSetting {
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
-                && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))) {
+                && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
+                && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
@@ -142,6 +146,17 @@ public class ValidateSetting {
         if (TERMS.equals(key) || key.startsWith(GRADE_TERMS)) {
             if (!DAYS.matcher(raw).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, from));
+            return;
+        }
+        if (!GRACE_DAYS.equals(key) && key.startsWith(GRADE_GRACE)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, from)); // blank: none
+                return;
+            }
+            if (!DAYS.matcher(raw).matches()) {
+                throw new InvalidSettingException("A grade's grace days must be a whole number of days, 0 or more, or blank for none");
             }
             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, from));
             return;

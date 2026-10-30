@@ -105,7 +105,8 @@ public class ApplyClaimStatus {
             BigDecimal figure = claim.isBound() && claim.getStatedDue() != null ? claim.getStatedDue()
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
             claim.setSettledDue(LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
-                    on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding));
+                    on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding,
+                    settings.grace(claim.getSheetId(), grade, claim.getDate())));
         }
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
         claim.setStatus(target);
@@ -137,6 +138,7 @@ public class ApplyClaimStatus {
         BigDecimal figure = fixed != null || claim.isBound() ? fixed
                 : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
         return LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
-                on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding);
+                on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding,
+                settings.grace(claim.getSheetId(), grade, claim.getDate()));
     }
 }

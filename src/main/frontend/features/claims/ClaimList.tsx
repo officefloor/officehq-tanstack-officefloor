@@ -8,11 +8,12 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicyDate, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
+import { useGrace } from './useGrace';
 import { ClaimSelect } from './BulkOpen';
 import { peopleKey, type Person } from '../people/usePeople';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
-// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies; an overdue claim gains, for each full 30 days overdue, the late percent in force on that boundary date (due-by plus 30, 60, 90 ... days) of that figure (the rate or bound one), the charges added up; then the floor in force on the claim's date is applied last: the greater of it and the figure plus its charge), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's, each as in force on that date), overdue (yes when it is OPEN or PENDING and its due-by is before the sheet's today), the status buttons (open, settle, void —
+// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies; an overdue claim gains, for each full 30 days overdue, the late percent in force on that boundary date (due-by plus 30, 60, 90 ... days) of that figure (the rate or bound one), the charges added up; then the floor in force on the claim's date is applied last: the greater of it and the figure plus its charge), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's, each as in force on that date), overdue (yes when it is OPEN or PENDING and its due-by plus the grace days of its person's grade in force on its date is before the sheet's today; the late charge's boundaries count from there too), the status buttons (open, settle, void —
 // one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
 // claim to PENDING, which shows its live due unbound by any statement; a steward may void a SETTLED claim within 7 days of
 // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
@@ -71,6 +72,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const floor = useFloor(sheet);
   const today = useSheetToday(sheet);
   const latePct = useLatePct(sheet);
+  const grace = useGrace(sheet);
   const policy = usePolicyDate(sheet);
   const settings = useSettings(sheet);
 
@@ -247,9 +249,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
-      <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today }, policy))}</span>{' '}
+      <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today, grace }, policy))}</span>{' '}
       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
-      <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, today, grace) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

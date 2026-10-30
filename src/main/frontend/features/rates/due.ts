@@ -1,4 +1,6 @@
 import { isDeferred, isOpen } from '../claims/useClaims';
+import { lateFrom } from '../claims/overdue';
+import type { Grace } from '../claims/useGrace';
 
 // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
 // due in millionths, then rounded to cents — half up for a claim dated before the sheet's policy date,
@@ -50,8 +52,9 @@ export function floored(due: bigint | null, floor: string): bigint | null {
 /** The value of a dated setting in force on a date (a claim's: its date), e.g. "1.00". */
 export type On = (date: string) => string;
 
-/** What a late charge needs: the sheet's late percent in force on a date (a boundary's, "10.00") and its today. */
-export type Late = { pct: On; today: string | undefined };
+/** What a late charge needs: the sheet's late percent in force on a date (a boundary's, "10.00"), its today and each
+ *  claim's grace days (none when left out). */
+export type Late = { pct: On; today: string | undefined; grace?: Grace };
 
 const DAY_MS = 86_400_000;
 
@@ -65,15 +68,16 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
 
 /** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
  *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
- *  boundary date (its due-by plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
-export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
+ *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
+export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
   if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
-  const days = Math.round((Date.parse(late.today) - Date.parse(claim.dueBy)) / DAY_MS);
+  const from = lateFrom(claim, late.grace);
+  const days = Math.round((Date.parse(late.today) - Date.parse(from)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
   const halfUp = roundsHalfUp(claim, policy);
   let charge = 0n;
   for (let n = 1; n <= periods; n++) {
-    const boundary = new Date(Date.parse(claim.dueBy) + n * 30 * DAY_MS).toISOString().slice(0, 10);
+    const boundary = new Date(Date.parse(from) + n * 30 * DAY_MS).toISOString().slice(0, 10);
     charge += dueCents(figure, late.pct(boundary), halfUp) ?? 0n;
   }
   return charge;
@@ -85,7 +89,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
  *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
  *  figures round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
-  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string },
+  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string },
   rate: string | undefined,
   floor: On,
   late?: Late,
@@ -103,7 +107,7 @@ export function claimDue(
  *  in force on its date); then it is the sum of the figures there are. A claim whose figure is n/a
  *  adds nothing. */
 export function dueTotal(
-  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string }[],
+  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; personId?: string }[],
   rateOn: (date: string) => string | undefined,
   rateToday: string | undefined,
   floor: On,

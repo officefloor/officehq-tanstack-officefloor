@@ -1,5 +1,6 @@
 import { countsLive, isOpen, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
+import { useGrace } from '../claims/useGrace';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
@@ -16,7 +17,8 @@ export function useSheetFigures(sheet: string) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
-  const late = { pct: useLatePct(sheet), today };
+  const grace = useGrace(sheet);
+  const late = { pct: useLatePct(sheet), today, grace };
   const policy = usePolicyDate(sheet);
   const cap = useCap(sheet);
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -51,7 +53,7 @@ export function useSheetFigures(sheet: string) {
   // The sheet's settled-total and open-total: everyone's figure added up, not trimmed.
   const sheetSettledTotal = formatCents(people.reduce((sum, p) => sum + settledTotalOf(p), 0n));
   const sheetOpenTotal = formatCents(people.reduce((sum, p) => sum + openTotalOf(p), 0n));
-  const overdue = live.filter((c) => isOverdue(c, today));
+  const overdue = live.filter((c) => isOverdue(c, today, grace));
   const overdueSum = (cs: typeof overdue) =>
     cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n);
   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));

@@ -4,7 +4,8 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { GRADES } from '../people/usePeople';
-import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSettings';
+import { inForce, PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSettings';
+import { useSheetToday } from '../sheet/useSheetToday';
 
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
@@ -30,6 +31,9 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
 // A steward delegates the steward role to a user for a from-date and a to-date, inclusive (blank: the sheet's today): while the
 // sheet's today is inside them the user acts as a steward in every rule. Anyone but a steward (by the role set), or a to-date
 // before the from-date, is refused.
+// Each grade's grace days (dated; whole days; blank: none; saved like the cap): a claim whose person's grade in force on its
+// date has grace days in force on that date is overdue only once its due-by plus them is before the sheet's today, and its
+// late charge's 30-day boundaries count from its due-by plus them. Its due-by is shown as it is.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -44,6 +48,10 @@ export function SettingsPanel() {
   // Each grade's own terms, by grade, as typed.
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [latePct, setLatePct] = useState('');
+  // Each grade's grace days, by grade, as typed; each may be saved blank (none), so entering its field marks it as one to save.
+  const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
+  const graceGradeChosen = useRef(new Set<string>());
+  const today = useSheetToday(sheet);
   const [policyDate, setPolicyDate] = useState('');
   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
   const policyChosen = useRef(false);
@@ -95,6 +103,18 @@ export function SettingsPanel() {
     for (const a of PERM_ACTIONS) {
       if (a !== except && (perms[a] ?? '').trim() === '') permsChosen.current.delete(a);
     }
+    unchooseGradeGrace();
+  };
+  // Entering another field leaves a blank grade's grace days as they are.
+  const unchooseGradeGrace = () => {
+    for (const g of GRADES) {
+      if ((gradeGrace[g] ?? '').trim() === '') graceGradeChosen.current.delete(g);
+    }
+  };
+  // Entering a grade's grace days (or their from-date) marks them as one to save, as they are.
+  const focusGradeGrace = (grade: string) => {
+    unchoosePolicy();
+    graceGradeChosen.current.add(grade);
   };
   // Entering a permission marks it as one to save, as it is.
   const focusPerm = (action: string) => {
@@ -198,6 +218,11 @@ export function SettingsPanel() {
         setPerms((p) => ({ ...p, [action]: '' }));
         permsChosen.current.delete(action);
       }
+      else if (body.key.startsWith('grace-') && body.key !== 'grace-days') {
+        const grade = body.key.slice('grace-'.length);
+        setGradeGrace((t) => ({ ...t, [grade]: '' }));
+        graceGradeChosen.current.delete(grade);
+      }
       else if (body.key === 'grace-days') {
         setGraceDays('');
         graceChosen.current = false;
@@ -256,8 +281,9 @@ export function SettingsPanel() {
             const graced = graceDays.trim() !== '' || graceChosen.current;
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+            const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
-            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed
+            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed
                 || noted || graced || entered || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
@@ -265,6 +291,7 @@ export function SettingsPanel() {
                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
                 ...ownTerms.map((g) => ({ key: `terms-${g}`, value: gradeTerms[g].trim() })),
                 ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
+                ...ownGrace.map((g) => ({ key: `grace-${g}`, value: (gradeGrace[g] ?? '').trim() })),
                 ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
                 ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
@@ -335,6 +362,24 @@ export function SettingsPanel() {
               }}
             />{' '}
             {fromField(`terms-${g}`)}{' '}
+          </span>
+        ))}
+        {GRADES.map((g) => (
+          <span key={g}>
+            Grace for grade {g} (days): <span data-testid={`setting-grace-${g}-current`}>{today === undefined ? '' : inForce(settings, `grace-${g}`, today, '')}</span>{' '}
+            <input
+              data-testid={`setting-grace-${g}`}
+              onFocus={() => focusGradeGrace(g)}
+              value={gradeGrace[g] ?? ''}
+              placeholder={`Grade ${g} grace in days (blank: none)`}
+              onChange={(e) => {
+                const value = e.target.value;
+                setGradeGrace((t) => ({ ...t, [g]: value }));
+                graceGradeChosen.current.add(g);
+                saveSetting.reset();
+              }}
+            />{' '}
+            {fromField(`grace-${g}`, () => focusGradeGrace(g))}{' '}
           </span>
         ))}
         Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>{' '}
@@ -472,7 +517,7 @@ export function SettingsPanel() {
           </span>
         ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

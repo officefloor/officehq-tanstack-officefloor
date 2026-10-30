@@ -65,7 +65,7 @@ public class Settings {
         jdbc.query("SELECT setting_key, from_date, setting_value FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key, from_date",
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> {
                     BigDecimal value = rs.getBigDecimal(3);
-                    String shown = value == null ? "" : rs.getString(1).startsWith("terms")
+                    String shown = value == null ? "" : rs.getString(1).startsWith("terms") || rs.getString(1).startsWith(ValidateSetting.GRADE_GRACE)
                             ? String.valueOf(value.intValue()) : value.setScale(2).toPlainString();
                     all.computeIfAbsent(rs.getString(1), k -> new java.util.ArrayList<>())
                             .add(new DatedValue(rs.getDate(2).toLocalDate().toString(), shown));
@@ -129,6 +129,15 @@ public class Settings {
     /** The terms a claim of a person dated on the date takes: the person's own terms, else as {@link #termsFor(String, String, LocalDate)}. */
     public int termsFor(String sheetId, Integer personTerms, String grade, LocalDate on) {
         return personTerms != null ? personTerms : termsFor(sheetId, grade, on);
+    }
+
+    /** A grade's grace days in force on a date (a claim's: its date); 0 when it has none then. */
+    public int grace(String sheetId, String grade, LocalDate on) {
+        if (grade == null) {
+            return 0;
+        }
+        InForce found = on(sheetId, ValidateSetting.GRADE_GRACE + grade, on);
+        return found == null || found.value() == null ? 0 : found.value().intValue();
     }
 
     /** The sheet's late percent in force on a date (a late charge's: each 30-day boundary of an overdue

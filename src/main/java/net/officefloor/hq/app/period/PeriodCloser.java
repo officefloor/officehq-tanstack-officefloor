@@ -76,7 +76,8 @@ public class PeriodCloser {
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), rounding);
                 if (figure != null) {
                     personTotal = personTotal.add(LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()),
-                            on -> settings.latePct(sheetId, on), today, rounding));
+                            on -> settings.latePct(sheetId, on), today, rounding,
+                            settings.grace(sheetId, person.gradeOn(claim.getDate()), claim.getDate())));
                 }
             }
             personTotals.put(person.getId(), personTotal);
