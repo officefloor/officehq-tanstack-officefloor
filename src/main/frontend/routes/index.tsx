@@ -3,6 +3,7 @@ import { asString, useSearchParam } from '../url/useSearchParam';
 import { CurrentUser, SignIn } from '../features/session/SignIn';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
+import { RatePanel } from '../features/rates/RatePanel';
 import { PersonForm } from '../features/people/PersonForm';
 import { PeopleList } from '../features/people/PeopleList';
 
@@ -23,6 +24,7 @@ function Home() {
       {sheet !== '' && (
         <div key={sheet}>
           <SheetToday />
+          <RatePanel />
           <PersonForm />
           <PeopleList />
         </div>

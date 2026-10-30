@@ -2,15 +2,19 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts, useClaims } from '../claims/useClaims';
+import { dueCents, formatCents, showDue, toCents } from '../rates/due';
+import { useRates } from '../rates/useRates';
 import { usePeople } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade, claimed (the
-// sum of their claims) and their claims; then the sheet's claimed-total.
+// sum of their claims), due-total (claimed at their grade's rate) and their claims; then the
+// sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
+  const rates = useRates(sheet);
   const onSheet = new Set(people.map((p) => p.id));
   return (
     <>
@@ -20,6 +24,7 @@ export function PeopleList() {
             <th>Name</th>
             <th>Grade</th>
             <th>Claimed</th>
+            <th>Due</th>
             <th />
             <th>Claims</th>
           </tr>
@@ -27,18 +32,20 @@ export function PeopleList() {
         <tbody>
           {people.map((p) => {
             const own = claims.filter((c) => c.personId === p.id);
+            const rate = rates.get(p.grade);
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
                 <td data-testid="person-claimed">{sumAmounts(own)}</td>
+                <td data-testid="person-due-total">{showDue(dueCents(toCents(sumAmounts(own)), rate))}</td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                     Edit
                   </button>
                 </td>
                 <td>
-                  <ClaimList claims={own} />
+                  <ClaimList claims={own} rate={rate} />
                   <ClaimForm personId={p.id} claims={own} />
                 </td>
               </tr>
@@ -48,6 +55,12 @@ export function PeopleList() {
       </table>
       <p>
         Claimed total: <span data-testid="rollup-claimed-total">{sumAmounts(claims.filter((c) => onSheet.has(c.personId)))}</span>
+      </p>
+      <p>
+        Due total: <span data-testid="rollup-due-total">{formatCents(people.reduce((sum, p) => {
+          const due = dueCents(toCents(sumAmounts(claims.filter((c) => c.personId === p.id))), rates.get(p.grade));
+          return due === null ? sum : sum + due;
+        }, 0n))}</span>
       </p>
     </>
   );
