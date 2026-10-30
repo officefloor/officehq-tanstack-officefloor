@@ -14,6 +14,7 @@ import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
 import { MergeControl } from './MergeControl';
 import { PasteClaims } from './PasteClaims';
+import { ImportPeople } from './ImportPeople';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
@@ -81,6 +82,7 @@ export function PeopleList() {
       <PersonSelection>
       <QuickAdd />
       <PasteClaims />
+      <ImportPeople />
       <ShowRetired />
       <button
         type="button"
