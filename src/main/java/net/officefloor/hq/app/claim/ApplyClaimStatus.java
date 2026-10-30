@@ -55,6 +55,11 @@ public class ApplyClaimStatus {
             // Four eyes: the user who opened a claim cannot settle (or approve) it.
             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
         }
+        if (request.target() == ClaimStatus.SETTLED && claim.getEditedBy() != null
+                && claim.getEditedBy().equals(request.user())) {
+            // Four eyes: nor can the user who last edited it.
+            throw new ClaimStatusRefusedException("The user who last edited a claim cannot settle it");
+        }
         if (request.target() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until its deferred-until date");
         }

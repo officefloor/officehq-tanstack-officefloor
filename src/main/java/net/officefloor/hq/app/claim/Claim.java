@@ -69,6 +69,10 @@ public class Claim {
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+    /** The user who last edited the claim; null if it was never edited. */
+    private String editedBy;
+    public String getEditedBy() { return editedBy; }
+    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
     /** The number of the SETTLED claim this correction corrects; null for any claim that is not a correction. */
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

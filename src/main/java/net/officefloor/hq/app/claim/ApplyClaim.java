@@ -35,5 +35,6 @@ public class ApplyClaim {
         claim.setCorrectedDate(claims.correctedDate(claim.getSheetId(), claim.getPersonId(), request.corrects()));
         claim.setDate(date);
         claim.setNote(request.note());
+        claim.setEditedBy(request.user());
     }
 }

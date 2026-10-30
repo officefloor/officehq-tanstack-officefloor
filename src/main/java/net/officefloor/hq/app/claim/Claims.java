@@ -37,6 +37,7 @@ public class Claims {
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
+        claim.setEditedBy(rs.getString("edited_by"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
@@ -265,9 +266,9 @@ public class Claims {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ?, void_reason = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ?, void_reason = ?, edited_by = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getVoidReason(),
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getEditedBy(),
                 claim.getSheetId(), claim.getId());
         recordTags(claim.getSheetId(), claim.getTags());
         history(claim.getSheetId(), claim.getId());
