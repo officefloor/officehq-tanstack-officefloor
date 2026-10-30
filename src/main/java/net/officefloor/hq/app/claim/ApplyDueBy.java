@@ -12,8 +12,8 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ApplyDueBy {
-    // Only a steward sets a due-by, and only on a DRAFT, OPEN or PENDING claim, to a real date not before its date and
-    // not inside a closed period. It is kept as set: a holiday added later does not work it out again.
+    // Only a steward sets a due-by, and only on a DRAFT, OPEN or PENDING claim, to a real date not inside a closed period
+    // (it may be before the claim's date). It is kept as set: a holiday added later does not work it out again.
     public void apply(@RequestBody(required = false) DueByRequest body, @Val Claim claim, Claims claims, Periods periods,
             Settings settings, ServerHttpConnection connection, Out<ClaimResponse> responseOut)
             throws ClaimDueBySetRefusedException {
@@ -29,9 +29,6 @@ public class ApplyDueBy {
             dueBy = LocalDate.parse(body == null || body.dueBy() == null ? "" : body.dueBy().trim());
         } catch (DateTimeParseException e) {
             throw new ClaimDueBySetRefusedException("Set the due-by to a date (yyyy-mm-dd).");
-        }
-        if (dueBy.isBefore(claim.date())) {
-            throw new ClaimDueBySetRefusedException("A due-by cannot be before the claim's date (" + claim.date() + ").");
         }
         Period closed = periods.closedOn(claim.sheetId(), dueBy);
         if (closed != null) {

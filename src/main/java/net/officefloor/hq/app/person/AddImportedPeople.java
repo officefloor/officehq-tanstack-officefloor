@@ -41,7 +41,7 @@ public class AddImportedPeople {
                     people.gradeFrom(person.id(), today, request.grade());
                 }
                 Person stored = people.find(sheet, person.id());
-                new AuditPersonEdited().audit(person, PersonResponse.from(stored, today), connection, audit);
+                PersonEditedLine.record(person, PersonResponse.from(stored, today), false, connection, audit);
                 updated++;
             }
             figures = RollupLines.record(sheet, user, figures, rollup, audit);

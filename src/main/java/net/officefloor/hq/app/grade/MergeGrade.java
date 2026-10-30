@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.ApplyPerson;
-import net.officefloor.hq.app.person.AuditPersonEdited;
+import net.officefloor.hq.app.person.PersonEditedLine;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonConflictException;
@@ -50,7 +50,7 @@ public class MergeGrade {
             } catch (InvalidPersonException | PersonConflictException e) {
                 throw new GradeRefusedException(person.name() + ": " + e.getMessage());
             }
-            new AuditPersonEdited().audit(person, edited[0], connection, held);
+            PersonEditedLine.record(person, edited[0], false, connection, held);
             figures = RollupLines.record(merge.sheetId(), user, figures, rollup, held);
             moved.add(person.id());
             merged++;
