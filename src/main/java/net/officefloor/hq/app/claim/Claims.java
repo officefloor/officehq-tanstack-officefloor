@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.holiday.Holidays;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -30,6 +31,8 @@ public class Claims {
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         java.sql.Date dueBy = rs.getDate("due_by");
         claim.setDueBy(dueBy == null ? null : dueBy.toLocalDate());
+        int terms = rs.getInt("terms");
+        claim.setTerms(rs.wasNull() ? null : terms);
         java.sql.Date deferredUntil = rs.getDate("deferred_until");
         claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
         java.sql.Date remindedOn = rs.getDate("reminded_on");
@@ -54,8 +57,11 @@ public class Claims {
 
     private final JdbcTemplate jdbc;
 
-    public Claims(JdbcTemplate jdbc) {
+    private final Holidays holidays;
+
+    public Claims(JdbcTemplate jdbc, Holidays holidays) {
         this.jdbc = jdbc;
+        this.holidays = holidays;
     }
 
     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
@@ -115,13 +121,15 @@ public class Claims {
         return add(sheetId, personId, amount, date, note, corrects, dueBy, ref, null);
     }
 
-    /** Adds a DRAFT claim with its due-by fixed as given, its external reference and its tags (null for none). */
+    /** Adds a DRAFT claim with its due-by fixed as given (keeping the terms it was fixed with), its external reference
+     *  and its tags (null for none). */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy, String ref, String tags) {
+        int terms = holidays.termsTo(sheetId, date, dueBy);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, terms, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
@@ -133,12 +141,14 @@ public class Claims {
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setString(8, ref);
             ps.setString(9, tags);
+            ps.setInt(10, terms);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
         history(sheetId, claim.getId());
         claim.setCorrects(corrects);
         claim.setDueBy(dueBy);
+        claim.setTerms(terms);
         claim.setRef(ref);
         claim.setTags(tags);
         recordTags(sheetId, tags);
@@ -212,6 +222,13 @@ public class Claims {
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
+    }
+
+    /** Records the claim's (re-fixed) due-by. */
+    public void refix(Claim claim) {
+        jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(claim.getDueBy()), claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
     }
 

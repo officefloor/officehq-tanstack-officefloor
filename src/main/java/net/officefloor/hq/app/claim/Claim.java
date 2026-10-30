@@ -21,6 +21,7 @@ public class Claim {
     private String corrects;
     private LocalDate correctedDate;
     private LocalDate dueBy;
+    private Integer terms;
     private LocalDate deferredUntil;
     private int proofs;
     private String splitFrom;
@@ -84,6 +85,9 @@ public class Claim {
     /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The terms in business days its due-by was fixed with; null when it has no due-by. */
+    public Integer getTerms() { return terms; }
+    public void setTerms(Integer terms) { this.terms = terms; }
     /** The date that places the claim in its period: its due-by as fixed at creation (its date when it has none). */
     public LocalDate getPeriodDate() { return dueBy != null ? dueBy : date; }
     /** The date the claim was last deferred until; null if it was never deferred. */

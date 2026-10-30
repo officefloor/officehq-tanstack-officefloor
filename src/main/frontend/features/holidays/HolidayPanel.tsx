@@ -4,6 +4,8 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { holidaysKey, useHolidays } from './useHolidays';
+import { claimsKey } from '../claims/useClaims';
+import { peopleKey } from '../people/usePeople';
 
 // The sheet's holidays and the form that adds one (a date already on the list is refused). A claim's
 // due-by fixed at creation that falls on a holiday moves to the next day that is not one.
@@ -20,6 +22,9 @@ export function HolidayPanel() {
     onSuccess: (saved) => {
       setDate('');
       queryClient.setQueryData(holidaysKey(sheet), saved);
+      // Adding a holiday re-fixes the due-by of the claims after it, which can move their figures.
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
   });
   return (

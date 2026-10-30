@@ -40,10 +40,32 @@ public class Holidays {
     /** A claim's due-by: the terms-th business day after its date, counting from the day after it and skipping
      *  every Saturday, Sunday and holiday on the sheet as they are now (terms of 0 leave the date itself). */
     public LocalDate dueBy(String sheetId, LocalDate date, int terms) {
+        return businessDays(date, terms, after(sheetId, date));
+    }
+
+    /** The terms a due-by was fixed with: the business days after the date up to it, over the sheet's holidays now. */
+    public int termsTo(String sheetId, LocalDate date, LocalDate dueBy) {
+        return termsBetween(date, dueBy, after(sheetId, date));
+    }
+
+    /** The sheet's holidays after the date. */
+    private Set<LocalDate> after(String sheetId, LocalDate date) {
         Set<LocalDate> holidays = new HashSet<>();
         jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? AND holiday_date > ?",
                 rs -> { holidays.add(rs.getDate(1).toLocalDate()); }, sheetId, Date.valueOf(date));
-        return businessDays(date, terms, holidays);
+        return holidays;
+    }
+
+    /** The days after the date up to and including the due-by that are neither a Saturday, a Sunday nor one of the holidays. */
+    public static int termsBetween(LocalDate date, LocalDate dueBy, Set<LocalDate> holidays) {
+        int terms = 0;
+        for (LocalDate day = date.plusDays(1); !day.isAfter(dueBy); day = day.plusDays(1)) {
+            DayOfWeek weekday = day.getDayOfWeek();
+            if (weekday != DayOfWeek.SATURDAY && weekday != DayOfWeek.SUNDAY && !holidays.contains(day)) {
+                terms++;
+            }
+        }
+        return terms;
     }
 
     /** The terms-th day after the date that is neither a Saturday, a Sunday nor one of the holidays. */
