@@ -28,6 +28,7 @@ public class People {
         person.setAddedOn(added == null ? null : added.toLocalDate());
         long place = rs.getLong("place");
         person.setPlace(rs.wasNull() ? person.getId() : place);
+        person.setOrigin(rs.getString("origin"));
         return person;
     };
 
@@ -336,6 +337,8 @@ public class People {
         java.util.SortedMap<java.time.LocalDate, String> grades = from.getGrades();
         String first = grades.isEmpty() ? from.getGrade() : grades.get(grades.firstKey());
         Person person = add(toSheet, from.getName(), first, from.getTerms(), from.getContact());
+        jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), person.getId());
+        person.setOrigin(from.getSheetId());
         grades.forEach((on, grade) -> {
             if (!on.equals(Person.BEGINNING)) {
                 person.recordGrade(on, grade);
@@ -365,6 +368,13 @@ public class People {
         jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
                 sheetId, sheetId, id);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
+    }
+
+    /** The sheet the person by the name (compared as names are) on the sheet came from; null when none. */
+    public String originOf(String sheetId, String name) {
+        List<String> found = jdbc.queryForList("SELECT origin FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = ?"
+                + " AND origin IS NOT NULL", String.class, sheetId, name.trim().toLowerCase(java.util.Locale.ROOT));
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** The people merged away after the date, as they stood when merged, in the order they were added. */

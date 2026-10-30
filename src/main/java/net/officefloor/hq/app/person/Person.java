@@ -176,5 +176,10 @@ public class Person {
     private long place;
     public long getPlace() { return place; }
     public void setPlace(long place) { this.place = place; }
+
+    /** The sheet the person was transferred from; null when not transferred in. */
+    private String origin;
+    public String getOrigin() { return origin; }
+    public void setOrigin(String origin) { this.origin = origin; }
     public void setVersion(int version) { this.version = version; }
 }

@@ -34,6 +34,8 @@ export type Person = {
   aliases: string[];
   /** Whether the person's name or an alias is used by someone else on a sheet of the sheet's tree. */
   clashing: boolean;
+  /** The sheet the person was transferred from; "" for anyone else. */
+  origin: string;
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */

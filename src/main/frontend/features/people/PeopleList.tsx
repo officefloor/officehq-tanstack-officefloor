@@ -118,6 +118,7 @@ export function PeopleList() {
             <th>Name</th>
             <th>Aliases</th>
             <th>Clashing</th>
+            <th>From sheet</th>
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
@@ -161,6 +162,7 @@ export function PeopleList() {
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-aliases">{p.aliases.join(', ')}</td>
                 <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
+                <td data-testid="person-origin">{p.origin}</td>
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-terms">{p.terms}</td>
                 <td data-testid="person-contact">{p.contact}</td>
