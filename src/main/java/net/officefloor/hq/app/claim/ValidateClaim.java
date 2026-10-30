@@ -12,10 +12,7 @@ public class ValidateClaim {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
-        String amount = request.amount() == null ? "" : request.amount().trim();
-        if (!AMOUNT.matcher(amount).matches()) {
-            throw new InvalidClaimException("The amount must be 0.00 or more, with at most two decimals");
-        }
+        BigDecimal amount = amount(request.amount());
         String rawDate = request.date() == null ? "" : request.date().trim();
         LocalDate date = null;
         if (!rawDate.isEmpty()) {
@@ -26,6 +23,15 @@ public class ValidateClaim {
             }
         }
         String note = request.note() == null ? "" : request.note().trim();
-        body.set(new ValidClaim(new BigDecimal(amount).setScale(2), date, note, request.user()));
+        body.set(new ValidClaim(amount, date, note, request.user()));
+    }
+
+    /** A claim's amount: 0.00 or more, with at most two decimals. */
+    static BigDecimal amount(String raw) throws InvalidClaimException {
+        String amount = raw == null ? "" : raw.trim();
+        if (!AMOUNT.matcher(amount).matches()) {
+            throw new InvalidClaimException("The amount must be 0.00 or more, with at most two decimals");
+        }
+        return new BigDecimal(amount).setScale(2);
     }
 }

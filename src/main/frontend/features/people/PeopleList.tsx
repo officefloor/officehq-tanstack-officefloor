@@ -6,6 +6,7 @@ import { dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
+import { QuickAdd } from './QuickAdd';
 import { usePeople } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade, claimed (the
@@ -29,6 +30,7 @@ export function PeopleList() {
     );
   return (
     <>
+      <QuickAdd />
       <table data-testid="people">
         <thead>
           <tr>
