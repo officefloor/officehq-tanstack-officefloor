@@ -14,11 +14,11 @@ import org.springframework.http.ResponseEntity;
 
 public class SaveClaimCreated {
     public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets, Audit audit, @Val RollupFigures before, Rollup rollup, Periods periods,
-            net.officefloor.hq.app.setting.Settings settings, ClaimLog log,
+            net.officefloor.hq.app.setting.Settings settings, ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         String sheetId = person.getSheetId();
         LocalDate date = request.date() != null ? request.date() : settings.claimDate(sheetId);
-        LocalDate dueBy = date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+        LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
         if (periods.isClosed(sheetId, dueBy)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }

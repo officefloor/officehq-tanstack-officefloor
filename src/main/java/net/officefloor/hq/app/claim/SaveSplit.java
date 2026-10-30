@@ -11,13 +11,13 @@ import net.officefloor.plugin.variable.Val;
  *  late entry when the claim is one. */
 public class SaveSplit {
     public void save(@Val ValidSplit request, @Val Claim claim, Claims claims, People people, Settings settings,
-            ClaimNumbering numbering, ClaimLog log, Out<ClaimSplit> split) {
+            ClaimNumbering numbering, ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays, Out<ClaimSplit> split) {
         claims.save(claim);
         claims.bind(claim);
         String sheetId = claim.getSheetId();
         Person person = people.find(sheetId, claim.getPersonId());
         Claim into = claims.add(sheetId, person.getId(), request.amount(), claim.getDate(), claim.getNote(),
-                claim.getDate().plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(claim.getDate()), claim.getDate())));
+                holidays.dueBy(sheetId, claim.getDate().plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(claim.getDate()), claim.getDate()))));
         into.setStatus(ClaimStatus.OPEN);
         into.setNumber(numbering.next(sheetId, into.getPeriodDate()));
         into.setOpenedBy(request.user());

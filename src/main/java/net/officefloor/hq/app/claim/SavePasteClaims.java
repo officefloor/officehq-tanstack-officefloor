@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SavePasteClaims {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidPasteClaims request, People people, Claims claims,
             Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup, Settings settings,
-            ClaimLog log, ObjectResponse<PasteClaimsResponse> response) throws InvalidClaimException {
+            ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays, ObjectResponse<PasteClaimsResponse> response) throws InvalidClaimException {
         LocalDate today = settings.claimDate(sheetId);
         List<Person> persons = new ArrayList<>();
         List<LocalDate> dates = new ArrayList<>();
@@ -35,7 +35,7 @@ public class SavePasteClaims {
                 throw new InvalidClaimException("Claim " + number + ": no one on the sheet is named " + line.name());
             }
             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
-            LocalDate dueBy = date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+            LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
             if (periods.isClosed(sheetId, dueBy)) {
                 throw new InvalidClaimException("Claim " + number + ": no claim can be added inside a closed period");
             }

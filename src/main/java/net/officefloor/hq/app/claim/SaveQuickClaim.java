@@ -25,14 +25,14 @@ public class SaveQuickClaim {
 
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidQuickClaim request, People people, Claims claims,
             Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup,
-            net.officefloor.hq.app.setting.Settings settings, ClaimLog log,
+            net.officefloor.hq.app.setting.Settings settings, ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         LocalDate date = settings.claimDate(sheetId);
         Person person = people.findByName(sheetId, request.name());
         // Refuse before anything is written: the claim's period goes by the due-by it would be fixed with.
-        LocalDate dueBy = date.plusDays(person != null
+        LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(person != null
                 ? settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)
-                : settings.termsFor(sheetId, GRADE, date));
+                : settings.termsFor(sheetId, GRADE, date)));
         if (periods.isClosed(sheetId, dueBy)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }
