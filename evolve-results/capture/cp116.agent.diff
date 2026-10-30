@@ -1,0 +1,162 @@
+diff --git a/src/main/frontend/features/people/ImportPeople.tsx b/src/main/frontend/features/people/ImportPeople.tsx
+index 7d29f81c..26b821d8 100644
+--- a/src/main/frontend/features/people/ImportPeople.tsx
++++ b/src/main/frontend/features/people/ImportPeople.tsx
+@@ -7,9 +7,10 @@ import { peopleKey } from './usePeople';
+ 
+ // The import box: one person per line as name,grade,terms,contact (terms and contact may be absent or
+ // blank). Every line is checked first by the person form's rules, and a name or contact given twice in
+-// the import refuses it; one refused line adds nothing. Otherwise each person is added in order as the
+-// form adds them, then shows how many were added; pressing again removes the old count until the new
+-// one is in.
++// the import refuses it; one refused line imports nothing. Otherwise the lines are taken in order: a line
++// naming a person on the sheet (by name or alias) updates them as the form saves them, any other adds a
++// person as the form adds them; then shows how many were added and updated. Pressing again removes the
++// old counts until the new ones are in.
+ export function ImportPeople() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+@@ -19,7 +20,7 @@ export function ImportPeople() {
+ 
+   const importPeople = useMutation({
+     mutationFn: (pasted: string) =>
+-      postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-people`, { text: pasted, user }),
++      postJson<{ added: number; updated: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-people`, { text: pasted, user }),
+     onSuccess: () => {
+       setText('');
+       // Not awaited: the count shows as soon as the import is in, never after the rows it added.
+@@ -51,14 +52,16 @@ export function ImportPeople() {
+       {importPeople.isSuccess && (
+         <>
+           {' '}
+-          Added <span data-testid="import-added">{importPeople.data.added}</span>
++          Added <span data-testid="import-added">{importPeople.data.added}</span>, updated{' '}
++          <span data-testid="import-updated">{importPeople.data.updated}</span>
+         </>
+       )}
+       {importPeople.isError && (
+         <span data-testid="import-error" role="alert">
+           {' '}
+-          Nothing was imported: every line needs a name used by no one on the sheet (nor any alias) and a grade of A, B
+-          or C, terms of whole days, and a contact used by no one; no name or contact may be given twice in the import.
++          Nothing was imported: every line needs a name and a grade of A, B or C, terms of whole days, and a contact
++          used by no one else; a name not on the sheet must be used by no one in the tree; no name, person or contact
++          may be given twice in the import.
+         </span>
+       )}
+     </form>
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportPeopleResponse.java b/src/main/java/net/officefloor/hq/app/person/ImportPeopleResponse.java
+index 17b0a9bc..316a0f4e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ImportPeopleResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/ImportPeopleResponse.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** How many people the import added. */
+-public record ImportPeopleResponse(int added) {
++/** How many people the import added, and how many already on the sheet it updated. */
++public record ImportPeopleResponse(int added, int updated) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SaveImportPeople.java b/src/main/java/net/officefloor/hq/app/person/SaveImportPeople.java
+index fa53dd19..5eeeec0c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SaveImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/SaveImportPeople.java
+@@ -1,5 +1,9 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupFigures;
+@@ -8,34 +12,72 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /**
+- * Adds the imported people in order, each as the person form adds them (PERSON_ADDED, then the
+- * figures it moved). Every line is checked against the sheet first (the name clashes with no one's
+- * name or alias, the contact with no one's contact), so one refused line writes nothing.
++ * Takes the imported lines in order. A line whose name is a person's name or alias on the sheet (as names
++ * are compared) updates that person as the person form saves them: the grade is recorded from the sheet's
++ * today (nothing when it is the grade they have), the terms and contact are set when the line gives them,
++ * audited as PERSON_EDITED with the figures it moved. Any other line adds a person as the person form adds
++ * them (PERSON_ADDED, then the figures it moved). Every line is checked against the sheet first (an added
++ * name clashes with no one's name or alias, a contact with no one else's contact, no person is named by two
++ * lines), so one refused line writes nothing.
+  */
+ public class SaveImportPeople {
+     public void save(@PathVariable("sheetId") String sheetId, @Val ValidImportPeople request, People people, Audit audit,
+-            Rollup rollup, ObjectResponse<ImportPeopleResponse> response) throws InvalidPersonException {
++            Rollup rollup, ObjectResponse<ImportPeopleResponse> response) throws InvalidPersonException, PersonConflictException {
++        List<Person> matched = new ArrayList<>();
++        Set<Long> updating = new HashSet<>();
+         int number = 0;
+         for (PersonRequest line : request.people()) {
+             number++;
+-            if (people.nameTaken(sheetId, line.name(), null)) {
+-                throw new InvalidPersonException("Person " + number + ": the name is already in use");
++            Person person = people.findByName(sheetId, line.name());
++            if (person == null) {
++                if (people.nameTaken(sheetId, line.name(), null)) {
++                    throw new InvalidPersonException("Person " + number + ": the name is already in use");
++                }
++            } else if (!updating.add(person.getId())) {
++                throw new InvalidPersonException("Person " + number + ": " + person.getName() + " is named twice in the import");
+             }
+-            if (!line.contact().isEmpty() && people.contactTaken(sheetId, line.contact(), null)) {
++            if (!line.contact().isEmpty()
++                    && people.contactTaken(sheetId, line.contact(), person == null ? null : person.getId())) {
+                 throw new InvalidPersonException("Person " + number + ": the contact is already in use");
+             }
++            matched.add(person);
+         }
+-        for (PersonRequest line : request.people()) {
++        int added = 0;
++        int updated = 0;
++        for (int i = 0; i < request.people().size(); i++) {
++            PersonRequest line = request.people().get(i);
++            Person person = matched.get(i);
+             RollupFigures before = rollup.figures(sheetId);
+-            Person person = people.add(sheetId, line.name(), line.grade(),
+-                    line.terms().isEmpty() ? null : Integer.valueOf(line.terms()),
+-                    line.contact().isEmpty() ? null : line.contact());
+-            audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
+-                    + " name=" + person.getName() + " grade=" + person.getGrade()
+-                    + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
+-                    + (person.getContact() == null ? "" : " contact=" + person.getContact()));
++            if (person == null) {
++                person = people.add(sheetId, line.name(), line.grade(),
++                        line.terms().isEmpty() ? null : Integer.valueOf(line.terms()),
++                        line.contact().isEmpty() ? null : line.contact());
++                audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
++                        + " name=" + person.getName() + " grade=" + person.getGrade()
++                        + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
++                        + (person.getContact() == null ? "" : " contact=" + person.getContact()));
++                added++;
++            } else {
++                if (!line.terms().isEmpty()) {
++                    person.editTerms(Integer.valueOf(line.terms()));
++                }
++                if (!line.contact().isEmpty()) {
++                    person.editContact(line.contact());
++                }
++                if (!line.grade().equals(person.getGrade())) {
++                    person.recordGrade(person.getToday(), line.grade());
++                }
++                if (!people.save(person)) {
++                    throw new PersonConflictException(person.getId());
++                }
++                audit.recordOnCommit("PERSON_EDITED sheet=" + sheetId + " by=" + request.user()
++                        + " name=" + person.getName() + " grade=" + person.getGrade()
++                        + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
++                        + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : ""));
++                updated++;
++            }
+             rollup.recordChanges(sheetId, request.user(), before);
+         }
+-        response.send(new ImportPeopleResponse(request.people().size()));
++        response.send(new ImportPeopleResponse(added, updated));
+     }
+ }
