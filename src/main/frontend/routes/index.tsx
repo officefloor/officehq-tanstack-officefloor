@@ -3,6 +3,8 @@ import { asString, useSearchParam } from '../url/useSearchParam';
 import { CurrentUser, SignIn } from '../features/session/SignIn';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
+import { PersonForm } from '../features/people/PersonForm';
+import { PeopleList } from '../features/people/PeopleList';
 
 // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
 // picker, and — once a sheet is loaded — that sheet.
@@ -18,7 +20,13 @@ function Home() {
     <>
       <CurrentUser />
       <SheetPicker />
-      {sheet !== '' && <SheetToday key={sheet} />}
+      {sheet !== '' && (
+        <div key={sheet}>
+          <SheetToday />
+          <PersonForm />
+          <PeopleList />
+        </div>
+      )}
       {sheet === '' && <p data-testid="home-empty">Nothing here yet.</p>}
     </>
   );
