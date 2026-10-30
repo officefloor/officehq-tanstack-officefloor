@@ -1,0 +1,76 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index e84aabca..de02e9cc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -10,12 +10,13 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the sheet's reassign permission allows
+  * (by default a steward) move a claim, and none whose due-by is inside a closed period moves.
+- * It keeps its number and date but loses any figure a statement bound it to: it is live again until
++ * It keeps its date, takes the next number in the sequence it would be numbered in now (its old number is
++ * never used again; a DRAFT, having none, gets none), but loses any figure a statement bound it to: it is live again until
+  * its new person's next statement.
+  */
+ public class ApplyReassign {
+     public void apply(@Val ReassignRequest request, @Val Claim claim, People people, Settings settings, Periods periods,
+-            Out<ClaimMove> move) throws ClaimStatusRefusedException {
++            ClaimNumbering numbering, Out<ClaimMove> move) throws ClaimStatusRefusedException {
+         if (!settings.allows(claim.getSheetId(), request.user(), "reassign")) {
+             throw new ClaimStatusRefusedException("Your role may not move a claim to another person");
+         }
+@@ -42,6 +43,9 @@ public class ApplyReassign {
+         claim.setPersonId(to.getId());
+         claim.setStated(false);
+         claim.setStatedDue(null);
++        if (claim.getNumber() != null) {
++            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
++        }
+         move.set(new ClaimMove(from, to));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+index 81d508e3..d29ea570 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+@@ -19,13 +19,14 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * Moves the selected claims to one person, in list order (people in the order they were added, newest
+  * claim first within a person, as listed before any of them moved), each by the rules of moving one
+  * claim — the roles the reassign permission allows, a DRAFT, OPEN or PENDING claim, no due-by inside a
+- * closed period, and no claim dated after the person's retirement — and audited as a single move would
++ * closed period, and no claim dated after the person's retirement — renumbered as a single move would be,
++ * and audited as a single move would
+  * be. A selected claim that cannot move is left as it is and counted as refused; so is a selected id
+  * that is not a claim on the sheet.
+  */
+ public class BulkReassignClaims {
+     public void reassign(@PathVariable("sheetId") String sheetId, @RequestBody BulkReassignRequest request,
+-            Claims claims, People people, Periods periods, Settings settings, Rollup rollup, Audit audit,
++            Claims claims, People people, Periods periods, Settings settings, ClaimNumbering numbering, Rollup rollup, Audit audit,
+             ObjectResponse<BulkReassignResponse> response) {
+         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
+         Person to = null;
+@@ -59,6 +60,9 @@ public class BulkReassignClaims {
+                 claim.setPersonId(to.getId());
+                 claim.setStated(false);
+                 claim.setStatedDue(null);
++                if (claim.getNumber() != null) {
++                    claim.setNumber(numbering.next(sheetId, claim.getPeriodDate()));
++                }
+                 claims.reassign(claim);
+                 audit.recordOnCommit(ClaimAudit.line("CLAIM_REASSIGNED", request.user(), to, claim, claim.getNumber())
+                         + " from=" + from.getName() + " to=" + to.getName());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index e2db5b61..948696d1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -202,8 +202,8 @@ public class Claims {
+ 
+     /** Moves the claim to its (new) person, listed as their newest claim, and leaves it unbound. */
+     public void reassign(Claim claim) {
+-        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, listed_seq = " + NEXT_LISTED
+-                + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
++        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, claim_number = ?, listed_seq = " + NEXT_LISTED
++                + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(), claim.getNumber(),
+                 claim.getSheetId(), claim.getId());
+         history(claim.getSheetId(), claim.getId());
+     }
