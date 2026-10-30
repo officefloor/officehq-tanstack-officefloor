@@ -10,7 +10,8 @@ import net.officefloor.hq.app.rate.Rates;
 /**
  * The late charge on a claim: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is before
  * the sheet's today gains, for each full 30 days it is overdue, the sheet's late percent in force on that
- * boundary date (its due-by plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up
+ * boundary date (its due-by plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it
+ * (compounding), each rounded like due, the charges added up
  * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction has no late charge. The charge is never bound by a statement; settling freezes it in.
  * The charge is worked on the rate figure alone (or the figure a statement bound); the floor is applied last.
  * With grace days (those of its person's grade in force on its date) the claim is overdue only once its due-by plus them is
@@ -57,7 +58,7 @@ public final class LateCharge {
         for (long n = 1; n <= periods; n++) {
             BigDecimal rate = pct.apply(lateFrom.plusDays(n * PERIOD_DAYS));
             if (rate != null && rate.signum() != 0) {
-                charge = charge.add(Rates.due(figure, rate, rounding));
+                charge = charge.add(Rates.due(figure.add(charge), rate, rounding));
             }
         }
         return charge;

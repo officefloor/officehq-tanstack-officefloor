@@ -68,7 +68,8 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
 
 /** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
  *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
- *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
+ *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
+ *  before it (compounding), each rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
 export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
   if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
   const from = lateFrom(claim, late.grace);
@@ -78,7 +79,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
   let charge = 0n;
   for (let n = 1; n <= periods; n++) {
     const boundary = new Date(Date.parse(from) + n * 30 * DAY_MS).toISOString().slice(0, 10);
-    charge += dueCents(figure, late.pct(boundary), halfUp) ?? 0n;
+    charge += dueCents(figure + charge, late.pct(boundary), halfUp) ?? 0n;
   }
   return charge;
 }
