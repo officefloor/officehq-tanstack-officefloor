@@ -46,6 +46,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 // original's number as split-from. A PENDING, deferred or settled claim, one dated inside a closed period, or a split by a
 // role that may not open a claim, is refused with the claim's error.
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
+// A claim is commented with the comment text and button (an empty comment is refused with the claim's error); its comments
+// are shown oldest first, each as "<user> on <date>: <text>", the date being the sheet's today when it was written.
 export function ClaimList({
   claims,
   people,
@@ -192,6 +194,20 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const [commentText, setCommentText] = useState('');
+
+  const comment = useMutation({
+    mutationFn: (text: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/comment`,
+        { text, user },
+      ),
+    onSuccess: () => {
+      setCommentText('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+
   const lock = useMutation({
     mutationFn: () =>
       postJson<Claim>(
@@ -244,6 +260,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     redate.reset();
     proof.reset();
     split.reset();
+    comment.reset();
     lock.reset();
     inline.reset();
     setEditRefused(false);
@@ -299,6 +316,22 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
           </li>
         ))}
       </ol>{' '}
+      <ol data-testid="claim-comments">
+        {(c.comments ?? []).map((line, i) => (
+          <li key={i} data-testid="claim-comments-line">
+            {line}
+          </li>
+        ))}
+      </ol>{' '}
+      <input
+        data-testid="claim-comment-text"
+        value={commentText}
+        placeholder="Comment"
+        onChange={(e) => act(() => setCommentText(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-comment-add" onClick={() => act(() => comment.mutate(commentText))}>
+        Comment
+      </button>{' '}
       <button type="button" data-testid="claim-proof" onClick={() => act(() => proof.mutate())}>
         Add proof
       </button>{' '}
@@ -456,6 +489,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only a steward can re-date a claim, only an OPEN or PENDING one, not to a date after the person's retirement, and not one whose due-by is inside a closed period.
+        </span>
+      )}
+      {comment.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: a comment needs some text, and a viewer cannot comment a claim.
         </span>
       )}
       {split.isError && (

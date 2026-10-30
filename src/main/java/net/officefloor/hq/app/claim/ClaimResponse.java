@@ -12,12 +12,13 @@ import java.util.List;
  *  splitFrom is the number of the claim a split made it from, "" for any other claim; lockedBy is the user whose
  *  open editor locks it, "" when unlocked; lateEntry is whether it was added while its period was soft-closed;
  *  remindedOn is the last day a reminder was written for it, "" if never; ref is its external reference, "" for none;
- *  tags are its tags, sorted and comma separated, "" for none; voidReason is the reason it was voided with, "" for none. */
+ *  tags are its tags, sorted and comma separated, "" for none; voidReason is the reason it was voided with, "" for none;
+ *  comments are its comments, oldest first, each "<user> on <date>: <text>" (empty unless listed). */
 public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String corrects,
         String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, String tags,
-        String voidReason) {
+        String voidReason, List<String> comments) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
@@ -34,7 +35,8 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getRemindedOn() == null ? "" : claim.getRemindedOn().toString(),
                 claim.getRef() == null ? "" : claim.getRef(),
                 claim.getTags() == null ? "" : claim.getTags(),
-                claim.getVoidReason() == null ? "" : claim.getVoidReason());
+                claim.getVoidReason() == null ? "" : claim.getVoidReason(),
+                claim.getComments().stream().map(ClaimComment::line).toList());
     }
 
     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */

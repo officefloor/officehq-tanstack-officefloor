@@ -81,6 +81,12 @@ public class Claims {
                             + rs.getDate("log_date").toLocalDate() + " due=" + rs.getString("due"));
         }, sheetId);
         claims.forEach(claim -> claim.setLog(logs.getOrDefault(claim.getId(), List.of())));
+        Map<Long, List<ClaimComment>> comments = new HashMap<>();
+        jdbc.query("SELECT claim_id, by_user, comment_date, text FROM claim_comment WHERE sheet_id = ? ORDER BY id", rs -> {
+            comments.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>()).add(new ClaimComment(
+                    rs.getString("by_user"), rs.getDate("comment_date").toLocalDate(), rs.getString("text")));
+        }, sheetId);
+        claims.forEach(claim -> claim.setComments(comments.getOrDefault(claim.getId(), List.of())));
         return claims;
     }
 
@@ -187,6 +193,12 @@ public class Claims {
                 + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
                 claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
+    }
+
+    /** Keeps a comment on the claim, written by the user on the sheet's today. */
+    public void comment(Claim claim, String user, String text) {
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text)"
+                + " SELECT s.id, ?, ?, s.today, ? FROM sheet s WHERE s.id = ?", claim.getId(), user, text, claim.getSheetId());
     }
 
     /** Records the claim's reminded date. */

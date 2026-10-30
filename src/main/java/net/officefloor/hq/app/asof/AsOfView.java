@@ -186,6 +186,7 @@ public class AsOfView {
                 if (!on.find() || !LocalDate.parse(on.group(1)).isAfter(date)) log.add(line);
             }
             then.setLog(log);
+            then.setComments(current.getComments().stream().filter(comment -> !comment.date().isAfter(date)).toList());
             shown.add(ClaimResponse.from(then));
         }
         return shown;

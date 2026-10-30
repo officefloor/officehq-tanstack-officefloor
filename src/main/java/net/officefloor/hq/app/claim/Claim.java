@@ -130,6 +130,10 @@ public class Claim {
     /** The claim's status log, oldest first: one "<STATUS> by <user> on <date> due=<due>" line per status it has had. */
     public java.util.List<String> getLog() { return log; }
     public void setLog(java.util.List<String> log) { this.log = log; }
+    private java.util.List<ClaimComment> comments = java.util.List.of();
+    /** The claim's comments, oldest first (empty unless listed). */
+    public java.util.List<ClaimComment> getComments() { return comments; }
+    public void setComments(java.util.List<ClaimComment> comments) { this.comments = comments; }
     /** The status the claim had at the end of the day, as its status log records it (each line dated the sheet's
      *  today when the change was made); null when it was added after that day. */
     public ClaimStatus statusAt(LocalDate end) {

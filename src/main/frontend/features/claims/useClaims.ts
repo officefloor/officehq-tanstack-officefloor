@@ -47,6 +47,8 @@ export type Claim = {
   remindedOn?: string;
   /** The reason the claim was voided with, from the sheet's list; "" for none. */
   voidReason?: string;
+  /** The claim's comments, oldest first: "<user> on <date>: <text>" each, the date the sheet's today when it was written. */
+  comments?: string[];
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold
