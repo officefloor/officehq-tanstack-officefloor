@@ -1,0 +1,203 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index c4f0bcd6..397e786c 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -216,6 +216,7 @@ export function PeopleList() {
+             {shown('statement-count') && <th>Statements</th>}
+             {shown('stated-total') && <th>Last stated</th>}
+             {shown('statement-date') && <th>Stated on</th>}
++            <th>Statement lines</th>
+             <th>Claims</th>
+           </tr>
+         </thead>
+@@ -301,6 +302,13 @@ export function PeopleList() {
+                 {shown('statement-count') && <td data-testid="person-statement-count">{p.statementCount}</td>}
+                 {shown('stated-total') && <td data-testid="person-stated-total">{p.statedTotal}</td>}
+                 {shown('statement-date') && <td data-testid="person-statement-date">{p.statementDate}</td>}
++                <td>
++                  {(p.statements ?? []).map((line, i) => (
++                    <div key={i} data-testid="person-statement-line-line">
++                      {line}
++                    </div>
++                  ))}
++                </td>
+                 <td>
+                   <PlanControl personId={p.id} />
+                   <ClaimList claims={own} people={people} rateOn={(c) => claimRate(rates, gradeOn(p, c.date), c)} />
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 69f60013..c8ab7598 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -43,6 +43,8 @@ export type Person = {
+   retirements: string[];
+   /** The person's SNAPSHOT lines, each "<the day being left> <due-total>" ("n/a" for none), oldest first. */
+   snapshots: string[];
++  /** Their statements still standing, each "<statement date> <due-total>", oldest first. */
++  statements: string[];
+ };
+ 
+ /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index c76a7b1d..152ef81d 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -135,15 +135,22 @@ public class AsOfView {
+         jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                 (RowCallbackHandler) rs -> retired.put(rs.getLong(1), local(rs.getDate(2))), sheetId, end);
+         // The statements taken by the end of the date and not cancelled by then: how many, and the last one's figures.
++        // (A statement a merge or a transfer brought over counts, and shows among the lines, but is never the last one.)
+         Map<Long, Integer> statementCount = new HashMap<>();
+-        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ?" + UP_TO
++        jdbc.query("SELECT person_id, stated_total, statement_date, brought FROM person_statement WHERE sheet_id = ?" + UP_TO
+                 + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY seq", (RowCallbackHandler) rs -> {
+                     Person then = byId.get(rs.getLong(1));
+                     if (then == null) return;
+                     statementCount.merge(then.getId(), 1, Integer::sum);
++                    if (rs.getBoolean(4)) return;
+                     then.setStatedTotal(rs.getBigDecimal(2));
+                     then.setStatementDate(local(rs.getDate(3)));
+                 }, sheetId, end, end);
++        Map<Long, List<String>> statements = new HashMap<>();
++        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ?" + UP_TO
++                + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq",
++                (RowCallbackHandler) rs -> statements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
++                        .add(Person.statementLine(rs.getDate(2), rs.getBigDecimal(3))), sheetId, end, end);
+         Map<Long, List<Long>> patrons = new HashMap<>();
+         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                 (RowCallbackHandler) rs -> patrons.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>()).add(rs.getLong(2)),
+@@ -163,6 +170,7 @@ public class AsOfView {
+             then.setRetirements(new ArrayList<>(retirements.getOrDefault(then.getId(), List.of())));
+             then.setSnapshots(new ArrayList<>(snapshots.getOrDefault(then.getId(), List.of())));
+             then.setStatementCount(statementCount.getOrDefault(then.getId(), 0));
++            then.setStatements(new ArrayList<>(statements.getOrDefault(then.getId(), List.of())));
+             List<Long> ids = new ArrayList<>();
+             List<String> names = new ArrayList<>();
+             for (Long patronId : patrons.getOrDefault(then.getId(), List.of())) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 9fb3a73c..1907bcfd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -75,6 +75,15 @@ public class People {
+         for (Person person : found) {
+             person.setSnapshots(new java.util.ArrayList<>(snapshots.getOrDefault(person.getId(), List.of())));
+         }
++        java.util.Map<Long, java.util.List<String>> statements = new java.util.HashMap<>();
++        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? AND NOT cancelled"
++                + " ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq", rs -> {
++            statements.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
++                    .add(Person.statementLine(rs.getDate("statement_date"), rs.getBigDecimal("stated_total")));
++        }, sheetId);
++        for (Person person : found) {
++            person.setStatements(new java.util.ArrayList<>(statements.getOrDefault(person.getId(), List.of())));
++        }
+         return found;
+     }
+ 
+@@ -395,8 +404,9 @@ public class People {
+     }
+ 
+     /** The person receiving another (merged or transferred into them, or arriving as them) takes their statements:
+-     *  the count becomes their own plus the other's; their last statement stays theirs, or, having none, becomes the
+-     *  other's, with the other's statement history (so it can be cancelled as the other's could). */
++     *  the count becomes their own plus the other's and the other's statement history joins theirs; their last
++     *  statement stays theirs (the other's come over as brought), or, having none, becomes the other's (so it can be
++     *  cancelled as the other's could). */
+     private void takeStatements(Person from, Person into) {
+         if (from.getStatementCount() == 0) {
+             return;
+@@ -406,11 +416,11 @@ public class People {
+         if (hadNone) {
+             into.setStatedTotal(from.getStatedTotal());
+             into.setStatementDate(from.getStatementDate());
+-            jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, set_on, cancelled, cancelled_on)"
+-                    + " SELECT ?, ?, stated_total, statement_date, set_on, cancelled, cancelled_on FROM person_statement"
+-                    + " WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+-                    into.getSheetId(), into.getId(), from.getSheetId(), from.getId());
+         }
++        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, set_on, cancelled, cancelled_on, brought)"
++                + " SELECT ?, ?, stated_total, statement_date, set_on, cancelled, cancelled_on, " + (hadNone ? "brought" : "TRUE")
++                + " FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
++                into.getSheetId(), into.getId(), from.getSheetId(), from.getId());
+         saveStatement(into);
+     }
+ 
+@@ -551,7 +561,7 @@ public class People {
+     /** Marks the person's last statement cancelled in their history (kept, dated, for the as-of view) and sets the person's statement to the one
+      *  before it (no due-total or date when there is none, or it is not known). The count goes down by one. */
+     public void cancelStatement(Person person) {
+-        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY seq DESC LIMIT 1",
++        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY brought, seq DESC LIMIT 1",
+                 (rs, i) -> rs.getLong(1), person.getSheetId(), person.getId());
+         if (!last.isEmpty()) {
+             jdbc.update("UPDATE person_statement SET cancelled = TRUE, cancelled_on = (SELECT today FROM sheet WHERE id = ?) WHERE seq = ?",
+@@ -560,7 +570,7 @@ public class People {
+         person.setStatementCount(person.getStatementCount() - 1);
+         person.setStatedTotal(null);
+         person.setStatementDate(null);
+-        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY seq DESC LIMIT 1",
++        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled AND NOT brought ORDER BY seq DESC LIMIT 1",
+                 rs -> {
+                     person.setStatedTotal(rs.getBigDecimal("stated_total"));
+                     java.sql.Date date = rs.getDate("statement_date");
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 6c960b95..55b3f9bf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -134,6 +134,18 @@ public class Person {
+     private java.util.List<String> snapshots = new java.util.ArrayList<>();
+     public java.util.List<String> getSnapshots() { return snapshots; }
+     public void setSnapshots(java.util.List<String> snapshots) { this.snapshots = snapshots; }
++
++    /** The person's statements still standing, each "<statement date> <due-total>" (due-total "n/a" when it was n/a),
++     *  oldest first — those a merge or a transfer brought over among them, by date. */
++    private java.util.List<String> statements = new java.util.ArrayList<>();
++    public java.util.List<String> getStatements() { return statements; }
++    public void setStatements(java.util.List<String> statements) { this.statements = statements; }
++
++    /** A statement line: "<statement date> <due-total>". */
++    public static String statementLine(java.sql.Date date, BigDecimal dueTotal) {
++        return (date == null ? "" : date.toLocalDate().toString()) + " "
++                + (dueTotal == null ? "n/a" : dueTotal.setScale(2).toPlainString());
++    }
+     /** A hold from a date to an optional to-date (null: open-ended), both days included. */
+     public record Hold(LocalDate from, LocalDate to) {
+         public boolean covers(LocalDate date) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 187ab062..33f22945 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -3,12 +3,13 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ 
+ /** statementCount is how many statements were taken; statedTotal is the last one's due-total ("n/a" when it
+- *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days ("" for none); contact is the person's contact ("" for none); tags are the person's tags, sorted and comma separated ("" for none); aliases are the person's aliases, sorted as names are compared; clashing says whether their name or an alias is used by someone else on a sheet of the sheet's tree; origin is the sheet they were transferred from ("" for none); retirements are their past retirements, each "<from> to <to>", in the order they ended; snapshots are their SNAPSHOT lines, each "<the day being left> <due-total>", oldest first. */
++ *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days ("" for none); contact is the person's contact ("" for none); tags are the person's tags, sorted and comma separated ("" for none); aliases are the person's aliases, sorted as names are compared; clashing says whether their name or an alias is used by someone else on a sheet of the sheet's tree; origin is the sheet they were transferred from ("" for none); retirements are their past retirements, each "<from> to <to>", in the order they ended; snapshots are their SNAPSHOT lines, each "<the day being left> <due-total>", oldest first; statements are their statements still standing, each "<statement date> <due-total>", oldest first. */
+ public record PersonResponse(String id, String name, String grade, int version, int statementCount,
+         String statedTotal, String statementDate, boolean retired, String retiredFrom, boolean held,
+         List<HoldFrom> holds,
+         List<String> patrons, List<String> patronIds, List<GradeFrom> grades, String terms, String contact, String tags,
+-        List<String> aliases, boolean clashing, String origin, List<String> retirements, List<String> snapshots) {
++        List<String> aliases, boolean clashing, String origin, List<String> retirements, List<String> snapshots,
++        List<String> statements) {
+ 
+     /** A grade in force from a date (YYYY-MM-DD; "" for the beginning of time). */
+     public record GradeFrom(String from, String grade) {
+@@ -37,7 +38,8 @@ public record PersonResponse(String id, String name, String grade, int version,
+                 List.copyOf(person.getAliases()), person.isClashing(),
+                 person.getOrigin() == null ? "" : person.getOrigin(),
+                 person.getRetirements().stream().map(r -> r.from() + " to " + r.to()).toList(),
+-                List.copyOf(person.getSnapshots()));
++                List.copyOf(person.getSnapshots()),
++                List.copyOf(person.getStatements()));
+     }
+ 
+     public static List<PersonResponse> from(List<Person> people) {
+diff --git a/src/main/resources/db/migration/V86__statement_brought.sql b/src/main/resources/db/migration/V86__statement_brought.sql
+new file mode 100644
+index 00000000..e3ebb069
+--- /dev/null
++++ b/src/main/resources/db/migration/V86__statement_brought.sql
+@@ -0,0 +1,3 @@
++-- A statement a merge or a transfer brought over from another person who already had their own: shown among the
++-- person's statements, but never their last statement while one of their own stands.
++ALTER TABLE person_statement ADD COLUMN brought BOOLEAN DEFAULT FALSE NOT NULL;
