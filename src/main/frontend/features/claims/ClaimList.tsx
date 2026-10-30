@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
-import { claimsKey, isDeferred, type Claim } from './useClaims';
+import { claimsKey, isDeferred, tagList, type Claim } from './useClaims';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicyDate, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -218,6 +218,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         note: c.note,
         corrects: c.corrects,
         ref: c.ref,
+        tags: c.tags ?? '',
         user,
       }),
     onSuccess: () => {
@@ -271,6 +272,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-ref">{c.ref}</span>{' '}
+      <span data-testid="claim-tags">{tagList(c.tags)}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today, grace }, policy))}</span>{' '}

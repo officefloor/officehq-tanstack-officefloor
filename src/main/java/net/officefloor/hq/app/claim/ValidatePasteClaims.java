@@ -39,7 +39,7 @@ public class ValidatePasteClaims {
                 ref = note.substring(hash + 2);
                 note = note.substring(0, hash);
             }
-            ClaimRequest claim = new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "", note, request.user(), null, ref);
+            ClaimRequest claim = new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "", note, request.user(), null, ref, null);
             try {
                 lines.add(new ValidPasteClaims.Line(name, ValidateClaim.check(claim)));
             } catch (InvalidClaimException e) {

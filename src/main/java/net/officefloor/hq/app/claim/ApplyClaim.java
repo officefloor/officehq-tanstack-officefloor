@@ -30,6 +30,7 @@ public class ApplyClaim {
         ValidateClaim.checkRef(request.ref(), claim.getSheetId(), claim.getId(), claims);
         claim.setAmount(request.amount());
         claim.setRef(request.ref());
+        claim.setTags(request.tags());
         claim.setCorrects(request.corrects());
         claim.setCorrectedDate(claims.correctedDate(claim.getSheetId(), claim.getPersonId(), request.corrects()));
         claim.setDate(date);

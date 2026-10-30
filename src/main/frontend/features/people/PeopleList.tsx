@@ -35,7 +35,8 @@ import { useSheetFigures } from './useSheetFigures';
 // patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
-// due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one). Retired
+// due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
+// Then, for every tag ever used on the sheet's claims, its due-total: the dues of the counting claims carrying it. Retired
 // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
@@ -46,7 +47,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -188,6 +189,13 @@ export function PeopleList() {
       <p>
         Overdue total: <span data-testid="rollup-overdue-total">{sheetOverdueTotal}</span>
       </p>
+      <ul>
+        {tagTotals.map(({ tag, total }) => (
+          <li key={tag}>
+            Tag {tag} due total: <span data-testid={`tag-${tag}-due-total`}>{total}</span>
+          </li>
+        ))}
+      </ul>
       <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} />
       </PersonSelection>
     </ClaimSelection>

@@ -27,7 +27,7 @@ public class SaveClaimCreated {
         }
         ValidateClaim.checkCorrects(request, sheetId, person.getId(), claims);
         ValidateClaim.checkRef(request.ref(), sheetId, null, claims);
-        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects(), dueBy, request.ref());
+        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects(), dueBy, request.ref(), request.tags());
         log.record(claim, person, request.user());
         audit.recordOnCommit(ClaimAudit.added(request.user(), person, claim));
         LateEntry.mark(claim, person, request.user(), claims, periods, audit);

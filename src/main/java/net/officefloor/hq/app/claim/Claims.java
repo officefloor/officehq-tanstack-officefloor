@@ -39,6 +39,7 @@ public class Claims {
         claim.setLockedBy(rs.getString("locked_by"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRef(rs.getString("ref"));
+        claim.setTags(rs.getString("tags"));
         return claim;
     };
 
@@ -101,13 +102,18 @@ public class Claims {
         return add(sheetId, personId, amount, date, note, corrects, dueBy, null);
     }
 
-    /** Adds a DRAFT claim with its due-by fixed as given, and its external reference (null for none). */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy, String ref) {
+        return add(sheetId, personId, amount, date, note, corrects, dueBy, ref, null);
+    }
+
+    /** Adds a DRAFT claim with its due-by fixed as given, its external reference and its tags (null for none). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy, String ref, String tags) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
@@ -118,6 +124,7 @@ public class Claims {
             ps.setString(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setString(8, ref);
+            ps.setString(9, tags);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
@@ -125,8 +132,23 @@ public class Claims {
         claim.setCorrects(corrects);
         claim.setDueBy(dueBy);
         claim.setRef(ref);
+        claim.setTags(tags);
+        recordTags(sheetId, tags);
         claim.setCorrectedDate(correctedDate(sheetId, personId, corrects));
         return claim;
+    }
+
+    /** Remembers each of the tags (comma separated; null for none) as used on the sheet. */
+    private void recordTags(String sheetId, String tags) {
+        if (tags == null) return;
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO sheet_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
+    }
+
+    /** Every tag ever used on the sheet's claims, sorted. */
+    public List<String> tagsUsed(String sheetId) {
+        return jdbc.queryForList("SELECT tag FROM sheet_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
     }
 
     /** Whether a claim on the sheet (other than exceptId, when given) carries the reference, compared without regard to case. */
@@ -230,10 +252,11 @@ public class Claims {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(),
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(),
                 claim.getSheetId(), claim.getId());
+        recordTags(claim.getSheetId(), claim.getTags());
         history(claim.getSheetId(), claim.getId());
     }
 }

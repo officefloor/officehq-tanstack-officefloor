@@ -25,6 +25,8 @@ export type Claim = {
   corrects: string;
   /** The claim's external reference, unique on the sheet regardless of case; "" for none. */
   ref: string;
+  /** The claim's tags, lower-cased, sorted and comma separated ("a,b"); "" for none. */
+  tags?: string;
   /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects. */
   roundingDate: string;
   /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */
@@ -101,4 +103,22 @@ export function useClaims(sheet: string): Claim[] {
 export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
+}
+
+/** A claim's tags as shown: sorted, comma and space separated. */
+export const tagList = (tags: string | undefined) => (tags ?? '').split(',').filter((t) => t !== '').join(', ');
+
+/** Whether a claim carries the tag. */
+export const hasTag = (c: { tags?: string }, tag: string) => (c.tags ?? '').split(',').includes(tag);
+
+export const tagsKey = (sheet: string) => ['sheet', sheet, 'tags'] as const;
+
+/** Every tag ever used on the sheet's claims, sorted. */
+export function useTags(sheet: string): string[] {
+  const { data } = useQuery({
+    queryKey: tagsKey(sheet),
+    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/tags`),
+    enabled: sheet !== '',
+  });
+  return data ?? [];
 }

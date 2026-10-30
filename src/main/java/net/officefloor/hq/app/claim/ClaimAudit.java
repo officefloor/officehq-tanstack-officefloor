@@ -11,9 +11,10 @@ final class ClaimAudit {
     private ClaimAudit() {
     }
 
-    /** CLAIM_ADDED: the line, then ref=<reference> when the claim carries one. */
+    /** CLAIM_ADDED: the line, then ref=<reference> when the claim carries one, then tags=<sorted, comma separated> when it has any. */
     static String added(String user, Person person, Claim claim) {
-        return line("CLAIM_ADDED", user, person, claim, claim.getNumber()) + (claim.getRef() == null ? "" : " ref=" + claim.getRef());
+        return line("CLAIM_ADDED", user, person, claim, claim.getNumber()) + (claim.getRef() == null ? "" : " ref=" + claim.getRef())
+                + (claim.getTags() == null ? "" : " tags=" + claim.getTags());
     }
 
     static String line(String event, String user, Person person, Claim claim, String number) {

@@ -111,6 +111,11 @@ public class Claim {
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }
 
+    /** The claim's tags: lower-cased, sorted and comma separated; null when it has none. */
+    private String tags;
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
+
     /** The user whose open editor locks the claim; null when unlocked. */
     private String lockedBy;
     public String getLockedBy() { return lockedBy; }

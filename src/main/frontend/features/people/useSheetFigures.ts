@@ -1,4 +1,4 @@
-import { countsLive, isOpen, useClaims } from '../claims/useClaims';
+import { countsLive, hasTag, isOpen, useClaims, useTags } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
@@ -15,6 +15,7 @@ export function useSheetFigures(sheet: string) {
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const tags = useTags(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const grace = useGrace(sheet);
@@ -87,10 +88,20 @@ export function useSheetFigures(sheet: string) {
     }
     return buckets;
   };
+  // Each tag ever used on the sheet with its due-total: the dues of the counting claims that carry it
+  // (a claim with two tags counts in both); n/a adds nothing.
+  const tagTotals = tags.map((tag) => ({
+    tag,
+    total: formatCents(
+      live
+        .filter((c) => hasTag(c, tag))
+        .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
+    ),
+  }));
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are

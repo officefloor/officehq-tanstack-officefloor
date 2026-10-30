@@ -3,13 +3,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { claimsKey, type Claim } from './useClaims';
+import { claimsKey, tagList, tagsKey, type Claim } from './useClaims';
 
 // The claim form on a person's row: adds a claim to that person, or — while one of their claims'
 // editor is open (`editClaim` in the URL) — saves that claim. Opening the editor fills the form
 // with the claim's values. A blank date takes the sheet's entry date while set, else its today. A negative amount is a correction,
 // which names in "corrects" the number of the SETTLED claim of the same person it corrects.
 // A reference (spaces trimmed, blank for none) must not already be used on the sheet, regardless of case.
+// Tags are comma separated: each is trimmed and lower-cased, and repeats are dropped (by the server).
 export function ClaimForm({ personId, claims }: { personId: string; claims: Claim[] }) {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -22,6 +23,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
   const [ref, setRef] = useState('');
+  const [tags, setTags] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
 
@@ -31,10 +33,11 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
     setNote('');
     setCorrects('');
     setRef('');
+    setTags('');
   };
 
   const save = useMutation({
-    mutationFn: (body: { amount: string; date: string; note: string; corrects: string; ref: string }) =>
+    mutationFn: (body: { amount: string; date: string; note: string; corrects: string; ref: string; tags: string }) =>
       editing !== ''
         ? putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(editing)}`, { ...body, user })
         : postJson<Claim>(
@@ -45,6 +48,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
       clear();
       if (editing !== '') setEditing(undefined);
       void queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: tagsKey(sheet) });
     },
   });
 
@@ -58,6 +62,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
       setNote(edited.note);
       setCorrects(edited.corrects);
       setRef(edited.ref);
+      setTags(tagList(edited.tags));
     } else {
       clear();
     }
@@ -76,7 +81,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
         e.preventDefault();
         submitOnce(() => {
           save.reset();
-          return save.mutateAsync({ amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim() });
+          return save.mutateAsync({ amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim(), tags });
         });
       }}
     >
@@ -97,6 +102,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
         onChange={(e) => changed(setCorrects)(e.target.value)}
       />{' '}
       <input data-testid="claim-form-ref" value={ref} placeholder="Reference" onChange={(e) => changed(setRef)(e.target.value)} />{' '}
+      <input data-testid="claim-form-tags" value={tags} placeholder="Tags" onChange={(e) => changed(setTags)(e.target.value)} />{' '}
       <button type="submit" data-testid="claim-form-submit">{editing !== '' ? 'Save claim' : 'Add claim'}</button>
       {save.isError && (
         <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim whose due-by falls inside a closed period can be added or changed, none after the person's retirement date, and no reference already used on the sheet.</span>
