@@ -1,4 +1,5 @@
 import { addDays } from '../claims/overdue';
+import { isOpen } from '../claims/useClaims';
 
 // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
 // due in millionths, then rounded to cents — half up for a claim dated before the sheet's policy date,
@@ -60,11 +61,11 @@ export const roundsHalfUp = (claim: { roundingDate?: string; date: string }, pol
 /** A claim with a negative amount is a correction: its due has no floor and no late charge. */
 export const isCorrection = (claim: { amount?: string }) => claim.amount !== undefined && toCents(claim.amount) < 0n;
 
-/** The late charge on a figure in cents: an OPEN claim whose due-by (its date plus the terms) is
+/** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (its date plus the terms) is
  *  before today gains the late percent of its figure for every full 30 days it is overdue, rounded
  *  like due. Never bound by a statement; settling freezes it into the settled due. */
 export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
-  if (late === undefined || late.today === undefined || claim.status !== 'OPEN' || isCorrection(claim)) return 0n;
+  if (late === undefined || late.today === undefined || !isOpen(claim) || isCorrection(claim)) return 0n;
   const dueBy = addDays(claim.date, late.terms);
   const days = Math.round((Date.parse(late.today) - Date.parse(dueBy)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
@@ -72,7 +73,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
 }
 
 /** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
- *  stays n/a), else its amount at the current rate, raised to the sheet's floor; an overdue claim's
+ *  stays n/a; a PENDING claim is never bound), else its amount at the current rate, raised to the sheet's floor; an overdue claim's
  *  late charge is added on top. A correction is never floored and gains no late charge. Live figures
  *  round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
@@ -83,7 +84,7 @@ export function claimDue(
   policy?: string,
 ): bigint | null {
   const live = dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
-  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated ? null : isCorrection(claim) ? live : floored(live, floor);
+  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : isCorrection(claim) ? live : floored(live, floor);
   return figure === null ? null : figure + lateCents(claim, figure, late, policy);
 }
 

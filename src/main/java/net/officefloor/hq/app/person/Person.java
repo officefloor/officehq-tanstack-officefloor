@@ -81,12 +81,12 @@ public class Person {
     public boolean isRetired() { return retiredFrom != null; }
     /** Whether a claim may be dated on this date: never after the person's retirement date. */
     public boolean allowsClaimOn(LocalDate date) { return retiredFrom == null || !date.isAfter(retiredFrom); }
-    /** Whether the person is on hold: their OPEN claims then count in no live total. */
+    /** Whether the person is on hold: their OPEN and PENDING claims then count in no live total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
-    /** Whether the claim counts in the live totals: OPEN or SETTLED, but not OPEN while the person is held. */
+    /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED, but not OPEN or PENDING while the person is held. */
     public boolean countsLive(Claim claim) {
-        return claim.getStatus().counts() && !(held && claim.getStatus() == ClaimStatus.OPEN);
+        return claim.getStatus().counts() && !(held && claim.getStatus().isOpen());
     }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public java.util.List<Long> getPatronIds() { return patronIds; }

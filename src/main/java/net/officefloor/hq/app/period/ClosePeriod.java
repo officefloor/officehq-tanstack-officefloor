@@ -49,7 +49,7 @@ public class ClosePeriod {
                 }
                 RoundingMode rounding = Rounding.of(claim, policyDate);
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
-                BigDecimal figure = fixed != null || claim.isStated() ? fixed
+                BigDecimal figure = fixed != null || claim.isBound() ? fixed
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 if (figure != null) {
                     total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today, rounding));

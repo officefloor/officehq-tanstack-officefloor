@@ -7,12 +7,18 @@ public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ValidClaimStatus> body)
             throws InvalidClaimException {
         String action = request.action() == null ? "" : request.action().trim();
-        ClaimStatus target = switch (action) {
-            case "open" -> ClaimStatus.OPEN;
-            case "settle" -> ClaimStatus.SETTLED;
-            case "void" -> ClaimStatus.VOID;
+        String reason = request.reason() == null ? "" : request.reason().trim();
+        ValidClaimStatus valid = switch (action) {
+            case "open" -> new ValidClaimStatus(ClaimStatus.OPEN, request.user(), ValidClaimStatus.Decision.NONE, null);
+            case "settle" -> new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.NONE, null);
+            case "void" -> new ValidClaimStatus(ClaimStatus.VOID, request.user(), ValidClaimStatus.Decision.NONE, null);
+            case "approve" -> new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.APPROVE, null);
+            case "reject" -> {
+                if (reason.isEmpty()) throw new InvalidClaimException("A rejection needs a reason");
+                yield new ValidClaimStatus(ClaimStatus.OPEN, request.user(), ValidClaimStatus.Decision.REJECT, reason);
+            }
             default -> throw new InvalidClaimException("No such status change: " + action);
         };
-        body.set(new ValidClaimStatus(target, request.user()));
+        body.set(valid);
     }
 }

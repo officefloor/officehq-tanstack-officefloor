@@ -45,7 +45,7 @@ public class TakeStatement {
                 RoundingMode rounding = Rounding.of(claim, policyDate);
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date.
-                BigDecimal figure = fixed != null || claim.isStated() ? fixed
+                BigDecimal figure = fixed != null || claim.isBound() ? fixed
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 anyFigure |= fixed != null;
                 if (figure != null) {

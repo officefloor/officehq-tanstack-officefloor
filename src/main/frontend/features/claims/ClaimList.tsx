@@ -11,8 +11,10 @@ import { dueBy, isOverdue } from './overdue';
 import { ClaimSelect } from './BulkOpen';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
-// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies; an overdue claim gains the sheet's late percent of that figure for every full 30 days overdue), due-by (its date plus the sheet's terms), overdue (yes when it is OPEN and its due-by is before the sheet's today), the status buttons (open, settle, void —
-// one the claim's status does not allow is refused with the claim's error) and an edit button that
+// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies; an overdue claim gains the sheet's late percent of that figure for every full 30 days overdue), due-by (its date plus the sheet's terms), overdue (yes when it is OPEN or PENDING and its due-by is before the sheet's today), the status buttons (open, settle, void —
+// one the claim's status does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
+// claim to PENDING, which shows its live due unbound by any statement), approve and reject with a reason (a steward's decision
+// on a PENDING claim: approve settles it, reject returns it to OPEN; the opener cannot approve it) and an edit button that
 // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim is
 // refused with the claim's error — to change an open claim, void it and add a new one.
 export function ClaimList({ claims, rateOn }: { claims: Claim[]; rateOn: (date: string) => string | undefined }) {
@@ -38,13 +40,18 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
   const policy = usePolicyDate(sheet);
 
   const status = useMutation({
-    mutationFn: (action: 'open' | 'settle' | 'void') =>
+    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject'; reason?: string }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/status`,
-        { action, user },
+        { action, user, reason },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+    onSuccess: (_, { action }) => {
+      if (action === 'reject') setReason('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
   });
+
+  const [reason, setReason] = useState('');
 
   const [editRefused, setEditRefused] = useState(false);
 
@@ -76,14 +83,26 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
-      <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate('open'))}>
+      <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate({ action: 'open' }))}>
         Open
       </button>{' '}
-      <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate('settle'))}>
+      <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate({ action: 'settle' }))}>
         Settle
       </button>{' '}
-      <button type="button" data-testid="claim-void" onClick={() => act(() => status.mutate('void'))}>
+      <button type="button" data-testid="claim-void" onClick={() => act(() => status.mutate({ action: 'void' }))}>
         Void
+      </button>{' '}
+      <button type="button" data-testid="claim-approve" onClick={() => act(() => status.mutate({ action: 'approve' }))}>
+        Approve
+      </button>{' '}
+      <input
+        data-testid="claim-reject-reason"
+        value={reason}
+        placeholder="Reason to reject"
+        onChange={(e) => act(() => setReason(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-reject" onClick={() => act(() => status.mutate({ action: 'reject', reason }))}>
+        Reject
       </button>{' '}
       {editing === c.id ? (
         <button type="button" data-testid="claim-cancel" onClick={() => act(() => setEditing(undefined))}>
@@ -103,7 +122,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle it, a clerk cannot settle a claim whose due is above the clerk limit, and no claim dated inside a closed period can change status).
+          Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle or approve it, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
         </span>
       )}
     </li>

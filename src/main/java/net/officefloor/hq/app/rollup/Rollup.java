@@ -71,7 +71,7 @@ public class Rollup {
                 RoundingMode rounding = Rounding.of(claim, policyDate);
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 anyFigure |= fixed != null;
-                BigDecimal figure = fixed != null || claim.isStated() ? fixed
+                BigDecimal figure = fixed != null || claim.isBound() ? fixed
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 if (figure != null) {
                     anyFigure = true;
