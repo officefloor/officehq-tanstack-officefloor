@@ -8,7 +8,8 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
 
 // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
 // are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
-// of them are active. Per period: its due-total, as the period list shows it. Per status: how many claims have it.
+// of them are active. Per period: its due-total, as the period list shows it, and its change from
+// the period before it by start date (blank for the earliest). Per status: how many claims have it.
 // Per reason on the sheet's void list: how many VOID claims were voided with it.
 export function SummaryPanel({
   people,
@@ -30,6 +31,11 @@ export function SummaryPanel({
   const periodDueTotal = usePeriodDueTotal(sheet);
   const voidReasons = useVoidReasons(sheet);
   const current = people.filter((p) => !p.retired);
+  const byStart = [...periods].sort((a, b) => a.from.localeCompare(b.from));
+  const changeOf = (p: (typeof periods)[number]) => {
+    const i = byStart.indexOf(p);
+    return i <= 0 ? '' : formatCents(periodDueTotal(p) - periodDueTotal(byStart[i - 1]));
+  };
   return (
     <section data-testid="summary">
       <h3>Summary</h3>
@@ -62,6 +68,7 @@ export function SummaryPanel({
           <tr>
             <th>Period</th>
             <th>Due</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody>
@@ -69,6 +76,7 @@ export function SummaryPanel({
             <tr key={p.name}>
               <td>{p.name}</td>
               <td data-testid={`summary-period-${p.name}-due-total`}>{formatCents(periodDueTotal(p))}</td>
+              <td data-testid={`summary-period-${p.name}-change`}>{changeOf(p)}</td>
             </tr>
           ))}
         </tbody>
