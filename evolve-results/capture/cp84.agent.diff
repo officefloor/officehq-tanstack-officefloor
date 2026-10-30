@@ -1,0 +1,207 @@
+diff --git a/src/main/frontend/features/settings/SettingsPanel.tsx b/src/main/frontend/features/settings/SettingsPanel.tsx
+index 45894639..ae6b91cc 100644
+--- a/src/main/frontend/features/settings/SettingsPanel.tsx
++++ b/src/main/frontend/features/settings/SettingsPanel.tsx
+@@ -8,8 +8,8 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
+ 
+ // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
+ // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
+-// a blank floor field leaves it as it is and saves the clerk limit), the terms (whole days; a claim's
+-// due-by is its date plus them, fixed when the claim is created; saved when its field is filled, together with any other field filled),
++// a blank floor field leaves it as it is and saves the clerk limit), the terms (whole business days; a claim's
++// due-by is that many business days after its date, skipping weekends and the sheet's holidays, fixed when the claim is created; saved when its field is filled, together with any other field filled),
+ // each grade's own terms (whole days; a new claim whose person's grade on its date has them uses them instead; saved like the terms; none: the sheet's terms), the late percent
+ // (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms), the policy date (a claim dated
+ // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
+diff --git a/src/main/java/db/migration/V50__business_day_terms.java b/src/main/java/db/migration/V50__business_day_terms.java
+new file mode 100644
+index 00000000..1e5c041d
+--- /dev/null
++++ b/src/main/java/db/migration/V50__business_day_terms.java
+@@ -0,0 +1,68 @@
++package db.migration;
++
++import java.sql.Connection;
++import java.sql.Date;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.time.LocalDate;
++import java.time.temporal.ChronoUnit;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import net.officefloor.hq.app.holiday.Holidays;
++import org.flywaydb.core.api.migration.BaseJavaMigration;
++import org.flywaydb.core.api.migration.Context;
++
++/**
++ * Terms now count business days: every claim's due-by is worked out again as the terms-th business day after the
++ * date it was fixed from, skipping Saturdays, Sundays and the sheet's holidays as they are now. The terms it was
++ * fixed with are its old due-by less that date, less the run of holidays its due-by was moved past.
++ */
++public class V50__business_day_terms extends BaseJavaMigration {
++
++    private record Fixed(long id, String sheetId, LocalDate date, LocalDate dueBy) {}
++
++    @Override
++    public void migrate(Context context) throws Exception {
++        Connection connection = context.getConnection();
++        Map<String, Set<LocalDate>> holidays = new HashMap<>();
++        try (PreparedStatement ps = connection.prepareStatement("SELECT sheet_id, holiday_date FROM holiday");
++                ResultSet rs = ps.executeQuery()) {
++            while (rs.next()) {
++                holidays.computeIfAbsent(rs.getString(1), s -> new HashSet<>()).add(rs.getDate(2).toLocalDate());
++            }
++        }
++        // The date a due-by was fixed from is the claim's first recorded date: a redate leaves the due-by as it is.
++        List<Fixed> claims = new ArrayList<>();
++        try (PreparedStatement ps = connection.prepareStatement("SELECT c.id, c.sheet_id, COALESCE((SELECT h.claim_date"
++                + " FROM claim_history h WHERE h.claim_id = c.id ORDER BY h.seq LIMIT 1), c.claim_date), c.due_by"
++                + " FROM claim c WHERE c.due_by IS NOT NULL");
++                ResultSet rs = ps.executeQuery()) {
++            while (rs.next()) {
++                claims.add(new Fixed(rs.getLong(1), rs.getString(2), rs.getDate(3).toLocalDate(), rs.getDate(4).toLocalDate()));
++            }
++        }
++        try (PreparedStatement claim = connection.prepareStatement("UPDATE claim SET due_by = ? WHERE id = ?");
++                PreparedStatement history = connection.prepareStatement(
++                        "UPDATE claim_history SET due_by = ? WHERE claim_id = ? AND due_by IS NOT NULL")) {
++            for (Fixed fixed : claims) {
++                Set<LocalDate> sheetHolidays = holidays.getOrDefault(fixed.sheetId(), Set.of());
++                LocalDate moved = fixed.dueBy();
++                while (moved.isAfter(fixed.date()) && sheetHolidays.contains(moved.minusDays(1))) {
++                    moved = moved.minusDays(1);
++                }
++                int terms = (int) Math.max(0, ChronoUnit.DAYS.between(fixed.date(), moved));
++                Date dueBy = Date.valueOf(Holidays.businessDays(fixed.date(), terms, sheetHolidays));
++                claim.setDate(1, dueBy);
++                claim.setLong(2, fixed.id());
++                claim.executeUpdate();
++                history.setDate(1, dueBy);
++                history.setLong(2, fixed.id());
++                history.executeUpdate();
++            }
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
+index d5dbdd98..8d483de9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
+@@ -18,7 +18,7 @@ public class SaveClaimCreated {
+             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
+         String sheetId = person.getSheetId();
+         LocalDate date = request.date() != null ? request.date() : settings.claimDate(sheetId);
+-        LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
++        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+         if (periods.isClosed(sheetId, dueBy)) {
+             throw new InvalidClaimException("No claim can be added inside a closed period");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+index b22bc341..98a1455e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+@@ -35,7 +35,7 @@ public class SavePasteClaims {
+                 throw new InvalidClaimException("Claim " + number + ": no one on the sheet is named " + line.name());
+             }
+             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
+-            LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
++            LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+             if (periods.isClosed(sheetId, dueBy)) {
+                 throw new InvalidClaimException("Claim " + number + ": no claim can be added inside a closed period");
+             }
+@@ -50,7 +50,7 @@ public class SavePasteClaims {
+             Person person = persons.get(i);
+             LocalDate date = dates.get(i);
+             Claim claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(),
+-                    date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
++                    holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
+             log.record(claim, person, request.user());
+             audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
+             LateEntry.mark(claim, person, request.user(), claims, periods, audit);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
+index 3da3006d..a97e8ee2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
+@@ -30,9 +30,9 @@ public class SaveQuickClaim {
+         LocalDate date = settings.claimDate(sheetId);
+         Person person = people.findByName(sheetId, request.name());
+         // Refuse before anything is written: the claim's period goes by the due-by it would be fixed with.
+-        LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(person != null
++        LocalDate dueBy = holidays.dueBy(sheetId, date, person != null
+                 ? settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)
+-                : settings.termsFor(sheetId, GRADE, date)));
++                : settings.termsFor(sheetId, GRADE, date));
+         if (periods.isClosed(sheetId, dueBy)) {
+             throw new InvalidClaimException("No claim can be added inside a closed period");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index 3531d9d2..456f04cb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -17,7 +17,7 @@ public class SaveSplit {
+         String sheetId = claim.getSheetId();
+         Person person = people.find(sheetId, claim.getPersonId());
+         Claim into = claims.add(sheetId, person.getId(), request.amount(), claim.getDate(), claim.getNote(),
+-                holidays.dueBy(sheetId, claim.getDate().plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(claim.getDate()), claim.getDate()))));
++                holidays.dueBy(sheetId, claim.getDate(), settings.termsFor(sheetId, person.getTerms(), person.gradeOn(claim.getDate()), claim.getDate())));
+         into.setStatus(ClaimStatus.OPEN);
+         into.setNumber(numbering.next(sheetId, into.getPeriodDate()));
+         into.setOpenedBy(request.user());
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/Holidays.java b/src/main/java/net/officefloor/hq/app/holiday/Holidays.java
+index 1d8ae5b7..d06cab3e 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/Holidays.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/Holidays.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.holiday;
+ 
+ import java.sql.Date;
++import java.time.DayOfWeek;
+ import java.time.LocalDate;
+ import java.util.HashSet;
+ import java.util.List;
+@@ -36,14 +37,24 @@ public class Holidays {
+         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
+     }
+ 
+-    /** A due-by moved past the sheet's holidays as they are now: the date when it is not a holiday, else the next day that is not. */
+-    public LocalDate dueBy(String sheetId, LocalDate date) {
++    /** A claim's due-by: the terms-th business day after its date, counting from the day after it and skipping
++     *  every Saturday, Sunday and holiday on the sheet as they are now (terms of 0 leave the date itself). */
++    public LocalDate dueBy(String sheetId, LocalDate date, int terms) {
+         Set<LocalDate> holidays = new HashSet<>();
+-        jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? AND holiday_date >= ?",
++        jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? AND holiday_date > ?",
+                 rs -> { holidays.add(rs.getDate(1).toLocalDate()); }, sheetId, Date.valueOf(date));
++        return businessDays(date, terms, holidays);
++    }
++
++    /** The terms-th day after the date that is neither a Saturday, a Sunday nor one of the holidays. */
++    public static LocalDate businessDays(LocalDate date, int terms, Set<LocalDate> holidays) {
+         LocalDate due = date;
+-        while (holidays.contains(due)) {
++        for (int counted = 0; counted < terms; ) {
+             due = due.plusDays(1);
++            DayOfWeek day = due.getDayOfWeek();
++            if (day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY && !holidays.contains(due)) {
++                counted++;
++            }
+         }
+         return due;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index df233ac1..c5f0f7df 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -108,7 +108,7 @@ public class Settings {
+         return found == null || found.value() == null ? START_FLOOR : found.value();
+     }
+ 
+-    /** The sheet's terms in days in force on a date: a claim's due-by is its date plus them. */
++    /** The sheet's terms in business days in force on a date: a claim's due-by is that many business days after its date. */
+     public int terms(String sheetId, LocalDate on) {
+         InForce found = on(sheetId, ValidateSetting.TERMS, on);
+         return found == null || found.value() == null ? START_TERMS : found.value().intValue();
