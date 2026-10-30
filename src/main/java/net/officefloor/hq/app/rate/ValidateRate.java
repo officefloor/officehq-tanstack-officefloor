@@ -17,8 +17,8 @@ public class ValidateRate {
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
-    /** A percent: 0 or more, at most four whole digits and two decimals. */
-    private static final Pattern PERCENT = Pattern.compile("\\d{1,4}(\\.\\d{1,2})?");
+    /** A percent: 0 or more, at most seven whole digits and two decimals. */
+    private static final Pattern PERCENT = Pattern.compile("\\d{1,7}(\\.\\d{1,2})?");
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withResolverStyle(ResolverStyle.STRICT);

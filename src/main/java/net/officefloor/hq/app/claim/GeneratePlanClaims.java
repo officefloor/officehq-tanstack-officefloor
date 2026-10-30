@@ -25,13 +25,19 @@ import org.springframework.web.bind.annotation.RequestBody;
  * start, then every N days; or the day in every month from the start's month, on the month's last day when it is shorter,
  * dates before the start left out) up to the end and the sheet's today that has none yet, dated that day with an empty note, each
  * audited as CLAIM_ADDED. A date the claim form refuses (its due-by inside a closed period, after the person's retirement) is
- * skipped, and tried again on the next generate.
+ * skipped, and tried again on the next generate. A viewer changes nothing: their generate makes no claim (an archived sheet
+ * refuses it).
  */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId, @RequestBody GenerateRequest request, Plans plans, People people,
             Claims claims, Sheets sheets, Periods periods, Holidays holidays, Settings settings, ClaimLog log, Audit audit,
-            @Val RollupFigures before, Rollup rollup, ObjectResponse<GenerateResponse> response) throws ViewerRefusedException {
-        settings.refuseViewer(sheetId, request.user());
+            @Val RollupFigures before, Rollup rollup, ObjectResponse<GenerateResponse> response) {
+        try {
+            settings.refuseViewer(sheetId, request.user());
+        } catch (ViewerRefusedException e) {
+            response.send(new GenerateResponse(0));
+            return;
+        }
         LocalDate today = sheets.today(sheetId);
         int made = 0;
         for (Plan plan : plans.list(sheetId)) {

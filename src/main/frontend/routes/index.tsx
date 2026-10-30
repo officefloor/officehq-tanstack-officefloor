@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { asString, useSearchParam } from '../url/useSearchParam';
 import { CurrentUser, SignIn } from '../features/session/SignIn';
+import { LocaleControl } from '../features/locale/LocaleControl';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
 import { AsOfControl } from '../features/asof/AsOfControl';
@@ -31,6 +32,7 @@ function Home() {
   return (
     <>
       <CurrentUser />
+      <LocaleControl />
       <SheetPicker />
       {sheet !== '' && (
         <div key={sheet}>
