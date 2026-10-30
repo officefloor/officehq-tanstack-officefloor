@@ -13,11 +13,12 @@ import { peopleKey, type Person } from '../people/usePeople';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
 // person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the floor in force on the claim's date, n/a when none applies; an overdue claim gains the late percent in force on the claim's date of that figure for every full 30 days overdue), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's, each as in force on that date), overdue (yes when it is OPEN or PENDING and its due-by is before the sheet's today), the status buttons (open, settle, void —
-// one the claim's status does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
+// one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
 // claim to PENDING, which shows its live due unbound by any statement), approve and reject with a reason (a steward's decision
 // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener cannot approve it) and an edit button that
 // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim is
-// refused with the claim's error — to change an open claim, void it and add a new one. A steward moves a DRAFT, OPEN or
+// refused with the claim's error — to change an open claim, void it and add a new one. A steward (or the roles the sheet's
+// reassign permission allows) moves a DRAFT, OPEN or
 // PENDING claim to another person on the sheet with the reassign button (it is listed first under them, live again until
 // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
 // A steward re-settles a SETTLED claim (outside any closed period) with the re-settle button: its due is frozen again at the

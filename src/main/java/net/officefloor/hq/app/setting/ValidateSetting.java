@@ -32,6 +32,11 @@ public class ValidateSetting {
 
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** An action's permission: perm-<action>, the roles that may take it. */
+    public static final String PERM = "perm-";
+
+    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+
     /** A number of days: 0 or more, whole. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
@@ -45,10 +50,26 @@ public class ValidateSetting {
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+                && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
+        if (key.startsWith(PERM)) {
+            // Not dated: a comma separated list of roles; blank for the standing rule.
+            List<String> roles = new java.util.ArrayList<>();
+            for (String part : raw.isEmpty() ? new String[0] : raw.split(",")) {
+                String role = part.trim();
+                if (!Settings.CLERK.equals(role) && !Settings.STEWARD.equals(role)) {
+                    throw new InvalidSettingException("A permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule");
+                }
+                if (!roles.contains(role)) {
+                    roles.add(role);
+                }
+            }
+            body.set(new ValidSetting(key, null, request.user(), null, null, String.join(",", roles)));
+            return;
+        }
         // A dated setting's from-date: blank for the sheet's today.
         String rawFrom = request.from() == null ? "" : request.from().trim();
         LocalDate from = null;

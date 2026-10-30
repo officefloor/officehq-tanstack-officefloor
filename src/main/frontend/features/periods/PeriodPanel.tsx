@@ -32,7 +32,8 @@ export function PeriodPanel() {
       queryClient.setQueryData(periodsKey(sheet), saved);
     },
   });
-  // Close a period, or reopen a closed one (a steward only).
+  // Close a period, or reopen a closed one (each by the roles the sheet's permission allows; by default
+  // close by clerk and steward, reopen by a steward only).
   const act = useMutation({
     mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
       postJson<Period[]>(
@@ -88,8 +89,8 @@ export function PeriodPanel() {
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error" role="alert">
                     {act.variables.action === 'reopen'
-                      ? ' Could not reopen the period: only a steward can reopen it, and only while it is closed.'
-                      : ' Could not close the period.'}
+                      ? ' Could not reopen the period: only a role the sheet allows to reopen (by default a steward) can reopen it, and only while it is closed.'
+                      : ' Could not close the period: only a role the sheet allows to close can close it, and only while it is open.'}
                   </span>
                 )}
               </td>

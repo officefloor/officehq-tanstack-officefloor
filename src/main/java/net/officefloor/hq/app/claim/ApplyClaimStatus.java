@@ -27,6 +27,17 @@ public class ApplyClaimStatus {
             throw new ClaimStatusRefusedException("No claim dated inside a closed period can change status");
         }
         boolean steward = Settings.STEWARD.equals(settings.role(claim.getSheetId(), request.user()));
+        if (request.decision() == ValidClaimStatus.Decision.NONE) {
+            // Opening, settling and voiding are each taken only by the roles the sheet's permission allows.
+            String action = switch (request.target()) {
+                case OPEN -> "open";
+                case SETTLED -> "settle";
+                default -> "void";
+            };
+            if (!settings.allows(claim.getSheetId(), request.user(), action)) {
+                throw new ClaimStatusRefusedException("Your role may not " + action + " a claim on this sheet");
+            }
+        }
         if (request.decision() != ValidClaimStatus.Decision.NONE) {
             // Only a steward approves or rejects, and only a PENDING claim.
             if (claim.getStatus() != ClaimStatus.PENDING) {

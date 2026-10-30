@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { GRADES } from '../people/usePeople';
-import { settingsKey, useSettings, type Settings } from './useSettings';
+import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSettings';
 
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
@@ -20,6 +20,9 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // field (blank: the sheet's today) and is saved as its value from that date, keeping the values from other dates; each
 // shows the value in force on the sheet's today. The proof threshold (two decimals; blank: none; saved like the cap) is dated
 // too: a claim whose due is above the one in force on its date needs a proof to be settled or approved. A claim takes the floor, late percent and terms in force on its date.
+// The permission matrix (not dated): for each of open, settle, void, reassign, close and reopen, the roles that may take it,
+// comma separated (blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward);
+// saved like the cap.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -45,8 +48,27 @@ export function SettingsPanel() {
   const [proofThreshold, setProofThreshold] = useState('');
   // Likewise the proof threshold may be saved blank (none).
   const proofChosen = useRef(false);
+  // Each action's permission, by action, as typed; each may be saved blank (the standing rule).
+  const [perms, setPerms] = useState<Record<string, string>>({});
+  const permsChosen = useRef(new Set<string>());
+  // Entering another field leaves a blank permission as it is.
+  const unchoosePerms = (except?: string) => {
+    for (const a of PERM_ACTIONS) {
+      if (a !== except && (perms[a] ?? '').trim() === '') permsChosen.current.delete(a);
+    }
+  };
+  // Entering a permission marks it as one to save, as it is.
+  const focusPerm = (action: string) => {
+    if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (cap.trim() === '') capChosen.current = false;
+    if (proofThreshold.trim() === '') proofChosen.current = false;
+    unchoosePerms(action);
+    permsChosen.current.add(action);
+  };
   // Entering another field leaves a blank policy date (and a blank period numbering from, and a blank cap) as it is.
   const unchoosePolicy = () => {
+    unchoosePerms();
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (cap.trim() === '') capChosen.current = false;
@@ -69,6 +91,7 @@ export function SettingsPanel() {
   );
   // Entering the cap (or its from-date) marks it as the one to save, as it is.
   const focusCap = () => {
+    unchoosePerms();
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (proofThreshold.trim() === '') proofChosen.current = false;
@@ -76,6 +99,7 @@ export function SettingsPanel() {
   };
   // Entering the proof threshold (or its from-date) marks it as the one to save, as it is.
   const focusProof = () => {
+    unchoosePerms();
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (cap.trim() === '') capChosen.current = false;
@@ -103,6 +127,11 @@ export function SettingsPanel() {
       else if (body.key === 'cap') {
         setCap('');
         capChosen.current = false;
+      }
+      else if (body.key.startsWith('perm-')) {
+        const action = body.key.slice('perm-'.length);
+        setPerms((p) => ({ ...p, [action]: '' }));
+        permsChosen.current.delete(action);
       }
       else if (body.key === 'proof-threshold') {
         setProofThreshold('');
@@ -137,7 +166,9 @@ export function SettingsPanel() {
             const capped = cap.trim() !== '' || capChosen.current;
             const proofed = proofThreshold.trim() !== '' || proofChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
-            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed) {
+            const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
+            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed
+                || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -148,6 +179,7 @@ export function SettingsPanel() {
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
                 ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
                 ...(proofed ? [{ key: 'proof-threshold', value: proofThreshold.trim() }] : []),
+                ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
             }
@@ -230,6 +262,7 @@ export function SettingsPanel() {
           value={policyDate}
           placeholder="Policy date YYYY-MM-DD (blank: the sheet's today)"
           onFocus={() => {
+            unchoosePerms();
             if (numberingFrom.trim() === '') numberingChosen.current = false;
             if (cap.trim() === '') capChosen.current = false;
             if (proofThreshold.trim() === '') proofChosen.current = false;
@@ -247,6 +280,7 @@ export function SettingsPanel() {
           value={numberingFrom}
           placeholder="Period numbering from YYYY-MM-DD (blank: off)"
           onFocus={() => {
+            unchoosePerms();
             if (policyDate.trim() === '') policyChosen.current = false;
             if (cap.trim() === '') capChosen.current = false;
             if (proofThreshold.trim() === '') proofChosen.current = false;
@@ -284,8 +318,25 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('proof-threshold', focusProof)}{' '}
+        {PERM_ACTIONS.map((a) => (
+          <span key={a}>
+            May {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.perms?.[a] ?? ''}</span>{' '}
+            <input
+              data-testid={`setting-perm-${a}`}
+              value={perms[a] ?? ''}
+              placeholder={`Roles that may ${a}, comma separated (blank: the standing rule)`}
+              onFocus={() => focusPerm(a)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setPerms((p) => ({ ...p, [a]: value }));
+                permsChosen.current.add(a);
+                saveSetting.reset();
+              }}
+            />{' '}
+          </span>
+        ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

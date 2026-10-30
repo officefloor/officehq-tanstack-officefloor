@@ -11,9 +11,25 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SaveSetting {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidSetting setting, @Val RollupFigures before,
             Settings settings, Sheets sheets, Rollup rollup, Audit audit, ObjectResponse<SettingsResponse> response) {
+        if (setting.roles() != null) {
+            settings.setPermission(sheetId, setting.key().substring(ValidateSetting.PERM.length()), setting.roles());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + setting.roles());
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.POLICY_DATE.equals(setting.key())
                 || ValidateSetting.PERIOD_NUMBERING_FROM.equals(setting.key())) {
-            if (ValidateSetting.POLICY_DATE.equals(setting.key())) {
+            if (setting.roles() != null) {
+            settings.setPermission(sheetId, setting.key().substring(ValidateSetting.PERM.length()), setting.roles());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + setting.roles());
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
+        if (ValidateSetting.POLICY_DATE.equals(setting.key())) {
                 settings.setPolicyDate(sheetId, setting.date());
             } else {
                 settings.setPeriodNumberingFrom(sheetId, setting.date());

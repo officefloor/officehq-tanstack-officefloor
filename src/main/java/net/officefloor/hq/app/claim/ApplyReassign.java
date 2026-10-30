@@ -7,15 +7,16 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only a steward moves a claim.
+ * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the sheet's reassign permission allows
+ * (by default a steward) move a claim.
  * It keeps its number and date but loses any figure a statement bound it to: it is live again until
  * its new person's next statement.
  */
 public class ApplyReassign {
     public void apply(@Val ReassignRequest request, @Val Claim claim, People people, Settings settings,
             Out<ClaimMove> move) throws ClaimStatusRefusedException {
-        if (!Settings.STEWARD.equals(settings.role(claim.getSheetId(), request.user()))) {
-            throw new ClaimStatusRefusedException("Only a steward can move a claim to another person");
+        if (!settings.allows(claim.getSheetId(), request.user(), "reassign")) {
+            throw new ClaimStatusRefusedException("Your role may not move a claim to another person");
         }
         ClaimStatus status = claim.getStatus();
         if (status != ClaimStatus.DRAFT && status != ClaimStatus.OPEN && status != ClaimStatus.PENDING) {

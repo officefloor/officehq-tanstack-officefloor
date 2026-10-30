@@ -11,8 +11,9 @@ export type Role = { user: string; role: string };
  *  full 30 days overdue), the policy date ("" for blank: the sheet's today), the period numbering from ("" for off: from it,
  *  a claim opened is numbered within its period), the roles set and each grade's own terms in days, by grade
  *  (a grade not listed uses the sheet's terms), the cap with two decimals ("" for none: a person's due-total is at most it) and the
- *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string };
+ *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved)
+ *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string> };
 
 /** A value recorded for a dated setting (clerk-limit, floor, terms, terms-<grade>, late-pct, cap): the date
  *  it is in force from and the value ("" for none). The figures shown in Settings are those in force on the
@@ -29,6 +30,10 @@ export function inForce(settings: Settings | undefined, key: string, date: strin
 
 /** The floor a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_FLOOR = '1.00';
+
+/** The actions the permission matrix covers; a blank entry keeps the standing rule: open, settle, void and close
+ *  by clerk and steward, reassign and reopen by steward. */
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 
 export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as const;
 

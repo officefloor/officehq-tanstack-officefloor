@@ -27,6 +27,9 @@ public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,
             Settings settings, Sheets sheets, Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
+        if (!settings.allows(sheetId, request.user(), "close")) {
+            throw new InvalidPeriodException("Your role may not close a period");
+        }
         PeriodResponse period = periods.lock(sheetId, name);
         if (period == null) {
             throw new InvalidPeriodException("No period named " + name + " is on the sheet");

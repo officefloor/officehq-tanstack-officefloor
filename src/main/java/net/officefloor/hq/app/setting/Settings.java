@@ -165,10 +165,38 @@ public class Settings {
                 sheetId, user, role);
     }
 
+    /** The roles set for an action ("" for the standing rule). */
+    public String permission(String sheetId, String action) {
+        List<String> found = jdbc.query("SELECT roles FROM sheet_permission WHERE sheet_id = ? AND action = ?",
+                (rs, i) -> rs.getString(1), sheetId, action);
+        return found.isEmpty() ? "" : found.get(0);
+    }
+
+    public void setPermission(String sheetId, String action, String roles) {
+        sheets.today(sheetId);
+        if (roles.isEmpty()) {
+            jdbc.update("DELETE FROM sheet_permission WHERE sheet_id = ? AND action = ?", sheetId, action);
+        } else {
+            jdbc.update("MERGE INTO sheet_permission (sheet_id, action, roles) KEY (sheet_id, action) VALUES (?, ?, ?)",
+                    sheetId, action, roles);
+        }
+    }
+
+    /** Whether the user's role may take the action on the sheet: by its permission when set, else by the standing
+     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
+    public boolean allows(String sheetId, String user, String action) {
+        String role = role(sheetId, user);
+        String set = permission(sheetId, action);
+        if (set.isEmpty()) {
+            return STEWARD.equals(role) || !("reassign".equals(action) || "reopen".equals(action));
+        }
+        return List.of(set.split(",")).contains(role);
+    }
+
     /** The sheet's settings as shown: each dated one as in force on the sheet's today — the clerk limit ("" for none),
      *  the floor, the terms, the late percent, each grade's own terms (a grade with none then is left out) and the cap
      *  ("" for none) — the proof threshold ("" for none), the policy date ("" for blank), the period numbering from ("" for off), every role set, by user
-     *  name, and every value recorded for the dated settings. */
+     *  name, every value recorded for the dated settings and each action's permission ("" for the standing rule). */
     public SettingsResponse load(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal limit = clerkLimit(sheetId);
@@ -186,11 +214,15 @@ public class Settings {
                 gradeTerms.put(grade, String.valueOf(own));
             }
         }
+        java.util.Map<String, String> perms = new java.util.LinkedHashMap<>();
+        for (String action : ValidateSetting.ACTIONS) {
+            perms.put(action, permission(sheetId, action));
+        }
         return new SettingsResponse(limit == null ? "" : limit.setScale(2).toPlainString(),
                 floor(sheetId, today).setScale(2).toPlainString(), String.valueOf(terms(sheetId, today)),
                 latePct(sheetId, today).setScale(2).toPlainString(), policy == null ? "" : policy.toString(),
                 numbering == null ? "" : numbering.toString(), roles, gradeTerms,
                 cap == null ? "" : cap.setScale(2).toPlainString(), dated(sheetId),
-                threshold == null ? "" : threshold.setScale(2).toPlainString());
+                threshold == null ? "" : threshold.setScale(2).toPlainString(), perms);
     }
 }

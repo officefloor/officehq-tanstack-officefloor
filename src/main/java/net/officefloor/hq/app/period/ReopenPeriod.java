@@ -7,14 +7,14 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reopens a closed period, by a steward only: its fixed due-total is dropped, so it totals its
+/** Reopens a closed period, by the roles the sheet's reopen permission allows (by default a steward only): its fixed due-total is dropped, so it totals its
  *  claims' current figures again. */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, Settings settings, Audit audit,
             ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
-        if (!Settings.STEWARD.equals(settings.role(sheetId, request.user()))) {
-            throw new InvalidPeriodException("Only a steward can reopen a period");
+        if (!settings.allows(sheetId, request.user(), "reopen")) {
+            throw new InvalidPeriodException("Your role may not reopen a period");
         }
         PeriodResponse period = periods.lock(sheetId, name);
         if (period == null) {
