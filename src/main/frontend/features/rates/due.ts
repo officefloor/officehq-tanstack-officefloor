@@ -96,7 +96,7 @@ export function claimDue(
   late?: Late,
   policy?: string,
 ): bigint | null {
-  if (claim.due !== '' && !isOpen(claim)) return toCents(claim.due);
+  if (claim.due !== '' && claim.status === 'SETTLED') return toCents(claim.due);
   const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
   if (figure === null) return null;
   const charged = figure + lateCents(claim, figure, late, policy);

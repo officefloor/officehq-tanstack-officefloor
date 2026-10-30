@@ -7,6 +7,7 @@ import { AsOfControl } from '../features/asof/AsOfControl';
 import { RatePanel } from '../features/rates/RatePanel';
 import { HolidayPanel } from '../features/holidays/HolidayPanel';
 import { VoidReasonPanel } from '../features/voidreasons/VoidReasonPanel';
+import { TemplatePanel } from '../features/templates/TemplatePanel';
 import { SettingsPanel } from '../features/settings/SettingsPanel';
 import { PeriodPanel } from '../features/periods/PeriodPanel';
 import { PersonForm } from '../features/people/PersonForm';
@@ -36,6 +37,7 @@ function Home() {
           <RatePanel />
           <HolidayPanel />
           <VoidReasonPanel />
+          <TemplatePanel />
           <SettingsPanel />
           <PeriodPanel />
           <PersonForm />
