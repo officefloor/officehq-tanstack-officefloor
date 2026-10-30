@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { asString, useSearchParam } from '../url/useSearchParam';
 import { CurrentUser, SignIn } from '../features/session/SignIn';
 import { SheetPicker } from '../features/session/SheetPicker';
+import { SheetToday } from '../features/sheet/SheetToday';
 
 // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
 // picker, and — once a sheet is loaded — that sheet.
@@ -17,6 +18,7 @@ function Home() {
     <>
       <CurrentUser />
       <SheetPicker />
+      {sheet !== '' && <SheetToday key={sheet} />}
       {sheet === '' && <p data-testid="home-empty">Nothing here yet.</p>}
     </>
   );
