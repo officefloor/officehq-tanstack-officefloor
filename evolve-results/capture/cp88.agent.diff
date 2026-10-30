@@ -1,0 +1,46 @@
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index 18f89c22..193c9a07 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -68,7 +68,8 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
+ 
+ /** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
+  *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
+- *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
++ *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
++ *  before it (compounding), each rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
+ export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
+   if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
+   const from = lateFrom(claim, late.grace);
+@@ -78,7 +79,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
+   let charge = 0n;
+   for (let n = 1; n <= periods; n++) {
+     const boundary = new Date(Date.parse(from) + n * 30 * DAY_MS).toISOString().slice(0, 10);
+-    charge += dueCents(figure, late.pct(boundary), halfUp) ?? 0n;
++    charge += dueCents(figure + charge, late.pct(boundary), halfUp) ?? 0n;
+   }
+   return charge;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LateCharge.java b/src/main/java/net/officefloor/hq/app/claim/LateCharge.java
+index 6fa9761d..301a578c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/claim/LateCharge.java
+@@ -10,7 +10,8 @@ import net.officefloor.hq.app.rate.Rates;
+ /**
+  * The late charge on a claim: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is before
+  * the sheet's today gains, for each full 30 days it is overdue, the sheet's late percent in force on that
+- * boundary date (its due-by plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up
++ * boundary date (its due-by plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it
++ * (compounding), each rounded like due, the charges added up
+  * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction has no late charge. The charge is never bound by a statement; settling freezes it in.
+  * The charge is worked on the rate figure alone (or the figure a statement bound); the floor is applied last.
+  * With grace days (those of its person's grade in force on its date) the claim is overdue only once its due-by plus them is
+@@ -57,7 +58,7 @@ public final class LateCharge {
+         for (long n = 1; n <= periods; n++) {
+             BigDecimal rate = pct.apply(lateFrom.plusDays(n * PERIOD_DAYS));
+             if (rate != null && rate.signum() != 0) {
+-                charge = charge.add(Rates.due(figure, rate, rounding));
++                charge = charge.add(Rates.due(figure.add(charge), rate, rounding));
+             }
+         }
+         return charge;
