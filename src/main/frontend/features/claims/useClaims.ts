@@ -49,6 +49,8 @@ export type Claim = {
   voidReason?: string;
   /** The claim's comments, oldest first: "<user> on <date>: <text>" each, the date the sheet's today when it was written. */
   comments?: string[];
+  /** The number of the bulk settle batch that settled the claim, "" when it was settled one at a time or never. */
+  batch?: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold
@@ -100,6 +102,18 @@ export function useClaims(sheet: string): Claim[] {
     enabled: sheet !== '',
   });
   return data ?? [];
+}
+
+export const settleBatchKey = (sheet: string) => ['sheet', sheet, 'settle-batch'] as const;
+
+/** The number of the sheet's last bulk settle batch, "" when there has been none. */
+export function useLastSettleBatch(sheet: string): string {
+  const { data } = useQuery({
+    queryKey: settleBatchKey(sheet),
+    queryFn: () => getJson<{ last: string }>(`/api/sheets/${encodeURIComponent(sheet)}/settle-batch`),
+    enabled: sheet !== '',
+  });
+  return data?.last ?? '';
 }
 
 /** The amounts of the claims that count added up, shown with two decimals. Summed in whole cents

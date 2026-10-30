@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { claimsKey } from './useClaims';
+import { claimsKey, settleBatchKey, useLastSettleBatch } from './useClaims';
 import { peopleKey, usePeople } from '../people/usePeople';
 
 type Selection = { selected: Set<string>; toggle: (id: string, on: boolean) => void; clear: () => void };
@@ -99,13 +99,15 @@ export function BulkOpenButton() {
 // Settles the selected claims together: the server settles each by the rules of settling one claim, in
 // list order, by the signed-in user; a claim sent to PENDING counts as settled, one that cannot be
 // settled is left as it is. Then shows how many were settled and how many were refused, and clears
-// the selection; pressing again removes the old counts until the new ones are in.
+// the selection; pressing again removes the old counts until the new ones are in. Beside it, the number of the
+// sheet's last batch: a bulk settle that settled at least one claim.
 export function BulkSettleButton() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
   const { selected, clear } = useClaimSelection();
+  const lastBatch = useLastSettleBatch(sheet);
 
   const settle = useMutation({
     mutationFn: (claimIds: string[]) =>
@@ -115,7 +117,10 @@ export function BulkSettleButton() {
       ),
     onSuccess: () => {
       clear();
-      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: settleBatchKey(sheet) }),
+      ]);
     },
   });
 
@@ -131,7 +136,8 @@ export function BulkSettleButton() {
         }}
       >
         Settle selected
-      </button>
+      </button>{' '}
+      Last batch <span data-testid="bulk-settle-batch">{lastBatch}</span>
       {settle.isSuccess && (
         <>
           {' '}

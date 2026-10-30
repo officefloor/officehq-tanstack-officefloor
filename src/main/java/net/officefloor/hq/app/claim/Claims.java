@@ -45,6 +45,8 @@ public class Claims {
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
+        int batch = rs.getInt("settle_batch");
+        claim.setSettleBatch(rs.wasNull() ? null : batch);
         return claim;
     };
 
@@ -67,10 +69,10 @@ public class Claims {
     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
     private void history(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
-                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry)"
+                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch)"
                 + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
-                + " c.split_from, c.late_entry"
+                + " c.split_from, c.late_entry, c.settle_batch"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
@@ -253,7 +255,13 @@ public class Claims {
         history(claim.getSheetId(), claim.getId());
     }
 
-    /** Records the claim's proofs count. */
+    /** Records the bulk settle batch that settled the claim. */
+    public void settleBatch(Claim claim) {
+        jdbc.update("UPDATE claim SET settle_batch = ? WHERE sheet_id = ? AND id = ?",
+                claim.getSettleBatch(), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
+    }
+
     /** Who holds the claim's editor lock; null when unlocked. */
     public String lockedBy(Claim claim) {
         List<String> found = jdbc.query("SELECT locked_by FROM claim WHERE sheet_id = ? AND id = ?",
@@ -276,6 +284,7 @@ public class Claims {
         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
     }
 
+    /** Records the claim's proofs count. */
     public void proofs(Claim claim) {
         jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
                 claim.getProofs(), claim.getSheetId(), claim.getId());

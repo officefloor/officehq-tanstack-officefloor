@@ -273,7 +273,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     c.status !== 'DRAFT' ||
     period?.closed === true ||
     (c.lockedBy ?? '') !== '' && c.lockedBy !== user ||
-    settings?.roles.some((r) => r.user === user && r.role === 'viewer') === true;
+    (settings?.roles.some((r) => r.user === user && r.role === 'viewer') === true &&
+      // a delegation covering the sheet's today makes the user a steward, as the server judges it
+      !(settings?.delegations ?? []).some((d) => d.user === user && today !== undefined && d.from <= today && today <= d.to));
   const edit = () =>
     act(() => {
       if (knownRefused()) setEditRefused(true);
@@ -305,6 +307,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
       <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+      <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}

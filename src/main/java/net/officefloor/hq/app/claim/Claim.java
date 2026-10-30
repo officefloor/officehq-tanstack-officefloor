@@ -109,6 +109,11 @@ public class Claim {
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
 
+    /** The number of the bulk settle batch that settled the claim; null when it was settled one at a time, or never. */
+    private Integer settleBatch;
+    public Integer getSettleBatch() { return settleBatch; }
+    public void setSettleBatch(Integer settleBatch) { this.settleBatch = settleBatch; }
+
     /** Whether the claim was added while its period was soft-closed. */
     private boolean lateEntry;
     public boolean isLateEntry() { return lateEntry; }

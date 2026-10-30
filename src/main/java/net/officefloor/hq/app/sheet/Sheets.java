@@ -47,6 +47,19 @@ public class Sheets {
         return jdbc.queryForObject("SELECT last_claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
     }
 
+    /** The sheet's next bulk settle batch number, counted like {@link #nextClaimNumber(String)}. */
+    public int nextSettleBatch(String sheetId) {
+        today(sheetId); // the sheet's row holds the counter
+        jdbc.update("UPDATE sheet SET last_settle_batch = last_settle_batch + 1 WHERE id = ?", sheetId);
+        return jdbc.queryForObject("SELECT last_settle_batch FROM sheet WHERE id = ?", Integer.class, sheetId);
+    }
+
+    /** The number of the sheet's last bulk settle batch; 0 when there has been none. */
+    public int lastSettleBatch(String sheetId) {
+        today(sheetId);
+        return jdbc.queryForObject("SELECT last_settle_batch FROM sheet WHERE id = ?", Integer.class, sheetId);
+    }
+
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }

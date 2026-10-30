@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -21,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Settles the selected claims in list order (people in the order they were added, newest claim first
  * within a person), each by exactly the rules of settling one claim and audited as a single settle
  * would be. A claim that goes to PENDING counts as settled; a selected claim that cannot be settled is
- * left as it is and counted as refused; so is a selected id that is not a claim on the sheet.
+ * left as it is and counted as refused; so is a selected id that is not a claim on the sheet. A bulk settle that
+ * settles at least one claim is the sheet's next batch, and each claim it settled keeps that batch's number.
  */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
@@ -32,7 +34,7 @@ public class BulkSettleClaims {
         ValidClaimStatus settle = new ValidClaimStatus(ClaimStatus.SETTLED, request.user(),
                 ValidClaimStatus.Decision.NONE, null);
         List<Claim> all = claims.list(sheetId);
-        int settled = 0;
+        List<Claim> settled = new ArrayList<>();
         for (Person person : people.list(sheetId)) {
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !selected.contains(String.valueOf(claim.getId()))) {
@@ -47,9 +49,16 @@ public class BulkSettleClaims {
                 }
                 claims.save(claim);
                 AuditClaimStatus.record(settle, claim, number, people, audit, before, rollup, log, watches);
-                settled++;
+                settled.add(claim);
             }
         }
-        response.send(new BulkSettleResponse(settled, selected.size() - settled));
+        if (!settled.isEmpty()) {
+            int batch = sheets.nextSettleBatch(sheetId);
+            for (Claim claim : settled) {
+                claim.setSettleBatch(batch);
+                claims.settleBatch(claim);
+            }
+        }
+        response.send(new BulkSettleResponse(settled.size(), selected.size() - settled.size()));
     }
 }

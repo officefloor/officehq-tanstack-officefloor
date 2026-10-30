@@ -173,6 +173,8 @@ public class AsOfView {
             then.setProofs(rs.wasNull() ? current.getProofs() : proofs);
             then.setSplitFrom(rs.getString("split_from"));
             then.setLateEntry(rs.getBoolean("late_entry"));
+            int batch = rs.getInt("settle_batch");
+            then.setSettleBatch(rs.wasNull() ? null : batch);
             latest.put(then.getId(), then);
         }, sheetId, end);
         List<ClaimResponse> shown = new ArrayList<>();
