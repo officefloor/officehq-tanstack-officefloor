@@ -72,8 +72,19 @@ public class ValidateClaim {
 
     /** Refuse a correction that does not name a SETTLED claim of the same person. */
     static void checkCorrects(ValidClaim request, String sheetId, long personId, Claims claims) throws InvalidClaimException {
-        if (request.corrects() != null && !claims.isSettled(sheetId, personId, request.corrects())) {
+        checkCorrects(request, sheetId, personId, null, claims);
+    }
+
+    /** Refuse a correction that does not name a SETTLED claim of the same person, or that exceeds what remains of it:
+     *  its amount less the corrections already made against it (not VOID nor DELETED, nor the claim being edited). */
+    static void checkCorrects(ValidClaim request, String sheetId, long personId, Long exceptId, Claims claims) throws InvalidClaimException {
+        if (request.corrects() == null) return;
+        if (!claims.isSettled(sheetId, personId, request.corrects())) {
             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person");
+        }
+        java.math.BigDecimal remaining = claims.remainingToCorrect(sheetId, personId, request.corrects(), exceptId);
+        if (request.amount().negate().compareTo(remaining) > 0) {
+            throw new InvalidClaimException("A correction may not exceed what remains of the claim it corrects (" + remaining.toPlainString() + ")");
         }
     }
 

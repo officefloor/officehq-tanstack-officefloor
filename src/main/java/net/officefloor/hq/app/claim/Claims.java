@@ -227,6 +227,17 @@ public class Claims {
         return found != null && found > 0;
     }
 
+    /** What remains of the SETTLED claim of that number: its amount less the corrections made against it
+     *  (VOID and DELETED ones left out, and the claim of exceptId when given). */
+    public BigDecimal remainingToCorrect(String sheetId, long personId, String number, Long exceptId) {
+        BigDecimal target = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND claim_number = ? AND status = ?", BigDecimal.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
+        BigDecimal corrected = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND corrects = ? AND status NOT IN (?, ?) AND id <> ?", BigDecimal.class, sheetId, personId, number,
+                ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(), exceptId == null ? -1L : exceptId);
+        return target.add(corrected).setScale(2);
+    }
+
     /** Moves the claim to its (new) person, listed as their newest claim, and leaves it unbound. */
     public void reassign(Claim claim) {
         jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, claim_number = ?, listed_seq = " + NEXT_LISTED

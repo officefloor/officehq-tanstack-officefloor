@@ -27,7 +27,7 @@ public class ApplyClaim {
         if (person != null && !person.allowsClaimOn(date)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
         }
-        ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claims);
+        ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claim.getId(), claims);
         ValidateClaim.checkRef(request.ref(), claim.getSheetId(), claim.getId(), claims);
         List<ClaimLine> lines = claims.lines(claim);
         if (!lines.isEmpty() && request.amount().compareTo(ClaimLine.sum(lines)) != 0) {
