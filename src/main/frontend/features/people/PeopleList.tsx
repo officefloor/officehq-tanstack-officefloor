@@ -8,6 +8,7 @@ import { rateOn, useRates } from '../rates/useRates';
 import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
+import { SummaryPanel } from '../summary/SummaryPanel';
 import { HoldControl } from './HoldControl';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
@@ -24,6 +25,7 @@ import { gradeOn, usePeople, type Person } from './usePeople';
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
+// Then the summary panel, worked from these same figures.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
@@ -136,6 +138,7 @@ export function PeopleList() {
       <p>
         Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
       </p>
+      <SummaryPanel people={people} claims={claims} today={today} totalOf={totalOf} />
     </>
   );
 }

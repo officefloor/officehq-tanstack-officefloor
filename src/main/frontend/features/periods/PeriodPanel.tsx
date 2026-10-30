@@ -3,13 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { countsLive, useClaims } from '../claims/useClaims';
-import { gradeOn, usePeople } from '../people/usePeople';
-import { claimDue, formatCents, toCents } from '../rates/due';
-import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
-import { useSheetToday } from '../sheet/useSheetToday';
-import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
+import { formatCents } from '../rates/due';
+import { usePeriodDueTotal } from './usePeriodDueTotal';
+import { periodsKey, usePeriods, type Period } from './usePeriods';
 
 // The sheet's periods, each with its dates and due-total (the dues, late charges included, of the claims that count whose
 // date falls in it, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
@@ -20,11 +16,7 @@ export function PeriodPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const periods = usePeriods(sheet);
-  const people = usePeople(sheet);
-  const claims = useClaims(sheet);
-  const rates = useRates(sheet);
-  const floor = useFloor(sheet);
-  const late = { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
+  const dueTotalOf = usePeriodDueTotal(sheet);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -49,12 +41,6 @@ export function PeriodPanel() {
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved),
   });
-  const personOf = new Map(people.map((p) => [p.id, p]));
-  const heldOf = new Map(people.map((p) => [p.id, p.held]));
-  const dueTotalOf = (period: Period) =>
-    period.closed ? toCents(period.closedTotal) : claims
-      .filter((c) => personOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date) === period)
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n);
   return (
     <>
       <table data-testid="periods">
