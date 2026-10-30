@@ -2,12 +2,9 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
 import { BulkOpenButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
-import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
-import { isOverdue } from '../claims/overdue';
-import { claimDue, dueTotal, formatCents, showDue } from '../rates/due';
-import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
-import { useSheetToday } from '../sheet/useSheetToday';
+import { sumAmounts } from '../claims/useClaims';
+import { formatCents, showDue } from '../rates/due';
+import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
 import { HoldControl } from './HoldControl';
@@ -16,7 +13,8 @@ import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
+import { gradeOn } from './usePeople';
+import { useSheetFigures } from './useSheetFigures';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
@@ -33,30 +31,9 @@ import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
-  const people = usePeople(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const listed = showRetired ? people : people.filter((p) => !p.retired);
-  const claims = useClaims(sheet);
-  const rates = useRates(sheet);
-  const today = useSheetToday(sheet);
-  const floor = useFloor(sheet);
-  const late = { pct: useLatePct(sheet), today };
-  const policy = usePolicyDate(sheet);
-  const byId = new Map(people.map((p) => [p.id, p]));
-  const live = claims.filter((c) => {
-    const person = byId.get(c.personId);
-    return person !== undefined && countsLive(c, (date) => heldOn(person, date));
-  });
-  // A claim is worked at the grade in force on its date; the row shows the one in force today.
-  const totalOf = (person: Person) =>
-    dueTotal(
-      live.filter((c) => c.personId === person.id),
-      (date) => rateOn(rates, gradeOn(person, date), date),
-      rateOn(rates, gradeOn(person, today), today),
-      floor,
-      late,
-      policy,
-    );
   const backing = (p: (typeof people)[number]) =>
     formatCents(p.patronIds.reduce((sum, id) => {
       const patron = byId.get(id);
@@ -64,10 +41,7 @@ export function PeopleList() {
       return due === null ? sum : sum + due;
     }, 0n));
 
-  const overdue = live.filter((c) => isOverdue(c, today));
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
-  const overdueTotal = (cs: typeof overdue) =>
-    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
   return (
     <ClaimSelection>
       <QuickAdd />
@@ -147,10 +121,7 @@ export function PeopleList() {
         Claimed total: <span data-testid="rollup-claimed-total">{sumAmounts(live)}</span>
       </p>
       <p>
-        Due total: <span data-testid="rollup-due-total">{formatCents(people.reduce((sum, p) => {
-          const due = totalOf(p);
-          return due === null ? sum : sum + due;
-        }, 0n))}</span>
+        Due total: <span data-testid="rollup-due-total">{sheetDueTotal}</span>
       </p>
       <p>
         Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>
@@ -158,7 +129,7 @@ export function PeopleList() {
       <p>
         Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
       </p>
-      <SummaryPanel people={people} claims={claims} today={today} totalOf={totalOf} />
+      <SummaryPanel people={people} today={today} totalOf={totalOf} statusCount={statusCount} />
     </ClaimSelection>
   );
 }

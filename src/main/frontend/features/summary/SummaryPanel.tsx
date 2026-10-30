@@ -1,32 +1,28 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import type { Claim } from '../claims/useClaims';
 import { GRADES, gradeOn, type Person } from '../people/usePeople';
+import { STATUSES } from '../people/useSheetFigures';
 import { usePeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { usePeriods } from '../periods/usePeriods';
 import { formatCents } from '../rates/due';
-
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
 // are on it today (retired people left out) and their due-totals added up (skipping n/a). Per
 // period: its due-total, as the period list shows it. Per status: how many claims have it.
 export function SummaryPanel({
   people,
-  claims,
   today,
   totalOf,
+  statusCount,
 }: {
   people: Person[];
-  claims: Claim[];
   today: string | undefined;
   totalOf: (person: Person) => bigint | null;
+  statusCount: (status: (typeof STATUSES)[number]) => number;
 }) {
   const [sheet] = useSearchParam('sheet', asString);
   const periods = usePeriods(sheet);
   const periodDueTotal = usePeriodDueTotal(sheet);
   const current = people.filter((p) => !p.retired);
-  const onSheet = new Set(people.map((p) => p.id));
-  const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   return (
     <section data-testid="summary">
       <h3>Summary</h3>
@@ -79,7 +75,7 @@ export function SummaryPanel({
           {STATUSES.map((s) => (
             <tr key={s}>
               <td>{s}</td>
-              <td data-testid={`summary-status-${s}-count`}>{sheetClaims.filter((c) => c.status === s).length}</td>
+              <td data-testid={`summary-status-${s}-count`}>{statusCount(s)}</td>
             </tr>
           ))}
         </tbody>
