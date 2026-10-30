@@ -1,0 +1,203 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index ce1d53b2..056cc17a 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -18,7 +18,7 @@ import { peopleKey, type Person } from '../people/usePeople';
+ // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
+ // person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies; an overdue claim gains, for each full 30 days overdue, the late percent in force on that boundary date (due-by plus 30, 60, 90 ... days) of that figure (the rate or bound one), the charges added up; then the floor in force on the claim's date is applied last: the greater of it and the figure plus its charge), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's, each as in force on that date), overdue (yes when it is OPEN or PENDING and its due-by plus the grace days of its person's grade in force on its date is before the sheet's today; the late charge's boundaries count from there too), the status buttons (open, settle, void —
+ // one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
+-// claim to PENDING, which shows its live due unbound by any statement; a steward may void a SETTLED claim within 7 days of
++// claim to PENDING, which keeps any figure a statement bound it to; a steward may void a SETTLED claim within 7 days of
+ // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
+ // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener or last editor cannot approve it), review (a steward's
+ // decision on a REVIEW claim — one whose due was above the review threshold in force on its date when opened — making it OPEN with its number) and an edit button that
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 75862bc6..043db5cd 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -7,7 +7,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
+ /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
+  *  opened (a voided claim keeps it), "" for a draft; `due` is the due fixed when it was settled, else the
+  *  figure the person's last statement bound it to, "" while its due is live (worked from the current
+- *  rate) or bound to n/a (a PENDING claim is never bound: its due is live); `stated` is whether the last statement bound it. A claim with a negative
++ *  rate) or bound to n/a; `stated` is whether the last statement bound it. A claim with a negative
+  *  amount is a correction: its due has no floor and no late charge. */
+ export type Claim = {
+   id: string;
+@@ -64,8 +64,8 @@ export const isOpen = (c: { status?: string }) => c.status === 'OPEN' || c.statu
+ /** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total. */
+ export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+ 
+-/** Whether a statement binds the claim's figure now: a PENDING claim is never bound. */
+-export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
++/** Whether a statement binds the claim's figure now (a PENDING claim included). */
++export const isBound = (c: Claim) => c.stated;
+ 
+ /** Whether a claim is deferred on the sheet's today: OPEN and deferred until a later date. A deferred claim
+  *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index 375e843d..e435b078 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -93,7 +93,7 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
+ }
+ 
+ /** A claim's due: the one fixed when it was settled, frozen as it is; else the figure a statement bound it to (a claim bound
+- *  to n/a stays n/a; a PENDING claim is never bound) or its amount at the current rate, with an overdue claim's late charge
++ *  to n/a stays n/a) or its amount at the current rate, with an overdue claim's late charge
+  *  (each 30-day boundary at the late percent in force on it) worked on that figure alone and added on top, and the floor in
+  *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
+  *  figures round by the sheet's rounding mode or policy date (see roundsHalfUp). */
+@@ -105,7 +105,7 @@ export function claimDue(
+   policy?: Policy,
+ ): bigint | null {
+   if (claim.due !== '' && claim.status === 'SETTLED') return toCents(claim.due);
+-  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
++  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
+   if (figure === null) return null;
+   const charged = figure + lateCents(claim, figure, late, policy);
+   return isCorrection(claim) ? charged : floored(charged, floor(claim.date));
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 162e820a..495aea84 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -126,11 +126,13 @@ public class AsOfView {
+         jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                 (RowCallbackHandler) rs -> retirements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                         .add(new Person.Retirement(rs.getDate(2).toLocalDate(), rs.getDate(3).toLocalDate())), sheetId, end);
+-        // A snapshot is taken as its day is left, so one dated the date itself was not yet taken at its end.
++        // A snapshot is taken on the day the sheet moves to (dated the day it left): one taken after the date was not yet
++        // taken at its end (a line kept without that day: taken once its own day was left).
+         Map<Long, List<String>> snapshots = new HashMap<>();
+-        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ? AND set_on < ? ORDER BY seq",
++        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ?"
++                + " AND (taken_on <= ? OR (taken_on IS NULL AND set_on < ?)) ORDER BY seq",
+                 (RowCallbackHandler) rs -> snapshots.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+-                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)), sheetId, end);
++                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)), sheetId, end, end);
+         Map<Long, LocalDate> retired = new HashMap<>();
+         jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                 (RowCallbackHandler) rs -> retired.put(rs.getLong(1), local(rs.getDate(2))), sheetId, end);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 565ddbf4..ff0ec904 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -139,7 +139,7 @@ public class ApplyClaimStatus {
+         // A voided claim keeps its number; numbers are never reused.
+         ClaimNumber number = new ClaimNumber(claim.getNumber());
+         if (target == ClaimStatus.SETTLED) {
+-            // Settling (or approving) fixes the due: the figure a statement bound it to (never while PENDING), else its amount
++            // Settling (or approving) fixes the due: the figure a statement bound it to, else its amount
+             // at the rate in force on the claim's date, with its late charge as of today on top and raised to the floor, frozen in;
+             // with no figure it stays live (n/a until a rate is set).
+             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index aed0111c..3f128282 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -64,8 +64,8 @@ public class Claim {
+     public boolean isStated() { return stated; }
+     /** The figure the last statement bound this claim to; null when unbound or when it was n/a. */
+     public BigDecimal getStatedDue() { return statedDue; }
+-    /** Whether the last statement binds this claim's figure now: a PENDING claim is not bound (it shows its live figure). */
+-    public boolean isBound() { return stated && status != ClaimStatus.PENDING; }
++    /** Whether the last statement binds this claim's figure now (a PENDING claim included). */
++    public boolean isBound() { return stated; }
+     public void setStated(boolean stated) { this.stated = stated; }
+     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
+     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index bf978600..1d250413 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
+ import java.util.List;
+ 
+ /** amount is shown with two decimals; status is DRAFT, OPEN, PENDING, SETTLED, VOID or DELETED; number is "" when none;
+- *  due is the due fixed when the claim was settled, else (unless PENDING) the figure its person's last statement bound
++ *  due is the due fixed when the claim was settled, else the figure its person's last statement bound
+  *  it to, "" while it is live (or bound to n/a); openedBy is "" when never opened; stated is whether
+  *  the last statement bound it; corrects is the number a correction corrects, "" for any other claim;
+  *  roundingDate is the date its rounding goes by (a correction's: the date of the claim it corrects);
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index fa403c96..65a3e98e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.sql.Date;
+ import java.sql.PreparedStatement;
+ import java.sql.Statement;
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -87,10 +89,11 @@ public class People {
+         return found;
+     }
+ 
+-    /** Keeps a SNAPSHOT line for the person: their due-total as shown, dated the sheet's today (the day being left). */
+-    public void recordSnapshot(String sheetId, long personId, String dueTotal) {
+-        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, due_total, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+-                sheetId, personId, dueTotal, sheetId);
++    /** Keeps a SNAPSHOT line for the person: their due-total as shown, dated the sheet's today (the day being left), taken on
++     *  the day the sheet moves to. */
++    public void recordSnapshot(String sheetId, long personId, String dueTotal, LocalDate takenOn) {
++        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, due_total, set_on, taken_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
++                sheetId, personId, dueTotal, sheetId, takenOn == null ? null : Date.valueOf(takenOn));
+     }
+ 
+     /** Fills in each person's dated grades and the sheet's today (the grade in force on it is shown). */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index b064eb39..0219a7f7 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -118,10 +118,10 @@ public class Rollup {
+ 
+     /** Audit (on commit) one SNAPSHOT line per person, in list order, with their due-total in {@code before}, and keep
+      *  it on the person dated the sheet's today (so call it before today moves). */
+-    public void recordSnapshots(String sheetId, String user, RollupFigures before) {
++    public void recordSnapshots(String sheetId, String user, RollupFigures before, LocalDate takenOn) {
+         String prefix = " sheet=" + sheetId + " by=" + user;
+         before.people().forEach((id, was) -> {
+-            people.recordSnapshot(sheetId, id, was.dueTotal());
++            people.recordSnapshot(sheetId, id, was.dueTotal(), takenOn);
+             audit.recordOnCommit("SNAPSHOT" + prefix + " name=" + was.name() + " due-total=" + was.dueTotal());
+         });
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
+index a0ff0469..68e1a4cf 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
+@@ -14,7 +14,7 @@ public class SaveToday {
+             @Val TodayRequest request, @Val RollupFigures before, Rollup rollup, PeriodCloser closer, Claims claims,
+             ObjectResponse<TodayResponse> response) {
+         // Each person's due-total as it stood on the day being left, before the change takes effect.
+-        rollup.recordSnapshots(sheetId, request.user(), before);
++        rollup.recordSnapshots(sheetId, request.user(), before, today);
+         sheets.setToday(sheetId, today);
+         // A change of today releases every open editor's lock.
+         claims.unlockAll(sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index c382a42c..8715357c 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -59,7 +59,7 @@ public class SheetCloner {
+                 "retire_history:set_on, retired_from",
+                 "person_hold:from_date, to_date, set_on",
+                 "person_retirement:from_date, to_date, set_on",
+-                "person_snapshot:due_total, set_on",
++                "person_snapshot:due_total, set_on, taken_on",
+                 "person_alias:alias, set_on",
+             };
+             for (String table : personCols) {
+diff --git a/src/main/resources/db/migration/V92__snapshot_taken_on.sql b/src/main/resources/db/migration/V92__snapshot_taken_on.sql
+new file mode 100644
+index 00000000..4276aa0f
+--- /dev/null
++++ b/src/main/resources/db/migration/V92__snapshot_taken_on.sql
+@@ -0,0 +1,3 @@
++-- The day a SNAPSHOT line was taken on: the sheet's today it moved to (set_on is the day being left).
++-- Null for lines kept before it was recorded.
++ALTER TABLE person_snapshot ADD COLUMN taken_on DATE;
