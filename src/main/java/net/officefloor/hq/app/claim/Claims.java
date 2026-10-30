@@ -295,6 +295,19 @@ public class Claims {
         return claim.withDate(date, claim.number());
     }
 
+    /**
+     * Sets the claim's due-by to {@code dueBy} if it still has its loaded status and due-by, and returns it so; null when
+     * it has since changed. Its terms are dropped, so a holiday added later leaves the due-by as set (see
+     * {@link #refixDueBys}).
+     */
+    public Claim setDueBy(Claim claim, LocalDate dueBy) {
+        if (jdbc.update("UPDATE claim SET due_by = ?, due_terms = NULL WHERE id = ? AND status = ? AND due_by = ?",
+                Date.valueOf(dueBy), claim.id(), claim.status().name(), Date.valueOf(claim.dueBy())) != 1) {
+            return null;
+        }
+        return claim.withDueBy(dueBy);
+    }
+
     /** Defers the claim to {@code until} if it is still OPEN, and returns it as deferred; null when it has since changed. */
     public Claim defer(Claim claim, LocalDate until) {
         if (jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND status = ?", Date.valueOf(until), claim.id(),
