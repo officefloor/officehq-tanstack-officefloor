@@ -1,0 +1,87 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 364833a6..8900e8dd 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -18,7 +18,7 @@ import { peopleKey, type Person } from '../people/usePeople';
+ // one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
+ // claim to PENDING, which shows its live due unbound by any statement; a steward may void a SETTLED claim within 7 days of
+ // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
+-// on a PENDING claim: approve settles it, reject returns it to OPEN; the opener cannot approve it) and an edit button that
++// on a PENDING claim: approve settles it, reject returns it to OPEN; the opener or last editor cannot approve it) and an edit button that
+ // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one whose due-by is inside a closed
+ // period, or one another user's open editor locks, is refused with the claim's error — to change an open claim, void it and
+ // add a new one. An open editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes. A steward (or the roles the sheet's
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index e65db9ab..2a5e9e08 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -35,5 +35,6 @@ public class ApplyClaim {
+         claim.setCorrectedDate(claims.correctedDate(claim.getSheetId(), claim.getPersonId(), request.corrects()));
+         claim.setDate(date);
+         claim.setNote(request.note());
++        claim.setEditedBy(request.user());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index a5b9a9a6..c5941c64 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -55,6 +55,11 @@ public class ApplyClaimStatus {
+             // Four eyes: the user who opened a claim cannot settle (or approve) it.
+             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
+         }
++        if (request.target() == ClaimStatus.SETTLED && claim.getEditedBy() != null
++                && claim.getEditedBy().equals(request.user())) {
++            // Four eyes: nor can the user who last edited it.
++            throw new ClaimStatusRefusedException("The user who last edited a claim cannot settle it");
++        }
+         if (request.target() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
+             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until its deferred-until date");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 539e6aae..de8c1fad 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -69,6 +69,10 @@ public class Claim {
+     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
+     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
+     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
++    /** The user who last edited the claim; null if it was never edited. */
++    private String editedBy;
++    public String getEditedBy() { return editedBy; }
++    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
+     /** The number of the SETTLED claim this correction corrects; null for any claim that is not a correction. */
+     public String getCorrects() { return corrects; }
+     public void setCorrects(String corrects) { this.corrects = corrects; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 9dd15320..b3b4e666 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -37,6 +37,7 @@ public class Claims {
+         claim.setProofs(rs.getInt("proofs"));
+         claim.setSplitFrom(rs.getString("split_from"));
+         claim.setLockedBy(rs.getString("locked_by"));
++        claim.setEditedBy(rs.getString("edited_by"));
+         claim.setLateEntry(rs.getBoolean("late_entry"));
+         claim.setRef(rs.getString("ref"));
+         claim.setTags(rs.getString("tags"));
+@@ -265,9 +266,9 @@ public class Claims {
+     }
+ 
+     public void save(Claim claim) {
+-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ?, void_reason = ? WHERE sheet_id = ? AND id = ?",
++        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ?, void_reason = ?, edited_by = ? WHERE sheet_id = ? AND id = ?",
+                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
+-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getVoidReason(),
++                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getEditedBy(),
+                 claim.getSheetId(), claim.getId());
+         recordTags(claim.getSheetId(), claim.getTags());
+         history(claim.getSheetId(), claim.getId());
+diff --git a/src/main/resources/db/migration/V55__claim_edited_by.sql b/src/main/resources/db/migration/V55__claim_edited_by.sql
+new file mode 100644
+index 00000000..082aff60
+--- /dev/null
++++ b/src/main/resources/db/migration/V55__claim_edited_by.sql
+@@ -0,0 +1,2 @@
++-- The user who last edited a claim (through the claim form or the row's amount entry); null if it was never edited.
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(255);
