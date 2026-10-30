@@ -3,7 +3,7 @@ import { ClaimForm } from '../claims/ClaimForm';
 import { BulkOpenButton, BulkReassignButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts } from '../claims/useClaims';
-import { formatCents, showDue, toCents } from '../rates/due';
+import { claimDue, formatCents, showDue, toCents } from '../rates/due';
 import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
@@ -26,8 +26,11 @@ import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { gradeOn, patronShares, sharedCents } from './usePeople';
 import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
-import { usePeriods } from '../periods/usePeriods';
+import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useSheetFigures } from './useSheetFigures';
+import { dueBy } from '../claims/overdue';
+import { useGrace } from '../claims/useGrace';
+import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
@@ -46,7 +49,9 @@ import { usePools } from '../pools/usePools';
 // Then, for every tag ever used on the sheet's claims, its due-total: the dues of the counting claims carrying it. Retired
 // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
-// order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
+// order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. The export claims button
+// downloads every claim as CSV — people in list order (retired too), each person's claims oldest first — with person,
+// number, date, amount, due, status and period as the claim's row shows them. Claims ticked
 // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
 // Each person also shows their cut total: their cuts across every pool they are a member of, added up (a pool showing
@@ -87,6 +92,26 @@ export function PeopleList() {
       .map(({ name, share }) => `${name} ${formatCents(share)}`)
       .join(', ');
 
+  const floor = useFloor(sheet);
+  const latePct = useLatePct(sheet);
+  const grace = useGrace(sheet);
+  const policy = usePolicyDate(sheet);
+  const claimRows = () =>
+    people.flatMap((p) =>
+      claims
+        .filter((c) => c.personId === p.id)
+        .reverse()
+        .map((c) => [
+          p.name,
+          c.number,
+          c.date,
+          c.amount,
+          showDue(claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, { pct: latePct, today, grace }, policy)),
+          c.status,
+          periodOf(periods, dueBy(c))?.name ?? '',
+        ]),
+    );
+
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   return (
     <ClaimSelection>
@@ -106,6 +131,13 @@ export function PeopleList() {
         }
       >
         Export CSV
+      </button>
+      <button
+        type="button"
+        data-testid="export-claims"
+        onClick={() => downloadCsv('claims.csv', [['person', 'number', 'date', 'amount', 'due', 'status', 'period'], ...claimRows()])}
+      >
+        Export claims
       </button>
       <BulkOpenButton />
       <BulkSettleButton />
