@@ -1,0 +1,152 @@
+diff --git a/src/main/frontend/features/dashboard/StewardDashboard.tsx b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+new file mode 100644
+index 00000000..4f992bad
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+@@ -0,0 +1,26 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useSheetFigures } from '../people/useSheetFigures';
++import { useSettings } from '../settings/useSettings';
++
++// The steward's dashboard: over the sheet, how many claims are PENDING and how many REVIEW (as the
++// header counts them), and how many claims that count are overdue (as the sheet's overdue-total
++// adds them up). Only a steward sees the counts — the role set, or a delegation covering the sheet's
++// today, as the server judges it; anyone else sees the cells empty. Under an as-of date the settings,
++// claims and today are those as they stood then, so the counts and the role are the ones of then.
++export function StewardDashboard() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const settings = useSettings(sheet);
++  const { today, statusCount, overdue } = useSheetFigures(sheet);
++  const steward =
++    settings !== undefined &&
++    (settings.roles.some((r) => r.user === user && r.role === 'steward') ||
++      settings.delegations.some((d) => d.user === user && today !== undefined && d.from <= today && today <= d.to));
++  return (
++    <section data-testid="dashboard">
++      Steward: pending <span data-testid="dash-pending-count">{steward ? statusCount('PENDING') : ''}</span>
++      {', '}review <span data-testid="dash-review-count">{steward ? statusCount('REVIEW') : ''}</span>
++      {', '}overdue <span data-testid="dash-overdue-count">{steward ? overdue.length : ''}</span>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 0322dfc8..ad9f83b0 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -16,6 +16,7 @@ import { PeriodPanel } from '../features/periods/PeriodPanel';
+ import { PersonForm } from '../features/people/PersonForm';
+ import { PeopleList } from '../features/people/PeopleList';
+ import { SheetHeader } from '../features/header/SheetHeader';
++import { StewardDashboard } from '../features/dashboard/StewardDashboard';
+ import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
+ import { TreeSearch } from '../features/search/TreeSearch';
+ import { AuditViewer } from '../features/audit/AuditViewer';
+@@ -38,6 +39,7 @@ function Home() {
+       {sheet !== '' && (
+         <div key={sheet}>
+           <SheetHeader />
++          <StewardDashboard />
+           <SheetToday />
+           <ConsolidatedFigures />
+           <AsOfControl />
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 0a8e24d7..6efcfa9c 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -21,6 +21,7 @@ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonResponse;
+ import net.officefloor.hq.app.rate.RateResponse;
++import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.setting.DatedValue;
+ import net.officefloor.hq.app.setting.DelegationResponse;
+ import net.officefloor.hq.app.setting.RoleResponse;
+@@ -150,7 +151,7 @@ public class AsOfView {
+                 }, sheetId, end, end);
+         Map<Long, List<String>> statements = new HashMap<>();
+         jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ?" + UP_TO
+-                + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq",
++                + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY set_on NULLS FIRST, seq",
+                 (RowCallbackHandler) rs -> statements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                         .add(Person.statementLine(rs.getDate(2), rs.getBigDecimal(3))), sheetId, end, end);
+         Map<Long, List<Long>> patrons = new HashMap<>();
+@@ -269,6 +270,31 @@ public class AsOfView {
+         return rates;
+     }
+ 
++    /** The sheet's ancestors as they stood at the end of the date: its parent as last set by then (none when never set by
++     *  then), that sheet's parent as last set by then, and so on, up to {@link Rates#ANCESTOR_LEVELS} levels up. A parent
++     *  set before its history was kept counts as of any date. */
++    public List<String> ancestors(String sheetId, LocalDate date) {
++        List<String> chain = new ArrayList<>();
++        String at = parentOn(sheetId, date);
++        while (at != null && chain.size() < Rates.ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
++            chain.add(at);
++            at = parentOn(at, date);
++        }
++        return chain;
++    }
++
++    private String parentOn(String sheetId, LocalDate date) {
++        List<String> set = jdbc.query("SELECT setting_value FROM plain_setting_history WHERE sheet_id = ? AND setting_key = ?"
++                + UP_TO + " ORDER BY seq", (rs, i) -> rs.getString(1), sheetId, Settings.PARENT, Date.valueOf(date));
++        if (!set.isEmpty()) {
++            String last = set.get(set.size() - 1);
++            return last.isBlank() ? null : last;
++        }
++        Integer recorded = jdbc.queryForObject("SELECT COUNT(*) FROM plain_setting_history WHERE sheet_id = ? AND setting_key = ?",
++                Integer.class, sheetId, Settings.PARENT);
++        return recorded != null && recorded > 0 ? null : sheets.parent(sheetId);
++    }
++
+     /** The periods added by the end of the date, by from-date, each closed (or soft-closed) as it stood then. */
+     public List<PeriodResponse> periods(String sheetId, LocalDate date) {
+         Date end = Date.valueOf(date);
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index c6a4d502..94033eff 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -81,7 +81,7 @@ public class People {
+         }
+         java.util.Map<Long, java.util.List<String>> statements = new java.util.HashMap<>();
+         jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? AND NOT cancelled"
+-                + " ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq", rs -> {
++                + " ORDER BY set_on NULLS FIRST, seq", rs -> {
+             statements.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
+                     .add(Person.statementLine(rs.getDate("statement_date"), rs.getBigDecimal("stated_total")));
+         }, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 0165e897..69ee31b0 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ 
+ /** statementCount is how many statements were taken; statedTotal is the last one's due-total ("n/a" when it
+- *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days in force on the sheet's today ("" for none) and baseTerms those from the beginning of time; contact is the person's contact ("" for none); tags are the person's tags, sorted and comma separated ("" for none); aliases are the person's aliases, sorted as names are compared; clashing says whether their name or an alias is used by someone else on a sheet of the sheet's tree; origin is the sheet they were transferred from ("" for none); retirements are their past retirements, each "<from> to <to>", in the order they ended; snapshots are their SNAPSHOT lines, each "<the day being left> <due-total>", oldest first; statements are their statements still standing, each "<statement date> <due-total>", oldest first. */
++ *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days in force on the sheet's today ("" for none) and baseTerms those from the beginning of time; contact is the person's contact ("" for none); tags are the person's tags, sorted and comma separated ("" for none); aliases are the person's aliases, sorted as names are compared; clashing says whether their name or an alias is used by someone else on a sheet of the sheet's tree; origin is the sheet they were transferred from ("" for none); retirements are their past retirements, each "<from> to <to>", in the order they ended; snapshots are their SNAPSHOT lines, each "<the day being left> <due-total>", oldest first; statements are their statements still standing, each "<statement date> <due-total>", in the order taken. */
+ public record PersonResponse(String id, String name, String grade, int version, int statementCount,
+         String statedTotal, String statementDate, boolean retired, String retiredFrom, boolean held,
+         List<HoldFrom> holds,
+diff --git a/src/main/java/net/officefloor/hq/app/rate/LoadInheritedRates.java b/src/main/java/net/officefloor/hq/app/rate/LoadInheritedRates.java
+index caaf86e5..443fd684 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/LoadInheritedRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/LoadInheritedRates.java
+@@ -8,13 +8,14 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The rates of the sheet's parent, its parent's parent and so on (up to three levels up), nearest
+- *  first; with an as-of date, each as it stood at the end of it. */
++ *  first; with an as-of date, of the ancestors as the sheet's parent chain stood at the end of it, each
++ *  with its rates as they are now (an ancestor's history runs by its own today, not this sheet's). */
+ public class LoadInheritedRates {
+     public void service(@PathVariable("sheetId") String sheetId,
+             @RequestParam(value = "asOf", required = false) String asOf, Rates rates, AsOfView view,
+             ObjectResponse<List<List<RateResponse>>> response) {
+         LocalDate date = AsOfView.parse(asOf);
+         response.send(date == null ? rates.inherited(sheetId)
+-                : rates.ancestors(sheetId).stream().map(ancestor -> view.rates(ancestor, date)).toList());
++                : view.ancestors(sheetId, date).stream().map(rates::list).toList());
+     }
+ }
