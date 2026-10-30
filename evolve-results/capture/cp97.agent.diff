@@ -1,0 +1,52 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 1aa985e0..d1011983 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -47,7 +47,7 @@ export function PeopleList() {
+   const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+   const watched = useWatches(sheet, user);
+-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals } = useSheetFigures(sheet);
++  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+@@ -197,6 +197,13 @@ export function PeopleList() {
+           </li>
+         ))}
+       </ul>
++      <ul>
++        {monthTotals.map(({ month, total }) => (
++          <li key={month}>
++            Month {month} due total: <span data-testid={`month-${month}-due-total`}>{total}</span>
++          </li>
++        ))}
++      </ul>
+       <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} voidReasonCount={voidReasonCount} />
+       </PersonSelection>
+     </ClaimSelection>
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 20beef70..db50438f 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -100,9 +100,19 @@ export function useSheetFigures(sheet: string) {
+   }));
+   const onSheet = new Set(people.map((p) => p.id));
+   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
++  // Each calendar month (yyyy-mm) any claim on the sheet is dated in, earliest first, with its
++  // due-total: the dues of the counting claims dated in it; n/a adds nothing.
++  const monthTotals = [...new Set(sheetClaims.map((c) => c.date.slice(0, 7)))].sort().map((month) => ({
++    month,
++    total: formatCents(
++      live
++        .filter((c) => c.date.slice(0, 7) === month)
++        .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
++    ),
++  }));
+   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
+   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
+-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals };
++  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+ }
+ 
+ // People's figures added up, leaving out the single highest and the single lowest when there are
