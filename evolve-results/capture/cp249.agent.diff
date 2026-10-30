@@ -1,0 +1,201 @@
+diff --git a/src/main/frontend/features/policy/policy.slot.tsx b/src/main/frontend/features/policy/policy.slot.tsx
+index e41073a8..04327693 100644
+--- a/src/main/frontend/features/policy/policy.slot.tsx
++++ b/src/main/frontend/features/policy/policy.slot.tsx
+@@ -1,7 +1,9 @@
++import { useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
+ import { ClaimCells } from '../../slots/defs/claimColumns';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+-import type { Claim } from '../claims/claimsQuery';
+-import { policyOn, usePolicyVersions } from '../settings/settingsQuery';
++import { claimsQuery, type Claim } from '../claims/claimsQuery';
++import { policyOn, usePolicyVersionLines, usePolicyVersions } from '../settings/settingsQuery';
+ 
+ /** The sheet's current policy version: how many versions of its policy settings have been made. */
+ function PolicyVersion({ sheetId }: { sheetId: string }) {
+@@ -12,6 +14,35 @@ function PolicyVersion({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++/** The policy versions, oldest first, once shown: "<version> <from or start> <key>=<value> <claims under it>". */
++function PolicyViewer({ sheetId }: { sheetId: string }) {
++  const [shown, setShown] = useState(false);
++  const versions = usePolicyVersions(sheetId);
++  const lines = usePolicyVersionLines(sheetId);
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const under = new Map<number, number>();
++  for (const claim of claims) {
++    const no = policyOn(versions, claim.date);
++    under.set(no, (under.get(no) ?? 0) + 1);
++  }
++  return (
++    <section data-testid="policy-viewer">
++      <button type="button" data-testid="policy-show" onClick={() => setShown(true)}>
++        Show policy versions
++      </button>
++      {shown && (
++        <ol data-testid="policy-lines">
++          {lines.map((v, i) => (
++            <li key={i} data-testid="policy-line">
++              {`${i + 1} ${v.from ?? 'start'} ${v.key}=${v.value} ${under.get(i + 1) ?? 0}`}
++            </li>
++          ))}
++        </ol>
++      )}
++    </section>
++  );
++}
++
+ /** The policy version in force on the claim's date. */
+ function ClaimPolicy({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+   return <td data-testid="claim-policy">{policyOn(usePolicyVersions(sheetId), claim.date)}</td>;
+@@ -19,5 +50,6 @@ function ClaimPolicy({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+ 
+ export const contributions = [
+   SheetPanel.fill({ order: 25.6, Component: PolicyVersion }),
++  SheetPanel.fill({ order: 25.7, Component: PolicyViewer }),
+   ClaimCells.fill({ order: 10.5, Component: ClaimPolicy }),
+ ];
+diff --git a/src/main/frontend/features/settings/settingsQuery.ts b/src/main/frontend/features/settings/settingsQuery.ts
+index efe81a1b..1c59c942 100644
+--- a/src/main/frontend/features/settings/settingsQuery.ts
++++ b/src/main/frontend/features/settings/settingsQuery.ts
+@@ -18,8 +18,12 @@ import type { DatedValue } from './dated';
+  *  (clerk-limit, clerk-limit-<grade>, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
+  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void, close and today
+  *  by clerk and steward; reassign and reopen by steward).
+- *  `policyVersions` are the from-dates (yyyy-mm-dd, null for none) of the policy versions, in the order made: every save of the rounding, floor, cap, terms, late percent or clerk limit is one. */
+-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; pendingSla: string; maxOpen: string; scoreMid: string; scoreHigh: string; scoreLog: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string>; policyVersions: (string | null)[] };
++ *  `policyVersions` are the from-dates (yyyy-mm-dd, null for none) of the policy versions, in the order made: every save of the rounding, floor, cap, terms, late percent or clerk limit is one.
++ *  `policyLines` are the same versions, in the order made, each with its from-date (null for none), the setting saved and the value saved. */
++export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; pendingSla: string; maxOpen: string; scoreMid: string; scoreHigh: string; scoreLog: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string>; policyVersions: (string | null)[]; policyLines: PolicyVersion[] };
++
++/** A policy version: its from-date (yyyy-mm-dd, null for none), the policy setting saved and the value saved. */
++export type PolicyVersion = { from: string | null; key: string; value: string };
+ 
+ /** The actions the permission matrix decides; each is kept (not dated) under perm-<action>. */
+ export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+@@ -140,6 +144,11 @@ export function usePolicyVersions(sheetId: string): (string | null)[] {
+   return useQuery(settingsQuery(sheetId)).data?.policyVersions ?? [];
+ }
+ 
++/** The sheet's policy versions, in the order made, each with the setting and value it saved. */
++export function usePolicyVersionLines(sheetId: string): PolicyVersion[] {
++  return useQuery(settingsQuery(sheetId)).data?.policyLines ?? [];
++}
++
+ /** The policy version in force on the date (yyyy-mm-dd): how many versions are from it or before (one with no from-date always counts). */
+ export function policyOn(versions: (string | null)[], date: string): number {
+   return versions.filter((from) => from === null || from <= date).length;
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index f206157b..aaf195e0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -98,7 +98,7 @@ public class ApplySettings {
+         LocalDate from = settings.from().getOrDefault(key, today);
+         store.set(settings.sheetId(), key, from, value);
+         if (Settings.POLICY.contains(key)) {
+-            store.recordVersion(settings.sheetId(), key, from);
++            store.recordVersion(settings.sheetId(), key, from, value);
+         }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 9b8f4703..2459f547 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -26,7 +26,8 @@ public class RespondWithSettings {
+                 settings.get(sheet, Settings.PROOF_KINDS), settings.get(sheet, Settings.DEFAULT_GRADE),
+                 settings.get(sheet, Settings.SCORE_MID), settings.get(sheet, Settings.SCORE_HIGH),
+                 settings.get(sheet, Settings.SCORE_LOG), settings.get(sheet, Settings.MAX_OPEN),
+-                settings.get(sheet, Settings.PENDING_SLA), settings.policyVersions(sheet)));
++                settings.get(sheet, Settings.PENDING_SLA), settings.policyVersions(sheet),
++                settings.policyVersionDetails(sheet)));
+     }
+ 
+     private static Map<String, String> gradeTerms(Settings settings, String sheet, LocalDate today, List<String> grades) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index bc17a582..8f6bf6fb 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -160,10 +160,10 @@ public class Settings {
+         return values.isEmpty() ? "" : values.get(0);
+     }
+ 
+-    /** Records a save of the policy setting as the sheet's next policy version, from the from-date (null: none, so always). */
+-    public void recordVersion(String sheetId, String key, LocalDate from) {
+-        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date) SELECT ?, COALESCE(MAX(version_no), 0) + 1, ?, ?"
+-                + " FROM policy_version WHERE sheet_id = ?", sheetId, key, from == null ? null : java.sql.Date.valueOf(from), sheetId);
++    /** Records a save of the policy setting's value as the sheet's next policy version, from the from-date (null: none, so always). */
++    public void recordVersion(String sheetId, String key, LocalDate from, String value) {
++        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date, setting_value) SELECT ?, COALESCE(MAX(version_no), 0) + 1, ?, ?, ?"
++                + " FROM policy_version WHERE sheet_id = ?", sheetId, key, from == null ? null : java.sql.Date.valueOf(from), value, sheetId);
+     }
+ 
+     /** The from-dates (yyyy-MM-dd, null for none) of the sheet's policy versions, in the order made: the current version is how many there are. */
+@@ -172,6 +172,17 @@ public class Settings {
+                 (rs, n) -> rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(), sheetId);
+     }
+ 
++    /** The sheet's policy versions, in the order made: each one's from-date (yyyy-MM-dd, null for none), setting key and the value saved ("" when not known). */
++    public List<PolicyVersion> policyVersionDetails(String sheetId) {
++        return jdbc.query("SELECT from_date, setting_key, setting_value FROM " + AsOf.table("policy_version") + " WHERE sheet_id = ? ORDER BY version_no",
++                (rs, n) -> new PolicyVersion(rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(),
++                        rs.getString("setting_key"), rs.getString("setting_value") == null ? "" : rs.getString("setting_value")), sheetId);
++    }
++
++    /** A policy version: its from-date (yyyy-MM-dd, null for none), the policy setting saved and the value saved. */
++    public record PolicyVersion(String from, String key, String value) {
++    }
++
+     /** A dated setting's values, by from-date. */
+     public List<DatedValue> history(String sheetId, String key) {
+         return jdbc.query("SELECT from_date, setting_value FROM " + AsOf.table("setting_from") + " WHERE sheet_id = ? AND setting_key = ? ORDER BY from_date",
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index a5e1d334..05537ef4 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -1,7 +1,8 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** The sheet's settings as the screen sees them, each dated one as it is in force on the sheet's today: the clerk limit with two decimals, "" when there is none, the floor with two decimals, the terms in days, the late percent with two decimals, and the policy date as yyyy-MM-dd, "" when there is none (the sheet's today is), and the period numbering from-date as yyyy-MM-dd, "" when it is off, and the terms in force for each grade, in days (its own, or the sheet's terms when it has none), and the cap with two decimals, "" when there is none. {@code dated} is every value recorded for each dated setting, by setting key, by from-date. {@code perms} is the roles each action is permitted to, by action, as a comma separated list, "" for the standing rule. {@code graceDays} is the grace days, "" when they are off. {@code entryDate} is the entry date as yyyy-MM-dd, "" when it is off. {@code pot} is the pot with two decimals, "" when there is none. {@code parent} is the parent sheet's id, "" when there is none. {@code fiscalStartMonth} is the month (1 to 12) the fiscal year starts on. {@code alertThreshold} is the alert threshold with two decimals, "" when alerts are off. {@code escalateAfter} is the escalation gap in days, "" when it is off. {@code reviewSla} is the review SLA in days, "" when there is none. {@code proofKinds} are the proof kinds, comma separated, "" when there are none. {@code defaultGrade} is the default grade, "" when there is none (A is). {@code scoreMid} and {@code scoreHigh} are the score thresholds, "" when there is none. {@code scoreLog} is the score log switch, "on" or "" when it is off. {@code maxOpen} is the maximum of open claims per person, "" when there is none. {@code pendingSla} is the pending SLA in days, "" when there is none. {@code policyVersions} are the from-dates (yyyy-MM-dd, null for none) of the policy versions, in the order made. */
++/** The sheet's settings as the screen sees them, each dated one as it is in force on the sheet's today: the clerk limit with two decimals, "" when there is none, the floor with two decimals, the terms in days, the late percent with two decimals, and the policy date as yyyy-MM-dd, "" when there is none (the sheet's today is), and the period numbering from-date as yyyy-MM-dd, "" when it is off, and the terms in force for each grade, in days (its own, or the sheet's terms when it has none), and the cap with two decimals, "" when there is none. {@code dated} is every value recorded for each dated setting, by setting key, by from-date. {@code perms} is the roles each action is permitted to, by action, as a comma separated list, "" for the standing rule. {@code graceDays} is the grace days, "" when they are off. {@code entryDate} is the entry date as yyyy-MM-dd, "" when it is off. {@code pot} is the pot with two decimals, "" when there is none. {@code parent} is the parent sheet's id, "" when there is none. {@code fiscalStartMonth} is the month (1 to 12) the fiscal year starts on. {@code alertThreshold} is the alert threshold with two decimals, "" when alerts are off. {@code escalateAfter} is the escalation gap in days, "" when it is off. {@code reviewSla} is the review SLA in days, "" when there is none. {@code proofKinds} are the proof kinds, comma separated, "" when there are none. {@code defaultGrade} is the default grade, "" when there is none (A is). {@code scoreMid} and {@code scoreHigh} are the score thresholds, "" when there is none. {@code scoreLog} is the score log switch, "on" or "" when it is off. {@code maxOpen} is the maximum of open claims per person, "" when there is none. {@code pendingSla} is the pending SLA in days, "" when there is none. {@code policyVersions} are the from-dates (yyyy-MM-dd, null for none) of the policy versions, in the order made. {@code policyLines} are the same versions, in the order made, each with its from-date, the setting saved and its value. */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, java.util.List<Settings.DatedValue>> dated,
+-        java.util.Map<String, String> perms, String graceDays, String entryDate, String pot, String parent, String fiscalStartMonth, String alertThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla, java.util.List<String> policyVersions) {
++        java.util.Map<String, String> perms, String graceDays, String entryDate, String pot, String parent, String fiscalStartMonth, String alertThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla, java.util.List<String> policyVersions,
++        java.util.List<Settings.PolicyVersion> policyLines) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java b/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
+index 504aa755..267eb613 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
+@@ -54,8 +54,8 @@ public class SheetClones {
+                 + "FROM setting WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO setting_from (sheet_id, setting_key, from_date, setting_value) "
+                 + "SELECT ?, setting_key, from_date, setting_value FROM setting_from WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date) "
+-                + "SELECT ?, version_no, setting_key, from_date FROM policy_version WHERE sheet_id = ? ORDER BY version_no", to, from);
++        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date, setting_value) "
++                + "SELECT ?, version_no, setting_key, from_date, setting_value FROM policy_version WHERE sheet_id = ? ORDER BY version_no", to, from);
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role "
+                 + "WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) SELECT ?, grade, rate, from_date, to_date, "
+diff --git a/src/main/resources/db/migration/V102__policy_version_value.sql b/src/main/resources/db/migration/V102__policy_version_value.sql
+new file mode 100644
+index 00000000..24a15c69
+--- /dev/null
++++ b/src/main/resources/db/migration/V102__policy_version_value.sql
+@@ -0,0 +1,11 @@
++-- A policy version keeps the value it saved, so the versions can be shown as they were made. A version made before
++-- values were kept takes the value its setting holds from its from-date (from the beginning of time when it has none).
++-- Kept in history too (see V101); the journal trigger is made again around the change, as in V95.
++DROP TRIGGER policy_version_journal;
++ALTER TABLE policy_version ADD COLUMN setting_value VARCHAR(255);
++ALTER TABLE policy_version_history ADD COLUMN setting_value VARCHAR(255);
++UPDATE policy_version v SET setting_value = (SELECT f.setting_value FROM setting_from f WHERE f.sheet_id = v.sheet_id
++    AND f.setting_key = v.setting_key AND f.from_date = COALESCE(v.from_date, DATE '0001-01-01'));
++UPDATE policy_version_history v SET setting_value = (SELECT p.setting_value FROM policy_version p WHERE p.sheet_id = v.sheet_id
++    AND p.version_no = v.version_no);
++CREATE TRIGGER policy_version_journal AFTER INSERT, UPDATE, DELETE ON policy_version FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
