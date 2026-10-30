@@ -1,0 +1,91 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 140a0cb2..2ff89590 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -26,6 +26,7 @@ import { WatchControl } from './WatchControl';
+ import { useWatches } from './useWatches';
+ import { downloadCsv } from './csv';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
++import { SortBy, useSortBy } from './SortBy';
+ import { gradeOn, patronShares, sharedCents } from './usePeople';
+ import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+@@ -78,7 +79,26 @@ export function PeopleList() {
+       0n,
+     );
+   const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
+-  const listed = showRetired ? people : people.filter((p) => !p.retired);
++  const [sortKey] = useSortBy();
++  // The rows as shown: list order, or sorted by the user's chosen key (by grade in force today, by
++  // name as names are compared, by due-total with n/a last); equal keys keep list order.
++  const bySort = (a: (typeof people)[number], b: (typeof people)[number]): number => {
++    switch (sortKey) {
++      case 'name':
++        return BY_NAME(a.name, b.name);
++      case 'grade':
++        return cmp(gradeOn(a, today), gradeOn(b, today));
++      case 'due-total': {
++        const da = totalOf(a);
++        const db = totalOf(b);
++        if (da === null || db === null) return da === db ? 0 : da === null ? 1 : -1;
++        return da < db ? -1 : da > db ? 1 : 0;
++      }
++      default:
++        return 0;
++    }
++  };
++  const listed = (showRetired ? people : people.filter((p) => !p.retired)).slice().sort(bySort);
+   const backing = (p: (typeof people)[number]) =>
+     formatCents(sharedCents(patronShares(p).reduce((sum, { id, share }) => {
+       const patron = byId.get(id);
+@@ -123,6 +143,7 @@ export function PeopleList() {
+       <GeneratePlans />
+       <ImportPeople />
+       <ShowRetired />
++      <SortBy />
+       <button
+         type="button"
+         data-testid="export-people"
+diff --git a/src/main/frontend/features/people/SortBy.tsx b/src/main/frontend/features/people/SortBy.tsx
+new file mode 100644
+index 00000000..38a308c1
+--- /dev/null
++++ b/src/main/frontend/features/people/SortBy.tsx
+@@ -0,0 +1,29 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
++export type SortKey = (typeof SORT_KEYS)[number];
++
++// The people list's sort: "added" (list order) when the screen is first opened; it lives in the URL
++// (`sort`), so it belongs to this user's screen and loading a sheet leaves it as it is. It changes
++// only the order the rows are shown in — positions, totals and actions in list order are unaffected.
++export function useSortBy(): [SortKey, (key: SortKey) => void] {
++  const [raw, setRaw] = useSearchParam('sort', asString);
++  const key = (SORT_KEYS as readonly string[]).includes(raw) ? (raw as SortKey) : 'added';
++  return [key, (value) => setRaw(value === 'added' ? undefined : value)];
++}
++
++export function SortBy() {
++  const [key, setKey] = useSortBy();
++  return (
++    <label>
++      Sort by{' '}
++      <select data-testid="sort-by" value={key} onChange={(e) => setKey(e.target.value as SortKey)}>
++        {SORT_KEYS.map((k) => (
++          <option key={k} value={k}>
++            {k}
++          </option>
++        ))}
++      </select>
++    </label>
++  );
++}
+diff --git a/src/main/resources/db/migration/V72__person_merged_tags.sql b/src/main/resources/db/migration/V72__person_merged_tags.sql
+new file mode 100644
+index 00000000..a0f51ebd
+--- /dev/null
++++ b/src/main/resources/db/migration/V72__person_merged_tags.sql
+@@ -0,0 +1,2 @@
++-- person_merged keeps a copy of person's columns (filled by SELECT p.*), so it takes the tags V71 gave person.
++ALTER TABLE person_merged ADD COLUMN tags VARCHAR(2000) BEFORE merged_on;
