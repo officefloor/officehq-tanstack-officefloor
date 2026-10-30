@@ -1,0 +1,91 @@
+diff --git a/src/main/frontend/features/crews/CrewPanel.tsx b/src/main/frontend/features/crews/CrewPanel.tsx
+index a9509338..02472c8b 100644
+--- a/src/main/frontend/features/crews/CrewPanel.tsx
++++ b/src/main/frontend/features/crews/CrewPanel.tsx
+@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { formatCents } from '../rates/due';
+ import type { Person } from '../people/usePeople';
+ import { useSheetFigures } from '../people/useSheetFigures';
+-import { crewsKey, useCrews, type Crew } from './useCrews';
++import { crewDueCents, crewsKey, useCrews, type Crew } from './useCrews';
+ 
+ // The sheet's crews and the form that adds one: a name (a blank name, or one already a crew, is refused)
+ // and a lead chosen from the people. Each crew shows its lead and its due-total — the lead's and the
+@@ -30,14 +30,7 @@ export function CrewPanel() {
+       queryClient.setQueryData(crewsKey(sheet), saved);
+     },
+   });
+-  const dueTotalOf = (crew: Crew) =>
+-    formatCents(
+-      [crew.leadId, ...crew.members.map((m) => m.personId)].reduce((sum, id) => {
+-        const person = byId.get(id);
+-        const due = person === undefined ? null : totalOf(person);
+-        return due === null ? sum : sum + due;
+-      }, 0n),
+-    );
++  const dueTotalOf = (crew: Crew) => formatCents(crewDueCents(crew, byId, totalOf));
+   return (
+     <>
+       <ul data-testid="crew-list">
+diff --git a/src/main/frontend/features/crews/useCrews.ts b/src/main/frontend/features/crews/useCrews.ts
+index d08e45b7..d21dc32f 100644
+--- a/src/main/frontend/features/crews/useCrews.ts
++++ b/src/main/frontend/features/crews/useCrews.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import type { Person } from '../people/usePeople';
+ 
+ /** A crew: its name, its lead and its members in the order added (each a person's id and name). */
+ export type Crew = { name: string; leadId: string; leadName: string; members: { personId: string; name: string }[] };
+@@ -15,3 +16,12 @@ export function useCrews(sheet: string): Crew[] {
+   });
+   return data ?? [];
+ }
++
++/** A crew's due-total in cents: the lead's and the members' due-totals added up, n/a skipped. */
++export function crewDueCents(crew: Crew, byId: Map<string, Person>, totalOf: (person: Person) => bigint | null): bigint {
++  return [crew.leadId, ...crew.members.map((m) => m.personId)].reduce((sum, id) => {
++    const person = byId.get(id);
++    const due = person === undefined ? null : totalOf(person);
++    return due === null ? sum : sum + due;
++  }, 0n);
++}
+diff --git a/src/main/frontend/features/header/SheetHeader.tsx b/src/main/frontend/features/header/SheetHeader.tsx
+index 3d855f2b..86a0f0a0 100644
+--- a/src/main/frontend/features/header/SheetHeader.tsx
++++ b/src/main/frontend/features/header/SheetHeader.tsx
+@@ -1,17 +1,23 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+-import { showDue } from '../rates/due';
++import { formatCents, showDue } from '../rates/due';
++import { crewDueCents, useCrews } from '../crews/useCrews';
+ import { STATUSES, useSheetFigures } from '../people/useSheetFigures';
+ 
+ // The sheet's counters, always on show: its people (retired included), its claims per status (as
+ // the summary counts them) and its due-total and overdue-total (as the sheet's totals show them).
+ // Then the signed-in user's own figures: the due-total and overdue-total of the person on the sheet
+ // with the user's name or alias (case and outer spaces ignored); nothing when there is no such person.
++// And the user's crew total: the due-totals of the crews that person leads, added up; nothing when
++// they lead none.
+ export function SheetHeader() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+-  const { people, sheetDueTotal, sheetOverdueTotal, statusCount, totalOf, overdue, overdueTotal } = useSheetFigures(sheet);
++  const { people, byId, sheetDueTotal, sheetOverdueTotal, statusCount, totalOf, overdue, overdueTotal } = useSheetFigures(sheet);
++  const crews = useCrews(sheet);
+   const key = (name: string) => name.trim().toLowerCase();
+   const me = user === '' ? undefined : people.find((p) => [p.name, ...p.aliases].some((n) => key(n) === key(user)));
++  const led = me ? crews.filter((c) => c.leadId === me.id) : [];
++  const crewTotal = led.length === 0 ? '' : formatCents(led.reduce((sum, c) => sum + crewDueCents(c, byId, totalOf), 0n));
+   return (
+     <header data-testid="header">
+       People: <span data-testid="header-people-count">{people.length}</span>
+@@ -25,6 +31,7 @@ export function SheetHeader() {
+       {' · '}Overdue: <span data-testid="header-overdue-total">{sheetOverdueTotal}</span>
+       {' · '}Mine: due <span data-testid="my-due-total">{me ? showDue(totalOf(me)) : ''}</span>
+       {', '}overdue <span data-testid="my-overdue-total">{me ? overdueTotal(overdue.filter((c) => c.personId === me.id)) : ''}</span>
++      {', '}crew due <span data-testid="my-crew-due-total">{crewTotal}</span>
+     </header>
+   );
+ }
