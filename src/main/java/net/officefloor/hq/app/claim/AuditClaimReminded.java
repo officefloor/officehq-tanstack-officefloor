@@ -9,5 +9,8 @@ public class AuditClaimReminded {
     public void audit(@Val RemindRequest request, @Val Claim claim, People people, Audit audit) {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         audit.recordOnCommit(ClaimAudit.line("REMIND", request.user(), person, claim, claim.getNumber()));
+        if (claim.isEscalating()) {
+            audit.recordOnCommit(ClaimAudit.line("ESCALATE", request.user(), person, claim, claim.getNumber()));
+        }
     }
 }

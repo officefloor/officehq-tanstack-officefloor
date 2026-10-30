@@ -85,6 +85,9 @@ export function SettingsPanel() {
   // The grace days (not dated); likewise may be saved blank (off).
   const [graceDays, setGraceDays] = useState('');
   const graceChosen = useRef(false);
+  // The escalation gap in days (not dated); likewise may be saved blank (off).
+  const [escalateAfter, setEscalateAfter] = useState('');
+  const escalateChosen = useRef(false);
   // The entry date (not dated); likewise may be saved blank (off).
   const [entryDate, setEntryDate] = useState('');
   const entryChosen = useRef(false);
@@ -132,7 +135,20 @@ export function SettingsPanel() {
     if (cap.trim() === '') capChosen.current = false;
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     graceChosen.current = true;
+  };
+  // Entering the escalation gap marks it as the one to save, as it is.
+  const focusEscalate = () => {
+    if (entryDate.trim() === '') entryChosen.current = false;
+    unchoosePerms();
+    if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (cap.trim() === '') capChosen.current = false;
+    if (proofThreshold.trim() === '') proofChosen.current = false;
+    if (noteThreshold.trim() === '') noteChosen.current = false;
+    if (graceDays.trim() === '') graceChosen.current = false;
+    escalateChosen.current = true;
   };
   // Entering the entry date marks it as the one to save, as it is.
   const focusEntry = () => {
@@ -143,6 +159,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     entryChosen.current = true;
   };
   // Entering the review threshold (or its from-date) marks it as the one to save, as it is.
@@ -190,6 +207,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     unchoosePerms(action);
     permsChosen.current.add(action);
@@ -203,6 +221,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
   };
   // Each dated setting's from-date, by key, as typed.
@@ -228,6 +247,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     capChosen.current = true;
   };
@@ -238,6 +258,7 @@ export function SettingsPanel() {
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (cap.trim() === '') capChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     proofChosen.current = true;
@@ -250,6 +271,7 @@ export function SettingsPanel() {
     if (cap.trim() === '') capChosen.current = false;
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (escalateAfter.trim() === '') escalateChosen.current = false;
     if (entryDate.trim() === '') entryChosen.current = false;
     noteChosen.current = true;
   };
@@ -293,6 +315,10 @@ export function SettingsPanel() {
       else if (body.key === 'grace-days') {
         setGraceDays('');
         graceChosen.current = false;
+      }
+      else if (body.key === 'escalate-after') {
+        setEscalateAfter('');
+        escalateChosen.current = false;
       }
       else if (body.key === 'pot') {
         setPot('');
@@ -375,6 +401,7 @@ export function SettingsPanel() {
             const rounded = rounding.trim() !== '' || roundingChosen.current;
             const reviewed = reviewThreshold.trim() !== '' || reviewChosen.current;
             const graced = graceDays.trim() !== '' || graceChosen.current;
+            const escalated = escalateAfter.trim() !== '' || escalateChosen.current;
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const potted = pot.trim() !== '' || potChosen.current;
             const alerted = alertThreshold.trim() !== '' || alertChosen.current;
@@ -384,7 +411,7 @@ export function SettingsPanel() {
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || rounded || reviewed || graced || entered || potted || alerted || parented || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || entered || potted || alerted || parented || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -402,6 +429,7 @@ export function SettingsPanel() {
                 ...(rounded ? [{ key: 'rounding', value: rounding.trim() }] : []),
                 ...(reviewed ? [{ key: 'review-threshold', value: reviewThreshold.trim() }] : []),
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
+                ...(escalated ? [{ key: 'escalate-after', value: escalateAfter.trim() }] : []),
                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
                 ...(potted ? [{ key: 'pot', value: pot.trim() }] : []),
                 ...(alerted ? [{ key: 'alert-threshold', value: alertThreshold.trim() }] : []),
@@ -524,6 +552,7 @@ export function SettingsPanel() {
             if (proofThreshold.trim() === '') proofChosen.current = false;
             if (noteThreshold.trim() === '') noteChosen.current = false;
             if (graceDays.trim() === '') graceChosen.current = false;
+            if (escalateAfter.trim() === '') escalateChosen.current = false;
             if (entryDate.trim() === '') entryChosen.current = false;
             policyChosen.current = true;
           }}
@@ -545,6 +574,7 @@ export function SettingsPanel() {
             if (proofThreshold.trim() === '') proofChosen.current = false;
             if (noteThreshold.trim() === '') noteChosen.current = false;
             if (graceDays.trim() === '') graceChosen.current = false;
+            if (escalateAfter.trim() === '') escalateChosen.current = false;
             if (entryDate.trim() === '') entryChosen.current = false;
             numberingChosen.current = true;
           }}
@@ -649,6 +679,18 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Escalate after (days): <span data-testid="setting-escalate-after-current">{settings?.escalateAfter ?? ''}</span>{' '}
+        <input
+          data-testid="setting-escalate-after"
+          value={escalateAfter}
+          placeholder="Escalate after days (blank: off)"
+          onFocus={focusEscalate}
+          onChange={(e) => {
+            setEscalateAfter(e.target.value);
+            escalateChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         Entry date: <span data-testid="setting-entry-date-current">{settings?.entryDate ?? ''}</span>{' '}
         <input
           data-testid="setting-entry-date"
@@ -715,7 +757,7 @@ export function SettingsPanel() {
           </span>
         ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the alert threshold must be an amount of 0.00 or more with at most two decimals, or blank for off; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; the fiscal year start month must be a month from 1 to 12; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the escalation gap must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the alert threshold must be an amount of 0.00 or more with at most two decimals, or blank for off; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; the fiscal year start month must be a month from 1 to 12; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

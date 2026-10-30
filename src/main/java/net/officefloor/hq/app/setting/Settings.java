@@ -232,6 +232,18 @@ public class Settings {
         plainHistory(sheetId, GRACE, days == null ? "" : String.valueOf(days));
     }
 
+    /** The sheet's escalation gap in days; null when off. */
+    public Integer escalateAfter(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the escalation gap
+        return jdbc.queryForObject("SELECT escalate_after FROM sheet WHERE id = ?", Integer.class, sheetId);
+    }
+
+    public void setEscalateAfter(String sheetId, Integer days) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
+        plainHistory(sheetId, ESCALATE, days == null ? "" : String.valueOf(days));
+    }
+
     /** The sheet's pot at two decimals; null when none. */
     public BigDecimal pot(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the pot
@@ -344,7 +356,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -385,6 +397,7 @@ public class Settings {
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         Integer grace = graceDays(sheetId);
+        Integer escalate = escalateAfter(sheetId);
         LocalDate entry = entryDate(sheetId);
         BigDecimal pot = pot(sheetId);
         BigDecimal alert = alertThreshold(sheetId);
@@ -416,6 +429,7 @@ public class Settings {
                 noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString(),
                 parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)),
                 alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()),
-                reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString());
+                reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
+                escalate == null ? "" : String.valueOf(escalate));
     }
 }

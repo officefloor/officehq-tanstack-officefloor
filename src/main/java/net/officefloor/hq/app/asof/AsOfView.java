@@ -364,7 +364,8 @@ public class AsOfView {
                 Objects.toString(sheets.parent(sheetId), ""), // the parent is not dated: as it is now
                 plain.getOrDefault(Settings.FISCAL, "1"), plain.getOrDefault(Settings.ALERT, ""),
                 net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)),
-                reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString());
+                reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
+                plain.getOrDefault(Settings.ESCALATE, ""));
     }
 
     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */

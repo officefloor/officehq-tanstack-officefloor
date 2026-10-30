@@ -102,6 +102,14 @@ public class Claim {
     private LocalDate remindedOn;
     public LocalDate getRemindedOn() { return remindedOn; }
     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** Whether the claim has been escalated (once ever); set on a reminder that escalates it. */
+    private boolean escalated;
+    public boolean isEscalated() { return escalated; }
+    public void setEscalated(boolean escalated) { this.escalated = escalated; }
+    /** Whether this reminder escalated the claim (not stored: the reminder's own outcome). */
+    private boolean escalating;
+    public boolean isEscalating() { return escalating; }
+    public void setEscalating(boolean escalating) { this.escalating = escalating; }
     /** The claim's proofs count: raised by one at a time. */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }

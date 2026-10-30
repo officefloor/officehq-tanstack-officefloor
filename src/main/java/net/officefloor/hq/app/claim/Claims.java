@@ -39,6 +39,7 @@ public class Claims {
         claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
         java.sql.Date remindedOn = rs.getDate("reminded_on");
         claim.setRemindedOn(remindedOn == null ? null : remindedOn.toLocalDate());
+        claim.setEscalated(rs.getBoolean("escalated"));
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
@@ -380,10 +381,10 @@ public class Claims {
                 claim.getSheetId(), claim.getId(), line.label(), line.qty(), line.unit());
     }
 
-    /** Records the claim's reminded date. */
+    /** Records the claim's reminded date and whether it has been escalated. */
     public void remind(Claim claim) {
-        jdbc.update("UPDATE claim SET reminded_on = ? WHERE sheet_id = ? AND id = ?",
-                Date.valueOf(claim.getRemindedOn()), claim.getSheetId(), claim.getId());
+        jdbc.update("UPDATE claim SET reminded_on = ?, escalated = ? WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(claim.getRemindedOn()), claim.isEscalated(), claim.getSheetId(), claim.getId());
     }
 
     /** Defers the claim until its deferred-until date. */
