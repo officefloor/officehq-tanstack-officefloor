@@ -21,8 +21,16 @@ public final class LateCharge {
     /** The charge on a claim's figure; zero when it is not overdue or has no figure. */
     public static BigDecimal of(Claim claim, BigDecimal figure, BigDecimal pct, LocalDate today,
             RoundingMode rounding) {
-        if (figure == null || pct == null || pct.signum() == 0 || !claim.getStatus().isOpen()
-                || claim.isCorrection()) {
+        if (!claim.getStatus().isOpen()) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        return asOpen(claim, figure, pct, today, rounding);
+    }
+
+    /** The charge the claim's figure would carry were it open, whatever its status; re-settling uses it. */
+    public static BigDecimal asOpen(Claim claim, BigDecimal figure, BigDecimal pct, LocalDate today,
+            RoundingMode rounding) {
+        if (figure == null || pct == null || pct.signum() == 0 || claim.isCorrection()) {
             return BigDecimal.ZERO.setScale(2);
         }
         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);

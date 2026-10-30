@@ -20,6 +20,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 // refused with the claim's error — to change an open claim, void it and add a new one. A steward moves a DRAFT, OPEN or
 // PENDING claim to another person on the sheet with the reassign button (it is listed first under them, live again until
 // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
+// A steward re-settles a SETTLED claim (outside any closed period) with the re-settle button: its due is frozen again at the
+// figure it would have today as an open claim bound by no statement, and its log gains a SETTLED line; else it is refused with the claim's error.
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 export function ClaimList({
   claims,
@@ -80,12 +82,26 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const resettle = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/resettle`,
+        { user },
+      ),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]),
+  });
+
   const [editRefused, setEditRefused] = useState(false);
 
   // The next action on the row removes an old error.
   const act = (run: () => void) => {
     status.reset();
     reassign.reset();
+    resettle.reset();
     setEditRefused(false);
     run();
   };
@@ -123,6 +139,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       </button>{' '}
       <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate({ action: 'settle' }))}>
         Settle
+      </button>{' '}
+      <button type="button" data-testid="claim-resettle" onClick={() => act(() => resettle.mutate())}>
+        Re-settle
       </button>{' '}
       <button type="button" data-testid="claim-void" onClick={() => act(() => status.mutate({ action: 'void' }))}>
         Void
@@ -175,6 +194,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle or approve it, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
+        </span>
+      )}
+      {resettle.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a steward can re-settle a claim, only a SETTLED one, and not one dated inside a closed period.
         </span>
       )}
       {reassign.isError && (
