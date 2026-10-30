@@ -3,6 +3,7 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,7 +21,7 @@ public class ValidateSetting {
     /** A grade's own terms: terms-<grade>. */
     public static final String GRADE_TERMS = "terms-";
 
-    private static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
+    static final List<String> GRADES = List.of("A", "B", "C");
 
     public static final String LATE_PCT = "late-pct";
 
@@ -45,13 +46,23 @@ public class ValidateSetting {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
+        // A dated setting's from-date: blank for the sheet's today.
+        String rawFrom = request.from() == null ? "" : request.from().trim();
+        LocalDate from = null;
+        if (!rawFrom.isEmpty() && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)) {
+            try {
+                from = LocalDate.parse(rawFrom);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The from-date must be a date (YYYY-MM-DD), or blank for the sheet's today");
+            }
+        }
         if (POLICY_DATE.equals(key)) {
             if (raw.isEmpty()) {
-                body.set(new ValidSetting(key, null, request.user(), null)); // blank: the sheet's today
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: the sheet's today
                 return;
             }
             try {
-                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw)));
+                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw), null));
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The policy date must be a date (YYYY-MM-DD), or blank for the sheet's today");
             }
@@ -59,11 +70,11 @@ public class ValidateSetting {
         }
         if (PERIOD_NUMBERING_FROM.equals(key)) {
             if (raw.isEmpty()) {
-                body.set(new ValidSetting(key, null, request.user(), null)); // blank: off
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: off
                 return;
             }
             try {
-                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw)));
+                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw), null));
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The period numbering from must be a date (YYYY-MM-DD), or blank for off");
             }
@@ -73,41 +84,41 @@ public class ValidateSetting {
             if (!DAYS.matcher(raw).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");
             }
-            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user()));
+            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, from));
             return;
         }
         if (LATE_PCT.equals(key)) {
             if (!PERCENT.matcher(raw).matches()) {
                 throw new InvalidSettingException("The late percent must be a percent of 0.00 or more with at most two decimals");
             }
-            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user()));
+            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
             return;
         }
         if (CAP.equals(key)) {
             if (raw.isEmpty()) {
-                body.set(new ValidSetting(key, null, request.user())); // blank: no cap
+                body.set(new ValidSetting(key, null, request.user(), null, from)); // blank: no cap
                 return;
             }
             if (!AMOUNT.matcher(raw).matches()) {
                 throw new InvalidSettingException("The cap must be an amount of 0.00 or more with at most two decimals, or blank for none");
             }
-            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user()));
+            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
             return;
         }
         if (FLOOR.equals(key)) {
             if (!AMOUNT.matcher(raw).matches()) {
                 throw new InvalidSettingException("The floor must be an amount of 0.00 or more with at most two decimals");
             }
-            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user()));
+            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
             return;
         }
         if (raw.isEmpty()) {
-            body.set(new ValidSetting(key, null, request.user())); // blank: no limit
+            body.set(new ValidSetting(key, null, request.user(), null, from)); // blank: no limit
             return;
         }
         if (!AMOUNT.matcher(raw).matches()) {
             throw new InvalidSettingException("The clerk limit must be an amount of 0.00 or more with at most two decimals");
         }
-        body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user()));
+        body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
     }
 }

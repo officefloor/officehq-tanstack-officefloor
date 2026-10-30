@@ -52,8 +52,8 @@ public class ApplyClaimStatus {
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
             BigDecimal figure = fixed != null || claim.isBound() ? fixed
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId()), rounding);
-            BigDecimal due = LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
+                    settings.floor(claim.getSheetId(), claim.getDate()), rounding);
+            BigDecimal due = LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId(), claim.getDate()),
                     sheets.today(claim.getSheetId()), rounding);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 // Above the clerk limit the claim awaits a steward's approval.
@@ -73,8 +73,8 @@ public class ApplyClaimStatus {
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             BigDecimal figure = claim.isBound() && claim.getStatedDue() != null ? claim.getStatedDue()
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId()), rounding);
-            claim.setSettledDue(LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
+                    settings.floor(claim.getSheetId(), claim.getDate()), rounding);
+            claim.setSettledDue(LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId(), claim.getDate()),
                     sheets.today(claim.getSheetId()), rounding));
         }
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.

@@ -40,15 +40,18 @@ export function showDue(due: bigint | null): string {
   return due === null ? NA : formatCents(due);
 }
 
-/** A live due raised to the sheet's floor ("1.00"); n/a stays n/a. */
+/** A live due raised to a floor ("1.00"); n/a stays n/a. */
 export function floored(due: bigint | null, floor: string): bigint | null {
   if (due === null) return null;
   const min = toCents(floor);
   return due < min ? min : due;
 }
 
-/** What a late charge needs: the sheet's late percent ("10.00") and its today. */
-export type Late = { pct: string; today: string | undefined };
+/** The value of a dated setting in force on a date (a claim's: its date), e.g. "1.00". */
+export type On = (date: string) => string;
+
+/** What a late charge needs: the sheet's late percent in force on a date ("10.00") and its today. */
+export type Late = { pct: On; today: string | undefined };
 
 const DAY_MS = 86_400_000;
 
@@ -67,22 +70,22 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
   if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isCorrection(claim)) return 0n;
   const days = Math.round((Date.parse(late.today) - Date.parse(claim.dueBy)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
-  return dueCents(figure * BigInt(periods), late.pct, roundsHalfUp(claim, policy)) ?? 0n;
+  return dueCents(figure * BigInt(periods), late.pct(claim.date), roundsHalfUp(claim, policy)) ?? 0n;
 }
 
 /** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
- *  stays n/a; a PENDING claim is never bound), else its amount at the current rate, raised to the sheet's floor; an overdue claim's
- *  late charge is added on top. A correction is never floored and gains no late charge. Live figures
+ *  stays n/a; a PENDING claim is never bound), else its amount at the current rate, raised to the floor in force on its date; an overdue claim's
+ *  late charge (at the late percent in force on its date) is added on top. A correction is never floored and gains no late charge. Live figures
  *  round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
   claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string },
   rate: string | undefined,
-  floor: string,
+  floor: On,
   late?: Late,
   policy?: string,
 ): bigint | null {
   const live = dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
-  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : isCorrection(claim) ? live : floored(live, floor);
+  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : isCorrection(claim) ? live : floored(live, floor(claim.date));
   return figure === null ? null : figure + lateCents(claim, figure, late, policy);
 }
 
@@ -94,7 +97,7 @@ export function dueTotal(
   claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string }[],
   rateOn: (date: string) => string | undefined,
   rateToday: string | undefined,
-  floor: string,
+  floor: On,
   late?: Late,
   policy?: string,
 ): bigint | null {

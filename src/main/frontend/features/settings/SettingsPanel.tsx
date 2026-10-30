@@ -16,6 +16,9 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
 // a claim opened is numbered within its period; blank: off; saved like the policy date), the cap (two decimals; a person's
 // due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward).
+// The clerk limit, the floor, the terms, each grade's terms, the late percent and the cap are dated: each has a from-date
+// field (blank: the sheet's today) and is saved as its value from that date, keeping the values from other dates; each
+// shows the value in force on the sheet's today. A claim takes the floor, late percent and terms in force on its date.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -44,12 +47,34 @@ export function SettingsPanel() {
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (cap.trim() === '') capChosen.current = false;
   };
+  // Each dated setting's from-date, by key, as typed.
+  const [froms, setFroms] = useState<Record<string, string>>({});
+  const fromField = (key: string, onFocus: () => void = unchoosePolicy) => (
+    <input
+      data-testid={`setting-${key}-from`}
+      onFocus={onFocus}
+      value={froms[key] ?? ''}
+      placeholder="From YYYY-MM-DD (blank: the sheet's today)"
+      onChange={(e) => {
+        const value = e.target.value;
+        setFroms((f) => ({ ...f, [key]: value }));
+        saveSetting.reset();
+      }}
+    />
+  );
+  // Entering the cap (or its from-date) marks it as the one to save, as it is.
+  const focusCap = () => {
+    if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
+    capChosen.current = true;
+  };
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const saveSetting = useMutation({
-    mutationFn: (body: { key: string; value: string }) =>
+    mutationFn: (body: { key: string; value: string; from?: string }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`, { ...body, user }),
     onSuccess: (saved, body) => {
+      setFroms((f) => ({ ...f, [body.key]: '' }));
       if (body.key === 'floor') setFloor('');
       else if (body.key === 'terms') setTerms('');
       else if (body.key.startsWith('terms-')) setGradeTerms((t) => ({ ...t, [body.key.slice('terms-'.length)]: '' }));
@@ -87,6 +112,9 @@ export function SettingsPanel() {
           e.preventDefault();
           submitSetting(() => {
             saveSetting.reset();
+            // A dated setting is saved from its from-date (blank: the sheet's today).
+            const save = (body: { key: string; value: string }) =>
+              saveSetting.mutateAsync({ ...body, from: (froms[body.key] ?? '').trim() });
             const policy = policyDate.trim() !== '' || policyChosen.current;
             const numbering = numberingFrom.trim() !== '' || numberingChosen.current;
             const capped = cap.trim() !== '' || capChosen.current;
@@ -102,13 +130,13 @@ export function SettingsPanel() {
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
                 ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
               ];
-              return saves.reduce<Promise<unknown>>((done, body) => done.then(() => saveSetting.mutateAsync(body)), Promise.resolve());
+              return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
             }
-            if (floor.trim() === '') return saveSetting.mutateAsync({ key: 'clerk-limit', value: limit.trim() });
-            const saveFloor = () => saveSetting.mutateAsync({ key: 'floor', value: floor.trim() });
+            if (floor.trim() === '') return save({ key: 'clerk-limit', value: limit.trim() });
+            const saveFloor = () => save({ key: 'floor', value: floor.trim() });
             return limit.trim() === ''
               ? saveFloor()
-              : saveSetting.mutateAsync({ key: 'clerk-limit', value: limit.trim() }).then(saveFloor);
+              : save({ key: 'clerk-limit', value: limit.trim() }).then(saveFloor);
           });
         }}
       >
@@ -123,6 +151,7 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        {fromField('clerk-limit')}{' '}
         Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>{' '}
         <input
           data-testid="setting-floor"
@@ -134,6 +163,7 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        {fromField('floor')}{' '}
         Terms (days): <span data-testid="setting-terms-current">{settings?.terms ?? ''}</span>{' '}
         <input
           data-testid="setting-terms"
@@ -145,6 +175,7 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        {fromField('terms')}{' '}
         {GRADES.map((g) => (
           <span key={g}>
             Terms for grade {g} (days): <span data-testid={`setting-terms-${g}-current`}>{settings?.gradeTerms?.[g] ?? ''}</span>{' '}
@@ -159,6 +190,7 @@ export function SettingsPanel() {
                 saveSetting.reset();
               }}
             />{' '}
+            {fromField(`terms-${g}`)}{' '}
           </span>
         ))}
         Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>{' '}
@@ -172,6 +204,7 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        {fromField('late-pct')}{' '}
         Policy date: <span data-testid="setting-policy-date-current">{settings?.policyDate ?? ''}</span>{' '}
         <input
           data-testid="setting-policy-date"
@@ -209,19 +242,16 @@ export function SettingsPanel() {
           data-testid="setting-cap"
           value={cap}
           placeholder="Cap (blank: none)"
-          onFocus={() => {
-            if (policyDate.trim() === '') policyChosen.current = false;
-            if (numberingFrom.trim() === '') numberingChosen.current = false;
-            capChosen.current = true;
-          }}
+          onFocus={focusCap}
           onChange={(e) => {
             setCap(e.target.value);
             capChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}
+        {fromField('cap', focusCap)}{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

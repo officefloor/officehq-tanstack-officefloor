@@ -37,8 +37,6 @@ public class ClosePeriod {
         LocalDate from = LocalDate.parse(period.from());
         LocalDate to = LocalDate.parse(period.to());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        BigDecimal floor = settings.floor(sheetId);
-        BigDecimal latePct = settings.latePct(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
@@ -53,9 +51,10 @@ public class ClosePeriod {
                 RoundingMode rounding = Rounding.of(claim, policyDate);
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()),
+                        settings.floor(sheetId, claim.getDate()), rounding);
                 if (figure != null) {
-                    personTotal = personTotal.add(LateCharge.withCharge(claim, figure, latePct, today, rounding));
+                    personTotal = personTotal.add(LateCharge.withCharge(claim, figure, settings.latePct(sheetId, claim.getDate()), today, rounding));
                 }
             }
             personTotals.put(person.getId(), personTotal);
