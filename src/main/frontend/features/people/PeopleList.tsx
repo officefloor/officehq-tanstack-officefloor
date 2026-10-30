@@ -13,6 +13,7 @@ import { HoldControl } from './HoldControl';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
+import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { gradeOn, usePeople, type Person } from './usePeople';
 
@@ -25,7 +26,8 @@ import { gradeOn, usePeople, type Person } from './usePeople';
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
-// Then the summary panel, worked from these same figures.
+// Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
+// order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
@@ -67,6 +69,18 @@ export function PeopleList() {
     <>
       <QuickAdd />
       <ShowRetired />
+      <button
+        type="button"
+        data-testid="export-people"
+        onClick={() =>
+          downloadCsv(
+            'people.csv',
+            [['name', 'grade', 'retired-from', 'due-total'], ...people.map((p) => [p.name, gradeOn(p, today), p.retiredFrom, showDue(totalOf(p))])],
+          )
+        }
+      >
+        Export CSV
+      </button>
       <table data-testid="people">
         <thead>
           <tr>
