@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimsKey } from './useClaims';
+import { peopleKey, usePeople } from '../people/usePeople';
 
 type Selection = { selected: Set<string>; toggle: (id: string, on: boolean) => void; clear: () => void };
 
@@ -142,6 +143,79 @@ export function BulkSettleButton() {
         <span data-testid="bulk-settle-error" role="alert">
           {' '}
           The selected claims could not be settled.
+        </span>
+      )}
+    </p>
+  );
+}
+
+// Moves the selected claims to the chosen person together: the server moves each by the rules of moving one claim,
+// in list order, by the signed-in user, and leaves each that cannot move as it is. Then shows how many were moved
+// and how many were refused, and clears the selection; pressing again removes the old counts until the new ones are in.
+export function BulkReassignButton() {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+  const people = usePeople(sheet);
+  const { selected, clear } = useClaimSelection();
+  const [toPersonId, setToPersonId] = useState('');
+
+  const reassign = useMutation({
+    mutationFn: ({ claimIds, to }: { claimIds: string[]; to: string }) =>
+      postJson<{ reassigned: number; refused: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/bulk-reassign`,
+        { claimIds, toPersonId: to, user },
+      ),
+    onSuccess: () => {
+      clear();
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
+  return (
+    <p>
+      <select
+        data-testid="bulk-reassign-to"
+        value={toPersonId}
+        onChange={(e) => {
+          reassign.reset();
+          setToPersonId(e.target.value);
+        }}
+      >
+        <option value="">Move to…</option>
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="bulk-reassign"
+        onClick={() => {
+          reassign.reset();
+          const claimIds = [...selected];
+          const to = toPersonId;
+          once(() => reassign.mutateAsync({ claimIds, to }));
+        }}
+      >
+        Reassign selected
+      </button>
+      {reassign.isSuccess && (
+        <>
+          {' '}
+          Moved <span data-testid="bulk-reassigned">{reassign.data.reassigned}</span>, refused{' '}
+          <span data-testid="bulk-reassign-refused">{reassign.data.refused}</span>
+        </>
+      )}
+      {reassign.isError && (
+        <span data-testid="bulk-reassign-error" role="alert">
+          {' '}
+          The selected claims could not be moved.
         </span>
       )}
     </p>

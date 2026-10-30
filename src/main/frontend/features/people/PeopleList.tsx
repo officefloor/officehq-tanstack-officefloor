@@ -1,6 +1,6 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
-import { BulkOpenButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
+import { BulkOpenButton, BulkReassignButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts } from '../claims/useClaims';
 import { formatCents, showDue } from '../rates/due';
@@ -40,7 +40,7 @@ import { useSheetFigures } from './useSheetFigures';
 // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
-// with their select checkbox are opened together with the bulk open button; people ticked with theirs
+// with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
@@ -79,6 +79,7 @@ export function PeopleList() {
       </button>
       <BulkOpenButton />
       <BulkSettleButton />
+      <BulkReassignButton />
       <BulkGrade />
       <table data-testid="people">
         <thead>
