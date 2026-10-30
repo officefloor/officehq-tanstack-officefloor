@@ -105,11 +105,14 @@ public class Pools {
         Set<String> crews = new HashSet<>();
         Map<String, List<PoolResponse.Member>> people = new LinkedHashMap<>();
         jdbc.query("SELECT c.name, c.lead_person_id, p.name, p.retired_from FROM crew c"
-                + " JOIN person p ON p.id = c.lead_person_id AND p.sheet_id = c.sheet_id"
+                + " LEFT JOIN person p ON p.id = c.lead_person_id AND p.sheet_id = c.sheet_id"
                 + " WHERE c.sheet_id = ? ORDER BY c.seq", rs -> {
                     List<PoolResponse.Member> list = new ArrayList<>();
-                    list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3), "",
-                            rs.getDate(4) != null, true, ""));
+                    // A lead no longer on the sheet (moved away) is left out: the crew's members share it all.
+                    if (rs.getString(3) != null) {
+                        list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3), "",
+                                rs.getDate(4) != null, true, ""));
+                    }
                     people.put(rs.getString(1), list);
                 }, sheetId);
         jdbc.query("SELECT m.crew_name, m.person_id, p.name, p.retired_from FROM crew_member m"
@@ -122,7 +125,7 @@ public class Pools {
                     }
                 }, sheetId);
         people.forEach((name, list) -> {
-            if (members.containsKey(name)) {
+            if (members.containsKey(name) || list.isEmpty()) {
                 return;
             }
             BigDecimal each = FULL.divide(BigDecimal.valueOf(list.size()), 2, RoundingMode.HALF_EVEN);

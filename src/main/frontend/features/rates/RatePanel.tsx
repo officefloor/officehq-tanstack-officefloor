@@ -10,16 +10,20 @@ import { ImportRates } from './ImportRates';
 import { RatePreview } from './RatePreview';
 import { rateOn, ratesKey, useRates, type Rate } from './useRates';
 
+const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+
 // The rate in force on the sheet's today for each grade (n/a where none applies), every rate set with
 // the dates it applies from and through, and the form that sets one (a blank from-date: from the
 // beginning of time; a blank to-date: no end; one already there from the same date is kept as an older
-// version and the row shows its version count), and a preview of a candidate rate for a grade.
+// version and the row shows its version count), a calendar of each grade's rate in force on the first day of
+// each month of the sheet's today's year (n/a where none), and a preview of a candidate rate for a grade.
 export function RatePanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const rates = useRates(sheet);
   const [grade, setGrade] = useState<string>('A');
   const today = useSheetToday(sheet);
+  const months = today ? MONTHS.map((m) => `${today.slice(0, 4)}-${m}`) : [];
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -49,6 +53,26 @@ export function RatePanel() {
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateOn(rates, g, today) ?? NA}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="rate-calendar">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            {months.map((m) => (
+              <th key={m}>{m}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              {months.map((m) => (
+                <td key={m} data-testid={`rate-month-${g}-${m}`}>{rateOn(rates, g, `${m}-01`) ?? NA}</td>
+              ))}
             </tr>
           ))}
         </tbody>
