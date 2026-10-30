@@ -63,6 +63,7 @@ public class TakeStatement {
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);
         people.saveStatement(person);
+        people.addStatement(person);
         statement.set(new Statement(dueTotal, counted));
     }
 }

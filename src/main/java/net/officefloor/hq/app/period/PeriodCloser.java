@@ -88,7 +88,7 @@ public class PeriodCloser {
     }
 
     /** The auto close, once the sheet's today is set: with grace days set, every open period whose to-date plus
-     *  them is before the sheet's today is closed, in order of their to-dates. */
+     *  them is before the sheet's today is closed, in order of their to-dates; a soft-closed period is left as it is. */
     public void closeDue(String sheetId, String user) {
         Integer grace = settings.graceDays(sheetId);
         if (grace == null) {
@@ -96,12 +96,12 @@ public class PeriodCloser {
         }
         LocalDate today = sheets.today(sheetId);
         List<PeriodResponse> due = periods.list(sheetId).stream()
-                .filter(p -> !p.closed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
+                .filter(p -> !p.closed() && !p.softClosed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
                 .sorted(java.util.Comparator.comparing(PeriodResponse::to))
                 .toList();
         for (PeriodResponse period : due) {
             PeriodResponse locked = periods.lock(sheetId, period.name());
-            if (locked != null && !locked.closed()) {
+            if (locked != null && !locked.closed() && !locked.softClosed()) {
                 close(sheetId, locked, user, true);
             }
         }

@@ -185,6 +185,33 @@ public class People {
                 person.getSheetId(), person.getId());
     }
 
+    /** Records a statement taken for the person in their statement history. */
+    public void addStatement(Person person) {
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), person.getStatedTotal(),
+                person.getStatementDate() == null ? null : java.sql.Date.valueOf(person.getStatementDate()));
+    }
+
+    /** Drops the person's last statement from their history and sets the person's statement to the one
+     *  before it (no due-total or date when there is none, or it is not known). The count goes down by one. */
+    public void cancelStatement(Person person) {
+        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY seq DESC LIMIT 1",
+                (rs, i) -> rs.getLong(1), person.getSheetId(), person.getId());
+        if (!last.isEmpty()) {
+            jdbc.update("DELETE FROM person_statement WHERE seq = ?", last.get(0));
+        }
+        person.setStatementCount(person.getStatementCount() - 1);
+        person.setStatedTotal(null);
+        person.setStatementDate(null);
+        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY seq DESC LIMIT 1",
+                rs -> {
+                    person.setStatedTotal(rs.getBigDecimal("stated_total"));
+                    java.sql.Date date = rs.getDate("statement_date");
+                    person.setStatementDate(date == null ? null : date.toLocalDate());
+                }, person.getSheetId(), person.getId());
+        saveStatement(person);
+    }
+
     /** Records the person's retirement date. The person's version is left as it is — retiring is
      *  not an edit of the person form. */
     public void saveRetired(Person person) {

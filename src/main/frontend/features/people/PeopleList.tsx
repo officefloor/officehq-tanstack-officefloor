@@ -6,6 +6,7 @@ import { sumAmounts } from '../claims/useClaims';
 import { formatCents, showDue } from '../rates/due';
 import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
+import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
 import { HoldControl } from './HoldControl';
 import { PasteClaims } from './PasteClaims';
@@ -125,6 +126,7 @@ export function PeopleList() {
                     Edit
                   </button>{' '}
                   <StatementButton personId={p.id} />{' '}
+                  <UnstateButton personId={p.id} />{' '}
                   <RetireControl personId={p.id} />{' '}
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
                   <PatronControl personId={p.id} people={people} />{' '}
