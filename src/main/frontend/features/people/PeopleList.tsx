@@ -204,6 +204,7 @@ export function PeopleList() {
             <th>Retired</th>
             <th>Retired from</th>
             <th>Past retirements</th>
+            <th>Snapshots</th>
             <th>Hold</th>
             <th>Statements</th>
             <th>Last stated</th>
@@ -273,6 +274,13 @@ export function PeopleList() {
                 <td>
                   {(p.retirements ?? []).map((line, i) => (
                     <div key={i} data-testid="person-retirement-line">
+                      {line}
+                    </div>
+                  ))}
+                </td>
+                <td>
+                  {(p.snapshots ?? []).map((line, i) => (
+                    <div key={i} data-testid="person-snapshot-line">
                       {line}
                     </div>
                   ))}

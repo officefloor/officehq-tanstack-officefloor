@@ -67,7 +67,21 @@ public class People {
         for (Person person : found) {
             person.setRetirements(new java.util.ArrayList<>(retirements.getOrDefault(person.getId(), List.of())));
         }
+        java.util.Map<Long, java.util.List<String>> snapshots = new java.util.HashMap<>();
+        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY seq", rs -> {
+            snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
+                    .add(rs.getDate("set_on").toLocalDate() + " " + rs.getString("due_total"));
+        }, sheetId);
+        for (Person person : found) {
+            person.setSnapshots(new java.util.ArrayList<>(snapshots.getOrDefault(person.getId(), List.of())));
+        }
         return found;
+    }
+
+    /** Keeps a SNAPSHOT line for the person: their due-total as shown, dated the sheet's today (the day being left). */
+    public void recordSnapshot(String sheetId, long personId, String dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, due_total, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, personId, dueTotal, sheetId);
     }
 
     /** Fills in each person's dated grades and the sheet's today (the grade in force on it is shown). */
@@ -335,6 +349,7 @@ public class People {
         takeStatements(from, into);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
@@ -408,6 +423,7 @@ public class People {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);

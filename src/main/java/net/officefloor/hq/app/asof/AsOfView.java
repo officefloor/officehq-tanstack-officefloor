@@ -126,6 +126,10 @@ public class AsOfView {
         jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> retirements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                         .add(new Person.Retirement(rs.getDate(2).toLocalDate(), rs.getDate(3).toLocalDate())), sheetId, end);
+        Map<Long, List<String>> snapshots = new HashMap<>();
+        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                (RowCallbackHandler) rs -> snapshots.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)), sheetId, end);
         Map<Long, LocalDate> retired = new HashMap<>();
         jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> retired.put(rs.getLong(1), local(rs.getDate(2))), sheetId, end);
@@ -156,6 +160,7 @@ public class AsOfView {
             then.setHolds(new ArrayList<>(holds.getOrDefault(then.getId(), List.of())));
             then.setRetiredFrom(retired.get(then.getId()));
             then.setRetirements(new ArrayList<>(retirements.getOrDefault(then.getId(), List.of())));
+            then.setSnapshots(new ArrayList<>(snapshots.getOrDefault(then.getId(), List.of())));
             then.setStatementCount(statementCount.getOrDefault(then.getId(), 0));
             List<Long> ids = new ArrayList<>();
             List<String> names = new ArrayList<>();

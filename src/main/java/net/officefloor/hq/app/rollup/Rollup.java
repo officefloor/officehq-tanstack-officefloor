@@ -114,11 +114,14 @@ public class Rollup {
                 grace(claim, person));
     }
 
-    /** Audit (on commit) one SNAPSHOT line per person, in list order, with their due-total in {@code before}. */
+    /** Audit (on commit) one SNAPSHOT line per person, in list order, with their due-total in {@code before}, and keep
+     *  it on the person dated the sheet's today (so call it before today moves). */
     public void recordSnapshots(String sheetId, String user, RollupFigures before) {
         String prefix = " sheet=" + sheetId + " by=" + user;
-        before.people().values().forEach(was -> audit.recordOnCommit("SNAPSHOT" + prefix
-                + " name=" + was.name() + " due-total=" + was.dueTotal()));
+        before.people().forEach((id, was) -> {
+            people.recordSnapshot(sheetId, id, was.dueTotal());
+            audit.recordOnCommit("SNAPSHOT" + prefix + " name=" + was.name() + " due-total=" + was.dueTotal());
+        });
     }
 
     /** Audit (on commit) the figures that moved since {@code before}, as taken by {@code user}. */

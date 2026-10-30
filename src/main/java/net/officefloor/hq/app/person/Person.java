@@ -130,6 +130,10 @@ public class Person {
     private java.util.List<Retirement> retirements = new java.util.ArrayList<>();
     public java.util.List<Retirement> getRetirements() { return retirements; }
     public void setRetirements(java.util.List<Retirement> retirements) { this.retirements = retirements; }
+    /** The person's SNAPSHOT lines, each "<the day being left> <due-total>", oldest first. */
+    private java.util.List<String> snapshots = new java.util.ArrayList<>();
+    public java.util.List<String> getSnapshots() { return snapshots; }
+    public void setSnapshots(java.util.List<String> snapshots) { this.snapshots = snapshots; }
     /** A hold from a date to an optional to-date (null: open-ended), both days included. */
     public record Hold(LocalDate from, LocalDate to) {
         public boolean covers(LocalDate date) {

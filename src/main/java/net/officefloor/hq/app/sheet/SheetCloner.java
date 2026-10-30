@@ -57,6 +57,7 @@ public class SheetCloner {
                 "retire_history:set_on, retired_from",
                 "person_hold:from_date, to_date, set_on",
                 "person_retirement:from_date, to_date, set_on",
+                "person_snapshot:due_total, set_on",
                 "person_alias:alias, set_on",
             };
             for (String table : personCols) {
