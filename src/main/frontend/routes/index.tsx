@@ -15,6 +15,7 @@ import { PersonForm } from '../features/people/PersonForm';
 import { PeopleList } from '../features/people/PeopleList';
 import { SheetHeader } from '../features/header/SheetHeader';
 import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
+import { TreeSearch } from '../features/search/TreeSearch';
 import { AuditViewer } from '../features/audit/AuditViewer';
 
 // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
@@ -46,6 +47,7 @@ function Home() {
           <PersonForm />
           <PeopleList />
           <PoolPanel />
+          <TreeSearch />
           <AuditViewer />
         </div>
       )}
