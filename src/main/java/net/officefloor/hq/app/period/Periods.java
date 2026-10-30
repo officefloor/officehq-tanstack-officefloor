@@ -44,6 +44,12 @@ public class Periods {
                 total, sheetId, name);
     }
 
+    /** Reopen the named period, dropping its fixed due-total. */
+    public void reopen(String sheetId, String name) {
+        jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
+                sheetId, name);
+    }
+
     /** Whether a date falls inside a closed period of the sheet. */
     public boolean isClosed(String sheetId, LocalDate date) {
         Integer closed = jdbc.queryForObject(

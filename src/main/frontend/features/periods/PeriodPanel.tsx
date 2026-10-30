@@ -14,7 +14,8 @@ import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 // The sheet's periods, each with its dates and due-total (the dues, late charges included, of the claims that count whose
 // date falls in it, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
 // already on the sheet, a from-date on or before the to-date, not overlapping another period). A
-// closed period shows the due-total fixed when it was closed, whatever the rates do later.
+// closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward
+// can reopen it, making its due-total live again.
 export function PeriodPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -39,10 +40,11 @@ export function PeriodPanel() {
       queryClient.setQueryData(periodsKey(sheet), saved);
     },
   });
-  const close = useMutation({
-    mutationFn: (name: string) =>
+  // Close a period, or reopen a closed one (a steward only).
+  const act = useMutation({
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
       postJson<Period[]>(
-        `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`,
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`,
         { user },
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved),
@@ -80,15 +82,29 @@ export function PeriodPanel() {
                     type="button"
                     data-testid="period-close"
                     onClick={() => {
-                      close.reset();
-                      close.mutate(p.name);
+                      act.reset();
+                      act.mutate({ name: p.name, action: 'close' });
                     }}
                   >
                     Close
                   </button>
-                )}
-                {close.isError && close.variables === p.name && (
-                  <span data-testid="period-error" role="alert"> Could not close the period.</span>
+                )}{' '}
+                <button
+                  type="button"
+                  data-testid="period-reopen"
+                  onClick={() => {
+                    act.reset();
+                    act.mutate({ name: p.name, action: 'reopen' });
+                  }}
+                >
+                  Reopen
+                </button>
+                {act.isError && act.variables?.name === p.name && (
+                  <span data-testid="period-error" role="alert">
+                    {act.variables.action === 'reopen'
+                      ? ' Could not reopen the period: only a steward can reopen it, and only while it is closed.'
+                      : ' Could not close the period.'}
+                  </span>
                 )}
               </td>
             </tr>
