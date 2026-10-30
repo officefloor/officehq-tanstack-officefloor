@@ -1,0 +1,167 @@
+diff --git a/src/main/frontend/features/periods/export.slot.tsx b/src/main/frontend/features/periods/export.slot.tsx
+new file mode 100644
+index 00000000..053f817f
+--- /dev/null
++++ b/src/main/frontend/features/periods/export.slot.tsx
+@@ -0,0 +1,49 @@
++import { useQueryClient } from '@tanstack/react-query';
++import { downloadCsv } from '../../api/csv';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { claimsQuery } from '../claims/claimsQuery';
++import { peopleQuery } from '../people/peopleQuery';
++import { ratesQuery } from '../rates/ratesQuery';
++import { useFloor, useLate } from '../settings/settingsQuery';
++import { personPeriodCarried, personPeriodDue, periodsQuery } from './periodsQuery';
++
++/** Downloads the period figures as CSV: one line per person and period, people in list order (retired people included)
++ *  and periods in the order added, with each person's due-total and carried figure for the period as their row shows
++ *  them. The data is re-read first, so the file holds what the store holds now. */
++function ExportPeriods({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  const exportCsv = async () => {
++    const fresh = { staleTime: 0 };
++    const [periods, people, claims, rates] = await Promise.all([
++      queryClient.fetchQuery({ ...periodsQuery(sheetId), ...fresh }),
++      queryClient.fetchQuery({ ...peopleQuery(sheetId), ...fresh }),
++      queryClient.fetchQuery({ ...claimsQuery(sheetId), ...fresh }),
++      queryClient.fetchQuery({ ...ratesQuery(sheetId), ...fresh }),
++    ]);
++    const added = [...periods].sort((a, b) => a.added - b.added);
++    downloadCsv('periods.csv', [
++      ['person', 'period', 'figure', 'carried'],
++      ...people.flatMap((person) =>
++        added.map((p) => [
++          person.name,
++          p.name,
++          personPeriodDue(p, person, claims, people, rates, floor, late),
++          personPeriodCarried(p, periods, person, claims, people, rates, floor, late),
++        ]),
++      ),
++    ]);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-periods" onClick={() => void exportCsv()}>
++        Export period figures (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetPanel.fill({ order: 7.1, Component: ExportPeriods });
+diff --git a/src/main/frontend/features/periods/periodsQuery.ts b/src/main/frontend/features/periods/periodsQuery.ts
+index 7dcd294b..7445114d 100644
+--- a/src/main/frontend/features/periods/periodsQuery.ts
++++ b/src/main/frontend/features/periods/periodsQuery.ts
+@@ -29,6 +29,8 @@ export type Period = {
+   personOpenings: Record<string, string>;
+   /** A locked period cannot be reopened; only a steward locks and unlocks it. */
+   locked: boolean;
++  /** The order the period was added in: a number rising with each period added. */
++  added: number;
+ };
+ 
+ /** Whether the period's figures are fixed: it is closed or soft-closed. */
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index abc05659..9a695faf 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -9,17 +9,18 @@ import java.util.Map;
+  * each person's due-total for it fixed then, by person id (empty while open; a person added later has none), and
+  * each person's carried figure for it fixed then the same way (a period fixed before carried figures were has none), and
+  * whether it is soft-closed (its figures fixed so, its claims still open to change), and its claim cap (null: none), and
+- * each person's opening balance for it, by person id (none: 0.00), part of their carried figure, and whether it is locked.
++ * each person's opening balance for it, by person id (none: 0.00), part of their carried figure, and whether it is locked, and the order it
++ * was added in (a number rising with each period added; null where not read).
+  */
+ public record PeriodResponse(String name, String from, String to, boolean closed, String closedTotal,
+         Map<Long, String> personTotals, Map<Long, String> personCarried, boolean soft, Integer cap,
+-        Map<Long, String> personOpenings, boolean locked) {
++        Map<Long, String> personOpenings, boolean locked, Long added) {
+ 
+     public static PeriodResponse from(Period period) {
+-        return from(period, Map.of());
++        return from(period, Map.of(), null);
+     }
+ 
+-    public static PeriodResponse from(Period period, Map<Long, BigDecimal> openings) {
++    public static PeriodResponse from(Period period, Map<Long, BigDecimal> openings, Long added) {
+         Map<Long, String> totals = new LinkedHashMap<>();
+         period.personTotals().forEach((id, total) -> totals.put(id, total.toPlainString()));
+         Map<Long, String> carried = new LinkedHashMap<>();
+@@ -28,6 +29,6 @@ public record PeriodResponse(String name, String from, String to, boolean closed
+         openings.forEach((id, amount) -> opening.put(id, amount.toPlainString()));
+         return new PeriodResponse(period.name(), period.from().toString(), period.to().toString(), period.closed(),
+                 period.closedTotal() == null ? null : period.closedTotal().toPlainString(), totals, carried, period.soft(), period.cap(),
+-                opening, period.locked());
++                opening, period.locked(), added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index 39d4b138..89259bee 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -46,6 +46,14 @@ public class Periods {
+                 .toList();
+     }
+ 
++    /** The order each of the sheet's periods was added in, by period name: a number rising with each period added. */
++    public Map<String, Long> added(String sheetId) {
++        Map<String, Long> added = new HashMap<>();
++        jdbc.query("SELECT name, added FROM " + AsOf.table("period") + " WHERE sheet_id = ?",
++                rs -> { added.put(rs.getString("name"), rs.getLong("added")); }, sheetId);
++        return added;
++    }
++
+     /** Each person's opening balance for each of the sheet's periods, by period name, then by person id. */
+     public Map<String, Map<Long, BigDecimal>> openings(String sheetId) {
+         Map<String, Map<Long, BigDecimal>> openings = new HashMap<>();
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index e59b93ff..a106931f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -9,10 +9,11 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class RespondWithPeriods {
+     public void respond(@PathVariable("sheetId") String sheetId, Periods periods,
+             ObjectResponse<List<PeriodResponse>> response) {
+-        // Each with its people's opening balances.
++        // Each with its people's opening balances and the order it was added in.
+         String sheet = sheetId.trim();
+         Map<String, Map<Long, BigDecimal>> openings = periods.openings(sheet);
++        Map<String, Long> added = periods.added(sheet);
+         response.send(periods.list(sheet).stream()
+-                .map(p -> PeriodResponse.from(p, openings.getOrDefault(p.name(), Map.of()))).toList());
++                .map(p -> PeriodResponse.from(p, openings.getOrDefault(p.name(), Map.of()), added.get(p.name()))).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java b/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
+index f060a0bf..6acca67f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetClones.java
+@@ -70,7 +70,7 @@ public class SheetClones {
+         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note, listed) SELECT ?, name, amount, note, listed "
+                 + "FROM claim_template WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, closed, closed_total, soft) "
+-                + "SELECT ?, name, from_date, to_date, FALSE, NULL, FALSE FROM period WHERE sheet_id = ?", to, from);
++                + "SELECT ?, name, from_date, to_date, FALSE, NULL, FALSE FROM period WHERE sheet_id = ? ORDER BY added", to, from);
+ 
+         // People in list order, each with their dated grades, aliases, holds and past retirements.
+         Map<Long, Long> people = new LinkedHashMap<>();
+diff --git a/src/main/resources/db/migration/V99__period_added.sql b/src/main/resources/db/migration/V99__period_added.sql
+new file mode 100644
+index 00000000..eff40442
+--- /dev/null
++++ b/src/main/resources/db/migration/V99__period_added.sql
+@@ -0,0 +1,8 @@
++-- The order a sheet's periods were added in (a rising number; the periods are otherwise kept by from-date), so the
++-- period figures can be exported period by period as they were added. Kept in the period's history too (see V40).
++-- The journal trigger is made again around the change, as in V70.
++DROP TRIGGER period_journal;
++CREATE SEQUENCE period_added_seq;
++ALTER TABLE period ADD COLUMN added BIGINT DEFAULT NEXT VALUE FOR period_added_seq NOT NULL;
++ALTER TABLE period_history ADD COLUMN added BIGINT;
++CREATE TRIGGER period_journal AFTER INSERT, UPDATE, DELETE ON period FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
