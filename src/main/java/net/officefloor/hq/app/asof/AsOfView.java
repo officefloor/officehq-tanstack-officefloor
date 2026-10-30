@@ -126,8 +126,9 @@ public class AsOfView {
         jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> retirements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                         .add(new Person.Retirement(rs.getDate(2).toLocalDate(), rs.getDate(3).toLocalDate())), sheetId, end);
+        // A snapshot is taken as its day is left, so one dated the date itself was not yet taken at its end.
         Map<Long, List<String>> snapshots = new HashMap<>();
-        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ? AND set_on < ? ORDER BY seq",
                 (RowCallbackHandler) rs -> snapshots.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                         .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)), sheetId, end);
         Map<Long, LocalDate> retired = new HashMap<>();
@@ -303,7 +304,8 @@ public class AsOfView {
         };
         Map<String, List<DatedValue>> datedShown = new TreeMap<>();
         dated.forEach((key, byFrom) -> byFrom.forEach((from, value) -> datedShown.computeIfAbsent(key, k -> new ArrayList<>())
-                .add(new DatedValue(from.toString(), value[0] == null ? "" : key.startsWith("terms")
+                .add(new DatedValue(from.toString(), value[0] == null ? "" : ValidateSetting.ROUNDING.equals(key)
+                        ? net.officefloor.hq.app.claim.Rounding.name(value[0]) : key.startsWith("terms")
                         ? String.valueOf(value[0].intValue()) : value[0].setScale(2).toPlainString()))));
         BigDecimal limit = on.apply(ValidateSetting.CLERK_LIMIT);
         BigDecimal cap = on.apply(ValidateSetting.CAP);
@@ -348,7 +350,8 @@ public class AsOfView {
                 delegations, noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(),
                 plain.getOrDefault(Settings.ENTRY, ""), plain.getOrDefault(Settings.POT, ""),
                 Objects.toString(sheets.parent(sheetId), ""), // the parent is not dated: as it is now
-                plain.getOrDefault(Settings.FISCAL, "1"), plain.getOrDefault(Settings.ALERT, ""));
+                plain.getOrDefault(Settings.FISCAL, "1"), plain.getOrDefault(Settings.ALERT, ""),
+                net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)));
     }
 
     private static LocalDate local(Date date) {

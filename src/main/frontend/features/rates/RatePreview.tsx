@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { isOpen, useClaims } from '../claims/useClaims';
 import { useGrace } from '../claims/useGrace';
 import { GRADES, gradeOn, usePeople } from '../people/usePeople';
-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, formatCents } from './due';
@@ -23,7 +23,7 @@ export function RatePreview() {
   const floor = useFloor(sheet);
   const grace = useGrace(sheet);
   const late = { pct: useLatePct(sheet), today, grace };
-  const policy = usePolicyDate(sheet);
+  const policy = usePolicy(sheet);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [result, setResult] = useState<{ count: number; diff: string } | null>(null);

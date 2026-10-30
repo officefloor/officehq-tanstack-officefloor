@@ -49,7 +49,7 @@ public class TakeStatement {
             if (!then.countsLive(claim, today)) {
                 continue;
             }
-            RoundingMode rounding = Rounding.of(claim, view.policyDate());
+            RoundingMode rounding = Rounding.of(claim, view.policyDate(), view.rounding());
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
             // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date (unfloored).
             BigDecimal figure = fixed != null || claim.isBound() ? fixed

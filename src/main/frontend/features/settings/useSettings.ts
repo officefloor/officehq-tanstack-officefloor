@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { readPath, useAsOf } from '../asof/useAsOf';
 import { useSheetToday } from '../sheet/useSheetToday';
+import type { Policy } from '../rates/due';
 
 /** A role a user name holds on the sheet: clerk (any name not listed), steward or viewer (sees everything, changes nothing). */
 export type Role = { user: string; role: string };
@@ -15,8 +16,9 @@ export type Role = { user: string; role: string };
  *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved)
  *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule),
  *  and every delegation of the steward role, in the order given, and the note threshold with two decimals ("" for none: above the one
- *  in force on its date a claim cannot be opened with an empty note), and the fiscal year start month, 1 to 12 ("1" unless set). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string };
+ *  in force on its date a claim cannot be opened with an empty note), and the fiscal year start month, 1 to 12 ("1" unless set), and the rounding mode in force
+ *  on the sheet's today (half-up or half-even; "" for none). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string };
 
 /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
  *  steward, and the audit lines of their changes end with for=<by>. */
@@ -69,12 +71,12 @@ export function useLatePct(sheet: string): (date: string) => string {
   return (date) => inForce(settings, 'late-pct', date, DEFAULT_LATE_PCT);
 }
 
-/** The sheet's policy date: the one set, or the sheet's today when it is blank. A claim dated before
- *  it rounds half up, one on or after it half to even. Undefined while loading. */
-export function usePolicyDate(sheet: string): string | undefined {
-  const set = useSettings(sheet)?.policyDate;
+/** How the sheet's claims round: its policy date (the one set, or the sheet's today when it is blank; undefined while
+ *  loading) and every rounding mode recorded, by from-date (see roundsHalfUp). */
+export function usePolicy(sheet: string): Policy {
+  const settings = useSettings(sheet);
   const today = useSheetToday(sheet);
-  return set ? set : today;
+  return { date: settings?.policyDate ? settings.policyDate : today, rounding: settings?.dated?.rounding ?? [] };
 }
 
 /** The sheet's cap in force on its today ("" for none): a person's due-total is at most it. */

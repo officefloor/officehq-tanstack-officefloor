@@ -3,7 +3,7 @@ import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { useGrace } from '../claims/useGrace';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { periodOf, usePeriods, type Period } from './usePeriods';
 
@@ -17,7 +17,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
   const rates = useRates(sheet);
   const floor = useFloor(sheet);
   const late = { pct: useLatePct(sheet), today: useSheetToday(sheet), grace: useGrace(sheet) };
-  const policy = usePolicyDate(sheet);
+  const policy = usePolicy(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
   return (period: Period, personId: string) => {
     if (period.closed || period.softClosed) return toCents(period.closedPersonTotals[personId] ?? '0.00');

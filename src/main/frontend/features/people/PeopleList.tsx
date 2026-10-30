@@ -34,7 +34,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useSheetFigures } from './useSheetFigures';
 import { dueBy } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
@@ -118,7 +118,7 @@ export function PeopleList() {
   const floor = useFloor(sheet);
   const latePct = useLatePct(sheet);
   const grace = useGrace(sheet);
-  const policy = usePolicyDate(sheet);
+  const policy = usePolicy(sheet);
   const claimRows = () =>
     people.flatMap((p) =>
       claims

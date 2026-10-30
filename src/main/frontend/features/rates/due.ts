@@ -3,8 +3,8 @@ import { lateFrom } from '../claims/overdue';
 import type { Grace } from '../claims/useGrace';
 
 // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
-// due in millionths, then rounded to cents — half up for a claim dated before the sheet's policy date,
-// half to even for one dated on or after it. No float ever touches it.
+// due in millionths, then rounded to cents — by the sheet's rounding mode in force on the claim's date, else half up
+// for a claim dated before the sheet's policy date, half to even for one dated on or after it. No float ever touches it.
 
 export const NA = 'n/a';
 
@@ -58,10 +58,18 @@ export type Late = { pct: On; today: string | undefined; grace?: Grace };
 
 const DAY_MS = 86_400_000;
 
-/** Whether a claim's live figures round half up: its rounding date (a correction's is the date of
- *  the claim it corrects) is before the sheet's policy date (blank: the sheet's today). */
-export const roundsHalfUp = (claim: { roundingDate?: string; date: string }, policy: string | undefined) =>
-  policy !== undefined && policy !== '' && (claim.roundingDate || claim.date) < policy;
+/** How the sheet's claims round: its policy date (blank: the sheet's today; undefined while loading) and every
+ *  rounding mode recorded (half-up, half-even; "" for none), oldest from-date first. */
+export type Policy = { date: string | undefined; rounding: { from: string; value: string }[] };
+
+/** Whether a claim's live figures round half up: by the rounding mode in force on its rounding date (a correction's is
+ *  the date of the claim it corrects) when one is, else when that date is before the sheet's policy date. */
+export function roundsHalfUp(claim: { roundingDate?: string; date: string }, policy: Policy | undefined): boolean {
+  const on = claim.roundingDate || claim.date;
+  const mode = (policy?.rounding ?? []).filter((d) => d.from <= on).pop()?.value ?? '';
+  if (mode !== '') return mode === 'half-up';
+  return policy?.date !== undefined && policy.date !== '' && on < policy.date;
+}
 
 /** A claim with a negative amount is a correction: its due has no floor and no late charge. */
 export const isCorrection = (claim: { amount?: string }) => claim.amount !== undefined && toCents(claim.amount) < 0n;
@@ -70,7 +78,7 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
  *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
  *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
  *  before it (compounding), each rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
-export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
+export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
   if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
   const from = lateFrom(claim, late.grace);
   const days = Math.round((Date.parse(late.today) - Date.parse(from)) / DAY_MS);
@@ -88,13 +96,13 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
  *  to n/a stays n/a; a PENDING claim is never bound) or its amount at the current rate, with an overdue claim's late charge
  *  (each 30-day boundary at the late percent in force on it) worked on that figure alone and added on top, and the floor in
  *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
- *  figures round by the sheet's policy date (see roundsHalfUp). */
+ *  figures round by the sheet's rounding mode or policy date (see roundsHalfUp). */
 export function claimDue(
   claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string },
   rate: string | undefined,
   floor: On,
   late?: Late,
-  policy?: string,
+  policy?: Policy,
 ): bigint | null {
   if (claim.due !== '' && claim.status === 'SETTLED') return toCents(claim.due);
   const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
@@ -113,7 +121,7 @@ export function dueTotal(
   rateToday: string | undefined,
   floor: On,
   late?: Late,
-  policy?: string,
+  policy?: Policy,
 ): bigint | null {
   const figures = claims.map((c) => claimDue(c, rateOn(c.date), floor, late, policy));
   if (rateToday === undefined && figures.every((f) => f === null)) return null;

@@ -6,7 +6,7 @@ import { claimDue, showDue } from '../rates/due';
 import { claimsKey, deferredShown, tagList, type Claim } from './useClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { useFloor, useLatePct, usePolicyDate, useSettings } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 import { useGrace } from './useGrace';
@@ -83,7 +83,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const today = useSheetToday(sheet);
   const latePct = useLatePct(sheet);
   const grace = useGrace(sheet);
-  const policy = usePolicyDate(sheet);
+  const policy = usePolicy(sheet);
   const settings = useSettings(sheet);
 
   const status = useMutation({

@@ -41,6 +41,8 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // late charge's 30-day boundaries count from its due-by plus them. Its due-by is shown as it is.
 // Each grade's proof threshold (dated; two decimals; blank: none; saved like the cap): a claim whose person's grade in force
 // on its date has one in force on that date takes it in place of the sheet's proof threshold.
+// The rounding mode (dated; half-up or half-even, anything else refused; blank: none; saved like the cap): a claim whose
+// date has one in force rounds every live figure by it; one with none in force on its date rounds by the policy date.
 // The fiscal year start month (not dated; 1 to 12; 1 unless set; saved when its field is filled, together with any other
 // field filled): a fiscal year is named FY<yyyy> by the calendar year its first day falls in.
 export function SettingsPanel() {
@@ -92,6 +94,9 @@ export function SettingsPanel() {
   // The alert threshold (not dated); likewise may be saved blank (off).
   const [alertThreshold, setAlertThreshold] = useState('');
   const alertChosen = useRef(false);
+  // The rounding mode (dated); likewise may be saved blank (none).
+  const [rounding, setRounding] = useState('');
+  const roundingChosen = useRef(false);
   // The parent sheet (not dated); likewise may be saved blank (none).
   const [parent, setParent] = useState('');
   const parentChosen = useRef(false);
@@ -99,6 +104,11 @@ export function SettingsPanel() {
   const focusParent = () => {
     unchoosePolicy();
     parentChosen.current = true;
+  };
+  // Entering the rounding mode (or its from-date) marks it as the one to save, as it is.
+  const focusRounding = () => {
+    unchoosePolicy();
+    roundingChosen.current = true;
   };
   // Entering the alert threshold marks it as the one to save, as it is.
   const focusAlert = () => {
@@ -143,6 +153,7 @@ export function SettingsPanel() {
     if (pot.trim() === '') potChosen.current = false;
     if (alertThreshold.trim() === '') alertChosen.current = false;
     if (parent.trim() === '') parentChosen.current = false;
+    if (rounding.trim() === '') roundingChosen.current = false;
     unchooseGradeGrace();
   };
   // Entering another field leaves a blank grade's grace days as they are.
@@ -305,6 +316,10 @@ export function SettingsPanel() {
         setNoteThreshold('');
         noteChosen.current = false;
       }
+      else if (body.key === 'rounding') {
+        setRounding('');
+        roundingChosen.current = false;
+      }
       else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
@@ -344,6 +359,7 @@ export function SettingsPanel() {
             const capped = cap.trim() !== '' || capChosen.current;
             const proofed = proofThreshold.trim() !== '' || proofChosen.current;
             const noted = noteThreshold.trim() !== '' || noteChosen.current;
+            const rounded = rounding.trim() !== '' || roundingChosen.current;
             const graced = graceDays.trim() !== '' || graceChosen.current;
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const potted = pot.trim() !== '' || potChosen.current;
@@ -354,7 +370,7 @@ export function SettingsPanel() {
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || graced || entered || potted || alerted || parented || permitted.length > 0) {
+                || noted || rounded || graced || entered || potted || alerted || parented || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -369,6 +385,7 @@ export function SettingsPanel() {
                 ...(proofed ? [{ key: 'proof-threshold', value: proofThreshold.trim() }] : []),
                 ...ownProof.map((g) => ({ key: `proof-threshold-${g}`, value: (gradeProof[g] ?? '').trim() })),
                 ...(noted ? [{ key: 'note-threshold', value: noteThreshold.trim() }] : []),
+                ...(rounded ? [{ key: 'rounding', value: rounding.trim() }] : []),
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
                 ...(potted ? [{ key: 'pot', value: pot.trim() }] : []),
@@ -579,6 +596,19 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('note-threshold', focusNote)}{' '}
+        Rounding: <span data-testid="setting-rounding-current">{settings?.rounding ?? ''}</span>{' '}
+        <input
+          data-testid="setting-rounding"
+          value={rounding}
+          placeholder="Rounding: half-up or half-even (blank: none)"
+          onFocus={focusRounding}
+          onChange={(e) => {
+            setRounding(e.target.value);
+            roundingChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        {fromField('rounding', focusRounding)}{' '}
         Grace days: <span data-testid="setting-grace-days-current">{settings?.graceDays ?? ''}</span>{' '}
         <input
           data-testid="setting-grace-days"

@@ -27,6 +27,9 @@ public class ValidateSetting {
     /** Above it (in force on a claim's date) a claim cannot be opened with an empty note; blank: none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
+    /** How a claim's live figures round (in force on its date): half-up or half-even; dated; blank: none (the policy date decides). */
+    public static final String ROUNDING = "rounding";
+
     public static final String TERMS = "terms";
 
     /** A grade's own terms: terms-<grade>. */
@@ -79,7 +82,7 @@ public class ValidateSetting {
             throws InvalidSettingException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
-        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
@@ -208,6 +211,17 @@ public class ValidateSetting {
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The entry date must be a date (YYYY-MM-DD), or blank for off");
             }
+            return;
+        }
+        if (ROUNDING.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, from, null, "")); // blank: none
+                return;
+            }
+            if (net.officefloor.hq.app.claim.Rounding.code(raw) == null) {
+                throw new InvalidSettingException("The rounding mode must be half-up or half-even, or blank for none");
+            }
+            body.set(new ValidSetting(key, net.officefloor.hq.app.claim.Rounding.code(raw), request.user(), null, from, null, raw));
             return;
         }
         if (TERMS.equals(key) || key.startsWith(GRADE_TERMS)) {

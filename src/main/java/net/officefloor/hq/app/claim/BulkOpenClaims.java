@@ -42,7 +42,7 @@ public class BulkOpenClaims {
                 }
                 try {
                     ApplyClaimStatus.refuseNoteless(claim, sheets, people, rates, settings,
-                            Rounding.of(claim, settings.policyDate(sheetId)));
+                            Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on)));
                     ApplyClaimStatus.refuseOverCap(claim, periods, all);
                 } catch (ClaimStatusRefusedException e) {
                     continue;

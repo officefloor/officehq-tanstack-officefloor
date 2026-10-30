@@ -65,7 +65,8 @@ public class Settings {
         jdbc.query("SELECT setting_key, from_date, setting_value FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key, from_date",
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> {
                     BigDecimal value = rs.getBigDecimal(3);
-                    String shown = value == null ? "" : rs.getString(1).startsWith("terms") || rs.getString(1).startsWith(ValidateSetting.GRADE_GRACE)
+                    String shown = value == null ? "" : ValidateSetting.ROUNDING.equals(rs.getString(1)) ? net.officefloor.hq.app.claim.Rounding.name(value)
+                            : rs.getString(1).startsWith("terms") || rs.getString(1).startsWith(ValidateSetting.GRADE_GRACE)
                             ? String.valueOf(value.intValue()) : value.setScale(2).toPlainString();
                     all.computeIfAbsent(rs.getString(1), k -> new java.util.ArrayList<>())
                             .add(new DatedValue(rs.getDate(2).toLocalDate().toString(), shown));
@@ -107,6 +108,12 @@ public class Settings {
     /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+    }
+
+    /** The sheet's rounding mode in force on a date (a claim's: its rounding date); null for none (it rounds by the policy date). */
+    public java.math.RoundingMode roundingMode(String sheetId, LocalDate on) {
+        InForce found = on(sheetId, ValidateSetting.ROUNDING, on);
+        return found == null ? null : net.officefloor.hq.app.claim.Rounding.mode(found.value());
     }
 
     /** The sheet's floor in force on a date (a claim's: its date): a claim's live due is at least it. */
@@ -367,6 +374,7 @@ public class Settings {
         BigDecimal cap = cap(sheetId);
         BigDecimal threshold = proofThreshold(sheetId, today);
         BigDecimal noteThreshold = noteThreshold(sheetId, today);
+        InForce rounding = on(sheetId, ValidateSetting.ROUNDING, today);
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         Integer grace = graceDays(sheetId);
@@ -400,6 +408,6 @@ public class Settings {
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
                 noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString(),
                 parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)),
-                alert == null ? "" : alert.toPlainString());
+                alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()));
     }
 }

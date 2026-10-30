@@ -70,7 +70,7 @@ public class PeriodCloser {
                         || claim.getPeriodDate().isBefore(from) || claim.getPeriodDate().isAfter(to)) {
                     continue;
                 }
-                RoundingMode rounding = Rounding.of(claim, policyDate);
+                RoundingMode rounding = Rounding.of(claim, policyDate, on -> settings.roundingMode(sheetId, on));
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 BigDecimal figure = fixed != null || claim.isBound() ? fixed
                         : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), rounding);

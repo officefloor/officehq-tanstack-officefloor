@@ -7,7 +7,8 @@ import java.time.LocalDate;
  *  (a clerk limit or cap of null: none); a policy date or period numbering from has its date in date (null: blank) and no value.
  *  A dated setting's from is the date its value is in force from (null: none given, the sheet's today).
  *  A permission (perm-<action>) has its roles, comma separated ("" for the standing rule), and no value.
- *  The parent has the parent sheet id in text (null: none) and no value. */
+ *  The parent has the parent sheet id in text (null: none) and no value.
+ *  The rounding mode has its stored code in value (1: half up, 2: half to even; null: none) and its name in text ("": none). */
 public record ValidSetting(String key, BigDecimal value, String user, LocalDate date, LocalDate from, String roles, String text) {
 
     public ValidSetting(String key, BigDecimal value, String user, LocalDate date, LocalDate from, String roles) {

@@ -29,7 +29,7 @@ public class ApplyClaimStatus {
     static ClaimNumber change(ValidClaimStatus request, Claim claim, Sheets sheets, People people,
             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log)
             throws ClaimStatusRefusedException {
-        RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()));
+        RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()), on -> settings.roundingMode(claim.getSheetId(), on));
         if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
             throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can change status");
         }

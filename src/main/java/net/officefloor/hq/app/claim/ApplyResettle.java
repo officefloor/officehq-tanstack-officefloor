@@ -29,7 +29,7 @@ public class ApplyResettle {
         if (periods.isClosed(sheetId, claim.getPeriodDate())) {
             throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can be re-settled");
         }
-        RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId));
+        RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on));
         String grade = people.find(sheetId, claim.getPersonId()).gradeOn(claim.getDate());
         BigDecimal figure = Rates.due(claim.getAmount(), rates.find(sheetId, grade, claim.getDate()), rounding);
         BigDecimal due = figure == null ? null

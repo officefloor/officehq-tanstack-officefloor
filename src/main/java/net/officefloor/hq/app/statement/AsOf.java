@@ -31,10 +31,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class AsOf {
 
-    /** A person and their claims, with the date standing for the sheet's today and the figures in force then. */
+    /** A person and their claims, with the date standing for the sheet's today and the figures in force then
+     *  (the rounding mode in force on a date: null for none). */
     public record View(LocalDate today, LocalDate policyDate, BigDecimal cap, Person person, List<Claim> claims,
             BiFunction<String, LocalDate, BigDecimal> rate, Function<LocalDate, BigDecimal> floor,
-            Function<LocalDate, BigDecimal> latePct) {
+            Function<LocalDate, BigDecimal> latePct, Function<LocalDate, java.math.RoundingMode> rounding) {
     }
 
     private record RateRow(BigDecimal rate, LocalDate from, LocalDate to) {
@@ -59,7 +60,7 @@ public class AsOf {
         String sheetId = person.getSheetId();
         return new View(sheets.today(sheetId), settings.policyDate(sheetId), settings.cap(sheetId), person,
                 claims.ofPerson(sheetId, person.getId()), (grade, on) -> rates.find(sheetId, grade, on),
-                on -> settings.floor(sheetId, on), on -> settings.latePct(sheetId, on));
+                on -> settings.floor(sheetId, on), on -> settings.latePct(sheetId, on), on -> settings.roundingMode(sheetId, on));
     }
 
     /** The person and the claims that were theirs as they stood at the end of the date. */
@@ -108,7 +109,8 @@ public class AsOf {
         LocalDate policy = policies.isEmpty() || policies.get(policies.size() - 1) == null ? date
                 : policies.get(policies.size() - 1);
 
-        return new View(date, policy, cap, personAt(person, end), claimsAt(person, end), rate, floor, latePct);
+        return new View(date, policy, cap, personAt(person, end), claimsAt(person, end), rate, floor, latePct,
+                on -> net.officefloor.hq.app.claim.Rounding.mode(setting.apply(ValidateSetting.ROUNDING, on)));
     }
 
     /** A sheet's own rates as set by the end of a date: for a grade and a date, the latest set for the latest from-date on or

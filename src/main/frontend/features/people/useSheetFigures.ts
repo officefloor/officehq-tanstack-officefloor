@@ -3,7 +3,7 @@ import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+import { useCap, useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
 
@@ -20,7 +20,7 @@ export function useSheetFigures(sheet: string) {
   const floor = useFloor(sheet);
   const grace = useGrace(sheet);
   const late = { pct: useLatePct(sheet), today, grace };
-  const policy = usePolicyDate(sheet);
+  const policy = usePolicy(sheet);
   const cap = useCap(sheet);
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {

@@ -108,7 +108,7 @@ public class Rollup {
      *  raised to the floor in force on its date. */
     private BigDecimal due(Claim claim, Person person, LocalDate today, LocalDate policyDate) {
         String sheetId = claim.getSheetId();
-        RoundingMode rounding = Rounding.of(claim, policyDate);
+        RoundingMode rounding = Rounding.of(claim, policyDate, on -> settings.roundingMode(sheetId, on));
         BigDecimal fixed = ClaimResponse.fixedDue(claim);
         BigDecimal figure = fixed != null || claim.isBound() ? fixed
                 : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate()), rounding);
