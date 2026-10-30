@@ -20,7 +20,7 @@ import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { gradeOn } from './usePeople';
+import { gradeOn, patronShares, sharedCents } from './usePeople';
 import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { usePeriods } from '../periods/usePeriods';
 import { useSheetFigures } from './useSheetFigures';
@@ -34,7 +34,7 @@ import { useSheetFigures } from './useSheetFigures';
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
 // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
-// aliases (sorted as names are compared, comma and space separated), patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
+// aliases (sorted as names are compared, comma and space separated), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
 // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
@@ -44,6 +44,10 @@ import { useSheetFigures } from './useSheetFigures';
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
 // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
+// Names sorted without regard to case, then by case (as the server sorts them).
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const BY_NAME = (a: string, b: string) => cmp(a.toLowerCase(), b.toLowerCase()) || cmp(a, b);
+
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -55,10 +59,19 @@ export function PeopleList() {
   const periodDueOf = usePersonPeriodDueTotal(sheet);
   const listed = showRetired ? people : people.filter((p) => !p.retired);
   const backing = (p: (typeof people)[number]) =>
-    formatCents(p.patronIds.reduce((sum, id) => {
+    formatCents(sharedCents(patronShares(p).reduce((sum, { id, share }) => {
       const patron = byId.get(id);
-      return patron ? sum + recentSettledOf(patron) : sum;
-    }, 0n));
+      return patron ? sum + recentSettledOf(patron) * share : sum;
+    }, 0n)));
+  const patronsOf = (p: (typeof people)[number]) =>
+    patronShares(p)
+      .flatMap(({ id, share }) => {
+        const patron = byId.get(id);
+        return patron ? [{ name: patron.name, share }] : [];
+      })
+      .sort((a, b) => BY_NAME(a.name, b.name))
+      .map(({ name, share }) => `${name} ${formatCents(share)}`)
+      .join(', ');
 
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   return (
@@ -147,7 +160,7 @@ export function PeopleList() {
                     {formatCents(periodDueOf(period, p.id))}
                   </td>
                 ))}
-                <td data-testid="person-patrons">{p.patrons.join(', ')}</td>
+                <td data-testid="person-patrons">{patronsOf(p)}</td>
                 <td data-testid="person-backing">{backing(p)}</td>
                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
                 <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>

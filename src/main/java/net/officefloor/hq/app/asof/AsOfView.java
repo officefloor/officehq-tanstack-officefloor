@@ -86,6 +86,11 @@ public class AsOfView {
         for (Person now : people.list(sheetId)) {
             if (now.getAddedOn() == null || !now.getAddedOn().isAfter(date)) found.add(now);
         }
+        // Those merged away since still stood on the sheet.
+        for (Person merged : people.mergedAfter(sheetId, date)) {
+            if (merged.getAddedOn() == null || !merged.getAddedOn().isAfter(date)) found.add(merged);
+        }
+        found.sort(Comparator.comparingLong(Person::getId));
         Map<Long, Person> byId = new LinkedHashMap<>();
         for (Person now : found) {
             Person then = new Person(now.getId(), sheetId, now.getName(), now.getGrades().get(now.getGrades().firstKey()),

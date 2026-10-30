@@ -220,7 +220,15 @@ public class People {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
+                sheetId, sheetId, fromId);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, fromId);
+    }
+
+    /** The people merged away after the date, as they stood when merged, in the order they were added. */
+    public List<Person> mergedAfter(String sheetId, java.time.LocalDate date) {
+        return jdbc.query("SELECT * FROM person_merged WHERE sheet_id = ? AND merged_on > ? ORDER BY id", ROW, sheetId,
+                java.sql.Date.valueOf(date));
     }
 
     public Person find(String sheetId, long id) {

@@ -74,3 +74,27 @@ export function usePeople(sheet: string): Person[] {
   });
   return data ?? [];
 }
+
+/** A quotient of integers rounded half to even. */
+function divHalfEven(n: bigint, d: bigint): bigint {
+  const negative = n < 0n !== d < 0n;
+  const a = n < 0n ? -n : n;
+  const b = d < 0n ? -d : d;
+  const whole = a / b;
+  const twice = (a % b) * 2n;
+  const rounded = twice > b || (twice === b && whole % 2n === 1n) ? whole + 1n : whole;
+  return negative ? -rounded : rounded;
+}
+
+/** The person's patrons with their shares in hundredths ("33.33" -> 3333n), in the order named:
+ *  100.00 split equally, each share rounded half to even to two decimals, the remainder to the
+ *  first-named. */
+export function patronShares(person: Person): { id: string; share: bigint }[] {
+  const n = BigInt(person.patronIds.length);
+  if (n === 0n) return [];
+  const each = divHalfEven(10000n, n);
+  return person.patronIds.map((id, i) => ({ id, share: i === 0 ? 10000n - each * (n - 1n) : each }));
+}
+
+/** A sum of cents times shares in hundredths of a percent (cents * 10000ths), back to cents, half to even. */
+export const sharedCents = (cents: bigint) => divHalfEven(cents, 10000n);
