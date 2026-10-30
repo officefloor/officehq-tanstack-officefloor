@@ -7,17 +7,22 @@ import { rateOn, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
 import { QuickAdd } from './QuickAdd';
+import { RetireControl } from './RetireControl';
+import { ShowRetired, useShowRetired } from './ShowRetired';
 import { usePeople } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade, claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
 // sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
-// their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
-// sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
+// whether they are retired and from when, their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+// sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a). Retired
+// people have no row unless "show retired" is on, but their claims keep counting in every total.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const people = usePeople(sheet);
+  const [showRetired] = useShowRetired();
+  const listed = showRetired ? people : people.filter((p) => !p.retired);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
@@ -31,6 +36,7 @@ export function PeopleList() {
   return (
     <>
       <QuickAdd />
+      <ShowRetired />
       <table data-testid="people">
         <thead>
           <tr>
@@ -39,6 +45,8 @@ export function PeopleList() {
             <th>Claimed</th>
             <th>Due</th>
             <th />
+            <th>Retired</th>
+            <th>Retired from</th>
             <th>Statements</th>
             <th>Last stated</th>
             <th>Stated on</th>
@@ -46,7 +54,7 @@ export function PeopleList() {
           </tr>
         </thead>
         <tbody>
-          {people.map((p) => {
+          {listed.map((p) => {
             const own = claims.filter((c) => c.personId === p.id);
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
@@ -58,8 +66,11 @@ export function PeopleList() {
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                     Edit
                   </button>{' '}
-                  <StatementButton personId={p.id} />
+                  <StatementButton personId={p.id} />{' '}
+                  <RetireControl personId={p.id} />
                 </td>
+                <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>
+                <td data-testid="person-retired-from">{p.retiredFrom}</td>
                 <td data-testid="person-statement-count">{p.statementCount}</td>
                 <td data-testid="person-stated-total">{p.statedTotal}</td>
                 <td data-testid="person-statement-date">{p.statementDate}</td>

@@ -20,6 +20,9 @@ public class SaveClaimCreated {
         if (periods.isClosed(sheetId, date)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }
+        if (!person.allowsClaimOn(date)) {
+            throw new InvalidClaimException("No claim can be dated after the person's retirement date");
+        }
         Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), before);

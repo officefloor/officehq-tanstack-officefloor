@@ -19,6 +19,8 @@ public class People {
         person.setStatedTotal(rs.getBigDecimal("stated_total"));
         java.sql.Date stated = rs.getDate("statement_date");
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
+        java.sql.Date retired = rs.getDate("retired_from");
+        person.setRetiredFrom(retired == null ? null : retired.toLocalDate());
         return person;
     };
 
@@ -73,6 +75,14 @@ public class People {
         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE sheet_id = ? AND id = ?",
                 person.getStatementCount(), person.getStatedTotal(),
                 person.getStatementDate() == null ? null : java.sql.Date.valueOf(person.getStatementDate()),
+                person.getSheetId(), person.getId());
+    }
+
+    /** Records the person's retirement date. The person's version is left as it is — retiring is
+     *  not an edit of the person form. */
+    public void saveRetired(Person person) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
+                person.getRetiredFrom() == null ? null : java.sql.Date.valueOf(person.getRetiredFrom()),
                 person.getSheetId(), person.getId());
     }
 

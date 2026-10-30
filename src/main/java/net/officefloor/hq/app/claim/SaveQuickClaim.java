@@ -32,6 +32,9 @@ public class SaveQuickClaim {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }
         Person person = people.findByName(sheetId, request.name());
+        if (person != null && !person.allowsClaimOn(date)) {
+            throw new InvalidClaimException("No claim can be dated after the person's retirement date");
+        }
         RollupFigures beforeClaim = before;
         if (person == null) {
             person = people.add(sheetId, request.name(), GRADE);
