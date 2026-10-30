@@ -171,5 +171,10 @@ public class Person {
     private LocalDate addedOn;
     public LocalDate getAddedOn() { return addedOn; }
     public void setAddedOn(LocalDate addedOn) { this.addedOn = addedOn; }
+
+    /** The person's place in the sheet's list: people are listed by place, lowest first. */
+    private long place;
+    public long getPlace() { return place; }
+    public void setPlace(long place) { this.place = place; }
     public void setVersion(int version) { this.version = version; }
 }

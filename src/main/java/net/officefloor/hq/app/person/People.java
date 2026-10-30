@@ -26,6 +26,8 @@ public class People {
         person.setRetiredFrom(retired == null ? null : retired.toLocalDate());
         java.sql.Date added = rs.getDate("added_on");
         person.setAddedOn(added == null ? null : added.toLocalDate());
+        long place = rs.getLong("place");
+        person.setPlace(rs.wasNull() ? person.getId() : place);
         return person;
     };
 
@@ -105,9 +107,31 @@ public class People {
                 person.getSheetId(), person.getId(), person.getSheetId(), person.getName(), person.getTerms(), person.getContact());
     }
 
-    /** The sheet's people in the order they were added. */
+    /** The sheet's people in list order: by their place. */
     public List<Person> list(String sheetId) {
-        return withClashing(sheetId, withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId)))));
+        return withClashing(sheetId, withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY place, id", ROW, sheetId)))));
+    }
+
+    /** Swaps the person's place with their neighbour's, above (up) or below; returns the person's new position in
+     *  the list counting from 1, or 0 (nothing written) when they have no neighbour that way. */
+    public int move(Person person, boolean up) {
+        List<long[]> places = jdbc.query("SELECT id, place FROM person WHERE sheet_id = ? ORDER BY place, id",
+                (rs, i) -> new long[] { rs.getLong(1), rs.getLong(2) }, person.getSheetId());
+        int at = -1;
+        for (int i = 0; i < places.size(); i++) {
+            if (places.get(i)[0] == person.getId()) {
+                at = i;
+            }
+        }
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= places.size()) {
+            return 0;
+        }
+        long[] mine = places.get(at);
+        long[] theirs = places.get(to);
+        jdbc.update("UPDATE person SET place = ? WHERE sheet_id = ? AND id = ?", theirs[1], person.getSheetId(), mine[0]);
+        jdbc.update("UPDATE person SET place = ? WHERE sheet_id = ? AND id = ?", mine[1], person.getSheetId(), theirs[0]);
+        return to + 1;
     }
 
     /** A name as names are compared: without regard to case or outer spaces. */
@@ -413,6 +437,9 @@ public class People {
             return ps;
         }, keys);
         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
+        // A new person goes to the end of the list.
+        jdbc.update("UPDATE person SET place = id WHERE id = ?", person.getId());
+        person.setPlace(person.getId());
         person.setTerms(terms);
         person.setContact(contact);
         writeHistory(person);

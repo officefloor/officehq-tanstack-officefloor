@@ -80,7 +80,7 @@ public class AsOfView {
         return new TodayResponse(sheetId, date.toString(), archived);
     }
 
-    /** The people on the sheet by the end of the date, each as they stood then, in the order they were added. */
+    /** The people on the sheet by the end of the date, each as they stood then, in list order (by place). */
     public List<PersonResponse> people(String sheetId, LocalDate date) {
         Date end = Date.valueOf(date);
         List<Person> found = new ArrayList<>();
@@ -91,7 +91,7 @@ public class AsOfView {
         for (Person merged : people.mergedAfter(sheetId, date)) {
             if (merged.getAddedOn() == null || !merged.getAddedOn().isAfter(date)) found.add(merged);
         }
-        found.sort(Comparator.comparingLong(Person::getId));
+        found.sort(Comparator.comparingLong(Person::getPlace).thenComparingLong(Person::getId));
         Map<Long, Person> byId = new LinkedHashMap<>();
         for (Person now : found) {
             Person then = new Person(now.getId(), sheetId, now.getName(), now.getGrades().get(now.getGrades().firstKey()),

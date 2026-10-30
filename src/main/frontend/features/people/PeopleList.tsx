@@ -13,6 +13,7 @@ import { openedEditor } from './editorOpens';
 import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
 import { MergeControl } from './MergeControl';
+import { MoveControl } from './MoveControl';
 import { PasteClaims } from './PasteClaims';
 import { ImportPeople } from './ImportPeople';
 import { PatronControl } from './PatronControl';
@@ -177,6 +178,7 @@ export function PeopleList() {
                   }}>
                     Edit
                   </button>{' '}
+                  <MoveControl personId={p.id} />{' '}
                   <StatementButton personId={p.id} />{' '}
                   <UnstateButton personId={p.id} />{' '}
                   <RetireControl personId={p.id} />{' '}
