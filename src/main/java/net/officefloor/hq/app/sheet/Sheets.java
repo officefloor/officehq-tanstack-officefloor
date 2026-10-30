@@ -60,6 +60,22 @@ public class Sheets {
         return jdbc.queryForObject("SELECT last_settle_batch FROM sheet WHERE id = ?", Integer.class, sheetId);
     }
 
+    /** Whether the sheet exists: it has been loaded. */
+    public boolean exists(String sheetId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, sheetId) > 0;
+    }
+
+    /** The sheet's parent sheet id; null when none. */
+    public String parent(String sheetId) {
+        List<String> found = jdbc.query("SELECT parent FROM sheet WHERE id = ?", (rs, i) -> rs.getString(1), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setParent(String sheetId, String parent) {
+        today(sheetId);
+        jdbc.update("UPDATE sheet SET parent = ? WHERE id = ?", parent, sheetId);
+    }
+
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }

@@ -68,21 +68,18 @@ public class AsOf {
         Date end = Date.valueOf(date);
         String upTo = " AND (set_on IS NULL OR set_on <= ?) ORDER BY seq";
 
-        // The rates: the latest set for each grade and from-date.
-        Map<String, Map<LocalDate, RateRow>> rateRows = new HashMap<>();
-        jdbc.query("SELECT grade, rate, from_date, to_date FROM rate_history WHERE sheet_id = ?" + upTo,
-                (RowCallbackHandler) rs -> {
-                    LocalDate from = local(rs.getDate("from_date"));
-                    rateRows.computeIfAbsent(rs.getString("grade").trim(), g -> new HashMap<>())
-                            .put(from == null ? LocalDate.MIN : from,
-                                    new RateRow(rs.getBigDecimal("rate"), from, local(rs.getDate("to_date"))));
-                }, sheetId, end);
+        // The rates: the sheet's own, then (for a grade it has none in force for) its ancestors', each as set by the end of the date.
+        List<BiFunction<String, LocalDate, BigDecimal>> levels = new ArrayList<>();
+        levels.add(ratesAt(sheetId, end));
+        for (String ancestor : rates.ancestors(sheetId)) {
+            levels.add(ratesAt(ancestor, end));
+        }
         BiFunction<String, LocalDate, BigDecimal> rate = (grade, on) -> {
-            TreeMap<LocalDate, RateRow> byFrom = new TreeMap<>(rateRows.getOrDefault(grade, Map.of()));
-            Map.Entry<LocalDate, RateRow> found = byFrom.floorEntry(on);
-            if (found == null) return null;
-            RateRow row = found.getValue();
-            return row.to() != null && row.to().isBefore(on) ? null : row.rate();
+            for (BiFunction<String, LocalDate, BigDecimal> level : levels) {
+                BigDecimal found = level.apply(grade, on);
+                if (found != null) return found;
+            }
+            return null;
         };
 
         // The dated settings: the latest recorded for each key and from-date (a null value: none from then).
@@ -112,6 +109,26 @@ public class AsOf {
                 : policies.get(policies.size() - 1);
 
         return new View(date, policy, cap, personAt(person, end), claimsAt(person, end), rate, floor, latePct);
+    }
+
+    /** A sheet's own rates as set by the end of a date: for a grade and a date, the latest set for the latest from-date on or
+     *  before it; null when none applies, or when that one's to-date is before the date. */
+    private BiFunction<String, LocalDate, BigDecimal> ratesAt(String sheetId, Date end) {
+        Map<String, Map<LocalDate, RateRow>> rateRows = new HashMap<>();
+        jdbc.query("SELECT grade, rate, from_date, to_date FROM rate_history WHERE sheet_id = ? AND (set_on IS NULL OR set_on <= ?) ORDER BY seq",
+                (RowCallbackHandler) rs -> {
+                    LocalDate from = local(rs.getDate("from_date"));
+                    rateRows.computeIfAbsent(rs.getString("grade").trim(), g -> new HashMap<>())
+                            .put(from == null ? LocalDate.MIN : from,
+                                    new RateRow(rs.getBigDecimal("rate"), from, local(rs.getDate("to_date"))));
+                }, sheetId, end);
+        return (grade, on) -> {
+            TreeMap<LocalDate, RateRow> byFrom = new TreeMap<>(rateRows.getOrDefault(grade, Map.of()));
+            Map.Entry<LocalDate, RateRow> found = byFrom.floorEntry(on);
+            if (found == null) return null;
+            RateRow row = found.getValue();
+            return row.to() != null && row.to().isBefore(on) ? null : row.rate();
+        };
     }
 
     /** The person with the grades, holds and retirement recorded by the end of the date. */

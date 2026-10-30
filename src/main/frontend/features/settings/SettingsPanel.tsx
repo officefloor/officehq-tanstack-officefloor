@@ -29,7 +29,9 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // every open period whose to-date plus them is before the new today is closed. The entry date (not dated; a date; blank: off;
 // saved like the cap): while set, it is the default date of a new claim (the claim form, the quick-add bar, a pasted line
 // with a blank date, a correction) in place of the sheet's today. The pot (not dated; two decimals; blank: none; saved like
-// the cap): each member of a balanced pool shows their cut of it.
+// the cap): each member of a balanced pool shows their cut of it. The parent (not dated; a sheet id; blank: none; saved like
+// the cap): a grade with no rate in force on a date on this sheet takes the parent's, then the parent's parent's, up to three
+// levels up. The sheet itself, a sheet that has this sheet as an ancestor, or a sheet never loaded is refused.
 // A steward delegates the steward role to a user for a from-date and a to-date, inclusive (blank: the sheet's today): while the
 // sheet's today is inside them the user acts as a steward in every rule. Anyone but a steward (by the role set), or a to-date
 // before the from-date, is refused.
@@ -83,6 +85,14 @@ export function SettingsPanel() {
   // The pot (not dated); likewise may be saved blank (none).
   const [pot, setPot] = useState('');
   const potChosen = useRef(false);
+  // The parent sheet (not dated); likewise may be saved blank (none).
+  const [parent, setParent] = useState('');
+  const parentChosen = useRef(false);
+  // Entering the parent marks it as the one to save, as it is.
+  const focusParent = () => {
+    unchoosePolicy();
+    parentChosen.current = true;
+  };
   // Entering the pot marks it as the one to save, as it is.
   const focusPot = () => {
     unchoosePolicy();
@@ -119,6 +129,7 @@ export function SettingsPanel() {
       if (a !== except && (perms[a] ?? '').trim() === '') permsChosen.current.delete(a);
     }
     if (pot.trim() === '') potChosen.current = false;
+    if (parent.trim() === '') parentChosen.current = false;
     unchooseGradeGrace();
   };
   // Entering another field leaves a blank grade's grace days as they are.
@@ -254,6 +265,11 @@ export function SettingsPanel() {
         potChosen.current = false;
         queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       }
+      else if (body.key === 'parent') {
+        setParent('');
+        parentChosen.current = false;
+        queryClient.invalidateQueries({ queryKey: ['sheet', sheet, 'inherited-rates'] });
+      }
       else if (body.key === 'entry-date') {
         setEntryDate('');
         entryChosen.current = false;
@@ -313,12 +329,13 @@ export function SettingsPanel() {
             const graced = graceDays.trim() !== '' || graceChosen.current;
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const potted = pot.trim() !== '' || potChosen.current;
+            const parented = parent.trim() !== '' || parentChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || graced || entered || potted || permitted.length > 0) {
+                || noted || graced || entered || potted || parented || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -335,6 +352,7 @@ export function SettingsPanel() {
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
                 ...(potted ? [{ key: 'pot', value: pot.trim() }] : []),
+                ...(parented ? [{ key: 'parent', value: parent.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -565,6 +583,18 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Parent sheet: <span data-testid="setting-parent-current">{settings?.parent ?? ''}</span>{' '}
+        <input
+          data-testid="setting-parent"
+          value={parent}
+          placeholder="Parent sheet id (blank: none)"
+          onFocus={focusParent}
+          onChange={(e) => {
+            setParent(e.target.value);
+            parentChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
             May {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.perms?.[a] ?? ''}</span>{' '}
@@ -583,7 +613,7 @@ export function SettingsPanel() {
           </span>
         ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

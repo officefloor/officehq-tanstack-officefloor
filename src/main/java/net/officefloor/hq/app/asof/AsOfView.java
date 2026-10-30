@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map;
 import java.util.TreeMap;
 import net.officefloor.hq.app.claim.Claim;
@@ -332,7 +333,8 @@ public class AsOfView {
                 cap == null ? "" : cap.setScale(2).toPlainString(), datedShown,
                 threshold == null ? "" : threshold.setScale(2).toPlainString(), perms, plain.getOrDefault(Settings.GRACE, ""),
                 delegations, noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(),
-                plain.getOrDefault(Settings.ENTRY, ""), plain.getOrDefault(Settings.POT, ""));
+                plain.getOrDefault(Settings.ENTRY, ""), plain.getOrDefault(Settings.POT, ""),
+                Objects.toString(sheets.parent(sheetId), "")); // the parent is not dated: as it is now
     }
 
     private static LocalDate local(Date date) {

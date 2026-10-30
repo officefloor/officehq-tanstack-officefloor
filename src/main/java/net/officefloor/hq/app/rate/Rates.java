@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -14,8 +15,11 @@ public class Rates {
 
     private final JdbcTemplate jdbc;
 
-    public Rates(JdbcTemplate jdbc) {
+    private final Sheets sheets;
+
+    public Rates(JdbcTemplate jdbc, Sheets sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     /** The sheet's rates, by grade then from-date (from the beginning of time first). */
@@ -30,9 +34,45 @@ public class Rates {
                 sheetId);
     }
 
-    /** The rate for a grade on the sheet in force on a date: the one with the latest from-date on or
-     *  before it; null when none applies, or when that one's to-date is before the date. */
+    /** How many levels up a sheet's parents are asked for a rate the sheet has not. */
+    public static final int ANCESTOR_LEVELS = 3;
+
+    /** The sheet's ancestors asked for a rate it has not: its parent, then the parent's parent, up to
+     *  {@link #ANCESTOR_LEVELS} levels up. */
+    public List<String> ancestors(String sheetId) {
+        List<String> chain = new java.util.ArrayList<>();
+        String at = sheets.parent(sheetId);
+        while (at != null && chain.size() < ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
+            chain.add(at);
+            at = sheets.parent(at);
+        }
+        return chain;
+    }
+
+    /** The rates of the sheet's ancestors (see {@link #ancestors(String)}), nearest first. */
+    public List<List<RateResponse>> inherited(String sheetId) {
+        return ancestors(sheetId).stream().map(this::list).toList();
+    }
+
+    /** The rate for a grade on the sheet in force on a date (see {@link #findOwn}); when the sheet has
+     *  none, its parent's, then the parent's parent's, up to {@link #ANCESTOR_LEVELS} levels up; null when none has one. */
     public BigDecimal find(String sheetId, String grade, LocalDate date) {
+        BigDecimal own = findOwn(sheetId, grade, date);
+        if (own != null) {
+            return own;
+        }
+        for (String ancestor : ancestors(sheetId)) {
+            BigDecimal rate = findOwn(ancestor, grade, date);
+            if (rate != null) {
+                return rate;
+            }
+        }
+        return null;
+    }
+
+    /** The rate for a grade set on the sheet itself in force on a date: the one with the latest from-date on or
+     *  before it; null when none applies, or when that one's to-date is before the date. */
+    public BigDecimal findOwn(String sheetId, String grade, LocalDate date) {
         Date on = Date.valueOf(date);
         List<BigDecimal> found = jdbc.query("SELECT rate, to_date FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1",

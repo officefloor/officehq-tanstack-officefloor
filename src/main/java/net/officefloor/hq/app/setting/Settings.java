@@ -232,6 +232,16 @@ public class Settings {
         plainHistory(sheetId, POT, pot == null ? "" : pot.setScale(2).toPlainString());
     }
 
+    /** The sheet's parent sheet id; null when none. */
+    public String parent(String sheetId) {
+        return sheets.parent(sheetId);
+    }
+
+    public void setParent(String sheetId, String parent) {
+        sheets.setParent(sheetId, parent);
+        plainHistory(sheetId, PARENT, parent == null ? "" : parent);
+    }
+
     /** The role the user name acts in on the sheet: a steward while a delegation to them covers the sheet's today,
      *  else the role set for them. */
     public String role(String sheetId, String user) {
@@ -295,7 +305,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -336,6 +346,7 @@ public class Settings {
         Integer grace = graceDays(sheetId);
         LocalDate entry = entryDate(sheetId);
         BigDecimal pot = pot(sheetId);
+        String parent = parent(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
@@ -360,6 +371,7 @@ public class Settings {
                         "SELECT user_name, from_date, to_date, delegated_by FROM sheet_delegation WHERE sheet_id = ? ORDER BY seq",
                         (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
-                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString());
+                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString(),
+                parent == null ? "" : parent);
     }
 }

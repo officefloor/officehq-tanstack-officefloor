@@ -3,15 +3,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { useSettings } from '../settings/useSettings';
 import { sheetTodayKey, useSheetArchived, useSheetToday, type SheetToday as SheetTodayDto } from './useSheetToday';
 
 // Shows the active sheet's today and changes it. A blank date resets it to the real date.
-// Also shows whether the sheet is archived, and archives it (a steward only).
+// Also shows whether the sheet is archived, and archives it (a steward only), and its parent sheet (nothing when none).
 export function SheetToday() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const today = useSheetToday(sheet);
   const archived = useSheetArchived(sheet);
+  const settings = useSettings(sheet);
   const [date, setDate] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
@@ -52,6 +54,7 @@ export function SheetToday() {
         }}
       />
       <button type="submit" data-testid="sheet-today-save">Set today</button>
+      {' '}Parent: <span data-testid="sheet-parent">{settings?.parent ?? ''}</span>
       {' '}Archived: <span data-testid="sheet-archived">{archived === undefined ? '' : archived ? 'yes' : 'no'}</span>{' '}
       <button
         type="button"

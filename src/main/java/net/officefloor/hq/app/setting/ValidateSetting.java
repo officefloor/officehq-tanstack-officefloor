@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,6 +52,9 @@ public class ValidateSetting {
     /** Not dated: each member of a balanced pool shows their cut of it; blank: none. */
     public static final String POT = "pot";
 
+    /** Not dated: the parent sheet, whose rates (then its parent's, up to three levels up) a grade with none in force here takes; blank: none. */
+    public static final String PARENT = "parent";
+
     /** An action's permission: perm-<action>, the roles that may take it. */
     public static final String PERM = "perm-";
 
@@ -65,12 +69,12 @@ public class ValidateSetting {
     /** An amount: 0 or more, with at most two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
 
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<ValidSetting> body, Settings settings)
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<ValidSetting> body, Settings settings, Sheets sheets)
             throws InvalidSettingException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !POT.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !POT.equals(key) && !PARENT.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
@@ -102,6 +106,26 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank for off");
             }
             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
+            return;
+        }
+        if (PARENT.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
+                return;
+            }
+            if (raw.equals(sheetId)) {
+                throw new InvalidSettingException("A sheet cannot be its own parent");
+            }
+            if (!sheets.exists(raw)) {
+                throw new InvalidSettingException("The parent must be a sheet that has been loaded");
+            }
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (String at = raw; at != null && seen.add(at); at = sheets.parent(at)) {
+                if (at.equals(sheetId)) {
+                    throw new InvalidSettingException("The parent cannot be a sheet that has this sheet as an ancestor");
+                }
+            }
+            body.set(new ValidSetting(key, null, request.user(), null, null, null, raw));
             return;
         }
         if (POT.equals(key)) {
