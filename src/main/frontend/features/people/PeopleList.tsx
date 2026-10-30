@@ -1,14 +1,15 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
 import { ClaimList } from '../claims/ClaimList';
-import { sumAmounts, useClaims } from '../claims/useClaims';
-import { dueCents, formatCents, showDue, toCents } from '../rates/due';
+import { counts, sumAmounts, useClaims } from '../claims/useClaims';
+import { dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { usePeople } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade, claimed (the
-// sum of their OPEN and SETTLED claims), due-total (claimed at their grade's rate in force on the sheet's today) and their claims; then the
+// sum of their OPEN and SETTLED claims), due-total (the
+// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled claim keeps a figure) and their claims; then the
 // sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
@@ -18,6 +19,12 @@ export function PeopleList() {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const onSheet = new Set(people.map((p) => p.id));
+  const totalOf = (personId: string, grade: string) =>
+    dueTotal(
+      claims.filter((c) => c.personId === personId && counts(c)),
+      (date) => rateOn(rates, grade, date),
+      rateOn(rates, grade, today),
+    );
   return (
     <>
       <table data-testid="people">
@@ -34,13 +41,12 @@ export function PeopleList() {
         <tbody>
           {people.map((p) => {
             const own = claims.filter((c) => c.personId === p.id);
-            const rate = rateOn(rates, p.grade, today);
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{p.grade}</td>
                 <td data-testid="person-claimed">{sumAmounts(own)}</td>
-                <td data-testid="person-due-total">{showDue(dueCents(toCents(sumAmounts(own)), rate))}</td>
+                <td data-testid="person-due-total">{showDue(totalOf(p.id, p.grade))}</td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                     Edit
@@ -60,7 +66,7 @@ export function PeopleList() {
       </p>
       <p>
         Due total: <span data-testid="rollup-due-total">{formatCents(people.reduce((sum, p) => {
-          const due = dueCents(toCents(sumAmounts(claims.filter((c) => c.personId === p.id))), rateOn(rates, p.grade, today));
+          const due = totalOf(p.id, p.grade);
           return due === null ? sum : sum + due;
         }, 0n))}</span>
       </p>

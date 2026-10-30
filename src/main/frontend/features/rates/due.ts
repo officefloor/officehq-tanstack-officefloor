@@ -1,5 +1,5 @@
 // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
-// due in millionths, then rounded half up (away from zero) to cents. No float ever touches it.
+// due in millionths, then rounded half to even to cents. No float ever touches it.
 
 export const NA = 'n/a';
 
@@ -25,7 +25,9 @@ export function dueCents(cents: bigint, rate: string | undefined): bigint | null
   const millionths = cents * toCents(rate);
   const negative = millionths < 0n;
   const abs = negative ? -millionths : millionths;
-  const rounded = (abs + 5000n) / 10000n;
+  const whole = abs / 10000n;
+  const rest = abs % 10000n;
+  const rounded = rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
   return negative ? -rounded : rounded;
 }
 
@@ -37,4 +39,16 @@ export function showDue(due: bigint | null): string {
 /** A claim's due: the one fixed when it was settled, else its amount at the current rate. */
 export function claimDue(claim: { amount: string; due: string }, rate: string | undefined): bigint | null {
   return claim.due !== '' ? toCents(claim.due) : dueCents(toCents(claim.amount), rate);
+}
+
+/** A person's due-total: the sum of the figures of their claims that count. With no rate for their
+ *  grade today it is n/a, unless a settled claim keeps a figure; then it is the sum of the figures
+ *  there are. A claim whose figure is n/a adds nothing. */
+export function dueTotal(
+  claims: { amount: string; due: string; date: string }[],
+  rateOn: (date: string) => string | undefined,
+  rateToday: string | undefined,
+): bigint | null {
+  if (rateToday === undefined && !claims.some((c) => c.due !== '')) return null;
+  return claims.reduce((sum, c) => sum + (claimDue(c, rateOn(c.date)) ?? 0n), 0n);
 }

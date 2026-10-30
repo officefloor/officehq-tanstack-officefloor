@@ -38,9 +38,9 @@ public class Rates {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The due on an amount at a rate (a percent), rounded half up to cents; null when there is no rate. */
+    /** The due on an amount at a rate (a percent), rounded half to even to cents; null when there is no rate. */
     public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
-        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 
     /** Set the grade's rate from a date (null: from the beginning of time), replacing one already there. */
