@@ -13,7 +13,7 @@ import { ratesQuery } from '../rates/ratesQuery';
 import { fiscalYear, useFiscalStartMonth, useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodCarried, personPeriodDue } from './periodsQuery';
+import { periodClaimsCount, periodDue, periodOf, periodsKey, periodsQuery, personPeriodCarried, personPeriodDue } from './periodsQuery';
 import type { Period } from './periodsQuery';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -290,6 +290,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   };
 
   const dueTotal = (period: Period) => periodDue(period, claims, people, rates, floor, late);
+  const claimsCount = (period: Period) => periodClaimsCount(period, claims);
 
   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {
     set(e.target.value);
@@ -330,6 +331,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Claim cap</th>
             <th>Closed</th>
             <th>Locked</th>
+            <th>Claims</th>
           </tr>
         </thead>
         <tbody>
@@ -342,6 +344,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-due-total">{dueTotal(p)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
               <PeriodState sheetId={sheetId} period={p} />
+              <td data-testid="period-claims-count">{claimsCount(p)}</td>
             </tr>
           ))}
         </tbody>

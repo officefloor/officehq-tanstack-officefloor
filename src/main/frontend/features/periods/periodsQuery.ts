@@ -128,6 +128,11 @@ export function personPeriodCarried(
   ]);
 }
 
+/** How many claims belong to a period (by due-by), VOID and DELETED claims left out. */
+export function periodClaimsCount(period: Period, claims: Claim[]): number {
+  return claims.filter((c) => period.from <= c.dueBy && c.dueBy <= period.to && c.status !== 'VOID' && c.status !== 'DELETED').length;
+}
+
 /** A period's due-total: its people's due-totals for it added up. */
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
   return sumDue(people.map((p) => personPeriodDue(period, p, claims, people, rates, floor, late)));
