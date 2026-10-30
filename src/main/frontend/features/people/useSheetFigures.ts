@@ -39,6 +39,18 @@ export function useSheetFigures(sheet: string) {
   // due-totals uses it. Their excess is how far the sum of their figures is above the cap.
   const totalOf = (person: Person) => capped(uncappedOf(person), cap);
   const excessOf = (person: Person) => excess(uncappedOf(person), cap);
+  // A person's settled-total and open-total: the dues of their counting SETTLED claims (frozen
+  // figures, corrections included), and of their counting OPEN and PENDING claims; n/a adds nothing.
+  // Together they make the sum of their figures before the cap.
+  const dueSumOf = (person: Person, which: (c: (typeof live)[number]) => boolean) =>
+    live
+      .filter((c) => c.personId === person.id && which(c))
+      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
+  const settledTotalOf = (person: Person) => dueSumOf(person, (c) => c.status === 'SETTLED');
+  const openTotalOf = (person: Person) => dueSumOf(person, isOpen);
+  // The sheet's settled-total and open-total: everyone's figure added up, not trimmed.
+  const sheetSettledTotal = formatCents(people.reduce((sum, p) => sum + settledTotalOf(p), 0n));
+  const sheetOpenTotal = formatCents(people.reduce((sum, p) => sum + openTotalOf(p), 0n));
   const overdue = live.filter((c) => isOverdue(c, today));
   const overdueSum = (cs: typeof overdue) =>
     cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n);
@@ -76,7 +88,7 @@ export function useSheetFigures(sheet: string) {
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are

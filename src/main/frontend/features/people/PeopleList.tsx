@@ -27,12 +27,14 @@ import { useSheetFigures } from './useSheetFigures';
 // sum of their OPEN and SETTLED claims), due-total (the
 // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
+// their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
+// claims; together the sum of their figures before the cap),
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
 // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
 // patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
-// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total (the
+// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
 // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one). Retired
 // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
@@ -44,7 +46,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -87,6 +89,8 @@ export function PeopleList() {
             <th>Claimed</th>
             <th>Due</th>
             <th>Excess</th>
+            <th>Settled</th>
+            <th>Open</th>
             <th>Active</th>
             <th>Aged 0-30</th>
             <th>Aged 31-60</th>
@@ -124,6 +128,8 @@ export function PeopleList() {
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
                 <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
+                <td data-testid="person-settled-total">{formatCents(settledTotalOf(p))}</td>
+                <td data-testid="person-open-total">{formatCents(openTotalOf(p))}</td>
                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
                 <td data-testid="person-aged-0-30">{formatCents(aged[0])}</td>
                 <td data-testid="person-aged-31-60">{formatCents(aged[1])}</td>
@@ -169,6 +175,12 @@ export function PeopleList() {
       </p>
       <p>
         Due total: <span data-testid="rollup-due-total">{sheetDueTotal}</span>
+      </p>
+      <p>
+        Settled total: <span data-testid="rollup-settled-total">{sheetSettledTotal}</span>
+      </p>
+      <p>
+        Open total: <span data-testid="rollup-open-total">{sheetOpenTotal}</span>
       </p>
       <p>
         Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>
