@@ -1,0 +1,61 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index b22d30f7..f4cf3af7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -27,7 +27,7 @@ public class ApplyClaim {
+         if (person != null && !person.allowsClaimOn(date)) {
+             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
+         }
+-        ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claims);
++        ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claim.getId(), claims);
+         ValidateClaim.checkRef(request.ref(), claim.getSheetId(), claim.getId(), claims);
+         List<ClaimLine> lines = claims.lines(claim);
+         if (!lines.isEmpty() && request.amount().compareTo(ClaimLine.sum(lines)) != 0) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 02b359a8..9c7b6ae8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -227,6 +227,17 @@ public class Claims {
+         return found != null && found > 0;
+     }
+ 
++    /** What remains of the SETTLED claim of that number: its amount less the corrections made against it
++     *  (VOID and DELETED ones left out, and the claim of exceptId when given). */
++    public BigDecimal remainingToCorrect(String sheetId, long personId, String number, Long exceptId) {
++        BigDecimal target = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
++                + " AND claim_number = ? AND status = ?", BigDecimal.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
++        BigDecimal corrected = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
++                + " AND corrects = ? AND status NOT IN (?, ?) AND id <> ?", BigDecimal.class, sheetId, personId, number,
++                ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(), exceptId == null ? -1L : exceptId);
++        return target.add(corrected).setScale(2);
++    }
++
+     /** Moves the claim to its (new) person, listed as their newest claim, and leaves it unbound. */
+     public void reassign(Claim claim) {
+         jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, claim_number = ?, listed_seq = " + NEXT_LISTED
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index db5f99f6..6ad6563a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -72,9 +72,20 @@ public class ValidateClaim {
+ 
+     /** Refuse a correction that does not name a SETTLED claim of the same person. */
+     static void checkCorrects(ValidClaim request, String sheetId, long personId, Claims claims) throws InvalidClaimException {
+-        if (request.corrects() != null && !claims.isSettled(sheetId, personId, request.corrects())) {
++        checkCorrects(request, sheetId, personId, null, claims);
++    }
++
++    /** Refuse a correction that does not name a SETTLED claim of the same person, or that exceeds what remains of it:
++     *  its amount less the corrections already made against it (not VOID nor DELETED, nor the claim being edited). */
++    static void checkCorrects(ValidClaim request, String sheetId, long personId, Long exceptId, Claims claims) throws InvalidClaimException {
++        if (request.corrects() == null) return;
++        if (!claims.isSettled(sheetId, personId, request.corrects())) {
+             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person");
+         }
++        java.math.BigDecimal remaining = claims.remainingToCorrect(sheetId, personId, request.corrects(), exceptId);
++        if (request.amount().negate().compareTo(remaining) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of the claim it corrects (" + remaining.toPlainString() + ")");
++        }
+     }
+ 
+     /** Refuse a reference another claim on the sheet already carries (compared without regard to case). */
