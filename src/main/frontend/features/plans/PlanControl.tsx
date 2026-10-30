@@ -6,7 +6,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { usePersonAction } from '../people/usePersonAction';
 import { plansKey, usePlans, type Plan } from './usePlans';
 
-// The person's plans, each with how many claims it has made so far, and the form that adds one: an amount
+// The person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form that adds one: an amount
 // the claim form takes, a start (blank: the sheet's today), every N days (a whole number, at least 1) or
 // instead monthly on a day of the month (1 to 31), and an end not before the start. A refusal shows the plan error on the row.
 export function PlanControl({ personId }: { personId: string }) {
@@ -56,7 +56,8 @@ export function PlanControl({ personId }: { personId: string }) {
             )}{' '}
             from{' '}
             <span data-testid="plan-start">{p.start}</span> to <span data-testid="plan-end">{p.end}</span>, made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>
+            <span data-testid="plan-generated">{p.generated}</span>, next{' '}
+            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
           </li>
         ))}
       </ul>

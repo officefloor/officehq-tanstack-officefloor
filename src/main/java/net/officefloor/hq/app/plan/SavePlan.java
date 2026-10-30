@@ -21,6 +21,6 @@ public class SavePlan {
         Plan plan = plans.add(sheetId, person.getId(), request.amount(), start, request.every(), request.day(), request.end());
         audit.recordOnCommit("PLAN_ADDED sheet=" + sheetId + " by=" + request.user() + " name=" + person.getName()
                 + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every()) + " end=" + plan.end());
-        response.send(new ResponseEntity<>(PlanResponse.from(plan), HttpStatus.CREATED));
+        response.send(new ResponseEntity<>(PlanResponse.from(plan, sheets.today(sheetId)), HttpStatus.CREATED));
     }
 }
