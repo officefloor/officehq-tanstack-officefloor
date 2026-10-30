@@ -12,7 +12,8 @@ import { sheetKey } from '../sheet/sheetQuery';
 /**
  * The control that merges the person into another (a steward only; neither may be retired). The merged person's
  * claims, aliases, patrons and pool memberships go to the other and they leave the list, so every figure of the
- * sheet is re-read.
+ * sheet is re-read. Beside it, the undo of the last merge into the person: the steward who made it, on the
+ * sheet-today it was made, brings the merged person back with the claims and aliases that came from them.
  */
 function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -30,6 +31,15 @@ function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number 
       await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
     },
     onError: () => setError('The person could not be merged.'),
+  });
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/merge-undo`, {}, user),
+    onSuccess: async () => {
+      setError('');
+      await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
+    },
+    onError: () => setError('The merge could not be undone.'),
   });
 
   return (
@@ -63,6 +73,17 @@ function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number 
         }}
       >
         Merge
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-merge-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          setError('');
+          once(() => undo.mutateAsync());
+        }}
+      >
+        Undo merge
       </button>
     </td>
   );

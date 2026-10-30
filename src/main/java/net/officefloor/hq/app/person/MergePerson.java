@@ -26,7 +26,7 @@ public class MergePerson {
         if (person.retired() || into.retired()) {
             throw new PersonMergeRefusedException("A retired person cannot be merged.");
         }
-        people.merge(person.sheetId(), person.id(), into.id());
+        people.merge(person.sheetId(), person.id(), into.id(), Audit.user(connection).trim(), sheets.today(person.sheetId()));
         mergedOut.set(new MergedPerson(person, into));
         responseOut.set(PersonResponse.from(people.find(person.sheetId(), into.id()), sheets.today(person.sheetId())));
     }

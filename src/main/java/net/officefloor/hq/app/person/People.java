@@ -305,8 +305,10 @@ public class People {
      * become into's aliases; from's patrons are added to into's and anyone naming from names into instead (never
      * themselves, no repeats); from's pool memberships and closed-period figures move to into (added to into's own where
      * into has one), and so do from's opening balances, plans and crews (a crew from leads is led by into). from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
+     * The merge is kept, made by {@code by} on the sheet-today {@code on}, so that {@link #undoMerge} can undo it.
      */
-    public void merge(String sheetId, long from, long into) {
+    public void merge(String sheetId, long from, long into, String by, LocalDate on) {
+        long kept = keepMerge(sheetId, from, into, by, on);
         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
             jdbc.update("UPDATE claim SET person_id = ?, listed = "
                     + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) WHERE id = ?", into, sheetId, claim);
@@ -367,6 +369,70 @@ public class People {
         jdbc.update("DELETE FROM person_terms WHERE person_id = ?", from);
         jdbc.update("DELETE FROM person WHERE id = ?", from);
         alias(sheetId, into, name);
+        jdbc.update("INSERT INTO person_merge_alias (merge_id, alias_id) SELECT ?, MAX(id) FROM person_alias WHERE person_id = ?",
+                kept, into);
+    }
+
+    /** Keep the merge of {@code from} into {@code into} as from is before it, returning its id. */
+    private long keepMerge(String sheetId, long from, long into, String by, LocalDate on) {
+        KeyHolder key = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO person_merge (sheet_id, into_id, from_id, name, grade, terms, contact, tags, origin_sheet_id, "
+                            + "origin_name, transferred_on, merged_by, merged_on) SELECT sheet_id, ?, id, name, grade, terms, contact, "
+                            + "tags, origin_sheet_id, origin_name, transferred_on, ?, ? FROM person WHERE id = ?", new String[] { "id" });
+            ps.setLong(1, into);
+            ps.setString(2, by);
+            ps.setDate(3, Date.valueOf(on));
+            ps.setLong(4, from);
+            return ps;
+        }, key);
+        long kept = key.getKey().longValue();
+        jdbc.update("INSERT INTO person_merge_claim (merge_id, claim_id) SELECT ?, id FROM claim WHERE person_id = ?", kept, from);
+        jdbc.update("INSERT INTO person_merge_alias (merge_id, alias_id) SELECT ?, id FROM person_alias WHERE person_id = ?", kept, from);
+        jdbc.update("INSERT INTO person_merge_grade (merge_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
+                + "WHERE person_id = ?", kept, from);
+        jdbc.update("INSERT INTO person_merge_terms (merge_id, from_date, terms) SELECT ?, from_date, terms FROM person_terms "
+                + "WHERE person_id = ?", kept, from);
+        return kept;
+    }
+
+    /** Whether a person on the sheet has this name (not counting aliases), ignoring case. */
+    public boolean personNamed(String sheetId, String name) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?)", Integer.class,
+                sheetId, name.trim());
+        return n != null && n > 0;
+    }
+
+    /** The last merge into the person, undone or not; null when none was made into them. */
+    public MergeKept lastMerge(String sheetId, long into) {
+        List<MergeKept> found = jdbc.query("SELECT * FROM person_merge WHERE sheet_id = ? AND into_id = ? ORDER BY id DESC LIMIT 1",
+                (rs, n) -> new MergeKept(rs.getLong("id"), rs.getLong("from_id"), rs.getString("name"),
+                        rs.getString("merged_by"), rs.getObject("merged_on", LocalDate.class), rs.getBoolean("undone")),
+                sheetId, into);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /**
+     * Undo the kept merge into {@code into}: the merged person is back (with their id, grades, terms, contact and tags)
+     * at the end of the list, with the claims that went with them that into still has (as they are now) and their own
+     * aliases (their name no longer one of into's). Patrons, pool memberships and the rest stay as the merge left them.
+     */
+    public void undoMerge(String sheetId, MergeKept merge, long into) {
+        jdbc.update("INSERT INTO person (id, sheet_id, name, grade, terms, contact, tags, origin_sheet_id, origin_name, "
+                + "transferred_on, list_position) SELECT from_id, sheet_id, name, grade, terms, contact, tags, origin_sheet_id, "
+                + "origin_name, transferred_on, (SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?) "
+                + "FROM person_merge WHERE id = ?", sheetId, merge.id());
+        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_merge_grade "
+                + "WHERE merge_id = ? ORDER BY from_date", merge.fromId(), merge.id());
+        jdbc.update("INSERT INTO person_terms (person_id, from_date, terms) SELECT ?, from_date, terms FROM person_merge_terms "
+                + "WHERE merge_id = ? ORDER BY from_date", merge.fromId(), merge.id());
+        jdbc.update("UPDATE claim SET person_id = ? WHERE person_id = ? AND id IN (SELECT claim_id FROM person_merge_claim "
+                + "WHERE merge_id = ?)", merge.fromId(), into, merge.id());
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ? AND id IN (SELECT alias_id FROM person_merge_alias "
+                + "WHERE merge_id = ?)", merge.fromId(), into, merge.id());
+        jdbc.update("DELETE FROM person_alias WHERE person_id = ? AND alias_key = LOWER(?)", merge.fromId(), merge.name());
+        jdbc.update("UPDATE person_merge SET undone = TRUE WHERE id = ?", merge.id());
     }
 
     /**
