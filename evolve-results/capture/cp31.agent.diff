@@ -1,0 +1,201 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 3d3eeb88..4cacae99 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -8,6 +8,7 @@ import { rateOn, useRates } from '../rates/useRates';
+ import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { StatementButton } from '../statements/StatementButton';
++import { SummaryPanel } from '../summary/SummaryPanel';
+ import { HoldControl } from './HoldControl';
+ import { PatronControl } from './PatronControl';
+ import { QuickAdd } from './QuickAdd';
+@@ -24,6 +25,7 @@ import { gradeOn, usePeople, type Person } from './usePeople';
+ // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+ // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
+ // people have no row unless "show retired" is on, but their claims keep counting in every total.
++// Then the summary panel, worked from these same figures.
+ export function PeopleList() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+@@ -136,6 +138,7 @@ export function PeopleList() {
+       <p>
+         Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
+       </p>
++      <SummaryPanel people={people} claims={claims} today={today} totalOf={totalOf} />
+     </>
+   );
+ }
+diff --git a/src/main/frontend/features/periods/PeriodPanel.tsx b/src/main/frontend/features/periods/PeriodPanel.tsx
+index 3e4beb39..33b03f46 100644
+--- a/src/main/frontend/features/periods/PeriodPanel.tsx
++++ b/src/main/frontend/features/periods/PeriodPanel.tsx
+@@ -3,13 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+-import { countsLive, useClaims } from '../claims/useClaims';
+-import { gradeOn, usePeople } from '../people/usePeople';
+-import { claimDue, formatCents, toCents } from '../rates/due';
+-import { rateOn, useRates } from '../rates/useRates';
+-import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
+-import { useSheetToday } from '../sheet/useSheetToday';
+-import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
++import { formatCents } from '../rates/due';
++import { usePeriodDueTotal } from './usePeriodDueTotal';
++import { periodsKey, usePeriods, type Period } from './usePeriods';
+ 
+ // The sheet's periods, each with its dates and due-total (the dues, late charges included, of the claims that count whose
+ // date falls in it, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
+@@ -20,11 +16,7 @@ export function PeriodPanel() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+   const periods = usePeriods(sheet);
+-  const people = usePeople(sheet);
+-  const claims = useClaims(sheet);
+-  const rates = useRates(sheet);
+-  const floor = useFloor(sheet);
+-  const late = { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
++  const dueTotalOf = usePeriodDueTotal(sheet);
+   const [name, setName] = useState('');
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+@@ -49,12 +41,6 @@ export function PeriodPanel() {
+       ),
+     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved),
+   });
+-  const personOf = new Map(people.map((p) => [p.id, p]));
+-  const heldOf = new Map(people.map((p) => [p.id, p.held]));
+-  const dueTotalOf = (period: Period) =>
+-    period.closed ? toCents(period.closedTotal) : claims
+-      .filter((c) => personOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date) === period)
+-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n);
+   return (
+     <>
+       <table data-testid="periods">
+diff --git a/src/main/frontend/features/periods/usePeriodDueTotal.ts b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+new file mode 100644
+index 00000000..9601012e
+--- /dev/null
++++ b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+@@ -0,0 +1,25 @@
++import { countsLive, useClaims } from '../claims/useClaims';
++import { gradeOn, usePeople } from '../people/usePeople';
++import { claimDue, toCents } from '../rates/due';
++import { rateOn, useRates } from '../rates/useRates';
++import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
++import { useSheetToday } from '../sheet/useSheetToday';
++import { periodOf, usePeriods, type Period } from './usePeriods';
++
++/** A period's due-total: the dues, late charges included, of the claims that count whose date falls
++ *  in it, leaving out a held person's OPEN claims (a claim whose due is n/a adds nothing); a closed
++ *  period gives the due-total fixed when it was closed. */
++export function usePeriodDueTotal(sheet: string): (period: Period) => bigint {
++  const periods = usePeriods(sheet);
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const floor = useFloor(sheet);
++  const late = { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
++  const personOf = new Map(people.map((p) => [p.id, p]));
++  const heldOf = new Map(people.map((p) => [p.id, p.held]));
++  return (period: Period) =>
++    period.closed ? toCents(period.closedTotal) : claims
++      .filter((c) => personOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date)?.name === period.name)
++      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n);
++}
+diff --git a/src/main/frontend/features/summary/SummaryPanel.tsx b/src/main/frontend/features/summary/SummaryPanel.tsx
+new file mode 100644
+index 00000000..8a6ce897
+--- /dev/null
++++ b/src/main/frontend/features/summary/SummaryPanel.tsx
+@@ -0,0 +1,89 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import type { Claim } from '../claims/useClaims';
++import { GRADES, gradeOn, type Person } from '../people/usePeople';
++import { usePeriodDueTotal } from '../periods/usePeriodDueTotal';
++import { usePeriods } from '../periods/usePeriods';
++import { formatCents } from '../rates/due';
++
++const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
++
++// The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
++// are on it today (retired people left out) and their due-totals added up (skipping n/a). Per
++// period: its due-total, as the period list shows it. Per status: how many claims have it.
++export function SummaryPanel({
++  people,
++  claims,
++  today,
++  totalOf,
++}: {
++  people: Person[];
++  claims: Claim[];
++  today: string | undefined;
++  totalOf: (person: Person) => bigint | null;
++}) {
++  const [sheet] = useSearchParam('sheet', asString);
++  const periods = usePeriods(sheet);
++  const periodDueTotal = usePeriodDueTotal(sheet);
++  const current = people.filter((p) => !p.retired);
++  const onSheet = new Set(people.map((p) => p.id));
++  const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
++  return (
++    <section data-testid="summary">
++      <h3>Summary</h3>
++      <table>
++        <thead>
++          <tr>
++            <th>Grade</th>
++            <th>People</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {GRADES.map((g) => {
++            const onGrade = current.filter((p) => gradeOn(p, today) === g);
++            const due = onGrade.reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
++            return (
++              <tr key={g}>
++                <td>{g}</td>
++                <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
++                <td data-testid={`summary-grade-${g}-due-total`}>{formatCents(due)}</td>
++              </tr>
++            );
++          })}
++        </tbody>
++      </table>
++      <table>
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name}>
++              <td>{p.name}</td>
++              <td data-testid={`summary-period-${p.name}-due-total`}>{formatCents(periodDueTotal(p))}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <table>
++        <thead>
++          <tr>
++            <th>Status</th>
++            <th>Claims</th>
++          </tr>
++        </thead>
++        <tbody>
++          {STATUSES.map((s) => (
++            <tr key={s}>
++              <td>{s}</td>
++              <td data-testid={`summary-status-${s}-count`}>{sheetClaims.filter((c) => c.status === s).length}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
