@@ -6,12 +6,14 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { formatCents } from '../rates/due';
 import type { Person } from '../people/usePeople';
 import { useSheetFigures } from '../people/useSheetFigures';
+import { poolsKey } from '../pools/usePools';
 import { crewDueCents, crewsKey, useCrews, type Crew } from './useCrews';
 
 // The sheet's crews and the form that adds one: a name (a blank name, or one already a crew, is refused)
 // and a lead chosen from the people. Each crew shows its lead and its due-total — the lead's and the
 // members' due-totals added up, n/a skipped — and adds a member from its row: the lead, or a person
-// already in the crew, is refused.
+// already in the crew, is refused. A name already a pool is refused too: every crew is also a pool of its name
+// (see PoolPanel), so changing a crew changes that pool.
 export function CrewPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -28,6 +30,7 @@ export function CrewPanel() {
       setName('');
       setLeadId('');
       queryClient.setQueryData(crewsKey(sheet), saved);
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
   });
   const dueTotalOf = (crew: Crew) => formatCents(crewDueCents(crew, byId, totalOf));
@@ -71,7 +74,7 @@ export function CrewPanel() {
           ))}
         </select>{' '}
         <button type="submit" data-testid="crew-form-submit">Add crew</button>
-        {add.isError && <span data-testid="crew-form-error" role="alert"> Could not add the crew: its name must not be blank or already a crew, and it needs a lead.</span>}
+        {add.isError && <span data-testid="crew-form-error" role="alert"> Could not add the crew: its name must not be blank or already a crew or a pool, and it needs a lead.</span>}
       </form>
     </>
   );
@@ -87,6 +90,7 @@ function CrewRow({ crew, dueTotal, people, sheet, user }: { crew: Crew; dueTotal
     onSuccess: (saved) => {
       setPersonId('');
       queryClient.setQueryData(crewsKey(sheet), saved);
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
   });
   return (

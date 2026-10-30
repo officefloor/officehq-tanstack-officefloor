@@ -20,7 +20,10 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // another has its cut there as its pot. A membership may carry an optional from-date and to-date (a to-date before
 // the from-date is refused); a member whose dates do not include the sheet's today is left out entirely: not in the
 // total share, not in the balance, no cut. The export button downloads the pools as CSV: one line per member, pools
-// and members in the order added, a pool member as pool:<name>, the cut as shown (empty when none).
+// and members in the order added, a pool member as pool:<name>, the cut as shown (empty when none). Every crew is also
+// a pool of its name, listed after the pools in the order added: the lead and the members at equal shares (100.00 split
+// as patrons' shares are, the remainder on the lead), given cuts like any pool. Its members come from the crew, so its
+// row has no form to add one; a pool cannot take a crew's name, nor a crew a pool's.
 export function PoolPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -80,7 +83,7 @@ export function PoolPanel() {
           }}
         />{' '}
         <button type="submit" data-testid="pool-form-submit">Add pool</button>
-        {add.isError && <span data-testid="pool-form-error" role="alert"> Could not add the pool: its name must not be blank or already a pool.</span>}
+        {add.isError && <span data-testid="pool-form-error" role="alert"> Could not add the pool: its name must not be blank or already a pool or a crew.</span>}
       </form>
     </>
   );
@@ -123,7 +126,7 @@ function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool
           </li>
         ))}
       </ul>
-      <form
+      {!pool.crew && <form
         onSubmit={(e) => {
           e.preventDefault();
           submitOnce(() => {
@@ -181,7 +184,7 @@ function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool
         />{' '}
         <button type="submit" data-testid="pool-member-add">Add member</button>
         {add.isError && <span data-testid="pool-error" role="alert"> Could not add the member: already in the pool, a pool already in a pool, containing this pool, or nesting more than three deep, or the share is not more than 0.00 and at most 100.00 with two decimals, or the to-date is before the from-date.</span>}
-      </form>
+      </form>}
     </li>
   );
 }

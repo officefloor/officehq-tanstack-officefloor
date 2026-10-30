@@ -3,8 +3,8 @@ package net.officefloor.hq.app.pool;
 import java.util.List;
 
 /** A pool as shown: its members, the total of their shares (a retired member's share counted as given) and whether
- *  that total is exactly 100.00. */
-public record PoolResponse(String name, String totalShare, boolean balanced, List<Member> members) {
+ *  that total is exactly 100.00; crew: whether it is a crew's pool (its members the crew's lead and members). */
+public record PoolResponse(String name, String totalShare, boolean balanced, List<Member> members, boolean crew) {
 
     /** A member: the person's id and name (or, for a pool that is a member, personId null, memberPool and name its
      *  name), their share (two decimals), whether a retirement date is set, whether the membership's dates include the sheet's today (when not, the member

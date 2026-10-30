@@ -67,6 +67,7 @@ public class Pools {
                                 share, rs.getDate(5) != null, current, ""));
                     }
                 }, day, day, sheetId);
+        Set<String> crews = crewPools(sheetId, members);
         BigDecimal pot = day == null ? livePot(sheetId) : potOn(sheetId, day);
         Map<String, String> totals = new HashMap<>();
         Set<String> nested = new HashSet<>();
@@ -93,8 +94,49 @@ public class Pools {
         }
         List<PoolResponse> pools = new ArrayList<>();
         members.keySet().forEach(name -> pools.add(new PoolResponse(name, totals.get(name),
-                new BigDecimal(totals.get(name)).compareTo(FULL) == 0, shown.get(name))));
+                new BigDecimal(totals.get(name)).compareTo(FULL) == 0, shown.get(name), crews.contains(name))));
         return pools;
+    }
+
+    /** Adds each of the sheet's crews, in the order added and after the pools, as a pool of its name: the lead and then
+     *  the members (in the order added) at equal shares, 100.00 split as patrons' shares are (each rounded half to even to
+     *  two decimals, the remainder on the lead), every membership current. Returns the crews' names. */
+    private Set<String> crewPools(String sheetId, Map<String, List<PoolResponse.Member>> members) {
+        Set<String> crews = new HashSet<>();
+        Map<String, List<PoolResponse.Member>> people = new LinkedHashMap<>();
+        jdbc.query("SELECT c.name, c.lead_person_id, p.name, p.retired_from FROM crew c"
+                + " JOIN person p ON p.id = c.lead_person_id AND p.sheet_id = c.sheet_id"
+                + " WHERE c.sheet_id = ? ORDER BY c.seq", rs -> {
+                    List<PoolResponse.Member> list = new ArrayList<>();
+                    list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3), "",
+                            rs.getDate(4) != null, true, ""));
+                    people.put(rs.getString(1), list);
+                }, sheetId);
+        jdbc.query("SELECT m.crew_name, m.person_id, p.name, p.retired_from FROM crew_member m"
+                + " JOIN person p ON p.id = m.person_id AND p.sheet_id = m.sheet_id"
+                + " WHERE m.sheet_id = ? ORDER BY m.seq", rs -> {
+                    List<PoolResponse.Member> list = people.get(rs.getString(1));
+                    if (list != null) {
+                        list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3), "",
+                                rs.getDate(4) != null, true, ""));
+                    }
+                }, sheetId);
+        people.forEach((name, list) -> {
+            if (members.containsKey(name)) {
+                return;
+            }
+            BigDecimal each = FULL.divide(BigDecimal.valueOf(list.size()), 2, RoundingMode.HALF_EVEN);
+            BigDecimal lead = FULL.subtract(each.multiply(BigDecimal.valueOf(list.size() - 1)));
+            List<PoolResponse.Member> shared = new ArrayList<>();
+            for (int i = 0; i < list.size(); i++) {
+                PoolResponse.Member m = list.get(i);
+                shared.add(new PoolResponse.Member(m.personId(), null, m.name(), (i == 0 ? lead : each).toPlainString(),
+                        m.retired(), true, ""));
+            }
+            members.put(name, shared);
+            crews.add(name);
+        });
+        return crews;
     }
 
     /** The sheet's pot now, at two decimals; null when none. */
@@ -180,9 +222,15 @@ public class Pools {
         return withCuts;
     }
 
-    /** Whether the sheet has a pool of the name. */
+    /** Whether the sheet has a pool of the name: one added as a pool, or a crew (every crew is also a pool). */
     public boolean contains(String sheetId, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?", Integer.class, sheetId, name);
+        return n != null && n > 0 || isCrew(sheetId, name);
+    }
+
+    /** Whether the pool of the name is a crew's: its members are the crew's lead and members, never added as a pool's. */
+    public boolean isCrew(String sheetId, String name) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM crew WHERE sheet_id = ? AND name = ?", Integer.class, sheetId, name);
         return n != null && n > 0;
     }
 

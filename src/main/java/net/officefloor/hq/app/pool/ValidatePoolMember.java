@@ -27,6 +27,9 @@ public class ValidatePoolMember {
         if (!pools.contains(sheetId, pool)) {
             throw new InvalidPoolException("No such pool");
         }
+        if (pools.isCrew(sheetId, pool)) {
+            throw new InvalidPoolException("A crew's members are its lead and crew members");
+        }
         String memberPool = request.memberPool() == null ? "" : request.memberPool().trim();
         Long personId = null;
         String memberName;

@@ -9,8 +9,9 @@ import { readPath, useAsOf } from '../asof/useAsOf';
  *  current is left out entirely: not in the total, not in the balance, no cut (""). A pool that is a member of none has the sheet's pot; one that is a member of another has its cut there. */
 export type PoolMember = { personId: string | null; memberPool: string | null; name: string; share: string; retired: boolean; current: boolean; cut: string };
 
-/** A pool: its members in the order added, the total of their shares and whether that is exactly 100.00. */
-export type Pool = { name: string; totalShare: string; balanced: boolean; members: PoolMember[] };
+/** A pool: its members in the order added, the total of their shares and whether that is exactly 100.00. crew: whether
+ *  it is a crew's pool — its members the crew's lead and members at equal shares, never added through the pool. */
+export type Pool = { name: string; totalShare: string; balanced: boolean; members: PoolMember[]; crew: boolean };
 
 export const poolsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'pools', asOf] as const;
 
