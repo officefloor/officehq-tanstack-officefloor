@@ -1,0 +1,258 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 974910b4..19f340c7 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -6,6 +6,7 @@ import { dueTotal, formatCents, showDue } from '../rates/due';
+ import { rateOn, useRates } from '../rates/useRates';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { StatementButton } from '../statements/StatementButton';
++import { QuickAdd } from './QuickAdd';
+ import { usePeople } from './usePeople';
+ 
+ // Every person on the sheet in the order they were added, with their name, grade, claimed (the
+@@ -29,6 +30,7 @@ export function PeopleList() {
+     );
+   return (
+     <>
++      <QuickAdd />
+       <table data-testid="people">
+         <thead>
+           <tr>
+diff --git a/src/main/frontend/features/people/QuickAdd.tsx b/src/main/frontend/features/people/QuickAdd.tsx
+new file mode 100644
+index 00000000..87e322ad
+--- /dev/null
++++ b/src/main/frontend/features/people/QuickAdd.tsx
+@@ -0,0 +1,62 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { claimsKey, type Claim } from '../claims/useClaims';
++import { peopleKey } from './usePeople';
++
++// The quick-add bar on the people list: a name and an amount make a DRAFT claim dated the sheet's
++// today, with an empty note, for the person of that name (case and outer spaces ignored) — adding
++// the person with grade A first when no one on the sheet has it. The person form's and the claim
++// form's rules apply; a refusal adds no one and nothing.
++export function QuickAdd() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const [name, setName] = useState('');
++  const [amount, setAmount] = useState('');
++  const queryClient = useQueryClient();
++  const submitOnce = useSubmitOnce();
++
++  const add = useMutation({
++    mutationFn: (body: { name: string; amount: string }) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/quick-claims`, { ...body, user }),
++    onSuccess: () => {
++      setName('');
++      setAmount('');
++      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++      void queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    },
++  });
++
++  const changed = (set: (v: string) => void) => (v: string) => {
++    set(v);
++    add.reset();
++  };
++
++  return (
++    <form
++      data-testid="quick-add"
++      onSubmit={(e) => {
++        e.preventDefault();
++        submitOnce(() => {
++          add.reset();
++          return add.mutateAsync({ name: name.trim(), amount: amount.trim() });
++        });
++      }}
++    >
++      <input data-testid="quick-name" value={name} placeholder="Name" onChange={(e) => changed(setName)(e.target.value)} />{' '}
++      <input
++        data-testid="quick-amount"
++        value={amount}
++        placeholder="Amount"
++        inputMode="decimal"
++        onChange={(e) => changed(setAmount)(e.target.value)}
++      />{' '}
++      <button type="submit" data-testid="quick-submit">Quick add</button>
++      {add.isError && (
++        <span data-testid="quick-error" role="alert"> Could not add: a name is required, the amount must be 0.00 or more, with at most two decimals, and no claim can be dated inside a closed period.</span>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/QuickClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/QuickClaimRequest.java
+new file mode 100644
+index 00000000..08262d72
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/QuickClaimRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Body of POST /api/sheets/{sheetId}/quick-claims: the person's name and the claim's amount. */
++public record QuickClaimRequest(String name, String amount, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
+new file mode 100644
+index 00000000..3647f5b2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
+@@ -0,0 +1,48 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.Periods;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupFigures;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/**
++ * Adds a DRAFT claim dated the sheet's today, with an empty note, for the named person (name
++ * compared as the person form compares it), first adding the person with grade A when no one on
++ * the sheet has that name. One change: a refused claim leaves no new person behind.
++ */
++public class SaveQuickClaim {
++
++    private static final String GRADE = "A";
++
++    public void save(@PathVariable("sheetId") String sheetId, @Val ValidQuickClaim request, People people, Claims claims,
++            Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup,
++            ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
++        LocalDate date = sheets.today(sheetId);
++        // Refuse before anything is written.
++        if (periods.isClosed(sheetId, date)) {
++            throw new InvalidClaimException("No claim can be added inside a closed period");
++        }
++        Person person = people.findByName(sheetId, request.name());
++        RollupFigures beforeClaim = before;
++        if (person == null) {
++            person = people.add(sheetId, request.name(), GRADE);
++            audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
++                    + " name=" + person.getName() + " grade=" + person.getGrade());
++            rollup.recordChanges(sheetId, request.user(), before);
++            beforeClaim = rollup.figures(sheetId);
++        }
++        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, "");
++        audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
++        rollup.recordChanges(sheetId, request.user(), beforeClaim);
++        response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidQuickClaim.java
+new file mode 100644
+index 00000000..9d393528
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidQuickClaim.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** A quick-add that passed validation: the trimmed name and the amount. */
++public record ValidQuickClaim(String name, BigDecimal amount, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index e0272d8c..62e97052 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -12,10 +12,7 @@ public class ValidateClaim {
+     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
+-        String amount = request.amount() == null ? "" : request.amount().trim();
+-        if (!AMOUNT.matcher(amount).matches()) {
+-            throw new InvalidClaimException("The amount must be 0.00 or more, with at most two decimals");
+-        }
++        BigDecimal amount = amount(request.amount());
+         String rawDate = request.date() == null ? "" : request.date().trim();
+         LocalDate date = null;
+         if (!rawDate.isEmpty()) {
+@@ -26,6 +23,15 @@ public class ValidateClaim {
+             }
+         }
+         String note = request.note() == null ? "" : request.note().trim();
+-        body.set(new ValidClaim(new BigDecimal(amount).setScale(2), date, note, request.user()));
++        body.set(new ValidClaim(amount, date, note, request.user()));
++    }
++
++    /** A claim's amount: 0.00 or more, with at most two decimals. */
++    static BigDecimal amount(String raw) throws InvalidClaimException {
++        String amount = raw == null ? "" : raw.trim();
++        if (!AMOUNT.matcher(amount).matches()) {
++            throw new InvalidClaimException("The amount must be 0.00 or more, with at most two decimals");
++        }
++        return new BigDecimal(amount).setScale(2);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
+new file mode 100644
+index 00000000..9e44dd2c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** The person form's and the claim form's rules, applied to the quick-add bar. */
++public class ValidateQuickClaim {
++    public void validate(@RequestBody QuickClaimRequest request, Out<ValidQuickClaim> body)
++            throws InvalidPersonException, InvalidClaimException {
++        String name = request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) {
++            throw new InvalidPersonException("A name is required");
++        }
++        body.set(new ValidQuickClaim(name, ValidateClaim.amount(request.amount()), request.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 62aabf58..67304158 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -38,6 +38,13 @@ public class People {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** The person on the sheet with this name, compared without regard to case or outer spaces; null when none. */
++    public Person findByName(String sheetId, String name) {
++        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id",
++                ROW, sheetId, name);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** Whether another person on the sheet already has this name, compared without regard to case. */
+     public boolean nameTaken(String sheetId, String name, Long exceptId) {
+         Integer count = jdbc.queryForObject(
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+new file mode 100644
+index 00000000..fa4be1ec
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+@@ -0,0 +1,12 @@
++# The quick-add bar: a claim for a person named in the body, adding the person when needed.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateQuickClaim
++  next: snapshot
++# The sheet's figures before the change, so the change can audit what it moved.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveQuickClaim
++  govern: [ transaction ]
