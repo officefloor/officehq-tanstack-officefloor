@@ -38,7 +38,7 @@ import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
-// sum of their OPEN and SETTLED claims), due-total (the
+// sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
 // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
 // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING

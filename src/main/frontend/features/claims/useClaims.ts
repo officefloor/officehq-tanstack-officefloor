@@ -124,10 +124,10 @@ export function useLastSettleBatch(sheet: string): string {
   return data?.last ?? '';
 }
 
-/** The amounts of the claims that count added up, shown with two decimals. Summed in whole cents
- *  so no float drift shows. */
+/** The amounts of the claims that count added up, leaving out corrections (claims that correct another),
+ *  shown with two decimals. Summed in whole cents so no float drift shows. */
 export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.filter(counts).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => counts(c) && !c.corrects).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
 

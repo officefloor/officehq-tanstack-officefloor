@@ -22,7 +22,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
 /**
- * The sheet's figures as the screen shows them — each person's claimed and due-total, and the
+ * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections) and due-total, and the
  * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap — worked out on the server so a change can audit what it
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
@@ -71,7 +71,9 @@ public class Rollup {
                 if (claim.getPersonId() != person.getId() || !person.countsLive(claim, today)) {
                     continue;
                 }
-                claimed = claimed.add(claim.getAmount());
+                if (claim.getCorrects() == null || claim.getCorrects().isEmpty()) {
+                    claimed = claimed.add(claim.getAmount());
+                }
                 BigDecimal figure = due(claim, person, today, policyDate);
                 if (figure != null) {
                     anyFigure = true;
