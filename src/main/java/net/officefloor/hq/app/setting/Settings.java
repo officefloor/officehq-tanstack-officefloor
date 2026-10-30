@@ -55,6 +55,8 @@ public class Settings {
         sheets.today(sheetId);
         jdbc.update("MERGE INTO sheet_setting (sheet_id, setting_key, from_date, setting_value)"
                 + " KEY (sheet_id, setting_key, from_date) VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
+        jdbc.update("INSERT INTO setting_history (sheet_id, set_on, setting_key, from_date, setting_value) VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?)",
+                sheetId, sheetId, key, Date.valueOf(from), value);
     }
 
     /** Every value recorded for the sheet's dated settings, by key, oldest from-date first. */
@@ -147,6 +149,8 @@ public class Settings {
     public void setPolicyDate(String sheetId, LocalDate date) {
         sheets.today(sheetId);
         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
+        jdbc.update("INSERT INTO policy_history (sheet_id, set_on, policy_date) VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                sheetId, sheetId, date == null ? null : Date.valueOf(date));
     }
 
     /** The date from which claims opened are numbered within their period; null when off. */

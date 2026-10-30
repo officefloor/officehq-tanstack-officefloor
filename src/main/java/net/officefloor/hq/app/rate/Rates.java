@@ -59,5 +59,7 @@ public class Rates {
         }
         jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
                 sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to));
+        jdbc.update("INSERT INTO rate_history (sheet_id, set_on, grade, rate, from_date, to_date) VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?)",
+                sheetId, sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to));
     }
 }

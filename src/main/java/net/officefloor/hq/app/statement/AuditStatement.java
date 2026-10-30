@@ -11,7 +11,8 @@ public class AuditStatement {
         audit.recordOnCommit("STATEMENT sheet=" + person.getSheetId() + " by=" + request.user()
                 + " name=" + person.getName()
                 + " due-total=" + (statement.dueTotal() == null ? "n/a" : statement.dueTotal().toPlainString())
-                + " claims=" + statement.claims());
+                + " claims=" + statement.claims()
+                + (statement.asOf() == null ? "" : " asof=" + statement.asOf()));
         rollup.recordChanges(person.getSheetId(), request.user(), before);
     }
 }

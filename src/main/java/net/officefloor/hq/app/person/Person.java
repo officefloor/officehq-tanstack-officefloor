@@ -145,5 +145,9 @@ public class Person {
     public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }
     public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
     public void setName(String name) { this.name = name; }
+    /** The sheet's today when the person was added; null when not known. */
+    private LocalDate addedOn;
+    public LocalDate getAddedOn() { return addedOn; }
+    public void setAddedOn(LocalDate addedOn) { this.addedOn = addedOn; }
     public void setVersion(int version) { this.version = version; }
 }

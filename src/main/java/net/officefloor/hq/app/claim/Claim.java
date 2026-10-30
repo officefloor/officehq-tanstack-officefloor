@@ -74,6 +74,7 @@ public class Claim {
     public void setCorrects(String corrects) { this.corrects = corrects; }
     /** The date of the claim this correction corrects; null when it is not a correction or that claim is not found. */
     public void setCorrectedDate(LocalDate correctedDate) { this.correctedDate = correctedDate; }
+    public LocalDate getCorrectedDate() { return correctedDate; }
     /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects, any other claim's its own. */
     public LocalDate getRoundingDate() { return correctedDate != null ? correctedDate : date; }
     /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */

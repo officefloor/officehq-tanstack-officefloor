@@ -52,6 +52,14 @@ public class Claims {
         this.jdbc = jdbc;
     }
 
+    /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
+    private void history(String sheetId, long id) {
+        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
+                + " stated, stated_due, due_by, deferred_until, corrects) SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount,"
+                + " c.claim_date, c.status, c.settled_due, c.stated, c.stated_due, c.due_by, c.deferred_until, c.corrects"
+                + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+    }
+
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
         return withLogs(sheetId, jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.listed_seq DESC, c.id DESC", ROW, sheetId));
@@ -102,6 +110,7 @@ public class Claims {
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        history(sheetId, claim.getId());
         claim.setCorrects(corrects);
         claim.setDueBy(dueBy);
         claim.setCorrectedDate(correctedDate(sheetId, personId, corrects));
@@ -120,6 +129,7 @@ public class Claims {
     public void bind(Claim claim) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
                 claim.isStated(), claim.getStatedDue(), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet: one a correction may correct. */
@@ -134,18 +144,21 @@ public class Claims {
         jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, listed_seq = " + NEXT_LISTED
                 + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
                 claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     /** Defers the claim until its deferred-until date. */
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     /** Records the claim's (new) date and number. */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     /** Marks the claim a late entry: added while its period was soft-closed. */
@@ -193,5 +206,6 @@ public class Claims {
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(),
                 claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 }

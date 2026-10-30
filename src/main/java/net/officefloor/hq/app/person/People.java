@@ -23,6 +23,8 @@ public class People {
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
         java.sql.Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired == null ? null : retired.toLocalDate());
+        java.sql.Date added = rs.getDate("added_on");
+        person.setAddedOn(added == null ? null : added.toLocalDate());
         return person;
     };
 
@@ -91,6 +93,8 @@ public class People {
         }
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)",
                 person.getSheetId(), person.getId(), from, recorded.getValue());
+        jdbc.update("INSERT INTO grade_history (sheet_id, person_id, set_on, from_date, grade) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)",
+                person.getSheetId(), person.getId(), person.getSheetId(), from, recorded.getValue());
         person.clearRecordedGrade();
     }
 
@@ -160,11 +164,13 @@ public class People {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                    "INSERT INTO person (sheet_id, name, grade, terms, added_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
             ps.setObject(4, terms, java.sql.Types.INTEGER);
+            ps.setString(5, sheetId);
             return ps;
         }, keys);
         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
@@ -218,14 +224,17 @@ public class People {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
                 person.getRetiredFrom() == null ? null : java.sql.Date.valueOf(person.getRetiredFrom()),
                 person.getSheetId(), person.getId());
+        jdbc.update("INSERT INTO retire_history (sheet_id, person_id, set_on, retired_from) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                person.getSheetId(), person.getId(), person.getSheetId(),
+                person.getRetiredFrom() == null ? null : java.sql.Date.valueOf(person.getRetiredFrom()));
     }
 
     /** Adds a hold to the person. The person's version is left as it is — holding is not an edit of
      *  the person form. */
     public void addHold(Person person, Person.Hold hold) {
-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, set_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                 person.getSheetId(), person.getId(), java.sql.Date.valueOf(hold.from()),
-                hold.to() == null ? null : java.sql.Date.valueOf(hold.to()));
+                hold.to() == null ? null : java.sql.Date.valueOf(hold.to()), person.getSheetId());
         person.getHolds().add(hold);
     }
 
