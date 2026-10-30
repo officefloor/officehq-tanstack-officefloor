@@ -18,7 +18,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Transfers the person to another sheet (a steward only; never a retired person, never to this sheet, never onto an
- * archived sheet, nor when their name, an alias or their contact is already on the other sheet). They arrive with
+ * archived sheet, nor when their name, an alias or their contact is already on the other sheet, or their name or an alias on
+ * another sheet of its tree). They arrive with
  * every grade they were given, their terms, contact and aliases, and their claims (status, dates, notes, tags,
  * settled figures and logs kept, listed in the same order); each claim that had a number takes the other sheet's
  * next, in the order the claims were opened (by the sheet's today when opened, then the order added). Figures a
@@ -44,7 +45,7 @@ public class TransferPerson {
         names.add(person.getName());
         names.addAll(person.getAliases());
         for (String name : names) {
-            if (people.nameTaken(to, name, null)) {
+            if (people.nameTaken(to, name, null, person)) {
                 throw new InvalidPersonException("The name " + name + " is already on the other sheet");
             }
         }

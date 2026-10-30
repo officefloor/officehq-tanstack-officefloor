@@ -9,6 +9,7 @@ import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
 import { AliasControl } from './AliasControl';
+import { openedEditor } from './editorOpens';
 import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
 import { MergeControl } from './MergeControl';
@@ -35,7 +36,7 @@ import { useSheetFigures } from './useSheetFigures';
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
 // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
-// aliases (sorted as names are compared, comma and space separated), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
+// aliases (sorted as names are compared, comma and space separated), whether they clash (their name or an alias is used by someone else on a sheet of the tree), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
 // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
@@ -103,6 +104,7 @@ export function PeopleList() {
             <th />
             <th>Name</th>
             <th>Aliases</th>
+            <th>Clashing</th>
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
@@ -144,6 +146,7 @@ export function PeopleList() {
                 </td>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-aliases">{p.aliases.join(', ')}</td>
+                <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-terms">{p.terms}</td>
                 <td data-testid="person-contact">{p.contact}</td>
@@ -166,7 +169,10 @@ export function PeopleList() {
                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
                 <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>
                 <td>
-                  <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
+                  <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => {
+                    setEditing(p.id);
+                    openedEditor();
+                  }}>
                     Edit
                   </button>{' '}
                   <StatementButton personId={p.id} />{' '}

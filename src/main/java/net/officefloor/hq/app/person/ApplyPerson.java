@@ -9,7 +9,8 @@ public class ApplyPerson {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(person.getId());
         }
-        if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
+        // A person already clashing stays refused until renamed to a name that clashes nowhere in the tree (nor any alias).
+        if (people.nameTaken(person.getSheetId(), request.name(), person.getId()) || people.wouldClash(person, request.name())) {
             throw new InvalidPersonException("The name is already in use");
         }
         if (!request.contact().isEmpty() && people.contactTaken(person.getSheetId(), request.contact(), person.getId())) {

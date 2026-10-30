@@ -32,6 +32,8 @@ export type Person = {
   contact: string;
   /** The person's aliases, sorted as names are compared. */
   aliases: string[];
+  /** Whether the person's name or an alias is used by someone else on a sheet of the sheet's tree. */
+  clashing: boolean;
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */

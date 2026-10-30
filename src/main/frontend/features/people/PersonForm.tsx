@@ -4,6 +4,7 @@ import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSheetToday } from '../sheet/useSheetToday';
+import { useEditorOpens } from './editorOpens';
 import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
 
 // Adds a person, or — while a person's editor is open (`editPerson` in the URL) — saves that
@@ -78,8 +79,9 @@ export function PersonForm() {
     setTermsRefused(false);
   };
 
-  // Opening an editor fills the form with that person's values.
+  // Opening an editor (pressing edit again too) fills the form with that person's values.
   const editedId = edited?.id;
+  const opens = useEditorOpens();
   useEffect(() => {
     save.reset();
     if (edited) {
@@ -92,7 +94,7 @@ export function PersonForm() {
       setVersion(edited.version);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editedId]);
+  }, [editedId, opens]);
 
   return (
     <form

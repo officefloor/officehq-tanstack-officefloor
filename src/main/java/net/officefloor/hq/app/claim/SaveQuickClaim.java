@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Adds a DRAFT claim dated the sheet's today, with an empty note, for the person of that name or alias (name
  * compared as the person form compares it), first adding the person with grade A when no one on
- * the sheet has that name. One change: a refused claim leaves no new person behind.
+ * the sheet has that name (refused when the name is used on another sheet of its tree). One change: a refused claim leaves no new person behind.
  */
 public class SaveQuickClaim {
 
@@ -41,6 +41,9 @@ public class SaveQuickClaim {
         }
         RollupFigures beforeClaim = before;
         if (person == null) {
+            if (people.nameTaken(sheetId, request.name(), null)) {
+                throw new InvalidClaimException("The name is already in use");
+            }
             person = people.add(sheetId, request.name(), GRADE);
             audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
                     + " name=" + person.getName() + " grade=" + person.getGrade());

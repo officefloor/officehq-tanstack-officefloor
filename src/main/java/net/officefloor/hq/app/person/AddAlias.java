@@ -3,7 +3,7 @@ package net.officefloor.hq.app.person;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.plugin.variable.Val;
 
-/** Gives the person an alias: never one equal, as names are compared, to any name or alias on the sheet. */
+/** Gives the person an alias: never one equal, as names are compared, to any name or alias on the sheet or another sheet of its tree. */
 public class AddAlias {
     public void add(@Val AliasRequest request, @Val Person person, People people, Audit audit)
             throws InvalidPersonException {

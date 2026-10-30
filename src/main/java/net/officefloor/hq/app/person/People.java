@@ -107,7 +107,88 @@ public class People {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId))));
+        return withClashing(sheetId, withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId)))));
+    }
+
+    /** A name as names are compared: without regard to case or outer spaces. */
+    private static String key(String name) {
+        return name.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Who holds a name: the sheet and the person's id. */
+    private static String holder(String sheetId, long personId) {
+        return sheetId + "\n" + personId;
+    }
+
+    /** The sheets of the sheet's tree: the sheet itself, its ancestors among the sheets that exist, and its descendants. */
+    public List<String> tree(String sheetId) {
+        java.util.LinkedHashSet<String> tree = new java.util.LinkedHashSet<>();
+        tree.add(sheetId);
+        for (String at = sheets.parent(sheetId); at != null && sheets.exists(at) && tree.add(at); at = sheets.parent(at)) {
+            // climbs to the root, stopping at a loop
+        }
+        tree.addAll(sheets.descendants(sheetId));
+        return new java.util.ArrayList<>(tree);
+    }
+
+    /** Every name and alias used on the sheets, as names are compared, with who holds it. */
+    private java.util.Map<String, java.util.Set<String>> uses(List<String> sheetIds) {
+        java.util.Map<String, java.util.Set<String>> uses = new java.util.HashMap<>();
+        for (String sheetId : sheetIds) {
+            jdbc.query("SELECT id, name FROM person WHERE sheet_id = ?", rs -> {
+                uses.computeIfAbsent(key(rs.getString("name")), k -> new java.util.HashSet<>()).add(holder(sheetId, rs.getLong("id")));
+            }, sheetId);
+            jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ?", rs -> {
+                uses.computeIfAbsent(key(rs.getString("alias")), k -> new java.util.HashSet<>()).add(holder(sheetId, rs.getLong("person_id")));
+            }, sheetId);
+        }
+        return uses;
+    }
+
+    /** Whether anyone but the person holds the name in the uses. */
+    private static boolean usedByOther(java.util.Map<String, java.util.Set<String>> uses, String name, Person person) {
+        java.util.Set<String> holders = uses.getOrDefault(key(name), java.util.Set.of());
+        return holders.stream().anyMatch(h -> !h.equals(holder(person.getSheetId(), person.getId())));
+    }
+
+    /** Marks each person clashing when their name or an alias is used by anyone else on a sheet of the sheet's tree. */
+    private List<Person> withClashing(String sheetId, List<Person> found) {
+        if (found.isEmpty()) {
+            return found;
+        }
+        java.util.Map<String, java.util.Set<String>> uses = uses(tree(sheetId));
+        for (Person person : found) {
+            boolean clashing = usedByOther(uses, person.getName(), person);
+            for (String alias : person.getAliases()) {
+                clashing |= usedByOther(uses, alias, person);
+            }
+            person.setClashing(clashing);
+        }
+        return found;
+    }
+
+    /** Whether the person, named this, would clash: the name or one of their aliases is used by anyone else on a
+     *  sheet of their sheet's tree. */
+    public boolean wouldClash(Person person, String name) {
+        java.util.Map<String, java.util.Set<String>> uses = uses(tree(person.getSheetId()));
+        if (usedByOther(uses, name, person)) {
+            return true;
+        }
+        for (String alias : person.getAliases()) {
+            if (usedByOther(uses, alias, person)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether anyone on another sheet of the sheet's tree uses the name as a name or alias, leaving out the person
+     *  (null for no one). */
+    public boolean nameUsedInTree(String sheetId, String name, Person except) {
+        List<String> others = new java.util.ArrayList<>(tree(sheetId));
+        others.remove(sheetId);
+        java.util.Set<String> holders = uses(others).getOrDefault(key(name), java.util.Set.of());
+        return holders.stream().anyMatch(h -> except == null || !h.equals(holder(except.getSheetId(), except.getId())));
     }
 
     /** Fills in each person's patrons (ids in the order named, names sorted). */
@@ -269,7 +350,7 @@ public class People {
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))));
+        List<Person> found = withClashing(sheetId, withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)))));
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -285,9 +366,14 @@ public class People {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Whether another person on the sheet already has this name, or anyone on the sheet has it as an alias,
-     *  compared without regard to case. */
+    /** Whether another person on the sheet already has this name, or anyone on the sheet has it as an alias, or
+     *  anyone on another sheet of the sheet's tree has it as a name or alias, compared without regard to case. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        return nameTaken(sheetId, name, exceptId, null);
+    }
+
+    /** As {@link #nameTaken(String, String, Long)}, leaving out the person (null for no one) on the tree's other sheets. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId, Person exceptInTree) {
         Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
                         + (exceptId == null ? "" : " AND id <> " + exceptId.longValue()),
@@ -295,7 +381,7 @@ public class People {
         Integer aliases = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))",
                 Integer.class, sheetId, name);
-        return (count != null && count > 0) || (aliases != null && aliases > 0);
+        return (count != null && count > 0) || (aliases != null && aliases > 0) || nameUsedInTree(sheetId, name, exceptInTree);
     }
 
     /** Whether another person on the sheet already has this contact. */
