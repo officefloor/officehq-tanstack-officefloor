@@ -10,8 +10,9 @@ import org.springframework.stereotype.Repository;
 /**
  * Gives an opening claim its number. While the sheet's period numbering from is set and the sheet's
  * today is on or after it, the number counts from 1 within the claim's period: {@code <period>-<n>},
- * or {@code X-<n>} in its own sequence for a claim in no period. Otherwise it is the sheet-wide number,
- * whose sequence only the claims numbered sheet-wide advance.
+ * or {@code X-<n>} in its own sequence for a claim in no period. Otherwise it is the sheet-wide number
+ * {@code FY<yyyy>-<n>}, counting from 1 within the fiscal year of the claim's period date, in a sequence shared
+ * across the sheet's tree that only the claims numbered sheet-wide advance.
  */
 @Repository
 public class ClaimNumbering {
@@ -43,7 +44,8 @@ public class ClaimNumbering {
     /** The next number for a claim dated on the date, opened now. */
     public String next(String sheetId, LocalDate claimDate) {
         if (!perPeriod(sheetId)) {
-            return String.valueOf(sheets.nextClaimNumber(sheetId));
+            String fy = fiscalYearOf(claimDate, settings.fiscalStartMonth(sheetId));
+            return fy + "-" + sheets.nextFiscalClaimNumber(sheetId, fy);
         }
         String period = periods.nameOn(sheetId, claimDate);
         String key = period == null ? "" : period;
@@ -55,5 +57,10 @@ public class ClaimNumbering {
         Long n = jdbc.queryForObject("SELECT last_number FROM period_claim_number WHERE sheet_id = ? AND period_name = ?",
                 Long.class, sheetId, key);
         return (period == null ? NO_PERIOD : period) + "-" + n;
+    }
+
+    /** The fiscal year a date falls in, FY<yyyy> by the calendar year its first day falls in. */
+    public static String fiscalYearOf(LocalDate date, int startMonth) {
+        return "FY" + (date.getMonthValue() >= startMonth ? date.getYear() : date.getYear() - 1);
     }
 }

@@ -62,6 +62,25 @@ public class Sheets {
         return last + 1;
     }
 
+    /** The sheet's next number in the fiscal year's sequence, shared across its tree like {@link #nextClaimNumber(String)}. */
+    public long nextFiscalClaimNumber(String sheetId, String fiscalYear) {
+        today(sheetId);
+        List<String> tree = new ArrayList<>(tree(sheetId));
+        tree.sort(null); // lock in one order so concurrent opens across the tree cannot deadlock
+        long last = 0;
+        for (String id : tree) {
+            jdbc.query("SELECT id FROM sheet WHERE id = ? FOR UPDATE", (rs, i) -> rs.getString(1), id);
+            List<Long> found = jdbc.query("SELECT last_number FROM fiscal_claim_number WHERE sheet_id = ? AND fiscal_year = ?",
+                    (rs, i) -> rs.getLong(1), id, fiscalYear);
+            if (!found.isEmpty()) {
+                last = Math.max(last, found.get(0));
+            }
+        }
+        jdbc.update("MERGE INTO fiscal_claim_number (sheet_id, fiscal_year, last_number) KEY (sheet_id, fiscal_year) VALUES (?, ?, ?)",
+                sheetId, fiscalYear, last + 1);
+        return last + 1;
+    }
+
     /** The sheets of the sheet's tree: its root (the top of its parent chain), and every descendant of the root. */
     public Set<String> tree(String sheetId) {
         String root = sheetId;
