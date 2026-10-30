@@ -35,7 +35,7 @@ public class SavePasteClaims {
                 throw new InvalidClaimException("Claim " + number + ": no one on the sheet is named " + line.name());
             }
             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
-            LocalDate dueBy = holidays.dueBy(sheetId, date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
+            LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
             if (periods.isClosed(sheetId, dueBy)) {
                 throw new InvalidClaimException("Claim " + number + ": no claim can be added inside a closed period");
             }
@@ -50,7 +50,7 @@ public class SavePasteClaims {
             Person person = persons.get(i);
             LocalDate date = dates.get(i);
             Claim claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(),
-                    date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
+                    holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
             log.record(claim, person, request.user());
             audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
             LateEntry.mark(claim, person, request.user(), claims, periods, audit);

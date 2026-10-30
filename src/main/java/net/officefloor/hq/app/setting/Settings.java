@@ -108,7 +108,7 @@ public class Settings {
         return found == null || found.value() == null ? START_FLOOR : found.value();
     }
 
-    /** The sheet's terms in days in force on a date: a claim's due-by is its date plus them. */
+    /** The sheet's terms in business days in force on a date: a claim's due-by is that many business days after its date. */
     public int terms(String sheetId, LocalDate on) {
         InForce found = on(sheetId, ValidateSetting.TERMS, on);
         return found == null || found.value() == null ? START_TERMS : found.value().intValue();

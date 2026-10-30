@@ -8,8 +8,8 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
 
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
-// a blank floor field leaves it as it is and saves the clerk limit), the terms (whole days; a claim's
-// due-by is its date plus them, fixed when the claim is created; saved when its field is filled, together with any other field filled),
+// a blank floor field leaves it as it is and saves the clerk limit), the terms (whole business days; a claim's
+// due-by is that many business days after its date, skipping weekends and the sheet's holidays, fixed when the claim is created; saved when its field is filled, together with any other field filled),
 // each grade's own terms (whole days; a new claim whose person's grade on its date has them uses them instead; saved like the terms; none: the sheet's terms), the late percent
 // (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms), the policy date (a claim dated
 // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is

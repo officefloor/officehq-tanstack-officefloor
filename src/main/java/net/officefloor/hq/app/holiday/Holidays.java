@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.holiday;
 
 import java.sql.Date;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -36,14 +37,24 @@ public class Holidays {
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
     }
 
-    /** A due-by moved past the sheet's holidays as they are now: the date when it is not a holiday, else the next day that is not. */
-    public LocalDate dueBy(String sheetId, LocalDate date) {
+    /** A claim's due-by: the terms-th business day after its date, counting from the day after it and skipping
+     *  every Saturday, Sunday and holiday on the sheet as they are now (terms of 0 leave the date itself). */
+    public LocalDate dueBy(String sheetId, LocalDate date, int terms) {
         Set<LocalDate> holidays = new HashSet<>();
-        jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? AND holiday_date >= ?",
+        jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? AND holiday_date > ?",
                 rs -> { holidays.add(rs.getDate(1).toLocalDate()); }, sheetId, Date.valueOf(date));
+        return businessDays(date, terms, holidays);
+    }
+
+    /** The terms-th day after the date that is neither a Saturday, a Sunday nor one of the holidays. */
+    public static LocalDate businessDays(LocalDate date, int terms, Set<LocalDate> holidays) {
         LocalDate due = date;
-        while (holidays.contains(due)) {
+        for (int counted = 0; counted < terms; ) {
             due = due.plusDays(1);
+            DayOfWeek day = due.getDayOfWeek();
+            if (day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY && !holidays.contains(due)) {
+                counted++;
+            }
         }
         return due;
     }
