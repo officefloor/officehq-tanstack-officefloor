@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
 /** The URL key holding the signed-in user's as-of date ("" or absent: none, the live sheet). It is this screen's
@@ -8,8 +9,11 @@ export const AS_OF_PARAM = 'asof';
  *  it stood at the end of that date, the date standing for the sheet's today, and every change is refused. */
 export function useAsOf(): string {
   const [asOf] = useSearchParam(AS_OF_PARAM, asString);
-  return asOf;
+  return useContext(LiveReads) ? '' : asOf;
 }
+
+/** While true, the reads below it are of the live sheet whatever the as-of date (see features/consolidated). */
+export const LiveReads = createContext(false);
 
 /** A read's path, asking for the sheet as of the date when one is set. */
 export function readPath(path: string, asOf: string): string {

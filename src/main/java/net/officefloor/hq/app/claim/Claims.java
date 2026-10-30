@@ -216,6 +216,63 @@ public class Claims {
         history(claim.getSheetId(), claim.getId());
     }
 
+    /** Copies the claim to the person on another sheet, listed as their newest claim: its status, dates, note, tags,
+     *  settled figure, log and comments kept; unnumbered, unbound from any statement, without its reference, lock or
+     *  settle batch. Its tags are remembered as used on the other sheet. Returns the copy's id. */
+    public long transferIn(Claim claim, String toSheet, long personId) {
+        long listed = jdbc.queryForObject("SELECT COALESCE(MAX(listed_seq), 0) + 1 FROM claim", Long.class);
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
+                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, listed_seq)"
+                            + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
+                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, ? FROM claim WHERE sheet_id = ? AND id = ?",
+                    Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, toSheet);
+            ps.setLong(2, personId);
+            ps.setLong(3, listed);
+            ps.setString(4, claim.getSheetId());
+            ps.setLong(5, claim.getId());
+            return ps;
+        }, keys);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) SELECT ?, ?, status, by_user, log_date, due"
+                + " FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text) SELECT ?, ?, by_user, comment_date, text"
+                + " FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
+        recordTags(toSheet, claim.getTags());
+        history(toSheet, id);
+        return id;
+    }
+
+    /** The sheet's today when the claim was opened (its first OPEN or PENDING log line); null when not known. */
+    public LocalDate openedOn(Claim claim) {
+        List<Date> dates = jdbc.queryForList("SELECT log_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
+                + " AND status IN ('OPEN', 'PENDING') ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
+        return dates.isEmpty() ? null : dates.get(0).toLocalDate();
+    }
+
+    /** Gives a transferred claim its number on the sheet it arrived on. */
+    public void numberTransferred(String sheetId, long id, String number) {
+        jdbc.update("UPDATE claim SET claim_number = ? WHERE sheet_id = ? AND id = ?", number, sheetId, id);
+        history(sheetId, id);
+    }
+
+    /** Points a transferred claim at the (renumbered) claim it corrects, when that one came with it. */
+    public void correctsTransferred(String sheetId, long id, String corrects) {
+        if (corrects == null) return;
+        jdbc.update("UPDATE claim SET corrects = ? WHERE sheet_id = ? AND id = ?", corrects, sheetId, id);
+        history(sheetId, id);
+    }
+
+    /** Removes the claim, its log and its comments from its sheet (its history is kept for the as-of view). */
+    public void remove(Claim claim) {
+        jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
+        jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
+        jdbc.update("DELETE FROM claim WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+    }
+
     /** Keeps a comment on the claim, written by the user on the sheet's today. */
     public void comment(Claim claim, String user, String text) {
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text)"

@@ -1,3 +1,4 @@
+import { LiveReads } from '../asof/useAsOf';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSheetFigures } from '../people/useSheetFigures';
 import { formatCents, toCents } from '../rates/due';
@@ -6,11 +7,16 @@ import { useDescendants } from './useDescendants';
 type Totals = { people: number; due: bigint; overdue: bigint };
 
 // The figures over the sheet and all its descendants: their people, and each sheet's due-total and
-// overdue-total as that sheet shows them, added up. A sheet with no children shows its own.
+// overdue-total as that sheet shows them, added up. A sheet with no children shows its own. They are
+// the live figures, also while the screen is shown as of a date.
 export function ConsolidatedFigures() {
   const [sheet] = useSearchParam('sheet', asString);
   const descendants = useDescendants(sheet);
-  return <Add sheets={[sheet, ...descendants]} totals={{ people: 0, due: 0n, overdue: 0n }} />;
+  return (
+    <LiveReads.Provider value={true}>
+      <Add sheets={[sheet, ...descendants]} totals={{ people: 0, due: 0n, overdue: 0n }} />
+    </LiveReads.Provider>
+  );
 }
 
 // Adds the first sheet's figures to the totals and passes on to the rest: one sheet's hooks per

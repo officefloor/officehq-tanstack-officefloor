@@ -225,6 +225,43 @@ public class People {
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, fromId);
     }
 
+    /** Adds the person to another sheet as they stand: their name, terms, contact, every grade they were given (with
+     *  its from-date) and their aliases; no statement taken. Returns them as added. */
+    public Person transferIn(Person from, String toSheet) {
+        java.util.SortedMap<java.time.LocalDate, String> grades = from.getGrades();
+        String first = grades.isEmpty() ? from.getGrade() : grades.get(grades.firstKey());
+        Person person = add(toSheet, from.getName(), first, from.getTerms(), from.getContact());
+        grades.forEach((on, grade) -> {
+            if (!on.equals(Person.BEGINNING)) {
+                person.recordGrade(on, grade);
+                writeRecordedGrade(person);
+            }
+        });
+        for (String alias : jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                String.class, from.getSheetId(), from.getId())) {
+            addAlias(person, alias);
+        }
+        return person;
+    }
+
+    /** Takes the person off their sheet entirely: their patron links both ways, pool memberships, fixed period
+     *  figures, holds, watches, statements, grades and aliases are dropped. Kept as they stood for the as-of view. */
+    public void transferOut(Person person) {
+        String sheetId = person.getSheetId();
+        long id = person.getId();
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
+                sheetId, sheetId, id);
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
+    }
+
     /** The people merged away after the date, as they stood when merged, in the order they were added. */
     public List<Person> mergedAfter(String sheetId, java.time.LocalDate date) {
         return jdbc.query("SELECT * FROM person_merged WHERE sheet_id = ? AND merged_on > ? ORDER BY id", ROW, sheetId,

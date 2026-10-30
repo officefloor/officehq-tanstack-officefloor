@@ -16,6 +16,7 @@ import { PasteClaims } from './PasteClaims';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
+import { TransferControl } from './TransferControl';
 import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
@@ -175,6 +176,7 @@ export function PeopleList() {
                   <PatronControl personId={p.id} people={people} />{' '}
                   <AliasControl personId={p.id} />{' '}
                   <MergeControl personId={p.id} people={people} />{' '}
+                  <TransferControl personId={p.id} />{' '}
                   <WatchControl personId={p.id} watched={watched.includes(p.id)} />
                 </td>
                 <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>
