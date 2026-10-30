@@ -25,6 +25,9 @@ public class ReopenPeriod {
         if (!period.closed() && !period.softClosed()) {
             throw new InvalidPeriodException("The period " + name + " is not closed");
         }
+        if (period.locked()) {
+            throw new InvalidPeriodException("The period " + name + " is locked");
+        }
         periods.reopen(sheetId, name);
         audit.recordOnCommit("PERIOD_REOPENED sheet=" + sheetId + " by=" + request.user() + " period=" + name);
         response.send(periods.list(sheetId));

@@ -23,7 +23,7 @@ public class Periods {
                 rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
                 total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>(),
                 rs.getBoolean("soft_closed"), rs.getObject("claim_cap") == null ? "" : String.valueOf(rs.getInt("claim_cap")),
-                new LinkedHashMap<>());
+                new LinkedHashMap<>(), rs.getBoolean("locked"));
     };
 
     private final JdbcTemplate jdbc;
@@ -94,6 +94,11 @@ public class Periods {
                 sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
         history(sheetId, name, false, false, null, Map.of(), Map.of());
+    }
+
+    /** Lock or unlock the named period. */
+    public void setLocked(String sheetId, String name, boolean locked) {
+        jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ?", locked, sheetId, name);
     }
 
     /** Whether a date falls inside a closed period of the sheet. */

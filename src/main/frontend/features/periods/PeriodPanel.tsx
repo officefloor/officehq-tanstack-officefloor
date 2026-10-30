@@ -16,7 +16,8 @@ import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods'
 // closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward
 // can reopen it, making its due-total live again. A soft-closed period (shown closed: soft) has its figures fixed the
 // same way, but claims dated in it can still be added and changed (one added then is a late entry); it can be closed
-// (fixing the figures afresh) or reopened.
+// (fixing the figures afresh) or reopened. A steward can lock a period (shown locked: yes), so it cannot be reopened
+// until a steward unlocks it.
 export function PeriodPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -69,7 +70,7 @@ export function PeriodPanel() {
   // Close a period (open or soft-closed), soft-close an open one, or reopen a closed or soft-closed one (each by the roles the sheet's permission allows; by default
   // close by clerk and steward, reopen by a steward only).
   const act = useMutation({
-    mutationFn: ({ name, action }: { name: string; action: 'close' | 'soft-close' | 'reopen' }) =>
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock' }) =>
       postJson<Period[]>(
         `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`,
         { user },
@@ -88,6 +89,7 @@ export function PeriodPanel() {
             <th>Closed</th>
             <th>FY</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th></th>
           </tr>
         </thead>
@@ -101,6 +103,7 @@ export function PeriodPanel() {
               <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</td>
               <td data-testid="period-cap">{p.cap}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 {!p.closed && (
                   <button
@@ -133,11 +136,35 @@ export function PeriodPanel() {
                   }}
                 >
                   Reopen
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-lock"
+                  onClick={() => {
+                    act.reset();
+                    act.mutate({ name: p.name, action: 'lock' });
+                  }}
+                >
+                  Lock
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-unlock"
+                  onClick={() => {
+                    act.reset();
+                    act.mutate({ name: p.name, action: 'unlock' });
+                  }}
+                >
+                  Unlock
                 </button>
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error" role="alert">
-                    {act.variables.action === 'reopen'
-                      ? ' Could not reopen the period: only a role the sheet allows to reopen (by default a steward) can reopen it, and only while it is closed or soft-closed.'
+                    {act.variables.action === 'lock'
+                      ? ' Could not lock the period: only a steward can lock it, and only while it is unlocked.'
+                      : act.variables.action === 'unlock'
+                      ? ' Could not unlock the period: only a steward can unlock it, and only while it is locked.'
+                      : act.variables.action === 'reopen'
+                      ? ' Could not reopen the period: only a role the sheet allows to reopen (by default a steward) can reopen it, and only while it is closed or soft-closed and not locked.'
                       : act.variables.action === 'soft-close'
                       ? ' Could not soft-close the period: only a role the sheet allows to close can soft-close it, and only while it is open.'
                       : ' Could not close the period: only a role the sheet allows to close can close it, and only while it is open or soft-closed.'}
