@@ -246,6 +246,46 @@ public class Claims {
         return id;
     }
 
+    /**
+     * Copies the claim to the person on a cloned sheet, listed after every claim: its status, figures, dates, notes,
+     * reference, tags, log and comments as they are. Its number, the number it corrects and the one it was split from
+     * are left for {@link #finishCloned}; a statement's binding and an editor's lock are not copied.
+     */
+    public long cloneIn(Claim claim, String toSheet, long personId) {
+        long listed = jdbc.queryForObject("SELECT COALESCE(MAX(listed_seq), 0) + 1 FROM claim", Long.class);
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
+                            + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
+                            + " listed_seq)"
+                            + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
+                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?"
+                            + " FROM claim WHERE sheet_id = ? AND id = ?",
+                    Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, toSheet);
+            ps.setLong(2, personId);
+            ps.setLong(3, listed);
+            ps.setString(4, claim.getSheetId());
+            ps.setLong(5, claim.getId());
+            return ps;
+        }, keys);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) SELECT ?, ?, status, by_user, log_date, due"
+                + " FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, comment_date, text) SELECT ?, ?, by_user, comment_date, text"
+                + " FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, id, claim.getSheetId(), claim.getId());
+        return id;
+    }
+
+    /** Gives a cloned claim its number (null for none), the number it corrects and the one it was split from on the
+     *  clone, and records it in the clone's history. */
+    public void finishCloned(String sheetId, long id, String number, String corrects, String splitFrom) {
+        jdbc.update("UPDATE claim SET claim_number = ?, corrects = ?, split_from = ? WHERE sheet_id = ? AND id = ?",
+                number, corrects, splitFrom, sheetId, id);
+        history(sheetId, id);
+    }
+
     /** The sheet's today when the claim was opened (its first OPEN or PENDING log line); null when not known. */
     public LocalDate openedOn(Claim claim) {
         List<Date> dates = jdbc.queryForList("SELECT log_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
