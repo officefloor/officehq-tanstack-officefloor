@@ -1,0 +1,835 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 9ed1273b..6e45b611 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -63,12 +63,12 @@ export function ClaimList({
+ }: {
+   claims: Claim[];
+   people: Person[];
+-  rateOn: (date: string) => string | undefined;
++  rateOn: (claim: Claim) => string | undefined;
+ }) {
+   return (
+     <ul data-testid="claims">
+       {claims.map((c) => (
+-        <ClaimRow key={c.id} claim={c} people={people} rate={rateOn(c.date)} />
++        <ClaimRow key={c.id} claim={c} people={people} rate={rateOn(c)} />
+       ))}
+     </ul>
+   );
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 3f9900ce..75862bc6 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -53,6 +53,8 @@ export type Claim = {
+   lines?: string[];
+   /** The number of the bulk settle batch that settled the claim, "" when it was settled one at a time or never. */
+   batch?: string;
++  /** The mark drawn when the claim arrived on the sheet: a forward-only rate applies to it only when its mark is lower. */
++  rateMark?: number;
+ };
+ 
+ /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index f6839d0d..ce58c510 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -4,7 +4,7 @@ import { BulkOpenButton, BulkReassignButton, BulkRedateButton, BulkSettleButton,
+ import { ClaimList } from '../claims/ClaimList';
+ import { sumAmounts, tagList } from '../claims/useClaims';
+ import { claimDue, formatCents, showDue, toCents } from '../rates/due';
+-import { rateOn } from '../rates/useRates';
++import { claimRate } from '../rates/useRates';
+ import { StatementButton } from '../statements/StatementButton';
+ import { UnstateButton } from '../statements/UnstateButton';
+ import { SummaryPanel } from '../summary/SummaryPanel';
+@@ -129,7 +129,7 @@ export function PeopleList() {
+           c.number,
+           c.date,
+           c.amount,
+-          showDue(claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, { pct: latePct, today, grace }, policy)),
++          showDue(claimDue(c, claimRate(rates, gradeOn(p, c.date), c), floor, { pct: latePct, today, grace }, policy)),
+           c.status,
+           periodOf(periods, dueBy(c))?.name ?? '',
+         ]),
+@@ -291,7 +291,7 @@ export function PeopleList() {
+                 <td data-testid="person-statement-date">{p.statementDate}</td>
+                 <td>
+                   <PlanControl personId={p.id} />
+-                  <ClaimList claims={own} people={people} rateOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
++                  <ClaimList claims={own} people={people} rateOn={(c) => claimRate(rates, gradeOn(p, c.date), c)} />
+                   <ClaimForm personId={p.id} claims={own} />
+                 </td>
+               </tr>
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 6039f1ae..074dfacd 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -2,7 +2,7 @@ import { countsLive, hasTag, isOpen, useClaims, useTags } from '../claims/useCla
+ import { isOverdue } from '../claims/overdue';
+ import { useGrace } from '../claims/useGrace';
+ import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
+-import { rateOn, useRates } from '../rates/useRates';
++import { claimRate, rateOn, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
+@@ -32,7 +32,7 @@ export function useSheetFigures(sheet: string) {
+   const uncappedOf = (person: Person) =>
+     dueTotal(
+       live.filter((c) => c.personId === person.id),
+-      (date) => rateOn(rates, gradeOn(person, date), date),
++      (c) => claimRate(rates, gradeOn(person, c.date), c),
+       rateOn(rates, gradeOn(person, today), today),
+       floor,
+       late,
+@@ -48,7 +48,7 @@ export function useSheetFigures(sheet: string) {
+   const dueSumOf = (person: Person, which: (c: (typeof live)[number]) => boolean) =>
+     live
+       .filter((c) => c.personId === person.id && which(c))
+-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
++      .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
+   const settledTotalOf = (person: Person) => dueSumOf(person, (c) => c.status === 'SETTLED');
+   const openTotalOf = (person: Person) => dueSumOf(person, isOpen);
+   // The sheet's settled-total and open-total: everyone's figure added up, not trimmed.
+@@ -56,7 +56,7 @@ export function useSheetFigures(sheet: string) {
+   const sheetOpenTotal = formatCents(people.reduce((sum, p) => sum + openTotalOf(p), 0n));
+   const overdue = live.filter((c) => isOverdue(c, today, grace));
+   const overdueSum = (cs: typeof overdue) =>
+-    cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n);
++    cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
+   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
+   // The sheet's due-total: the people's due-totals added up, skipping n/a, trimmed.
+   const sheetDueTotal = formatCents(trimmedSum(people.map(totalOf).filter((due): due is bigint => due !== null)));
+@@ -83,7 +83,7 @@ export function useSheetFigures(sheet: string) {
+     for (const c of live) {
+       if (c.personId !== person.id || !isOpen(c)) continue;
+       const age = daysBetween(c.date, today);
+-      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n;
++      const due = claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n;
+       buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;
+     }
+     return buckets;
+@@ -95,7 +95,7 @@ export function useSheetFigures(sheet: string) {
+     total: formatCents(
+       live
+         .filter((c) => hasTag(c, tag) || hasTag(byId.get(c.personId)!, tag))
+-        .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
++        .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n),
+     ),
+   }));
+   const onSheet = new Set(people.map((p) => p.id));
+@@ -107,7 +107,7 @@ export function useSheetFigures(sheet: string) {
+     total: formatCents(
+       live
+         .filter((c) => c.date.slice(0, 7) === month)
+-        .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
++        .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n),
+     ),
+   }));
+   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
+diff --git a/src/main/frontend/features/periods/usePeriodDueTotal.ts b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+index bc60f679..ad978d60 100644
+--- a/src/main/frontend/features/periods/usePeriodDueTotal.ts
++++ b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+@@ -2,7 +2,7 @@ import { countsAtEnd, countsLive, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
+ import { claimDue, toCents } from '../rates/due';
+ import { useGrace } from '../claims/useGrace';
+-import { rateOn, useRates } from '../rates/useRates';
++import { claimRate, useRates } from '../rates/useRates';
+ import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { periodOf, usePeriods, type Period } from './usePeriods';
+@@ -25,7 +25,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
+     if (!person) return 0n;
+     return claims
+       .filter((c) => c.personId === personId && countsAtEnd(c, period.to, (date) => heldOn(person, date) || retiredOn(person, late.today), late.today) && periodOf(periods, c.dueBy)?.name === period.name)
+-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
++      .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
+   };
+ }
+ 
+@@ -53,7 +53,7 @@ export function useClassicPeriodDueTotal(sheet: string): (period: Period) => big
+       const held = (date: string) => heldOn(person, date) || retiredOn(person, late.today);
+       return claims
+         .filter((c) => c.personId === person.id && countsLive(c, held, late.today) && periodOf(periods, c.dueBy)?.name === period.name)
+-        .reduce((s, c) => s + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), sum);
++        .reduce((s, c) => s + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), sum);
+     }, 0n);
+   };
+ }
+diff --git a/src/main/frontend/features/rates/RatePreview.tsx b/src/main/frontend/features/rates/RatePreview.tsx
+index 1a0d2915..46a30f6e 100644
+--- a/src/main/frontend/features/rates/RatePreview.tsx
++++ b/src/main/frontend/features/rates/RatePreview.tsx
+@@ -6,7 +6,7 @@ import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { claimDue, formatCents } from './due';
+-import { rateOn, useRates } from './useRates';
++import { claimRate, useRates } from './useRates';
+ 
+ const PCT = /^\d+(\.\d{1,2})?$/;
+ 
+@@ -44,7 +44,7 @@ export function RatePreview() {
+     for (const c of claims) {
+       const person = byId.get(c.personId);
+       if (person === undefined || !isOpen(c) || gradeOn(person, c.date) !== grade) continue;
+-      const current = claimDue(c, rateOn(rates, grade, c.date), floor, late, policy);
++      const current = claimDue(c, claimRate(rates, grade, c), floor, late, policy);
+       const next = claimDue(c, candidate, floor, late, policy);
+       if (current === next) continue;
+       count++;
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index 1313a547..375e843d 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -116,14 +116,14 @@ export function claimDue(
+  *  in force on its date); then it is the sum of the figures there are. A claim whose figure is n/a
+  *  adds nothing. */
+ export function dueTotal(
+-  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; personId?: string }[],
+-  rateOn: (date: string) => string | undefined,
++  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; personId?: string; rateMark?: number }[],
++  rateOf: (claim: { date: string; rateMark?: number }) => string | undefined,
+   rateToday: string | undefined,
+   floor: On,
+   late?: Late,
+   policy?: Policy,
+ ): bigint | null {
+-  const figures = claims.map((c) => claimDue(c, rateOn(c.date), floor, late, policy));
++  const figures = claims.map((c) => claimDue(c, rateOf(c), floor, late, policy));
+   if (rateToday === undefined && figures.every((f) => f === null)) return null;
+   return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
+ }
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 3f4fe43a..0b5dee98 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -6,8 +6,26 @@ import { readPath, useAsOf } from '../asof/useAsOf';
+ /** A grade's rate: a percent shown with two decimals ("12.50"), in force from a date (YYYY-MM-DD;
+  *  "" for from the beginning of time) through a date ("" for no end), and its version: how many times a
+  *  rate has been set for the grade and from-date, this the newest. One inherited from an ancestor
+- *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above; the sheet's own have none. */
+-export type Rate = { grade: string; rate: string; from: string; to: string; version: number; level?: number };
++ *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above; the sheet's own have none.
++ *  afterMark is 0 for a rate applying to every claim; a forward-only one (saved with a from-date on or after the
++ *  sheet's today) applies only to claims whose rateMark is greater, the others falling back to the older versions
++ *  it replaced (earlier, newest first). */
++export type Rate = {
++  grade: string;
++  rate: string;
++  from: string;
++  to: string;
++  version: number;
++  level?: number;
++  afterMark?: number;
++  earlier?: { rate: string; to: string; afterMark: number }[];
++};
++
++/** Whether a rate (version) with this mark applies to a claim with that one; no claim mark: the rate in force,
++ *  without regard to forward-only rates (as the rates panel, the rate preview and the rate calendar show it). */
++function applies(afterMark: number | undefined, claimMark: number | undefined): boolean {
++  return !afterMark || claimMark === undefined || claimMark > afterMark;
++}
+ 
+ export const ratesKey = (sheet: string, asOf = '') => ['sheet', sheet, 'rates', asOf] as const;
+ 
+@@ -33,12 +51,14 @@ export function useRates(sheet: string): Rate[] {
+   );
+ }
+ 
+-/** One sheet's grade rate in force on a date: the one with the latest from-date on or before it;
+- *  undefined when none applies, or when that one's to-date is before the date. */
+-function ownRateOn(rates: Rate[], grade: string, date: string, level: number): string | undefined {
+-  let found: Rate | undefined;
++/** One sheet's grade rate in force on a date (for a claim with a mark: of the versions that apply to it): the one with
++ *  the latest from-date on or before it; undefined when none applies, or when that one's to-date is before the date. */
++function ownRateOn(rates: Rate[], grade: string, date: string, level: number, mark?: number): string | undefined {
++  let found: { from: string; rate: string; to: string } | undefined;
+   for (const r of rates) {
+-    if ((r.level ?? 0) === level && r.grade === grade && r.from <= date && (found === undefined || r.from >= found.from)) found = r;
++    if ((r.level ?? 0) !== level || r.grade !== grade || r.from > date || (found !== undefined && r.from < found.from)) continue;
++    const version = [r, ...(r.earlier ?? [])].find((v) => applies(v.afterMark, mark));
++    if (version !== undefined) found = { from: r.from, rate: version.rate, to: version.to };
+   }
+   if (found === undefined || (found.to !== '' && found.to < date)) return undefined;
+   return found.rate;
+@@ -46,11 +66,17 @@ function ownRateOn(rates: Rate[], grade: string, date: string, level: number): s
+ 
+ /** The grade's rate in force on a date: the sheet's own (see ownRateOn); when it has none, its parent's,
+  *  then the parent's parent's, up to three levels up; undefined when none has one (or the date is not known yet). */
+-export function rateOn(rates: Rate[], grade: string, date: string | undefined): string | undefined {
++export function rateOn(rates: Rate[], grade: string, date: string | undefined, mark?: number): string | undefined {
+   if (date === undefined) return undefined;
+   for (let level = 0; level <= 3; level++) {
+-    const found = ownRateOn(rates, grade, date, level);
++    const found = ownRateOn(rates, grade, date, level, mark);
+     if (found !== undefined) return found;
+   }
+   return undefined;
+ }
++
++/** The grade's rate that applies to a claim on its date (see rateOn): a forward-only rate only when the claim
++ *  arrived on the sheet after it was saved. */
++export function claimRate(rates: Rate[], grade: string, claim: { date: string; rateMark?: number }): string | undefined {
++  return rateOn(rates, grade, claim.date, claim.rateMark ?? 0);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index d3b40f34..9749a9f9 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -207,6 +207,7 @@ public class AsOfView {
+             // A claim's ref and tags are not kept in its history: they show as they are now.
+             then.setRef(current.getRef());
+             then.setTags(current.getTags());
++            then.setRateMark(current.getRateMark());
+             // Nor is its void reason: a claim void by then shows the reason it was voided with.
+             if (then.getStatus() == ClaimStatus.VOID) then.setVoidReason(current.getVoidReason());
+             latest.put(then.getId(), then);
+@@ -233,7 +234,7 @@ public class AsOfView {
+     /** The rates set by the end of the date, by grade then from-date (from the beginning of time first). */
+     public List<RateResponse> rates(String sheetId, LocalDate date) {
+         Map<String, TreeMap<LocalDate, RateResponse>> byGrade = new TreeMap<>();
+-        jdbc.query("SELECT grade, rate, from_date, to_date FROM rate_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
++        jdbc.query("SELECT grade, rate, from_date, to_date, after_mark FROM rate_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                 (RowCallbackHandler) rs -> {
+                     LocalDate from = local(rs.getDate(3));
+                     LocalDate to = local(rs.getDate(4));
+@@ -241,9 +242,14 @@ public class AsOfView {
+                     TreeMap<LocalDate, RateResponse> byFrom = byGrade.computeIfAbsent(grade, g -> new TreeMap<>());
+                     LocalDate key = from == null ? LocalDate.MIN : from;
+                     RateResponse replaced = byFrom.get(key);
++                    List<RateResponse.Earlier> earlier = new ArrayList<>();
++                    if (replaced != null) {
++                        earlier.add(new RateResponse.Earlier(replaced.rate(), replaced.to(), replaced.afterMark()));
++                        earlier.addAll(replaced.earlier());
++                    }
+                     byFrom.put(key, new RateResponse(grade, rs.getBigDecimal(2).setScale(2).toPlainString(),
+                             from == null ? "" : from.toString(), to == null ? "" : to.toString(),
+-                            replaced == null ? 1 : replaced.version() + 1));
++                            replaced == null ? 1 : replaced.version() + 1, rs.getLong(5), earlier));
+                 }, sheetId, Date.valueOf(date));
+         List<RateResponse> rates = new ArrayList<>();
+         byGrade.values().forEach(byFrom -> rates.addAll(byFrom.values()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 66ea684f..565ddbf4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -144,7 +144,7 @@ public class ApplyClaimStatus {
+             // with no figure it stays live (n/a until a rate is set).
+             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+             BigDecimal figure = claim.isBound() && claim.getStatedDue() != null ? claim.getStatedDue()
+-                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
++                    : Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
+             claim.setSettledDue(LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
+                     on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding,
+                     settings.grace(claim.getSheetId(), grade, claim.getDate())));
+@@ -212,7 +212,7 @@ public class ApplyClaimStatus {
+         String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+         BigDecimal fixed = ClaimResponse.fixedDue(claim);
+         BigDecimal figure = fixed != null || claim.isBound() ? fixed
+-                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
++                : Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
+         return LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
+                 on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding,
+                 settings.grace(claim.getSheetId(), grade, claim.getDate()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+index 30e56cef..3e237ed4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+@@ -31,7 +31,7 @@ public class ApplyResettle {
+         }
+         RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on));
+         String grade = people.find(sheetId, claim.getPersonId()).gradeOn(claim.getDate());
+-        BigDecimal figure = Rates.due(claim.getAmount(), rates.find(sheetId, grade, claim.getDate()), rounding);
++        BigDecimal figure = Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
+         BigDecimal due = figure == null ? null
+                 : LateCharge.floored(claim, figure.add(LateCharge.asOpen(claim, figure, on -> settings.latePct(sheetId, on),
+                         sheets.today(sheetId), rounding, settings.grace(sheetId, grade, claim.getDate()))), settings.floor(sheetId, claim.getDate()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 5b6ba8b0..df22ede5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -134,6 +134,12 @@ public class Claim {
+     public String getVoidReason() { return voidReason; }
+     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+ 
++    /** The mark drawn when the claim arrived on its sheet: a forward-only rate applies to it only when saved before
++     *  (its mark lower; see Rates). 0 for a claim from before marks were kept. */
++    private long rateMark;
++    public long getRateMark() { return rateMark; }
++    public void setRateMark(long rateMark) { this.rateMark = rateMark; }
++
+     /** The user whose open editor locks the claim; null when unlocked. */
+     private String lockedBy;
+     public String getLockedBy() { return lockedBy; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 856c0363..bf978600 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -15,12 +15,13 @@ import java.util.List;
+  *  tags are its tags, sorted and comma separated, "" for none; voidReason is the reason it was voided with, "" for none;
+  *  comments are its comments, oldest first, each "<user> on <date>: <text>" (empty unless listed);
+  *  lines are its lines, oldest first, each "<label> <qty> x <unit>" (empty unless listed);
+- *  batch is the number of the bulk settle batch that settled it, "" when settled one at a time or never. */
++ *  batch is the number of the bulk settle batch that settled it, "" when settled one at a time or never;
++ *  rateMark is the mark drawn when it arrived on the sheet: a forward-only rate applies to it only when its mark is lower. */
+ public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy, boolean stated, String corrects,
+         String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
+         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, String tags,
+-        String voidReason, List<String> comments, String batch, List<String> lines) {
++        String voidReason, List<String> comments, String batch, List<String> lines, long rateMark) {
+ 
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
+@@ -40,7 +41,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
+                 claim.getVoidReason() == null ? "" : claim.getVoidReason(),
+                 claim.getComments().stream().map(ClaimComment::line).toList(),
+                 claim.getSettleBatch() == null ? "" : String.valueOf(claim.getSettleBatch()),
+-                claim.getLines().stream().map(ClaimLine::line).toList());
++                claim.getLines().stream().map(ClaimLine::line).toList(), claim.getRateMark());
+     }
+ 
+     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 6b97b7c0..02b359a8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -49,6 +49,7 @@ public class Claims {
+         claim.setVoidReason(rs.getString("void_reason"));
+         int batch = rs.getInt("settle_batch");
+         claim.setSettleBatch(rs.wasNull() ? null : batch);
++        claim.setRateMark(rs.getLong("rate_mark"));
+         return claim;
+     };
+ 
+@@ -56,6 +57,9 @@ public class Claims {
+     private static final String SELECT = "SELECT c.*, k.claim_date AS corrected_date FROM claim c LEFT JOIN claim k"
+             + " ON k.sheet_id = c.sheet_id AND k.person_id = c.person_id AND k.claim_number = c.corrects";
+ 
++    /** A new mark for a claim arriving on a sheet (see Rates). */
++    private static final String NEXT_RATE_MARK = "NEXT VALUE FOR rate_mark_seq";
++
+     /** The listed_seq after every claim's: a new or moved claim is listed first. */
+     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed_seq), 0) + 1 FROM claim)";
+ 
+@@ -71,10 +75,10 @@ public class Claims {
+     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
+     private void history(String sheetId, long id) {
+         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
+-                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch)"
++                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark)"
+                 + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
+                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
+-                + " c.split_from, c.late_entry, c.settle_batch"
++                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark"
+                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+     }
+ 
+@@ -153,8 +157,8 @@ public class Claims {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, terms, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+-                            + NEXT_LISTED + ")",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, terms, listed_seq, rate_mark)"
++                            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ", " + NEXT_RATE_MARK + ")",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, sheetId);
+             ps.setLong(2, personId);
+@@ -169,6 +173,7 @@ public class Claims {
+             return ps;
+         }, keys);
+         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
++        claim.setRateMark(jdbc.queryForObject("SELECT rate_mark FROM claim WHERE id = ?", Long.class, claim.getId()));
+         history(sheetId, claim.getId());
+         claim.setCorrects(corrects);
+         claim.setDueBy(dueBy);
+@@ -247,9 +252,11 @@ public class Claims {
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
+-                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq)"
++                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq,"
++                            + " rate_mark)"
+                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
+-                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ? FROM claim WHERE sheet_id = ? AND id = ?",
++                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ?, " + NEXT_RATE_MARK
++                            + " FROM claim WHERE sheet_id = ? AND id = ?",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, toSheet);
+             ps.setLong(2, personId);
+@@ -282,9 +289,9 @@ public class Claims {
+             PreparedStatement ps = con.prepareStatement(
+                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
+                             + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
+-                            + " listed_seq)"
++                            + " listed_seq, rate_mark)"
+                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
+-                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?"
++                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark"
+                             + " FROM claim WHERE sheet_id = ? AND id = ?",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, toSheet);
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index c69febc9..cdfe7d55 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -73,7 +73,7 @@ public class PeriodCloser {
+                 RoundingMode rounding = Rounding.of(claim, policyDate, on -> settings.roundingMode(sheetId, on));
+                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
+                 BigDecimal figure = fixed != null || claim.isBound() ? fixed
+-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), rounding);
++                        : Rates.due(claim.getAmount(), rates.find(claim, person.gradeOn(claim.getDate())), rounding);
+                 if (figure != null) {
+                     personTotal = personTotal.add(LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()),
+                             on -> settings.latePct(sheetId, on), today, rounding,
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index 400aa499..471f85c5 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,7 +1,16 @@
+ package net.officefloor.hq.app.rate;
+ 
++import java.util.List;
++
+ /** A grade's rate, a percent shown with two decimals ("12.50"), and the date it applies from
+  *  (YYYY-MM-DD; "" when it applies from the beginning of time) and through ("" when it has no end), and its
+- *  version: how many times a rate has been set for the grade and from-date, this the newest. */
+-public record RateResponse(String grade, String rate, String from, String to, int version) {
++ *  version: how many times a rate has been set for the grade and from-date, this the newest. afterMark is 0 for a rate
++ *  applying to every claim, else the mark of a forward-only one: it applies only to claims with a greater mark; earlier
++ *  are the older versions it replaced, newest first, for the claims it does not apply to. */
++public record RateResponse(String grade, String rate, String from, String to, int version, long afterMark,
++        List<Earlier> earlier) {
++
++    /** An older version of a rate: its percent, to-date ("" for no end) and mark (see {@link RateResponse}). */
++    public record Earlier(String rate, String to, long afterMark) {
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index b81720c5..6a33db2e 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -4,9 +4,13 @@ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The rate store: percents per grade, each from a date (or from the beginning of time), kept per sheet. */
+@@ -22,19 +26,45 @@ public class Rates {
+         this.sheets = sheets;
+     }
+ 
+-    /** The sheet's rates, by grade then from-date (from the beginning of time first). */
++    /** The sheet's rates, by grade then from-date (from the beginning of time first), each with the older versions it
++     *  replaced (newest first) for the claims a forward-only newer version does not apply to. */
+     public List<RateResponse> list(String sheetId) {
+-        return jdbc.query("SELECT grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
++        Map<String, List<RateResponse.Earlier>> earlier = new HashMap<>();
++        jdbc.query("SELECT grade, from_date, rate, to_date, after_mark FROM rate_version WHERE sheet_id = ? ORDER BY version DESC",
++                (RowCallbackHandler) rs -> {
++                    Date to = rs.getDate("to_date");
++                    earlier.computeIfAbsent(rs.getString("grade") + "|" + rs.getDate("from_date"), k -> new ArrayList<>())
++                            .add(new RateResponse.Earlier(rs.getBigDecimal("rate").setScale(2).toPlainString(),
++                                    to == null ? "" : to.toLocalDate().toString(), rs.getLong("after_mark")));
++                }, sheetId);
++        return jdbc.query("SELECT grade, rate, from_date, to_date, version, after_mark FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
+                 (rs, i) -> {
+                     Date from = rs.getDate("from_date");
+                     Date to = rs.getDate("to_date");
+                     return new RateResponse(rs.getString("grade"), rs.getBigDecimal("rate").setScale(2).toPlainString(),
+                             from == null ? "" : from.toLocalDate().toString(), to == null ? "" : to.toLocalDate().toString(),
+-                            rs.getInt("version"));
++                            rs.getInt("version"), rs.getLong("after_mark"),
++                            earlier.getOrDefault(rs.getString("grade") + "|" + from, List.of()));
+                 },
+                 sheetId);
+     }
+ 
++    /** A claim's mark later than every rate's: asks for the rate in force without regard to forward-only rates (the
++     *  rates panel, the rate preview and the rate calendar show that one). */
++    public static final long IN_FORCE = Long.MAX_VALUE;
++
++    /** Whether a rate (version) saved with this mark applies to a claim with that one: a rate applying to every claim
++     *  (mark 0) always; a forward-only one only to a claim that arrived after it was saved. */
++    public static boolean applies(long afterMark, long claimMark) {
++        return afterMark == 0 || claimMark > afterMark;
++    }
++
++    /** The rate for a grade in force on a date for a claim with a mark (see {@link #applies}). */
++    @FunctionalInterface
++    public interface Lookup {
++        BigDecimal rate(String grade, LocalDate date, long claimMark);
++    }
++
+     /** How many levels up a sheet's parents are asked for a rate the sheet has not. */
+     public static final int ANCESTOR_LEVELS = 3;
+ 
+@@ -58,12 +88,22 @@ public class Rates {
+     /** The rate for a grade on the sheet in force on a date (see {@link #findOwn}); when the sheet has
+      *  none, its parent's, then the parent's parent's, up to {@link #ANCESTOR_LEVELS} levels up; null when none has one. */
+     public BigDecimal find(String sheetId, String grade, LocalDate date) {
+-        BigDecimal own = findOwn(sheetId, grade, date);
++        return find(sheetId, grade, date, IN_FORCE);
++    }
++
++    /** The rate for a grade on the sheet that applies to the claim on its date (see {@link #find(String, String, LocalDate, long)}). */
++    public BigDecimal find(net.officefloor.hq.app.claim.Claim claim, String grade) {
++        return find(claim.getSheetId(), grade, claim.getDate(), claim.getRateMark());
++    }
++
++    /** As {@link #find(String, String, LocalDate)}, for a claim with a mark: the rates that apply to it only. */
++    public BigDecimal find(String sheetId, String grade, LocalDate date, long claimMark) {
++        BigDecimal own = findOwn(sheetId, grade, date, claimMark);
+         if (own != null) {
+             return own;
+         }
+         for (String ancestor : ancestors(sheetId)) {
+-            BigDecimal rate = findOwn(ancestor, grade, date);
++            BigDecimal rate = findOwn(ancestor, grade, date, claimMark);
+             if (rate != null) {
+                 return rate;
+             }
+@@ -71,17 +111,24 @@ public class Rates {
+         return null;
+     }
+ 
+-    /** The rate for a grade set on the sheet itself in force on a date: the one with the latest from-date on or
+-     *  before it; null when none applies, or when that one's to-date is before the date. */
+-    public BigDecimal findOwn(String sheetId, String grade, LocalDate date) {
++    /** The rate for a grade set on the sheet itself in force on a date for a claim with a mark: of the versions that apply
++     *  to it (see {@link #applies}), the newest of the one with the latest from-date on or before the date; null when none
++     *  applies, or when that one's to-date is before the date. */
++    public BigDecimal findOwn(String sheetId, String grade, LocalDate date, long claimMark) {
+         Date on = Date.valueOf(date);
+-        List<BigDecimal> found = jdbc.query("SELECT rate, to_date FROM rate WHERE sheet_id = ? AND grade = ?"
+-                + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1",
+-                (rs, i) -> {
+-                    Date to = rs.getDate("to_date");
+-                    return to != null && to.before(on) ? null : rs.getBigDecimal("rate");
+-                }, sheetId, grade, on);
+-        return found.isEmpty() ? null : found.get(0);
++        String cols = "SELECT from_date, version, rate, to_date, after_mark FROM ";
++        String where = " WHERE sheet_id = ? AND grade = ? AND (from_date IS NULL OR from_date <= ?)";
++        List<Object[]> found = jdbc.query(cols + "rate" + where + " UNION ALL " + cols + "rate_version" + where
++                + " ORDER BY from_date DESC NULLS LAST, version DESC",
++                (rs, i) -> new Object[] { rs.getBigDecimal("rate"), rs.getDate("to_date"), rs.getLong("after_mark") },
++                sheetId, grade, on, sheetId, grade, on);
++        for (Object[] row : found) {
++            if (applies((Long) row[2], claimMark)) {
++                Date to = (Date) row[1];
++                return to != null && to.before(on) ? null : (BigDecimal) row[0];
++            }
++        }
++        return null;
+     }
+ 
+     /** The due on an amount at a rate (a percent), rounded to cents by the claim's rounding; null when there is no rate. */
+@@ -90,18 +137,22 @@ public class Rates {
+     }
+ 
+     /** Set the grade's rate from a date (null: from the beginning of time) through a date (null: no
+-     *  end) as a new version: one already there from the same date is kept as an older version. */
++     *  end) as a new version: one already there from the same date is kept as an older version. One from a date on or
++     *  after the sheet's today is forward-only: it draws a mark, and applies only to claims arriving after it. */
+     public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal rate) {
+         Date fromDate = from == null ? null : Date.valueOf(from);
++        long afterMark = from != null && !from.isBefore(sheets.today(sheetId))
++                ? jdbc.queryForObject("SELECT NEXT VALUE FOR rate_mark_seq", Long.class) : 0L;
+         String sameFrom = fromDate == null ? " AND from_date IS NULL" : " AND from_date = ?";
+         Object[] key = fromDate == null ? new Object[] { sheetId, grade } : new Object[] { sheetId, grade, fromDate };
+-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date)"
+-                + " SELECT sheet_id, grade, from_date, version, rate, to_date FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key);
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date, after_mark)"
++                + " SELECT sheet_id, grade, from_date, version, rate, to_date, after_mark FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key);
+         Integer latest = jdbc.queryForObject("SELECT MAX(version) FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, Integer.class, key);
+         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key);
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
+-                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), latest == null ? 1 : latest + 1);
+-        jdbc.update("INSERT INTO rate_history (sheet_id, set_on, grade, rate, from_date, to_date) VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?)",
+-                sheetId, sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to));
++        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_mark) VALUES (?, ?, ?, ?, ?, ?, ?)",
++                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), latest == null ? 1 : latest + 1, afterMark);
++        jdbc.update("INSERT INTO rate_history (sheet_id, set_on, grade, rate, from_date, to_date, after_mark)"
++                + " VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?, ?)",
++                sheetId, sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), afterMark);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index d1d74f66..b064eb39 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -111,7 +111,7 @@ public class Rollup {
+         RoundingMode rounding = Rounding.of(claim, policyDate, on -> settings.roundingMode(sheetId, on));
+         BigDecimal fixed = ClaimResponse.fixedDue(claim);
+         BigDecimal figure = fixed != null || claim.isBound() ? fixed
+-                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate()), rounding);
++                : Rates.due(claim.getAmount(), rates.find(claim, person.gradeOn(claim.getDate())), rounding);
+         return LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()), on -> settings.latePct(sheetId, on), today, rounding,
+                 grace(claim, person));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 7dfc2e35..b0fb9112 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -36,9 +36,9 @@ public class SheetCloner {
+         copyRows("sheet_role", "user_name, role", "", from, to);
+         copyRows("sheet_permission", "action, roles", "", from, to);
+         copyRows("sheet_delegation", "user_name, from_date, to_date, delegated_by, set_on", " ORDER BY seq", from, to);
+-        copyRows("rate", "grade, rate, from_date, to_date, version", "", from, to);
+-        copyRows("rate_version", "grade, from_date, version, rate, to_date", "", from, to);
+-        copyRows("rate_history", "set_on, grade, rate, from_date, to_date", " ORDER BY seq", from, to);
++        copyRows("rate", "grade, rate, from_date, to_date, version, after_mark", "", from, to);
++        copyRows("rate_version", "grade, from_date, version, rate, to_date, after_mark", "", from, to);
++        copyRows("rate_history", "set_on, grade, rate, from_date, to_date, after_mark", " ORDER BY seq", from, to);
+         copyRows("holiday", "holiday_date", "", from, to);
+         copyRows("void_reason", "reason", " ORDER BY seq", from, to);
+         copyRows("claim_template", "name, amount, note", "", from, to);
+diff --git a/src/main/java/net/officefloor/hq/app/statement/AsOf.java b/src/main/java/net/officefloor/hq/app/statement/AsOf.java
+index d4052381..33af0bfd 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/statement/AsOf.java
+@@ -34,11 +34,11 @@ public class AsOf {
+     /** A person and their claims, with the date standing for the sheet's today and the figures in force then
+      *  (the rounding mode in force on a date: null for none). */
+     public record View(LocalDate today, LocalDate policyDate, BigDecimal cap, Person person, List<Claim> claims,
+-            BiFunction<String, LocalDate, BigDecimal> rate, Function<LocalDate, BigDecimal> floor,
++            Rates.Lookup rate, Function<LocalDate, BigDecimal> floor,
+             Function<LocalDate, BigDecimal> latePct, Function<LocalDate, java.math.RoundingMode> rounding) {
+     }
+ 
+-    private record RateRow(BigDecimal rate, LocalDate from, LocalDate to) {
++    private record RateRow(BigDecimal rate, LocalDate from, LocalDate to, long afterMark) {
+     }
+ 
+     private final JdbcTemplate jdbc;
+@@ -59,7 +59,7 @@ public class AsOf {
+     public View now(Person person) {
+         String sheetId = person.getSheetId();
+         return new View(sheets.today(sheetId), settings.policyDate(sheetId), settings.cap(sheetId), person,
+-                claims.ofPerson(sheetId, person.getId()), (grade, on) -> rates.find(sheetId, grade, on),
++                claims.ofPerson(sheetId, person.getId()), (grade, on, mark) -> rates.find(sheetId, grade, on, mark),
+                 on -> settings.floor(sheetId, on), on -> settings.latePct(sheetId, on), on -> settings.roundingMode(sheetId, on));
+     }
+ 
+@@ -70,14 +70,14 @@ public class AsOf {
+         String upTo = " AND (set_on IS NULL OR set_on <= ?) ORDER BY seq";
+ 
+         // The rates: the sheet's own, then (for a grade it has none in force for) its ancestors', each as set by the end of the date.
+-        List<BiFunction<String, LocalDate, BigDecimal>> levels = new ArrayList<>();
++        List<Rates.Lookup> levels = new ArrayList<>();
+         levels.add(ratesAt(sheetId, end));
+         for (String ancestor : rates.ancestors(sheetId)) {
+             levels.add(ratesAt(ancestor, end));
+         }
+-        BiFunction<String, LocalDate, BigDecimal> rate = (grade, on) -> {
+-            for (BiFunction<String, LocalDate, BigDecimal> level : levels) {
+-                BigDecimal found = level.apply(grade, on);
++        Rates.Lookup rate = (grade, on, mark) -> {
++            for (Rates.Lookup level : levels) {
++                BigDecimal found = level.rate(grade, on, mark);
+                 if (found != null) return found;
+             }
+             return null;
+@@ -113,23 +113,28 @@ public class AsOf {
+                 on -> net.officefloor.hq.app.claim.Rounding.mode(setting.apply(ValidateSetting.ROUNDING, on)));
+     }
+ 
+-    /** A sheet's own rates as set by the end of a date: for a grade and a date, the latest set for the latest from-date on or
+-     *  before it; null when none applies, or when that one's to-date is before the date. */
+-    private BiFunction<String, LocalDate, BigDecimal> ratesAt(String sheetId, Date end) {
+-        Map<String, Map<LocalDate, RateRow>> rateRows = new HashMap<>();
+-        jdbc.query("SELECT grade, rate, from_date, to_date FROM rate_history WHERE sheet_id = ? AND (set_on IS NULL OR set_on <= ?) ORDER BY seq",
++    /** A sheet's own rates as set by the end of a date: for a grade, a date and a claim's mark, of the rates set that apply
++     *  to the claim (see {@link Rates#applies}), the latest set for the latest from-date on or before the date; null when
++     *  none applies, or when that one's to-date is before the date. */
++    private Rates.Lookup ratesAt(String sheetId, Date end) {
++        Map<String, Map<LocalDate, List<RateRow>>> rateRows = new HashMap<>();
++        jdbc.query("SELECT grade, rate, from_date, to_date, after_mark FROM rate_history WHERE sheet_id = ? AND (set_on IS NULL OR set_on <= ?) ORDER BY seq",
+                 (RowCallbackHandler) rs -> {
+                     LocalDate from = local(rs.getDate("from_date"));
+                     rateRows.computeIfAbsent(rs.getString("grade").trim(), g -> new HashMap<>())
+-                            .put(from == null ? LocalDate.MIN : from,
+-                                    new RateRow(rs.getBigDecimal("rate"), from, local(rs.getDate("to_date"))));
++                            .computeIfAbsent(from == null ? LocalDate.MIN : from, f -> new ArrayList<>())
++                            .add(0, new RateRow(rs.getBigDecimal("rate"), from, local(rs.getDate("to_date")), rs.getLong("after_mark")));
+                 }, sheetId, end);
+-        return (grade, on) -> {
+-            TreeMap<LocalDate, RateRow> byFrom = new TreeMap<>(rateRows.getOrDefault(grade, Map.of()));
+-            Map.Entry<LocalDate, RateRow> found = byFrom.floorEntry(on);
+-            if (found == null) return null;
+-            RateRow row = found.getValue();
+-            return row.to() != null && row.to().isBefore(on) ? null : row.rate();
++        return (grade, on, mark) -> {
++            TreeMap<LocalDate, List<RateRow>> byFrom = new TreeMap<>(rateRows.getOrDefault(grade, Map.of()));
++            for (List<RateRow> versions : byFrom.headMap(on, true).descendingMap().values()) {
++                for (RateRow row : versions) {
++                    if (Rates.applies(row.afterMark(), mark)) {
++                        return row.to() != null && row.to().isBefore(on) ? null : row.rate();
++                    }
++                }
++            }
++            return null;
+         };
+     }
+ 
+@@ -172,6 +177,7 @@ public class AsOf {
+                     claim.setDueBy(local(rs.getDate("due_by")));
+                     claim.setDeferredUntil(local(rs.getDate("deferred_until")));
+                     claim.setCorrects(rs.getString("corrects"));
++                    claim.setRateMark(rs.getLong("rate_mark"));
+                     latest.put(claim.getId(), claim);
+                 }, sheetId, end);
+         List<Claim> own = new ArrayList<>();
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index bb6e5f14..8fde8838 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -53,7 +53,7 @@ public class TakeStatement {
+             BigDecimal fixed = ClaimResponse.fixedDue(claim);
+             // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date (unfloored).
+             BigDecimal figure = fixed != null || claim.isBound() ? fixed
+-                    : Rates.due(claim.getAmount(), view.rate().apply(then.gradeOn(claim.getDate()), claim.getDate()), rounding);
++                    : Rates.due(claim.getAmount(), view.rate().rate(then.gradeOn(claim.getDate()), claim.getDate(), claim.getRateMark()), rounding);
+             if (figure != null) {
+                 anyFigure = true;
+                 total = total.add(LateCharge.due(claim, figure, view.floor().apply(claim.getDate()), view.latePct(),
+@@ -68,7 +68,7 @@ public class TakeStatement {
+             claims.bind(claim);
+         }
+         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
+-        boolean na = !anyFigure && view.rate().apply(then.getGrade(), today) == null;
++        boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;
+         BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap());
+         person.setStatementCount(person.getStatementCount() + 1);
+         person.setStatedTotal(dueTotal);
+diff --git a/src/main/resources/db/migration/V82__forward_rates.sql b/src/main/resources/db/migration/V82__forward_rates.sql
+new file mode 100644
+index 00000000..70a50b19
+--- /dev/null
++++ b/src/main/resources/db/migration/V82__forward_rates.sql
+@@ -0,0 +1,12 @@
++-- Forward-only rates. A rate saved with a from-date on or after the sheet's today applies only to claims added after it
++-- was saved; one with no from-date, or a from-date before the sheet's today, applies to every claim. Both a rate save and
++-- a claim's arrival on the sheet draw a mark from one sequence, so a forward-only rate (after_mark: its mark; 0 for a rate
++-- applying to every claim) applies to a claim exactly when the claim's rate_mark is greater. A claim from before this
++-- was kept has mark 0: every forward-only rate is newer than it.
++CREATE SEQUENCE rate_mark_seq START WITH 1;
++ALTER TABLE rate ADD COLUMN after_mark BIGINT NOT NULL DEFAULT 0;
++ALTER TABLE rate_version ADD COLUMN after_mark BIGINT NOT NULL DEFAULT 0;
++ALTER TABLE rate_history ADD COLUMN after_mark BIGINT NOT NULL DEFAULT 0;
++ALTER TABLE claim ADD COLUMN rate_mark BIGINT NOT NULL DEFAULT 0;
++ALTER TABLE claim_transferred ADD COLUMN rate_mark BIGINT NOT NULL DEFAULT 0 BEFORE transferred_on;
++ALTER TABLE claim_history ADD COLUMN rate_mark BIGINT NOT NULL DEFAULT 0;
