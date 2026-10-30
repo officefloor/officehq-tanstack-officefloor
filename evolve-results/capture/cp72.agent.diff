@@ -1,0 +1,117 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index f4c7a145..a4e1f76f 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -32,7 +32,7 @@ import { useSheetFigures } from './useSheetFigures';
+ // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+ // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total (the
+ // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one). Retired
+-// people have no row unless "show retired" is on, but their claims keep counting in every total.
++// people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
+ // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
+ // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
+ // with their select checkbox are opened together with the bulk open button.
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 38a2d5cb..2eb86f85 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -33,6 +33,11 @@ export type Person = {
+ export type HoldFrom = { from: string; to: string };
+ 
+ /** Whether one of the person's holds covers the date. */
++/** Whether the person's retirement date is reached on the sheet's today: from then their OPEN and
++ *  PENDING claims, unless bound by a statement, count in no live total. */
++export const retiredOn = (person: Person, today: string | undefined) =>
++  person.retiredFrom !== '' && today !== undefined && today >= person.retiredFrom;
++
+ export const heldOn = (person: Person, date: string) =>
+   person.holds.some((h) => h.from <= date && (h.to === '' || date <= h.to));
+ 
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 0ba47e29..2345f51a 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -4,7 +4,7 @@ import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rat
+ import { rateOn, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheetToday';
+-import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
++import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
+ 
+ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+ 
+@@ -22,7 +22,7 @@ export function useSheetFigures(sheet: string) {
+   const byId = new Map(people.map((p) => [p.id, p]));
+   const live = claims.filter((c) => {
+     const person = byId.get(c.personId);
+-    return person !== undefined && countsLive(c, (date) => heldOn(person, date), today);
++    return person !== undefined && countsLive(c, (date) => heldOn(person, date) || retiredOn(person, today), today);
+   });
+   // A claim is worked at the grade in force on its date; the row shows the one in force today.
+   // The sum of a person's figures, before the cap.
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 122f9e11..7984d133 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -114,9 +114,15 @@ public class Person {
+         return claim.getStatus().counts()
+                 && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
+     }
+-    /** Whether the claim counts in the live totals on the sheet's today: as {@link #countsLive(Claim)}, and not deferred. */
++    /** Whether the person's retirement date has been reached on the date (the sheet's today on or after it). */
++    public boolean retiredOn(LocalDate today) {
++        return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
++    }
++    /** Whether the claim counts in the live totals on the sheet's today: as {@link #countsLive(Claim)}, not deferred,
++     *  and, once the person's retirement date is reached, not OPEN or PENDING unless a statement binds it. */
+     public boolean countsLive(Claim claim, LocalDate today) {
+-        return countsLive(claim) && !claim.isDeferredOn(today);
++        return countsLive(claim) && !claim.isDeferredOn(today)
++                && !(claim.getStatus().isOpen() && !claim.isBound() && retiredOn(today));
+     }
+     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
+      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
+diff --git a/src/main/java/net/officefloor/hq/app/person/RetirePerson.java b/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
+index e4c16452..6c0f8ff5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
+@@ -2,16 +2,21 @@ package net.officefloor.hq.app.person;
+ 
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupFigures;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Retires the person from the date (the sheet's today when blank). Their claims keep counting. */
++/** Retires the person from the date (the sheet's today when blank). Once the sheet's today reaches the date,
++ *  their OPEN and PENDING claims, unless bound by a statement, count in no live total; their SETTLED claims still do. */
+ public class RetirePerson {
+-    public void retire(@Val ValidRetire request, @Val Person person, People people, Sheets sheets, Audit audit) {
++    public void retire(@Val ValidRetire request, @Val Person person, People people, Sheets sheets, Audit audit,
++            @Val RollupFigures before, Rollup rollup) {
+         LocalDate from = request.date() != null ? request.date() : sheets.today(person.getSheetId());
+         person.setRetiredFrom(from);
+         people.saveRetired(person);
+         audit.recordOnCommit("PERSON_RETIRED sheet=" + person.getSheetId() + " by=" + request.user()
+                 + " name=" + person.getName() + " from=" + from);
++        rollup.recordChanges(person.getSheetId(), request.user(), before);
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index 6f442df1..5e04c59d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,6 +1,11 @@
+ # Retire the person from a date: no claim of theirs may be dated after it.
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
++  next: snapshot
++# The sheet's figures before the change, so the change can audit what it moved.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
