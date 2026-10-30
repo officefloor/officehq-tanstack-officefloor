@@ -8,6 +8,7 @@ import { AsOfControl } from '../features/asof/AsOfControl';
 import { RatePanel } from '../features/rates/RatePanel';
 import { HolidayPanel } from '../features/holidays/HolidayPanel';
 import { VoidReasonPanel } from '../features/voidreasons/VoidReasonPanel';
+import { NotePanel } from '../features/notes/NotePanel';
 import { PoolPanel } from '../features/pools/PoolPanel';
 import { CrewPanel } from '../features/crews/CrewPanel';
 import { TemplatePanel } from '../features/templates/TemplatePanel';
@@ -46,6 +47,7 @@ function Home() {
           <RatePanel />
           <HolidayPanel />
           <VoidReasonPanel />
+          <NotePanel />
           <TemplatePanel />
           <SettingsPanel />
           <PeriodPanel />
