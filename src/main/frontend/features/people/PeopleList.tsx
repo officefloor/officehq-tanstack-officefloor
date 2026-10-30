@@ -15,6 +15,8 @@ import { HoldControl } from './HoldControl';
 import { MergeControl } from './MergeControl';
 import { MoveControl } from './MoveControl';
 import { PasteClaims } from './PasteClaims';
+import { GeneratePlans } from '../plans/GeneratePlans';
+import { PlanControl } from '../plans/PlanControl';
 import { ImportPeople } from './ImportPeople';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
@@ -118,6 +120,7 @@ export function PeopleList() {
       <PersonSelection>
       <QuickAdd />
       <PasteClaims />
+      <GeneratePlans />
       <ImportPeople />
       <ShowRetired />
       <button
@@ -253,6 +256,7 @@ export function PeopleList() {
                 <td data-testid="person-stated-total">{p.statedTotal}</td>
                 <td data-testid="person-statement-date">{p.statementDate}</td>
                 <td>
+                  <PlanControl personId={p.id} />
                   <ClaimList claims={own} people={people} rateOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
                   <ClaimForm personId={p.id} claims={own} />
                 </td>
