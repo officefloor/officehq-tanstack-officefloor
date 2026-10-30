@@ -32,6 +32,9 @@ public class Claims {
     private static final String SELECT = "SELECT c.*, k.claim_date AS corrected_date FROM claim c LEFT JOIN claim k"
             + " ON k.sheet_id = c.sheet_id AND k.person_id = c.person_id AND k.claim_number = c.corrects";
 
+    /** The listed_seq after every claim's: a new or moved claim is listed first. */
+    private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed_seq), 0) + 1 FROM claim)";
+
     private final JdbcTemplate jdbc;
 
     public Claims(JdbcTemplate jdbc) {
@@ -40,12 +43,12 @@ public class Claims {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.id DESC", ROW, sheetId);
+        return jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.listed_seq DESC, c.id DESC", ROW, sheetId);
     }
 
     /** A person's claims on the sheet, newest first. */
     public List<Claim> ofPerson(String sheetId, long personId) {
-        return jdbc.query(SELECT + " WHERE c.sheet_id = ? AND c.person_id = ? ORDER BY c.id DESC", ROW, sheetId, personId);
+        return jdbc.query(SELECT + " WHERE c.sheet_id = ? AND c.person_id = ? ORDER BY c.listed_seq DESC, c.id DESC", ROW, sheetId, personId);
     }
 
     public Claim find(String sheetId, long id) {
@@ -61,7 +64,8 @@ public class Claims {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed_seq) VALUES (?, ?, ?, ?, ?, ?, "
+                            + NEXT_LISTED + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -96,6 +100,13 @@ public class Claims {
         Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
                 + " AND claim_number = ? AND status = ?", Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
         return found != null && found > 0;
+    }
+
+    /** Moves the claim to its (new) person, listed as their newest claim, and leaves it unbound. */
+    public void reassign(Claim claim) {
+        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, listed_seq = " + NEXT_LISTED
+                + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
+                claim.getSheetId(), claim.getId());
     }
 
     public void save(Claim claim) {

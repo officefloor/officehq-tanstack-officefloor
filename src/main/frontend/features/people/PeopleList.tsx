@@ -134,7 +134,7 @@ export function PeopleList() {
                 <td data-testid="person-stated-total">{p.statedTotal}</td>
                 <td data-testid="person-statement-date">{p.statementDate}</td>
                 <td>
-                  <ClaimList claims={own} rateOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
+                  <ClaimList claims={own} people={people} rateOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
                   <ClaimForm personId={p.id} claims={own} />
                 </td>
               </tr>
