@@ -1,0 +1,87 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 1c7fc8f0..55b3a7a5 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -27,6 +27,7 @@ import { useSheetFigures } from './useSheetFigures';
+ // sum of their OPEN and SETTLED claims), due-total (the
+ // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+ // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
++// the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
+ // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
+ // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
+ // patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
+@@ -43,7 +44,7 @@ export function PeopleList() {
+   const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+   const watched = useWatches(sheet, user);
+-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf } = useSheetFigures(sheet);
++  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+@@ -87,6 +88,9 @@ export function PeopleList() {
+             <th>Due</th>
+             <th>Excess</th>
+             <th>Active</th>
++            <th>Aged 0-30</th>
++            <th>Aged 31-60</th>
++            <th>Aged 61+</th>
+             {periods.map((period) => (
+               <th key={period.name}>Due {period.name}</th>
+             ))}
+@@ -108,6 +112,7 @@ export function PeopleList() {
+         <tbody>
+           {listed.map((p) => {
+             const own = claims.filter((c) => c.personId === p.id);
++            const aged = agedOf(p);
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td>
+@@ -120,6 +125,9 @@ export function PeopleList() {
+                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
+                 <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
+                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
++                <td data-testid="person-aged-0-30">{formatCents(aged[0])}</td>
++                <td data-testid="person-aged-31-60">{formatCents(aged[1])}</td>
++                <td data-testid="person-aged-61">{formatCents(aged[2])}</td>
+                 {periods.map((period) => (
+                   <td key={period.name} data-testid={`person-period-${period.name}-due-total`}>
+                     {formatCents(periodDueOf(period, p.id))}
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 2345f51a..e5284da3 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -60,10 +60,23 @@ export function useSheetFigures(sheet: string) {
+       : claims
+           .filter((c) => c.personId === person.id && c.status === 'SETTLED' && c.date >= settledFrom && c.date <= today! && /^-?\d+\.\d{2}$/.test(c.due))
+           .reduce((sum, c) => sum + toCents(c.due), 0n);
++  // Aged: the dues of a person's OPEN and PENDING claims that count, split by the claim's age on
++  // today (days from its date): 0 to 30, 31 to 60, 61 or more; a claim dated after today is 0 to 30.
++  const agedOf = (person: Person) => {
++    const buckets = [0n, 0n, 0n];
++    if (today === undefined) return buckets;
++    for (const c of live) {
++      if (c.personId !== person.id || !isOpen(c)) continue;
++      const age = daysBetween(c.date, today);
++      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n;
++      buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;
++    }
++    return buckets;
++  };
+   const onSheet = new Set(people.map((p) => p.id));
+   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
+   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
+-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf };
++  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf, agedOf };
+ }
+ 
+ // People's figures added up, leaving out the single highest and the single lowest when there are
+@@ -82,3 +95,8 @@ function daysBefore(date: string, days: number): string {
+   d.setUTCDate(d.getUTCDate() - days);
+   return d.toISOString().slice(0, 10);
+ }
++
++// The whole days from one ISO date to a later one (negative when it is earlier).
++function daysBetween(from: string, to: string): number {
++  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
++}
