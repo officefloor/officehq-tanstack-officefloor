@@ -1,0 +1,138 @@
+diff --git a/src/main/frontend/features/settings/settingsQuery.ts b/src/main/frontend/features/settings/settingsQuery.ts
+index 144fc8ad..000a7e83 100644
+--- a/src/main/frontend/features/settings/settingsQuery.ts
++++ b/src/main/frontend/features/settings/settingsQuery.ts
+@@ -16,12 +16,12 @@ import type { DatedValue } from './dated';
+  *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none; `graceDays` is a whole number of days (not dated), or "" when closing periods by today is off; `entryDate` is yyyy-mm-dd, or "" when it is off (a new claim left undated takes the sheet's today); `pot` has two decimals (not dated), or is "" when there is none; `alertThreshold` has two decimals (not dated), or is "" when alerts are off; `escalateAfter` is a whole number of days (not dated), or "" when escalation is off; `reviewSla` is a whole number of days (not dated), or "" when there is none; `pendingSla` is a whole number of days (not dated), or "" when there is none; `maxOpen` is the most OPEN or PENDING claims a person may have (not dated), or "" when there is none; `proofKinds` are the proof kinds, comma separated (not dated), or "" when there are none; `parent` is the id of the sheet whose rates are used where this one has none (not dated), or "" when there is none; `fiscalStartMonth` is the month (1 to 12) the sheet's fiscal year starts on (not dated; "1" unless set).
+  *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
+  *  (clerk-limit, clerk-limit-<grade>, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
+- *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
++ *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void, close and today
+  *  by clerk and steward; reassign and reopen by steward). */
+ export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; pendingSla: string; maxOpen: string; scoreMid: string; scoreHigh: string; scoreLog: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
+ 
+ /** The actions the permission matrix decides; each is kept (not dated) under perm-<action>. */
+-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ export type PermAction = (typeof PERM_ACTIONS)[number];
+ 
+ /** What the request carries: a setting left out (or blank, for the floor, terms, a grade's terms and late percent) is left as it is; a blank policy date is none.
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index fceefc33..81a85f55 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -95,7 +95,7 @@ public class Settings {
+     /** The roles a sheet gives user names. */
+     public static final List<String> ROLES = List.of(CLERK, STEWARD);
+     /** The actions the permission matrix decides, each kept (undated) under {@link #permKey}. */
+-    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     private final JdbcTemplate jdbc;
+     private final Sheets sheets;
+@@ -462,7 +462,7 @@ public class Settings {
+         return get(sheetId, permKey(action));
+     }
+ 
+-    /** The standing rule: reassign and reopen by steward; open, settle, void and close by clerk and steward. */
++    /** The standing rule: reassign and reopen by steward; open, settle, void, close and today by clerk and steward (anyone but a viewer). */
+     private static List<String> standing(String action) {
+         return action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : ROLES;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 4e4b5fd5..0105eb3a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -312,7 +312,7 @@ public class ValidateSettings {
+         if (body != null && body.perms() != null) {
+             for (String action : body.perms().keySet()) {
+                 if (!Settings.PERM_ACTIONS.contains(action)) {
+-                    throw new InvalidSettingException("Permissions are set only for open, settle, void, reassign, close and reopen.");
++                    throw new InvalidSettingException("Permissions are set only for open, settle, void, reassign, close, reopen and today.");
+                 }
+             }
+             for (String action : Settings.PERM_ACTIONS) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleTodayRefused.java b/src/main/java/net/officefloor/hq/app/sheet/HandleTodayRefused.java
+new file mode 100644
+index 00000000..4e563fd7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleTodayRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleTodayRefused {
++    public void handle(@Parameter TodayRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RefuseTodayPerm.java b/src/main/java/net/officefloor/hq/app/sheet/RefuseTodayPerm.java
+new file mode 100644
+index 00000000..e6925553
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RefuseTodayPerm.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RefuseTodayPerm {
++    // Only a role the permission matrix allows to change today (by default anyone but a viewer) changes it: refused before anything is read, stored or recorded.
++    public void refuse(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection, Settings settings)
++            throws TodayRefusedException {
++        if (!settings.permits(sheetId.trim(), "today", Audit.user(connection).trim())) {
++            throw new TodayRefusedException("Your role is not allowed to change the sheet's today.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/TodayRefusedException.java b/src/main/java/net/officefloor/hq/app/sheet/TodayRefusedException.java
+new file mode 100644
+index 00000000..bc8959bf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/TodayRefusedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++/** A change of the sheet's today asked for by a role the permission matrix does not allow to change it. */
++public class TodayRefusedException extends Exception {
++
++    public TodayRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.TodayRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.TodayRefusedException.yml
+new file mode 100644
+index 00000000..6e65a41a
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.TodayRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleTodayRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index fe83254e..2e0d0f83 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,11 +1,16 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. Body {"today":"yyyy-mm-dd"}; blank is
+ # the real date. A date that is not real is refused with 400 and nothing is stored. With grace days set,
+ # each open period whose to-date plus the grace days is before the new today is then closed (PERIOD_CLOSED ... auto=yes).
++# A role the permission matrix does not allow to change today (perm-today) is refused with 422.
+ # Every claim's lock on the sheet is released. Before any period closes, one SNAPSHOT per person (list order) records
+ # the due-total as it stood on the day being left; while the score log is on, one SCORE per person (list order)
+ # before them records the score as it stood then.
+ viewer:
+   class: net.officefloor.hq.app.setting.RefuseViewer
++  next: perm
++  govern: [ transaction ]
++perm:
++  class: net.officefloor.hq.app.sheet.RefuseTodayPerm
+   next: archived
+   govern: [ transaction ]
+ archived:
