@@ -1,0 +1,324 @@
+diff --git a/src/main/frontend/features/people/merge.slot.tsx b/src/main/frontend/features/people/merge.slot.tsx
+index b1443762..a791293a 100644
+--- a/src/main/frontend/features/people/merge.slot.tsx
++++ b/src/main/frontend/features/people/merge.slot.tsx
+@@ -12,7 +12,8 @@ import { sheetKey } from '../sheet/sheetQuery';
+ /**
+  * The control that merges the person into another (a steward only; neither may be retired). The merged person's
+  * claims, aliases, patrons and pool memberships go to the other and they leave the list, so every figure of the
+- * sheet is re-read.
++ * sheet is re-read. Beside it, the undo of the last merge into the person: the steward who made it, on the
++ * sheet-today it was made, brings the merged person back with the claims and aliases that came from them.
+  */
+ function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const queryClient = useQueryClient();
+@@ -31,6 +32,15 @@ function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number
+     },
+     onError: () => setError('The person could not be merged.'),
+   });
++  const undo = useMutation({
++    mutationFn: () =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/merge-undo`, {}, user),
++    onSuccess: async () => {
++      setError('');
++      await queryClient.invalidateQueries({ queryKey: sheetKey(sheetId) });
++    },
++    onError: () => setError('The merge could not be undone.'),
++  });
+ 
+   return (
+     <td>
+@@ -63,6 +73,17 @@ function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number
+         }}
+       >
+         Merge
++      </button>{' '}
++      <button
++        type="button"
++        data-testid="person-merge-undo"
++        disabled={undo.isPending}
++        onClick={() => {
++          setError('');
++          once(() => undo.mutateAsync());
++        }}
++      >
++        Undo merge
+       </button>
+     </td>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonMergeUndone.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonMergeUndone.java
+new file mode 100644
+index 00000000..59bfc85b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonMergeUndone.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditPersonMergeUndone {
++    public void audit(@Val MergeUndone undone, ServerHttpConnection connection, Audit audit) {
++        audit.record(Audit.line("PERSON_MERGE_UNDONE", undone.from().sheetId(), Audit.user(connection),
++                "name=" + undone.restored().name(), "from=" + undone.from().name()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergeKept.java b/src/main/java/net/officefloor/hq/app/person/MergeKept.java
+new file mode 100644
+index 00000000..1fda0a48
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MergeKept.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++
++/** A merge kept for its undo: the person merged (their id and name), who merged them, on what sheet-today, and whether it was undone. */
++public record MergeKept(long id, long fromId, String name, String mergedBy, LocalDate mergedOn, boolean undone) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergePerson.java b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+index 9d1909a4..74f38c06 100644
+--- a/src/main/java/net/officefloor/hq/app/person/MergePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+@@ -26,7 +26,7 @@ public class MergePerson {
+         if (person.retired() || into.retired()) {
+             throw new PersonMergeRefusedException("A retired person cannot be merged.");
+         }
+-        people.merge(person.sheetId(), person.id(), into.id());
++        people.merge(person.sheetId(), person.id(), into.id(), Audit.user(connection).trim(), sheets.today(person.sheetId()));
+         mergedOut.set(new MergedPerson(person, into));
+         responseOut.set(PersonResponse.from(people.find(person.sheetId(), into.id()), sheets.today(person.sheetId())));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergeUndone.java b/src/main/java/net/officefloor/hq/app/person/MergeUndone.java
+new file mode 100644
+index 00000000..c775647f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MergeUndone.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A merge undone: the person restored and the person they had been merged into. */
++public record MergeUndone(Person restored, Person from) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index e4ee93a6..30e4d71a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -305,8 +305,10 @@ public class People {
+      * become into's aliases; from's patrons are added to into's and anyone naming from names into instead (never
+      * themselves, no repeats); from's pool memberships and closed-period figures move to into (added to into's own where
+      * into has one), and so do from's opening balances, plans and crews (a crew from leads is led by into). from's holds, watchers, grades and contact are dropped, and from leaves the sheet.
++     * The merge is kept, made by {@code by} on the sheet-today {@code on}, so that {@link #undoMerge} can undo it.
+      */
+-    public void merge(String sheetId, long from, long into) {
++    public void merge(String sheetId, long from, long into, String by, LocalDate on) {
++        long kept = keepMerge(sheetId, from, into, by, on);
+         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE person_id = ? ORDER BY listed, id", Long.class, from)) {
+             jdbc.update("UPDATE claim SET person_id = ?, listed = "
+                     + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?) WHERE id = ?", into, sheetId, claim);
+@@ -367,6 +369,70 @@ public class People {
+         jdbc.update("DELETE FROM person_terms WHERE person_id = ?", from);
+         jdbc.update("DELETE FROM person WHERE id = ?", from);
+         alias(sheetId, into, name);
++        jdbc.update("INSERT INTO person_merge_alias (merge_id, alias_id) SELECT ?, MAX(id) FROM person_alias WHERE person_id = ?",
++                kept, into);
++    }
++
++    /** Keep the merge of {@code from} into {@code into} as from is before it, returning its id. */
++    private long keepMerge(String sheetId, long from, long into, String by, LocalDate on) {
++        KeyHolder key = new GeneratedKeyHolder();
++        jdbc.update(con -> {
++            PreparedStatement ps = con.prepareStatement(
++                    "INSERT INTO person_merge (sheet_id, into_id, from_id, name, grade, terms, contact, tags, origin_sheet_id, "
++                            + "origin_name, transferred_on, merged_by, merged_on) SELECT sheet_id, ?, id, name, grade, terms, contact, "
++                            + "tags, origin_sheet_id, origin_name, transferred_on, ?, ? FROM person WHERE id = ?", new String[] { "id" });
++            ps.setLong(1, into);
++            ps.setString(2, by);
++            ps.setDate(3, Date.valueOf(on));
++            ps.setLong(4, from);
++            return ps;
++        }, key);
++        long kept = key.getKey().longValue();
++        jdbc.update("INSERT INTO person_merge_claim (merge_id, claim_id) SELECT ?, id FROM claim WHERE person_id = ?", kept, from);
++        jdbc.update("INSERT INTO person_merge_alias (merge_id, alias_id) SELECT ?, id FROM person_alias WHERE person_id = ?", kept, from);
++        jdbc.update("INSERT INTO person_merge_grade (merge_id, from_date, grade) SELECT ?, from_date, grade FROM person_grade "
++                + "WHERE person_id = ?", kept, from);
++        jdbc.update("INSERT INTO person_merge_terms (merge_id, from_date, terms) SELECT ?, from_date, terms FROM person_terms "
++                + "WHERE person_id = ?", kept, from);
++        return kept;
++    }
++
++    /** Whether a person on the sheet has this name (not counting aliases), ignoring case. */
++    public boolean personNamed(String sheetId, String name) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?)", Integer.class,
++                sheetId, name.trim());
++        return n != null && n > 0;
++    }
++
++    /** The last merge into the person, undone or not; null when none was made into them. */
++    public MergeKept lastMerge(String sheetId, long into) {
++        List<MergeKept> found = jdbc.query("SELECT * FROM person_merge WHERE sheet_id = ? AND into_id = ? ORDER BY id DESC LIMIT 1",
++                (rs, n) -> new MergeKept(rs.getLong("id"), rs.getLong("from_id"), rs.getString("name"),
++                        rs.getString("merged_by"), rs.getObject("merged_on", LocalDate.class), rs.getBoolean("undone")),
++                sheetId, into);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /**
++     * Undo the kept merge into {@code into}: the merged person is back (with their id, grades, terms, contact and tags)
++     * at the end of the list, with the claims that went with them that into still has (as they are now) and their own
++     * aliases (their name no longer one of into's). Patrons, pool memberships and the rest stay as the merge left them.
++     */
++    public void undoMerge(String sheetId, MergeKept merge, long into) {
++        jdbc.update("INSERT INTO person (id, sheet_id, name, grade, terms, contact, tags, origin_sheet_id, origin_name, "
++                + "transferred_on, list_position) SELECT from_id, sheet_id, name, grade, terms, contact, tags, origin_sheet_id, "
++                + "origin_name, transferred_on, (SELECT COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?) "
++                + "FROM person_merge WHERE id = ?", sheetId, merge.id());
++        jdbc.update("INSERT INTO person_grade (person_id, from_date, grade) SELECT ?, from_date, grade FROM person_merge_grade "
++                + "WHERE merge_id = ? ORDER BY from_date", merge.fromId(), merge.id());
++        jdbc.update("INSERT INTO person_terms (person_id, from_date, terms) SELECT ?, from_date, terms FROM person_merge_terms "
++                + "WHERE merge_id = ? ORDER BY from_date", merge.fromId(), merge.id());
++        jdbc.update("UPDATE claim SET person_id = ? WHERE person_id = ? AND id IN (SELECT claim_id FROM person_merge_claim "
++                + "WHERE merge_id = ?)", merge.fromId(), into, merge.id());
++        jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ? AND id IN (SELECT alias_id FROM person_merge_alias "
++                + "WHERE merge_id = ?)", merge.fromId(), into, merge.id());
++        jdbc.update("DELETE FROM person_alias WHERE person_id = ? AND alias_key = LOWER(?)", merge.fromId(), merge.name());
++        jdbc.update("UPDATE person_merge SET undone = TRUE WHERE id = ?", merge.id());
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/person/UndoMerge.java b/src/main/java/net/officefloor/hq/app/person/UndoMerge.java
+new file mode 100644
+index 00000000..a06273cf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/UndoMerge.java
+@@ -0,0 +1,37 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class UndoMerge {
++    // Only the steward who made the last merge into the person undoes it, and only on the sheet-today it was made: the
++    // merged person is back with the claims and aliases that went with them.
++    public void undo(@Val Person person, People people, Settings settings, Sheets sheets, ServerHttpConnection connection,
++            Out<MergeUndone> undoneOut, Out<PersonResponse> responseOut) throws PersonMergeRefusedException {
++        String user = Audit.user(connection).trim();
++        if (!Settings.STEWARD.equals(settings.role(person.sheetId(), user))) {
++            throw new PersonMergeRefusedException("Only a steward can undo a merge.");
++        }
++        MergeKept merge = people.lastMerge(person.sheetId(), person.id());
++        if (merge == null || merge.undone()) {
++            throw new PersonMergeRefusedException("There is no merge into this person to undo.");
++        }
++        if (!merge.mergedBy().equals(user)) {
++            throw new PersonMergeRefusedException("Only the steward who made a merge can undo it.");
++        }
++        if (!sheets.today(person.sheetId()).equals(merge.mergedOn())) {
++            throw new PersonMergeRefusedException("A merge can be undone only on the day it was made.");
++        }
++        if (people.personNamed(person.sheetId(), merge.name())) {
++            throw new PersonMergeRefusedException("Another person now has the name " + merge.name() + ".");
++        }
++        people.undoMerge(person.sheetId(), merge, person.id());
++        Person restored = people.find(person.sheetId(), merge.fromId());
++        undoneOut.set(new MergeUndone(restored, person));
++        responseOut.set(PersonResponse.from(restored, sheets.today(person.sheetId())));
++    }
++}
+diff --git a/src/main/resources/db/migration/V100__person_merge.sql b/src/main/resources/db/migration/V100__person_merge.sql
+new file mode 100644
+index 00000000..245d9845
+--- /dev/null
++++ b/src/main/resources/db/migration/V100__person_merge.sql
+@@ -0,0 +1,42 @@
++-- The merges done on a sheet, kept so the last merge into a person can be undone on the sheet-today it was made: the
++-- merged person as they were (their id, name, grades, terms, contact and tags), who merged them and on what day, and
++-- which claims and aliases went with them to the person merged into. An undone merge is marked so.
++CREATE TABLE person_merge (
++    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id        VARCHAR(255) NOT NULL,
++    into_id         BIGINT       NOT NULL,
++    from_id         BIGINT       NOT NULL,
++    name            VARCHAR(255) NOT NULL,
++    grade           VARCHAR(1)   NOT NULL,
++    terms           INT,
++    contact         VARCHAR(255),
++    tags            VARCHAR(4000),
++    origin_sheet_id VARCHAR(255),
++    origin_name     VARCHAR(255),
++    transferred_on  DATE,
++    merged_by       VARCHAR(255) NOT NULL,
++    merged_on       DATE         NOT NULL,
++    undone          BOOLEAN DEFAULT FALSE NOT NULL
++);
++CREATE INDEX person_merge_into ON person_merge (sheet_id, into_id, id);
++CREATE TABLE person_merge_claim (
++    merge_id BIGINT NOT NULL,
++    claim_id BIGINT NOT NULL
++);
++CREATE INDEX person_merge_claim_merge ON person_merge_claim (merge_id);
++-- The aliases that went with the merged person: their own, and the alias their name became.
++CREATE TABLE person_merge_alias (
++    merge_id BIGINT NOT NULL,
++    alias_id BIGINT NOT NULL
++);
++CREATE INDEX person_merge_alias_merge ON person_merge_alias (merge_id);
++CREATE TABLE person_merge_grade (
++    merge_id  BIGINT     NOT NULL,
++    from_date DATE       NOT NULL,
++    grade     VARCHAR(1) NOT NULL
++);
++CREATE TABLE person_merge_terms (
++    merge_id  BIGINT NOT NULL,
++    from_date DATE   NOT NULL,
++    terms     INT
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge-undo.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge-undo.POST.yml
+new file mode 100644
+index 00000000..40ed698b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge-undo.POST.yml
+@@ -0,0 +1,37 @@
++# POST /api/sheets/{sheetId}/people/{personId}/merge-undo — the steward who made the last merge into the person undoes
++# it, on the same sheet-today it was made: the merged person is back at the end of the list (their id, grades, terms,
++# contact and tags as before) with the claims that came from them (their numbers and status as they are now) and their
++# own aliases, which leave the person's; patron and pool changes stay. Records PERSON_MERGE_UNDONE, then the ROLLUP and
++# TOTALS lines. 422, storing nothing, for anyone else, any later day, or a person with no merge to undo; 404 for a
++# person not on the sheet. Responds with the person restored.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: snapshot
++  govern: [ transaction ]
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  next: load
++  govern: [ transaction ]
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  next: undo
++  govern: [ transaction ]
++undo:
++  class: net.officefloor.hq.app.person.UndoMerge
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonMergeUndone
++  next: rollup
++  govern: [ transaction ]
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.person.RespondWithEditedPerson
++  govern: [ transaction ]
