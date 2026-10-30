@@ -14,6 +14,10 @@ public class ApplyClaim {
             // Only a draft can be edited; to change an open claim, void it and add a new one.
             throw new InvalidClaimException("Only a DRAFT claim can be edited");
         }
+        String lockedBy = claims.lockedBy(claim);
+        if (lockedBy != null && !lockedBy.equals(request.user())) {
+            throw new InvalidClaimException("The claim is being edited by " + lockedBy);
+        }
         LocalDate date = request.date() != null ? request.date() : sheets.today(claim.getSheetId());
         if (periods.isClosed(claim.getSheetId(), claim.getDate()) || periods.isClosed(claim.getSheetId(), date)) {
             throw new InvalidClaimException("No claim dated inside a closed period can be edited");

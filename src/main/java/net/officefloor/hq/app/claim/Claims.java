@@ -34,6 +34,7 @@ public class Claims {
         claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
+        claim.setLockedBy(rs.getString("locked_by"));
         return claim;
     };
 
@@ -153,6 +154,28 @@ public class Claims {
     }
 
     /** Records the claim's proofs count. */
+    /** Who holds the claim's editor lock; null when unlocked. */
+    public String lockedBy(Claim claim) {
+        List<String> found = jdbc.query("SELECT locked_by FROM claim WHERE sheet_id = ? AND id = ?",
+                (rs, i) -> rs.getString(1), claim.getSheetId(), claim.getId());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void lock(Claim claim, String user) {
+        claim.setLockedBy(user);
+        jdbc.update("UPDATE claim SET locked_by = ? WHERE sheet_id = ? AND id = ?", user, claim.getSheetId(), claim.getId());
+    }
+
+    public void unlock(Claim claim) {
+        claim.setLockedBy(null);
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+    }
+
+    /** Releases every claim's lock on the sheet (its today changed). */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+    }
+
     public void proofs(Claim claim) {
         jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
                 claim.getProofs(), claim.getSheetId(), claim.getId());

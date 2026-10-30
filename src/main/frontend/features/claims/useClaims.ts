@@ -34,6 +34,8 @@ export type Claim = {
   proofs: string;
   /** The number of the claim a split made this claim from, "" for any other claim. */
   splitFrom: string;
+  /** The user whose open editor locks the claim for everyone else, "" when unlocked. */
+  lockedBy?: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

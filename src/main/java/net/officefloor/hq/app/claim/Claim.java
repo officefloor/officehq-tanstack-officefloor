@@ -93,6 +93,11 @@ public class Claim {
     /** The number of the claim this claim was split from; null for any claim a split did not make. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
+
+    /** The user whose open editor locks the claim; null when unlocked. */
+    private String lockedBy;
+    public String getLockedBy() { return lockedBy; }
+    public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
     /** A correction is a claim with a negative amount: its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
     /** The claim's status log, oldest first: one "<STATUS> by <user> on <date> due=<due>" line per status it has had. */

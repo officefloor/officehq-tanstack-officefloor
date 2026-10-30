@@ -5,7 +5,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, isDeferred, type Claim } from './useClaims';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicyDate, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 import { ClaimSelect } from './BulkOpen';
@@ -17,8 +17,9 @@ import { peopleKey, type Person } from '../people/usePeople';
 // claim to PENDING, which shows its live due unbound by any statement; a steward may void a SETTLED claim within 7 days of
 // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
 // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener cannot approve it) and an edit button that
-// opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim is
-// refused with the claim's error — to change an open claim, void it and add a new one. A steward (or the roles the sheet's
+// opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one dated inside a closed
+// period, or one another user's open editor locks, is refused with the claim's error — to change an open claim, void it and
+// add a new one. An open editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes. A steward (or the roles the sheet's
 // reassign permission allows) moves a DRAFT, OPEN or
 // PENDING claim to another person on the sheet with the reassign button (it is listed first under them, live again until
 // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
@@ -69,6 +70,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const today = useSheetToday(sheet);
   const latePct = useLatePct(sheet);
   const policy = usePolicyDate(sheet);
+  const settings = useSettings(sheet);
 
   const status = useMutation({
     mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject'; reason?: string }) =>
@@ -173,6 +175,23 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const lock = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/lock`,
+        { user },
+      ),
+    onSuccess: () => setEditing(c.id),
+  });
+
+  const unlock = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/unlock`,
+        { user },
+      ),
+  });
+
   const [editRefused, setEditRefused] = useState(false);
 
   // The next action on the row removes an old error.
@@ -184,14 +203,28 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     redate.reset();
     proof.reset();
     split.reset();
+    lock.reset();
     setEditRefused(false);
     run();
   };
 
+  // What the screen already knows is refused at once (the claim form must not stay in adding mode
+  // while a refusal is on its way); the server takes the lock or refuses what the screen could not see.
+  const knownRefused = () =>
+    c.status !== 'DRAFT' ||
+    period?.closed === true ||
+    (c.lockedBy ?? '') !== '' && c.lockedBy !== user ||
+    settings?.roles.some((r) => r.user === user && r.role === 'viewer') === true;
   const edit = () =>
     act(() => {
-      if (c.status === 'DRAFT') setEditing(c.id);
-      else setEditRefused(true);
+      if (knownRefused()) setEditRefused(true);
+      else lock.mutate();
+    });
+
+  const cancel = () =>
+    act(() => {
+      setEditing(undefined);
+      unlock.mutate();
     });
 
   return (
@@ -292,7 +325,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         Reassign
       </button>{' '}
       {editing === c.id ? (
-        <button type="button" data-testid="claim-cancel" onClick={() => act(() => setEditing(undefined))}>
+        <button type="button" data-testid="claim-cancel" onClick={cancel}>
           Cancel
         </button>
       ) : (
@@ -300,10 +333,10 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
           Edit
         </button>
       )}
-      {editRefused && (
+      {(lock.isError || editRefused) && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: only a DRAFT claim can be edited; to change a {c.status} claim, void it and add a new one.
+          Not allowed: only a DRAFT claim outside any closed period can be edited, and not while another user's editor has it open; to change a {c.status} claim, void it and add a new one.
         </span>
       )}
       {status.isError && (
