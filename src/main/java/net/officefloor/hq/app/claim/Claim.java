@@ -106,6 +106,11 @@ public class Claim {
     public boolean isLateEntry() { return lateEntry; }
     public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
 
+    /** The claim's external reference; null when it has none. */
+    private String ref;
+    public String getRef() { return ref; }
+    public void setRef(String ref) { this.ref = ref; }
+
     /** The user whose open editor locks the claim; null when unlocked. */
     private String lockedBy;
     public String getLockedBy() { return lockedBy; }

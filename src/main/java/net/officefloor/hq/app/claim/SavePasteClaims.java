@@ -42,6 +42,11 @@ public class SavePasteClaims {
             if (!person.allowsClaimOn(date)) {
                 throw new InvalidClaimException("Claim " + number + ": no claim can be dated after the person's retirement date");
             }
+            try {
+                ValidateClaim.checkRef(line.claim().ref(), sheetId, null, claims);
+            } catch (InvalidClaimException e) {
+                throw new InvalidClaimException("Claim " + number + ": " + e.getMessage());
+            }
             persons.add(person);
             dates.add(date);
         }
@@ -49,10 +54,10 @@ public class SavePasteClaims {
             ValidClaim valid = request.lines().get(i).claim();
             Person person = persons.get(i);
             LocalDate date = dates.get(i);
-            Claim claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(),
-                    holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
+            Claim claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(), null,
+                    holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)), valid.ref());
             log.record(claim, person, request.user());
-            audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
+            audit.recordOnCommit(ClaimAudit.added(request.user(), person, claim));
             LateEntry.mark(claim, person, request.user(), claims, periods, audit);
         }
         rollup.recordChanges(sheetId, request.user(), before);

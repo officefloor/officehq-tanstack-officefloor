@@ -10,7 +10,8 @@ import { peopleKey } from './usePeople';
 // is the sheet's entry date while set, else its today; the note may be absent). Each line adds a DRAFT claim, in order, for the person
 // of that name already on the sheet (case and outer spaces ignored). Every line is checked first by the
 // claim form's rules; one refused line adds nothing. Then shows how many were added; pressing again
-// removes the old count until the new one is in.
+// removes the old count until the new one is in. A note ending " #<reference>" gives the claim that
+// reference (not part of the note); a reference used on the sheet, or twice in the paste, refuses it all.
 export function PasteClaims() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -61,7 +62,7 @@ export function PasteClaims() {
         <span data-testid="paste-error" role="alert">
           {' '}
           Nothing was added: every line needs a name on the sheet and an amount of 0.00 or more with at most two
-          decimals, and no claim whose due-by falls inside a closed period can be added or after the person's retirement date.
+          decimals, and no claim whose due-by falls inside a closed period can be added or after the person's retirement date, and no reference may be used already on the sheet or twice in the paste.
         </span>
       )}
     </form>

@@ -9,6 +9,7 @@ import { claimsKey, type Claim } from './useClaims';
 // editor is open (`editClaim` in the URL) — saves that claim. Opening the editor fills the form
 // with the claim's values. A blank date takes the sheet's entry date while set, else its today. A negative amount is a correction,
 // which names in "corrects" the number of the SETTLED claim of the same person it corrects.
+// A reference (spaces trimmed, blank for none) must not already be used on the sheet, regardless of case.
 export function ClaimForm({ personId, claims }: { personId: string; claims: Claim[] }) {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -20,6 +21,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
+  const [ref, setRef] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
 
@@ -28,10 +30,11 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
     setDate('');
     setNote('');
     setCorrects('');
+    setRef('');
   };
 
   const save = useMutation({
-    mutationFn: (body: { amount: string; date: string; note: string; corrects: string }) =>
+    mutationFn: (body: { amount: string; date: string; note: string; corrects: string; ref: string }) =>
       editing !== ''
         ? putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(editing)}`, { ...body, user })
         : postJson<Claim>(
@@ -54,6 +57,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
       setDate(edited.date);
       setNote(edited.note);
       setCorrects(edited.corrects);
+      setRef(edited.ref);
     } else {
       clear();
     }
@@ -72,7 +76,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
         e.preventDefault();
         submitOnce(() => {
           save.reset();
-          return save.mutateAsync({ amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim() });
+          return save.mutateAsync({ amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim() });
         });
       }}
     >
@@ -92,9 +96,10 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
         inputMode="numeric"
         onChange={(e) => changed(setCorrects)(e.target.value)}
       />{' '}
+      <input data-testid="claim-form-ref" value={ref} placeholder="Reference" onChange={(e) => changed(setRef)(e.target.value)} />{' '}
       <button type="submit" data-testid="claim-form-submit">{editing !== '' ? 'Save claim' : 'Add claim'}</button>
       {save.isError && (
-        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim whose due-by falls inside a closed period can be added or changed, and none after the person's retirement date.</span>
+        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim whose due-by falls inside a closed period can be added or changed, none after the person's retirement date, and no reference already used on the sheet.</span>
       )}
     </form>
   );

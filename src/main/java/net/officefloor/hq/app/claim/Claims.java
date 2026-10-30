@@ -38,6 +38,7 @@ public class Claims {
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
+        claim.setRef(rs.getString("ref"));
         return claim;
     };
 
@@ -95,13 +96,18 @@ public class Claims {
         return add(sheetId, personId, amount, date, note, null, dueBy);
     }
 
-    /** Adds a DRAFT claim with its due-by fixed as given. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy) {
+        return add(sheetId, personId, amount, date, note, corrects, dueBy, null);
+    }
+
+    /** Adds a DRAFT claim with its due-by fixed as given, and its external reference (null for none). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy, String ref) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, listed_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
@@ -111,14 +117,23 @@ public class Claims {
             ps.setString(5, note);
             ps.setString(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
+            ps.setString(8, ref);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
         history(sheetId, claim.getId());
         claim.setCorrects(corrects);
         claim.setDueBy(dueBy);
+        claim.setRef(ref);
         claim.setCorrectedDate(correctedDate(sheetId, personId, corrects));
         return claim;
+    }
+
+    /** Whether a claim on the sheet (other than exceptId, when given) carries the reference, compared without regard to case. */
+    public boolean refUsed(String sheetId, String ref, Long exceptId) {
+        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+                Integer.class, sheetId, ref, exceptId == null ? -1L : exceptId);
+        return found != null && found > 0;
     }
 
     /** The date of the person's claim with this number; null when there is none (or no number). */
@@ -215,9 +230,9 @@ public class Claims {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(),
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(),
                 claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
     }

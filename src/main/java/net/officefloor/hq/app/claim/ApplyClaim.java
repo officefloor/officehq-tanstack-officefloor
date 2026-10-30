@@ -27,7 +27,9 @@ public class ApplyClaim {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
         }
         ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claims);
+        ValidateClaim.checkRef(request.ref(), claim.getSheetId(), claim.getId(), claims);
         claim.setAmount(request.amount());
+        claim.setRef(request.ref());
         claim.setCorrects(request.corrects());
         claim.setCorrectedDate(claims.correctedDate(claim.getSheetId(), claim.getPersonId(), request.corrects()));
         claim.setDate(date);

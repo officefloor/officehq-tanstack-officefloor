@@ -11,6 +11,11 @@ final class ClaimAudit {
     private ClaimAudit() {
     }
 
+    /** CLAIM_ADDED: the line, then ref=<reference> when the claim carries one. */
+    static String added(String user, Person person, Claim claim) {
+        return line("CLAIM_ADDED", user, person, claim, claim.getNumber()) + (claim.getRef() == null ? "" : " ref=" + claim.getRef());
+    }
+
     static String line(String event, String user, Person person, Claim claim, String number) {
         ClaimResponse shown = ClaimResponse.from(claim);
         return event + " sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()

@@ -217,6 +217,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         date: c.date,
         note: c.note,
         corrects: c.corrects,
+        ref: c.ref,
         user,
       }),
     onSuccess: () => {
@@ -269,6 +270,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-amount">{c.amount}</span>{' '}
       <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
+      <span data-testid="claim-ref">{c.ref}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today, grace }, policy))}</span>{' '}

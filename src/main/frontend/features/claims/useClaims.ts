@@ -23,6 +23,8 @@ export type Claim = {
   stated: boolean;
   /** The number of the SETTLED claim a correction (a negative amount) corrects, "" for any other claim. */
   corrects: string;
+  /** The claim's external reference, unique on the sheet regardless of case; "" for none. */
+  ref: string;
   /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects. */
   roundingDate: string;
   /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */

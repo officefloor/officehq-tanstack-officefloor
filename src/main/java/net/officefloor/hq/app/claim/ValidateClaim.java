@@ -42,7 +42,8 @@ public class ValidateClaim {
             }
         }
         String note = request.note() == null ? "" : request.note().trim();
-        return new ValidClaim(amount, date, note, request.user(), corrects);
+        String ref = request.ref() == null ? "" : request.ref().trim();
+        return new ValidClaim(amount, date, note, request.user(), corrects, ref.isEmpty() ? null : ref);
     }
 
     /** The claim form's amount: with at most two decimals; a negative one is a correction. */
@@ -68,6 +69,13 @@ public class ValidateClaim {
     static void checkCorrects(ValidClaim request, String sheetId, long personId, Claims claims) throws InvalidClaimException {
         if (request.corrects() != null && !claims.isSettled(sheetId, personId, request.corrects())) {
             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person");
+        }
+    }
+
+    /** Refuse a reference another claim on the sheet already carries (compared without regard to case). */
+    static void checkRef(String ref, String sheetId, Long exceptId, Claims claims) throws InvalidClaimException {
+        if (ref != null && claims.refUsed(sheetId, ref, exceptId)) {
+            throw new InvalidClaimException("The reference " + ref + " is already used on the sheet");
         }
     }
 
