@@ -87,7 +87,7 @@ export function PersonForm() {
           Cancel
         </button>
       )}
-      {save.isError && <span data-testid="person-form-error" role="alert"> Could not save: a name is required.</span>}
+      {save.isError && <span data-testid="person-form-error" role="alert"> Could not save: a name is required and must not already be in use.</span>}
     </form>
   );
 }

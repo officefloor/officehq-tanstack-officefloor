@@ -31,6 +31,15 @@ public class People {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether another person on the sheet already has this name, compared without regard to case. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
+                        + (exceptId == null ? "" : " AND id <> " + exceptId.longValue()),
+                Integer.class, sheetId, name);
+        return count != null && count > 0;
+    }
+
     public Person add(String sheetId, String name, String grade) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
