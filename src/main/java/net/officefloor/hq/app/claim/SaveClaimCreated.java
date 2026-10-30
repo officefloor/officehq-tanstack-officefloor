@@ -23,7 +23,8 @@ public class SaveClaimCreated {
         if (!person.allowsClaimOn(date)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
         }
-        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note());
+        ValidateClaim.checkCorrects(request, sheetId, person.getId(), claims);
+        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), before);
         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));

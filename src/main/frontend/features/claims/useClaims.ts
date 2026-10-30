@@ -6,7 +6,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
  *  opened (a voided claim keeps it), "" for a draft; `due` is the due fixed when it was settled, else the
  *  figure the person's last statement bound it to, "" while its due is live (worked from the current
- *  rate) or bound to n/a; `stated` is whether the last statement bound it. */
+ *  rate) or bound to n/a; `stated` is whether the last statement bound it. A claim with a negative
+ *  amount is a correction: its due has no floor and no late charge. */
 export type Claim = {
   id: string;
   personId: string;
@@ -19,6 +20,8 @@ export type Claim = {
   /** The user who opened the claim, "" if it was never opened. */
   openedBy: string;
   stated: boolean;
+  /** The number of the SETTLED claim a correction (a negative amount) corrects, "" for any other claim. */
+  corrects: string;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */

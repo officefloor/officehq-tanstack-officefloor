@@ -22,6 +22,7 @@ public class Claims {
                 rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
         claim.setStated(rs.getBoolean("stated"));
         claim.setStatedDue(rs.getBigDecimal("stated_due"));
+        claim.setCorrects(rs.getObject("corrects", Long.class));
         return claim;
     };
 
@@ -47,19 +48,26 @@ public class Claims {
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+        return add(sheetId, personId, amount, date, note, null);
+    }
+
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
+            ps.setObject(6, corrects);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        claim.setCorrects(corrects);
+        return claim;
     }
 
     /** Bind the claim to the figure a statement gives it (stated), or leave it unbound. */
@@ -68,9 +76,17 @@ public class Claims {
                 claim.isStated(), claim.getStatedDue(), claim.getSheetId(), claim.getId());
     }
 
+    /** Whether the person has a SETTLED claim with this number on the sheet: one a correction may correct. */
+    public boolean isSettled(String sheetId, long personId, long number) {
+        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND claim_number = ? AND status = ?", Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
+        return found != null && found > 0;
+    }
+
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(),
+                claim.getSheetId(), claim.getId());
     }
 }

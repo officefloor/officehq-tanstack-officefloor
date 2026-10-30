@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
 public class ApplyClaim {
-    public void apply(@Val ValidClaim request, @Val Claim claim, Sheets sheets, Periods periods, People people)
+    public void apply(@Val ValidClaim request, @Val Claim claim, Sheets sheets, Periods periods, People people, Claims claims)
             throws InvalidClaimException {
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             // Only a draft can be edited; to change an open claim, void it and add a new one.
@@ -22,7 +22,9 @@ public class ApplyClaim {
         if (person != null && !person.allowsClaimOn(date)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
         }
+        ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claims);
         claim.setAmount(request.amount());
+        claim.setCorrects(request.corrects());
         claim.setDate(date);
         claim.setNote(request.note());
     }
