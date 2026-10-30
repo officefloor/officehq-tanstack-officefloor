@@ -1,0 +1,77 @@
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+index 4acfd058..fc5041e6 100644
+--- a/src/main/frontend/features/people/PersonForm.tsx
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -87,7 +87,7 @@ export function PersonForm() {
+           Cancel
+         </button>
+       )}
+-      {save.isError && <span data-testid="person-form-error" role="alert"> Could not save: a name is required.</span>}
++      {save.isError && <span data-testid="person-form-error" role="alert"> Could not save: a name is required and must not already be in use.</span>}
+     </form>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 4dbcdcd7..47b46e44 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -3,7 +3,10 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+-    public void apply(@Val PersonRequest request, @Val Person person) {
++    public void apply(@Val PersonRequest request, @Val Person person, People people) throws InvalidPersonException {
++        if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
++            throw new InvalidPersonException("The name is already in use");
++        }
+         person.setName(request.name());
+         person.setGrade(request.grade());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+index 4a374b4a..486e29c0 100644
+--- a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** A person form that cannot be saved (no name, an unknown grade); nothing is written. */
++/** A person form that cannot be saved (no name, a name already in use, an unknown grade); nothing is written. */
+ public class InvalidPersonException extends Exception {
+     public InvalidPersonException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 2ec3ea0c..6401fd56 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -31,6 +31,15 @@ public class People {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** Whether another person on the sheet already has this name, compared without regard to case. */
++    public boolean nameTaken(String sheetId, String name, Long exceptId) {
++        Integer count = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
++                        + (exceptId == null ? "" : " AND id <> " + exceptId.longValue()),
++                Integer.class, sheetId, name);
++        return count != null && count > 0;
++    }
++
+     public Person add(String sheetId, String name, String grade) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java b/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java
+index 6c5f5b49..755245bc 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java
+@@ -8,7 +8,10 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class SavePersonCreated {
+     public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people,
+-            ObjectResponse<ResponseEntity<PersonResponse>> response) {
++            ObjectResponse<ResponseEntity<PersonResponse>> response) throws InvalidPersonException {
++        if (people.nameTaken(sheetId, request.name(), null)) {
++            throw new InvalidPersonException("The name is already in use");
++        }
+         Person person = people.add(sheetId, request.name(), request.grade());
+         response.send(new ResponseEntity<>(PersonResponse.from(person), HttpStatus.CREATED));
+     }
