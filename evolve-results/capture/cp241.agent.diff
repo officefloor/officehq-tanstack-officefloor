@@ -1,0 +1,144 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyDueBy.java b/src/main/java/net/officefloor/hq/app/claim/ApplyDueBy.java
+index 0d1a8bb4..53e42cc1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyDueBy.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyDueBy.java
+@@ -12,8 +12,8 @@ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ApplyDueBy {
+-    // Only a steward sets a due-by, and only on a DRAFT, OPEN or PENDING claim, to a real date not before its date and
+-    // not inside a closed period. It is kept as set: a holiday added later does not work it out again.
++    // Only a steward sets a due-by, and only on a DRAFT, OPEN or PENDING claim, to a real date not inside a closed period
++    // (it may be before the claim's date). It is kept as set: a holiday added later does not work it out again.
+     public void apply(@RequestBody(required = false) DueByRequest body, @Val Claim claim, Claims claims, Periods periods,
+             Settings settings, ServerHttpConnection connection, Out<ClaimResponse> responseOut)
+             throws ClaimDueBySetRefusedException {
+@@ -30,9 +30,6 @@ public class ApplyDueBy {
+         } catch (DateTimeParseException e) {
+             throw new ClaimDueBySetRefusedException("Set the due-by to a date (yyyy-mm-dd).");
+         }
+-        if (dueBy.isBefore(claim.date())) {
+-            throw new ClaimDueBySetRefusedException("A due-by cannot be before the claim's date (" + claim.date() + ").");
+-        }
+         Period closed = periods.closedOn(claim.sheetId(), dueBy);
+         if (closed != null) {
+             throw new ClaimDueBySetRefusedException("The period " + closed.name() + " is closed: no claim can be moved into it.");
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 41b12158..4b0d3394 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -5,7 +5,7 @@ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.ApplyPerson;
+-import net.officefloor.hq.app.person.AuditPersonEdited;
++import net.officefloor.hq.app.person.PersonEditedLine;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonConflictException;
+@@ -50,7 +50,7 @@ public class MergeGrade {
+             } catch (InvalidPersonException | PersonConflictException e) {
+                 throw new GradeRefusedException(person.name() + ": " + e.getMessage());
+             }
+-            new AuditPersonEdited().audit(person, edited[0], connection, held);
++            PersonEditedLine.record(person, edited[0], false, connection, held);
+             figures = RollupLines.record(merge.sheetId(), user, figures, rollup, held);
+             moved.add(person.id());
+             merged++;
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+index c35398ac..2e2dbc91 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+@@ -41,7 +41,7 @@ public class AddImportedPeople {
+                     people.gradeFrom(person.id(), today, request.grade());
+                 }
+                 Person stored = people.find(sheet, person.id());
+-                new AuditPersonEdited().audit(person, PersonResponse.from(stored, today), connection, audit);
++                PersonEditedLine.record(person, PersonResponse.from(stored, today), false, connection, audit);
+                 updated++;
+             }
+             figures = RollupLines.record(sheet, user, figures, rollup, audit);
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+index 7d9b71e4..fae0ed29 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -1,24 +1,20 @@
+ package net.officefloor.hq.app.person;
+ 
+-import java.util.ArrayList;
+-import java.util.List;
+ import java.util.Objects;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ 
+ public class AuditPersonEdited {
+-    public void audit(@Val Person loaded, @Val PersonResponse edited,
++    public void audit(@Val Person loaded, @Val PersonRequest request, @Val PersonResponse edited, Sheets sheets,
+             ServerHttpConnection connection, Audit audit) {
+-        // terms= only when the save changed the person's own terms recorded, showing those in force on the sheet's today
++        // terms= only when the save changed the person's own terms recorded, or recorded them from the beginning of time
++        // (terms typed other than those in force today, with no from-date), showing those in force on the sheet's today
+         // ("" for none); contact= when it changed the contact ("" when it cleared it).
+-        List<String> fields = new ArrayList<>(List.of("name=" + edited.name(), "grade=" + edited.grade()));
+-        if (!PersonResponse.termses(loaded).equals(edited.termses())) {
+-            fields.add("terms=" + (edited.terms() == null ? "" : edited.terms()));
+-        }
+-        if (!Objects.equals(loaded.contact(), edited.contact())) {
+-            fields.add("contact=" + (edited.contact() == null ? "" : edited.contact()));
+-        }
+-        audit.record(Audit.line("PERSON_EDITED", loaded.sheetId(), Audit.user(connection), fields.toArray(String[]::new)));
++        Integer typed = request.terms() == null ? null : Integer.valueOf(request.terms());
++        boolean fromStart = request.termsFrom() == null
++                && !Objects.equals(typed, loaded.ownTermsOn(sheets.today(loaded.sheetId())));
++        PersonEditedLine.record(loaded, edited, fromStart, connection, audit);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonEditedLine.java b/src/main/java/net/officefloor/hq/app/person/PersonEditedLine.java
+new file mode 100644
+index 00000000..5b390174
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonEditedLine.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.person;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Objects;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.server.http.ServerHttpConnection;
++
++/** The PERSON_EDITED audit line, for every save that edits a person (kept apart: a function class has one method). */
++public final class PersonEditedLine {
++
++    private PersonEditedLine() {
++    }
++
++    /** The PERSON_EDITED line of a save; {@code fromStart} when it recorded terms from the beginning of time. */
++    public static void record(Person loaded, PersonResponse edited, boolean fromStart, ServerHttpConnection connection,
++            Audit audit) {
++        List<String> fields = new ArrayList<>(List.of("name=" + edited.name(), "grade=" + edited.grade()));
++        if (fromStart || !PersonResponse.termses(loaded).equals(edited.termses())) {
++            fields.add("terms=" + (edited.terms() == null ? "" : edited.terms()));
++        }
++        if (!Objects.equals(loaded.contact(), edited.contact())) {
++            fields.add("contact=" + (edited.contact() == null ? "" : edited.contact()));
++        }
++        audit.record(Audit.line("PERSON_EDITED", loaded.sheetId(), Audit.user(connection), fields.toArray(String[]::new)));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.PUT.yml
+index 27eb65d1..c2896828 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.PUT.yml
+@@ -1,7 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/due-by — a steward sets the due-by of a DRAFT, OPEN or PENDING claim. Body
+ # {"dueBy":"yyyy-mm-dd"}. A due-by set this way stays as set (a holiday added later does not move it); overdue, the late
+-# charge, grace and the claim's period follow it. Refused with 422 for anyone but a steward, any other status, a due-by
+-# before the claim's date, or a claim (or the new due-by) in a closed period; nothing is stored. 404 for a claim not on
++# charge, grace and the claim's period follow it; it may be before the claim's date. Refused with 422 for anyone but a
++# steward, any other status, or a claim (or the new due-by) in a closed period; nothing is stored. 404 for a claim not on
+ # the sheet.
+ viewer:
+   class: net.officefloor.hq.app.setting.RefuseViewer
