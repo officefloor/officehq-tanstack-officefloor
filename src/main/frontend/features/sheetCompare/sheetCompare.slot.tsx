@@ -3,20 +3,21 @@ import type { FormEvent } from 'react';
 import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { GRADES } from '../people/peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import { useGradeDueTotals } from '../rates/due.slot';
 import { sheetKey } from '../sheet/sheetQuery';
 
 /** Per grade of this sheet, `<grade> <this sheet's due-total> <the other sheet's>`, as each sheet's summary shows them. */
 function CompareLines({ sheetId, other }: { sheetId: string; other: string }) {
-  const mine = useGradeDueTotals(sheetId);
-  const theirs = useGradeDueTotals(other);
+  const grades = useGrades(sheetId);
+  const mine = useGradeDueTotals(sheetId, grades);
+  const theirs = useGradeDueTotals(other, grades);
   // Show nothing until both sheets' figures are read, so no line shows a half-loaded sheet.
   const fetching = useIsFetching({ queryKey: sheetKey(other) }) + useIsFetching({ queryKey: sheetKey(sheetId) });
   if (fetching > 0) return null;
   return (
     <>
-      {GRADES.map((g, i) => (
+      {grades.map((g, i) => (
         <li key={g} data-testid="compare-line">
           {`${g} ${mine[i]} ${theirs[i]}`}
         </li>

@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery, isActive, isReviewLate } from '../claims/claimsQuery';
 import type { Claim, ClaimStatus } from '../claims/claimsQuery';
-import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+import { gradeOn, peopleQuery } from '../people/peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import { classicPeriodDue, periodDue, periodsQuery } from '../periods/periodsQuery';
 import { useCapFor } from '../pools/poolsQuery';
 import { difference, personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
@@ -22,6 +23,7 @@ export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filt
  */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
+  const grades = useGrades(sheetId);
   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
   const rates = useQuery(ratesQuery(sheetId)).data ?? [];
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
@@ -54,7 +56,7 @@ function Summary({ sheetId }: { sheetId: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
+          {grades.map((g) => {
             const onGrade = unretired.filter((p) => gradeOn(p, today) === g);
             return (
               <tr key={g} data-testid={`summary-grade-${g}`}>

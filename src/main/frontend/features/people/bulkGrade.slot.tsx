@@ -4,7 +4,8 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { GRADES, peopleKey, peopleQuery } from './peopleQuery';
+import { peopleKey, peopleQuery } from './peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import type { Grade, Person } from './peopleQuery';
 import { useSelectedPeople } from './useSelectedPeople';
 
@@ -18,6 +19,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 function BulkGrade({ user, sheetId }: { user: string; sheetId: string }) {
   const queryClient = useQueryClient();
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
+  const sheetGrades = useGrades(sheetId);
   const today = useSheetToday(sheetId);
   const [selected, setSelected] = useSelectedPeople();
   const [grade, setGrade] = useState<Grade>('A');
@@ -62,7 +64,7 @@ function BulkGrade({ user, sheetId }: { user: string; sheetId: string }) {
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {sheetGrades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

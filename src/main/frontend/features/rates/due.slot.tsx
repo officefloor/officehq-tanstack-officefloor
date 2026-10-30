@@ -4,7 +4,7 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
-import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+import { gradeOn, peopleQuery } from '../people/peopleQuery';
 import { useCapFor } from '../pools/poolsQuery';
 import { patronSharesOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -111,13 +111,13 @@ export function useSheetDueTotal(sheetId: string) {
 }
 
 /**
- * Per grade (as `GRADES` orders them), the due-totals of the people on it today, retired people left out, added up
+ * Per grade (as `grades` orders them), the due-totals of the people on it today, retired people left out, added up
  * skipping n/a — as the summary shows them.
  */
-export function useGradeDueTotals(sheetId: string): string[] {
+export function useGradeDueTotals(sheetId: string, grades: string[]): string[] {
   const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
   const unretired = people.filter((p) => p.retiredFrom === null);
-  return GRADES.map((g) =>
+  return grades.map((g) =>
     sumDue(unretired.filter((p) => gradeOn(p, today) === g).map((p) => personDue(p, people, claims, rates, today, floor, late, capFor(p.id)))),
   );
 }

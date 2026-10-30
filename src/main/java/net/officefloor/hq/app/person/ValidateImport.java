@@ -26,6 +26,7 @@ public class ValidateImport {
         Set<Long> matched = new HashSet<>();
         String defaultGrade = grades.defaultFor(sheet, settings.defaultGrade(sheet));
         java.time.LocalDate today = sheets.today(sheet);
+        List<String> sheetGrades = grades.all(sheet);
         int n = 0;
         for (String line : text.split("\\r?\\n")) {
             n++;
@@ -38,7 +39,7 @@ public class ValidateImport {
             }
             try {
                 PersonRequest request = PersonRules.parse(new PersonRequest(fields[0], fields[1].isBlank() ? defaultGrade : fields[1], null, null,
-                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null, null));
+                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null, null), sheetGrades);
                 if (!names.add(request.name().toLowerCase(Locale.ROOT))) {
                     throw new InvalidPersonException("The name " + request.name() + " is given twice in the import.");
                 }

@@ -6,7 +6,8 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { tagsKey } from '../claims/claimsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useUser } from '../session/useUser';
-import { GRADES, peopleKey, peopleQuery } from './peopleQuery';
+import { peopleKey, peopleQuery } from './peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import type { Grade, Person } from './peopleQuery';
 import { useEditingPerson } from './useEditingPerson';
 
@@ -14,6 +15,7 @@ import { useEditingPerson } from './useEditingPerson';
 export function PersonForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
+  const sheetGrades = useGrades(sheetId);
   const [editingId, setEditingId] = useEditingPerson();
   const editing = people.find((p) => p.id === editingId);
   const [name, setName] = useState('');
@@ -134,7 +136,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {sheetGrades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

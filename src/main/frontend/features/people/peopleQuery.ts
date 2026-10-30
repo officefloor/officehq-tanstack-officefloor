@@ -1,7 +1,9 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
 
-export type Grade = 'A' | 'B' | 'C';
+/** A grade's code: A, B or C, or one of one to three capital letters added on the sheet (see `useGrades`). */
+export type Grade = string;
+/** The grades every sheet has. */
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
 /**

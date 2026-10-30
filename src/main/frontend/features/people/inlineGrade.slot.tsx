@@ -6,7 +6,8 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { usePersonError } from './usePersonError';
 import { useUser } from '../session/useUser';
 import { sheetKey } from '../sheet/sheetQuery';
-import { GRADES, peopleQuery } from './peopleQuery';
+import { peopleQuery } from './peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import type { Grade, Person } from './peopleQuery';
 
 /**
@@ -20,6 +21,7 @@ function PersonInlineGrade({ sheetId, personId }: { sheetId: string; personId: n
   const [user] = useUser();
   const [, setError] = usePersonError(personId);
   const person = (useQuery(peopleQuery(sheetId)).data ?? []).find((p) => p.id === personId);
+  const sheetGrades = useGrades(sheetId);
   // Blank until a grade is chosen: the person's grade shows.
   const [grade, setGrade] = useState<Grade | ''>('');
   const once = useSubmitOnce();
@@ -48,7 +50,7 @@ function PersonInlineGrade({ sheetId, personId }: { sheetId: string; personId: n
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {sheetGrades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

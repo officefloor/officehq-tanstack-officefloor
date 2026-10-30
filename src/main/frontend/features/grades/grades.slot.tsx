@@ -5,22 +5,34 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
-import { GRADES } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
-import { gradesKey, gradesQuery } from './gradesQuery';
+import { gradesKey, gradesQuery, useGrades } from './gradesQuery';
 import type { GradeState } from './gradesQuery';
 
-/** The grades and whether each is retired, and the select and button a grade is retired through. A grade already
+/** The grades and whether each is retired, then the entry and button a grade is added through: a code of one to three
+ *  capital letters not yet a grade (anything else is refused). Then the select and button a grade is retired through. A grade already
  *  retired is refused. Then the two selects and button a steward merges a grade into another through: everyone on the
  *  merged grade today is given the other from the sheet's today. */
 function Grades({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const grades = useQuery(gradesQuery(sheetId));
+  const codes = useGrades(sheetId);
   const [grade, setGrade] = useState<Grade>('A');
   const [error, setError] = useState('');
 
   const [user] = useUser();
   const once = useSubmitOnce();
+  const [code, setCode] = useState('');
+  const add = useMutation({
+    mutationFn: (body: { grade: string }) =>
+      postJson<GradeState[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades`, body, user),
+    onSuccess: (list) => {
+      queryClient.setQueryData(gradesKey(sheetId), list);
+      setCode('');
+    },
+    onError: (e: Error) => setError(e.message || 'The grade could not be added.'),
+  });
+
   const retire = useMutation({
     mutationFn: (body: { grade: Grade }) =>
       postJson<GradeState[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades/retire`, body, user),
@@ -49,6 +61,12 @@ function Grades({ sheetId }: { sheetId: string }) {
     once(() => merge.mutateAsync({ from: mergeFrom, into: mergeInto }));
   };
 
+  const submitAdd = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    once(() => add.mutateAsync({ grade: code }));
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
@@ -70,6 +88,20 @@ function Grades({ sheetId }: { sheetId: string }) {
           ))}
         </tbody>
       </table>
+      <form onSubmit={submitAdd}>
+        <input
+          data-testid="grade-add-code"
+          placeholder="Code"
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <button type="submit" data-testid="grade-add" disabled={add.isPending}>
+          Add grade
+        </button>
+      </form>
       <form onSubmit={submit}>
         <select
           data-testid="grade-retire-select"
@@ -79,7 +111,7 @@ function Grades({ sheetId }: { sheetId: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -99,7 +131,7 @@ function Grades({ sheetId }: { sheetId: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -114,7 +146,7 @@ function Grades({ sheetId }: { sheetId: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

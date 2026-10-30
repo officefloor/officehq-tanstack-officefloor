@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -27,21 +28,21 @@ public class ValidateSettings {
     // A blank late percent is left as it is; otherwise it must be a percent of 0.00 or more, with up to two decimals.
     // A missing policy date is left as it is; a blank one is none (the sheet's today is); otherwise it must be a yyyy-MM-dd date.
     // A grade's own terms are like the terms: blank is left as it is, otherwise a whole number of days, 0 or more,
-    // and only a grade (A, B or C) may have them.
-    // A grade's grace days are dated like its terms: blank is none, otherwise a whole number of days, 0 or more, and only for a grade (A, B or C).
+    // and only a grade of the sheet may have them.
+    // A grade's grace days are dated like its terms: blank is none, otherwise a whole number of days, 0 or more, and only for a grade of the sheet.
     // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
     // The cap is missing: left as it is, blank: none, otherwise an amount of 0.00 or more with up to two decimals.
     // The proof threshold is like the cap: missing is left as it is, blank is none, otherwise an amount of 0.00 or more with up to two decimals.
-    // A grade's proof threshold is dated like it: blank is none (the sheet's is in force), otherwise an amount like it, and only for a grade (A, B or C).
+    // A grade's proof threshold is dated like it: blank is none (the sheet's is in force), otherwise an amount like it, and only for a grade of the sheet.
     // The note threshold is like the cap too.
-    // A grade's clerk limit is dated like the clerk limit: blank is none (the sheet's is in force), otherwise an amount like it, and only for a grade (A, B or C).
+    // A grade's clerk limit is dated like the clerk limit: blank is none (the sheet's is in force), otherwise an amount like it, and only for a grade of the sheet.
     // The grace days are missing: left as they are, blank: off, otherwise a whole number of days, 0 or more (not dated).
     // The entry date is like the period numbering from-date: missing is left as it is, blank is off (the sheet's today), otherwise a yyyy-MM-dd date.
     // The pot is like the cap, but not dated: missing is left as it is, blank is none.
     // The alert threshold is like the pot: missing is left as it is, blank is off.
     // The escalation gap is like the grace days: missing is left as it is, blank is off, otherwise a whole number of days, 0 or more (not dated).
     // The proof kinds are not dated: missing is left as they are, blank is none, otherwise receipt or photo, separated by commas.
-    // The default grade is not dated: missing is left as it is, blank is none (so A), otherwise a grade, A, B or C.
+    // The default grade is not dated: missing is left as it is, blank is none (so A), otherwise a grade of the sheet.
     // The parent is a sheet id, not dated: missing is left as it is, blank is none. It may not be the sheet itself, nor a
     // sheet that has this one as an ancestor, and it must be a sheet that has been loaded.
     // The rounding mode is dated: missing is left as it is, blank is none (the policy date decides), otherwise half-up or half-even.
@@ -49,7 +50,9 @@ public class ValidateSettings {
     // An action's permitted roles are missing: left as they are, blank: the standing rule, otherwise clerk or steward, separated by commas.
     // A from-date, given by setting key, is blank (the sheet's today) or a yyyy-MM-dd date, and only a dated setting has one.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
-            Sheets sheets, Settings store, Out<SheetSettings> settingsOut) throws InvalidSettingException {
+            Sheets sheets, Settings store, net.officefloor.hq.app.grade.Grades grades, Out<SheetSettings> settingsOut)
+            throws InvalidSettingException {
+        List<String> sheetGrades = grades.all(sheetId.trim());
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
         if (!floor.isEmpty() && !AMOUNT.matcher(floor).matches()) {
             throw new InvalidSettingException("The floor must be an amount of 0.00 or more, with up to two decimals.");
@@ -70,8 +73,8 @@ public class ValidateSettings {
                 if (days.isEmpty()) {
                     continue;
                 }
-                if (!Settings.GRADES.contains(grade)) {
-                    throw new InvalidSettingException("Terms can be set only for grade A, B or C.");
+                if (!sheetGrades.contains(grade)) {
+                    throw new InvalidSettingException("Terms can be set only for a grade of the sheet.");
                 }
                 if (!DAYS.matcher(days).matches()) {
                     throw new InvalidSettingException("The terms of grade " + grade + " must be a whole number of days, 0 or more.");
@@ -87,8 +90,8 @@ public class ValidateSettings {
                     continue;
                 }
                 String days = entry.getValue().trim();
-                if (!Settings.GRADES.contains(grade)) {
-                    throw new InvalidSettingException("Grace days can be set only for grade A, B or C.");
+                if (!sheetGrades.contains(grade)) {
+                    throw new InvalidSettingException("Grace days can be set only for a grade of the sheet.");
                 }
                 if (!days.isEmpty() && !DAYS.matcher(days).matches()) {
                     throw new InvalidSettingException("The grace days of grade " + grade + " must be a whole number of days, 0 or more.");
@@ -104,8 +107,8 @@ public class ValidateSettings {
                     continue;
                 }
                 String amount = entry.getValue().trim();
-                if (!Settings.GRADES.contains(grade)) {
-                    throw new InvalidSettingException("A proof threshold can be set only for grade A, B or C.");
+                if (!sheetGrades.contains(grade)) {
+                    throw new InvalidSettingException("A proof threshold can be set only for a grade of the sheet.");
                 }
                 if (!amount.isEmpty() && !AMOUNT.matcher(amount).matches()) {
                     throw new InvalidSettingException("The proof threshold of grade " + grade + " must be an amount of 0.00 or more, with up to two decimals.");
@@ -121,8 +124,8 @@ public class ValidateSettings {
                     continue;
                 }
                 String amount = entry.getValue().trim();
-                if (!Settings.GRADES.contains(grade)) {
-                    throw new InvalidSettingException("A clerk limit can be set only for grade A, B or C.");
+                if (!sheetGrades.contains(grade)) {
+                    throw new InvalidSettingException("A clerk limit can be set only for a grade of the sheet.");
                 }
                 if (!amount.isEmpty() && !AMOUNT.matcher(amount).matches()) {
                     throw new InvalidSettingException("The clerk limit of grade " + grade + " must be an amount of 0.00 or more, with up to two decimals.");
@@ -277,8 +280,8 @@ public class ValidateSettings {
             proofKinds = String.join(",", kinds);
         }
         String defaultGrade = body == null || body.defaultGrade() == null ? null : body.defaultGrade().trim();
-        if (defaultGrade != null && !defaultGrade.isEmpty() && !Settings.GRADES.contains(defaultGrade)) {
-            throw new InvalidSettingException("The default grade must be A, B or C.");
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !sheetGrades.contains(defaultGrade)) {
+            throw new InvalidSettingException("The default grade must be a grade of the sheet.");
         }
         Map<String, LocalDate> from = new java.util.HashMap<>();
         if (body != null && body.from() != null) {
@@ -288,7 +291,7 @@ public class ValidateSettings {
                 if (date.isEmpty()) {
                     continue;
                 }
-                if (!Settings.DATED.contains(key)) {
+                if (!Settings.dated(sheetGrades).contains(key)) {
                     throw new InvalidSettingException("Only a setting that carries a figure has a from-date.");
                 }
                 try {

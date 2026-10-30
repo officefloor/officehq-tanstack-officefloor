@@ -9,7 +9,7 @@ import { PERM_ACTIONS, PROOF_KINDS, ROLES, ROUNDING_MODES, rolesKey, rolesQuery,
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, valueOn } from './dated';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { PermAction, Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
-import { GRADES } from '../people/peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import type { Grade } from '../people/peopleQuery';
 import { poolsKey } from '../pools/poolsQuery';
 import { ratesKey } from '../rates/ratesQuery';
@@ -39,6 +39,7 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
+  const grades = useGrades(sheetId);
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
@@ -133,7 +134,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       return;
     }
     const gl: Partial<Record<Grade, string>> = {};
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       const amount = (gradeLimit[grade] ?? '').trim();
       if (amount !== '' && !AMOUNT.test(amount)) {
         setError(`The clerk limit of grade ${grade} must be an amount of 0.00 or more, with up to two decimals.`);
@@ -152,7 +153,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       return;
     }
     const g: Partial<Record<Grade, string>> = {};
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       const days = (gradeTerms[grade] ?? '').trim();
       if (days === '') continue;
       if (!DAYS.test(days)) {
@@ -162,7 +163,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       g[grade] = days;
     }
     const gg: Partial<Record<Grade, string>> = {};
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       const days = (gradeGrace[grade] ?? '').trim();
       if (days !== '' && !DAYS.test(days)) {
         setError(`The grace days of grade ${grade} must be a whole number of days, 0 or more.`);
@@ -196,7 +197,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       return;
     }
     const gp: Partial<Record<Grade, string>> = {};
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       const amount = (gradeProof[grade] ?? '').trim();
       if (amount !== '' && !AMOUNT.test(amount)) {
         setError(`The proof threshold of grade ${grade} must be an amount of 0.00 or more, with up to two decimals.`);
@@ -275,7 +276,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       return;
     }
     const dg = defaultGrade.trim();
-    if (dg !== '' && !(GRADES as readonly string[]).includes(dg)) {
+    if (dg !== '' && !grades.includes(dg)) {
       setError('The default grade must be A, B or C.');
       return;
     }
@@ -310,15 +311,15 @@ function Settings({ sheetId }: { sheetId: string }) {
       froms[key] = d;
     }
     // A blank grace is none: saved when its from-date is given, or when it was the last field worked in.
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       if (gg[grade] === undefined && (froms[`grace-${grade}`] ?? '') !== '') gg[grade] = '';
     }
     // A blank grade's proof threshold is none likewise.
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       if (gp[grade] === undefined && (froms[`proof-threshold-${grade}`] ?? '') !== '') gp[grade] = '';
     }
     // A blank grade's clerk limit is none likewise.
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       if (gl[grade] === undefined && (froms[`clerk-limit-${grade}`] ?? '') !== '') gl[grade] = '';
     }
     // A blank rounding mode is none likewise: saved when its from-date is given, or when it was the last field worked in.
@@ -349,15 +350,15 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (dg !== '' || (none && blank === 'defaultGrade')) body.defaultGrade = dg;
     if (pa !== '' || (none && blank === 'parent')) body.parent = pa;
     if (fm !== '') body.fiscalStartMonth = fm;
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       if (none && blank === `grace-${grade}`) gg[grade] = '';
     }
     if (Object.keys(gg).length > 0) body.gradeGrace = gg;
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       if (none && blank === `proof-threshold-${grade}`) gp[grade] = '';
     }
     if (Object.keys(gp).length > 0) body.gradeProof = gp;
-    for (const grade of GRADES) {
+    for (const grade of grades) {
       if (none && blank === `clerk-limit-${grade}`) gl[grade] = '';
     }
     if (Object.keys(gl).length > 0) body.gradeClerkLimit = gl;
@@ -401,7 +402,7 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
-        {GRADES.map((grade) => (
+        {grades.map((grade) => (
           <span key={grade}>
             <label>
               Clerk limit {grade}{' '}
@@ -478,7 +479,7 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
-        {GRADES.map((grade) => (
+        {grades.map((grade) => (
           <span key={grade}>
             <label>
               Terms {grade} (days){' '}
@@ -606,7 +607,7 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
-        {GRADES.map((grade) => (
+        {grades.map((grade) => (
           <span key={grade}>
             <label>
               Proof threshold {grade}{' '}
@@ -723,7 +724,7 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
-        {GRADES.map((grade) => (
+        {grades.map((grade) => (
           <span key={grade}>
             <label>
               Grace {grade} (days){' '}
@@ -946,7 +947,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Clerk limit in force: <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
       </p>
-      {GRADES.map((grade) => (
+      {grades.map((grade) => (
         <p key={grade}>
           Clerk limit of grade {grade} in force:{' '}
           <span data-testid={`setting-clerk-limit-${grade}-current`}>{current(`clerk-limit-${grade}`)}</span>
@@ -958,7 +959,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Terms in force: <span data-testid="setting-terms-current">{currentTerms}</span>
       </p>
-      {GRADES.map((grade) => (
+      {grades.map((grade) => (
         <p key={grade}>
           Terms of grade {grade} in force:{' '}
           <span data-testid={`setting-terms-${grade}-current`}>{current(`terms-${grade}`, currentTerms)}</span>
@@ -980,7 +981,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Proof threshold in force: <span data-testid="setting-proof-threshold-current">{current('proof-threshold')}</span>
       </p>
-      {GRADES.map((grade) => (
+      {grades.map((grade) => (
         <p key={grade}>
           Proof threshold of grade {grade} in force:{' '}
           <span data-testid={`setting-proof-threshold-${grade}-current`}>{current(`proof-threshold-${grade}`)}</span>
@@ -998,7 +999,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</span>
       </p>
-      {GRADES.map((grade) => (
+      {grades.map((grade) => (
         <p key={grade}>
           Grace of grade {grade} in force: <span data-testid={`setting-grace-${grade}-current`}>{current(`grace-${grade}`)}</span>
         </p>

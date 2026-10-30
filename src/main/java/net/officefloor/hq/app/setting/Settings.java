@@ -72,6 +72,18 @@ public class Settings {
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"),
             gradeProofKey("A"), gradeProofKey("B"), gradeProofKey("C"), ROUNDING, REVIEW_THRESHOLD,
             gradeClerkLimitKey("A"), gradeClerkLimitKey("B"), gradeClerkLimitKey("C"));
+
+    /** The dated settings of a sheet with these grades: {@link #DATED}, then the terms, grace days, proof threshold and
+     *  clerk limit of each grade beyond A, B and C. */
+    public static List<String> dated(List<String> grades) {
+        List<String> dated = new java.util.ArrayList<>(DATED);
+        for (String grade : grades) {
+            if (!GRADES.contains(grade)) {
+                dated.addAll(List.of(gradeTermsKey(grade), gradeGraceKey(grade), gradeProofKey(grade), gradeClerkLimitKey(grade)));
+            }
+        }
+        return dated;
+    }
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */

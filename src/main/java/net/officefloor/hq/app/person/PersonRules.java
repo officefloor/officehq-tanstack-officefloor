@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /** The person form's rules, shared by the form and the people import. */
@@ -18,17 +17,16 @@ final class PersonRules {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
-    /** The request as it is stored; the name is kept without surrounding spaces, a blank one is refused. */
-    public static PersonRequest parse(PersonRequest body) throws InvalidPersonException {
+    /** The request as it is stored; the name is kept without surrounding spaces, a blank one is refused, as is a grade
+     *  not among the sheet's {@code grades}. */
+    public static PersonRequest parse(PersonRequest body, java.util.List<String> grades) throws InvalidPersonException {
         String name = body == null || body.name() == null ? "" : body.name().trim();
         String grade = body == null || body.grade() == null ? "" : body.grade().trim();
         if (name.isEmpty()) {
             throw new InvalidPersonException("Type a name.");
         }
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("The grade must be A, B or C.");
+        if (!grades.contains(grade)) {
+            throw new InvalidPersonException("The grade must be one of " + String.join(", ", grades) + ".");
         }
         // A blank from-date is kept null: the sheet's today, filled in when stored.
         String from = date(body.gradeFrom());

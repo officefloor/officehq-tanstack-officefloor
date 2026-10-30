@@ -4,7 +4,8 @@ import { sheetKey } from '../sheet/sheetQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { Late } from '../rates/ratesQuery';
 import { claimsQuery } from '../claims/claimsQuery';
-import { GRADES, peopleQuery } from '../people/peopleQuery';
+import { peopleQuery } from '../people/peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import type { Grade } from '../people/peopleQuery';
 import { valueOn } from './dated';
 import type { DatedValue } from './dated';
@@ -140,8 +141,9 @@ export function usePolicyDate(sheetId: string): string {
 /** What a claim's late charge and its rounding depend on, as the sheet has it now. */
 export function useLate(sheetId: string): Late {
   const dated = useQuery(settingsQuery(sheetId)).data?.dated;
+  const grades = useGrades(sheetId);
   return {
-    grace: Object.fromEntries(GRADES.map((g) => [g, dated?.[`grace-${g}`] ?? []])),
+    grace: Object.fromEntries(grades.map((g) => [g, dated?.[`grace-${g}`] ?? []])),
     people: useQuery(peopleQuery(sheetId)).data ?? [],
     today: useSheetToday(sheetId),
     pct: useLatePct(sheetId),

@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
+import { GRADES } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
 
 /** A grade and whether it is retired on the sheet: a retired grade cannot be chosen for a person; people on it keep it. */
@@ -12,3 +14,9 @@ export const gradesQuery = (sheetId: string) => ({
   queryKey: gradesKey(sheetId),
   queryFn: () => getJson<GradeState[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades`),
 });
+
+/** The sheet's grades, in order: A, B and C, then those added on it (A, B and C until they are read). */
+export function useGrades(sheetId: string): Grade[] {
+  const grades = useQuery(gradesQuery(sheetId)).data;
+  return grades ? grades.map((g) => g.grade) : GRADES;
+}

@@ -18,7 +18,7 @@ public class SheetClones {
 
     /** The tables kept per sheet (by sheet_id) whose rows show a sheet has been used. */
     private static final List<String> SHEET_TABLES = List.of("person", "claim", "setting", "setting_from", "rate",
-            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool", "crew", "grade_retired");
+            "sheet_role", "period", "holiday", "void_reason", "claim_template", "pool", "crew", "grade_retired", "grade");
 
     private final JdbcTemplate jdbc;
 
@@ -38,7 +38,7 @@ public class SheetClones {
     }
 
     /**
-     * Copy the sheet {@code from} to the empty sheet {@code to}, which takes {@code today}: its settings, roles, rates,
+     * Copy the sheet {@code from} to the empty sheet {@code to}, which takes {@code today}: its settings, roles, grades, rates,
      * holidays, void reasons, templates, people (grades, terms, contacts, tags, aliases, holds, retirements, patrons), pools, crews,
      * periods (all open) and claims (status, frozen figures, dates, notes, tags, references, logs; unnumbered and unbound by
      * any statement, listed in the order they were). Returns each copied claim's id here by its id on {@code from}, in the
@@ -64,6 +64,7 @@ public class SheetClones {
                 to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, reason, listed) SELECT ?, reason, listed FROM void_reason "
                 + "WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO grade (sheet_id, grade) SELECT ?, grade FROM grade WHERE sheet_id = ? ORDER BY seq", to, from);
         jdbc.update("INSERT INTO grade_retired (sheet_id, grade) SELECT ?, grade FROM grade_retired WHERE sheet_id = ?",
                 to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note, listed) SELECT ?, name, amount, note, listed "

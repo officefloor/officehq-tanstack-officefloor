@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery } from '../claims/claimsQuery';
-import { GRADES, peopleQuery } from '../people/peopleQuery';
+import { peopleQuery } from '../people/peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import { useGradeDueTotals, usePeopleDueTotals } from '../rates/due.slot';
 import { usePeopleOverdueTotals } from '../rates/overdue.slot';
 import { sumDue, trimmedSum } from '../rates/ratesQuery';
@@ -10,9 +11,9 @@ import { descendantsQuery } from './consolidatedQuery';
 
 /**
  * `names` holds each person's name and aliases (as names are compared); `dues` and `overdues` each person's due-total
- * and overdue-total, all over the sheets so far. `grades` follows `GRADES` and `statuses` follows `STATUSES`.
+ * and overdue-total, all over the sheets so far. `grades` follows `codes` (the grades of the sheet the tree is shown from) and `statuses` follows `STATUSES`.
  */
-type Figures = { names: string[][]; dues: string[]; overdues: string[]; grades: string[]; statuses: number[] };
+type Figures = { names: string[][]; dues: string[]; overdues: string[]; codes: string[]; grades: string[]; statuses: number[] };
 
 const nameKey = (name: string) => name.trim().toLowerCase();
 
@@ -40,9 +41,10 @@ function Accumulate({ sheetIds, sum }: { sheetIds: string[]; sum: Figures }) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const dueByPerson = usePeopleDueTotals(sheetId);
   const overdues = usePeopleOverdueTotals(sheetId);
-  const grades = useGradeDueTotals(sheetId);
+  const grades = useGradeDueTotals(sheetId, sum.codes);
   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
   const next = {
+    codes: sum.codes,
     names: [...sum.names, ...people.map((p) => [p.name, ...p.aliases].map(nameKey))],
     dues: [...sum.dues, ...people.map((p) => dueByPerson.get(p.id) ?? 'n/a')],
     overdues: [...sum.overdues, ...overdues],
@@ -58,7 +60,7 @@ function Accumulate({ sheetIds, sum }: { sheetIds: string[]; sum: Figures }) {
       Consolidated: people <strong data-testid="consolidated-people-count">{distinctPeople(next.names)}</strong>
       {' '}· Due <strong data-testid="consolidated-due-total">{due}</strong>
       {' '}· Overdue <strong data-testid="consolidated-overdue-total">{overdue}</strong>
-      {GRADES.map((g, i) => (
+      {next.codes.map((g, i) => (
         <span key={g}>
           {' '}· {g} due <strong data-testid={`consolidated-grade-${g}-due-total`}>{next.grades[i]}</strong>
         </span>
@@ -82,8 +84,9 @@ function Accumulate({ sheetIds, sum }: { sheetIds: string[]; sum: Figures }) {
  */
 function Consolidated({ sheetId }: { sheetId: string }) {
   const descendants = useQuery(descendantsQuery(sheetId)).data ?? [];
+  const codes = useGrades(sheetId);
   const sheetIds = [sheetId, ...descendants];
-  return <Accumulate key={sheetIds.join('\n')} sheetIds={sheetIds} sum={{ names: [], dues: [], overdues: [], grades: GRADES.map(() => '0.00'), statuses: STATUSES.map(() => 0) }} />;
+  return <Accumulate key={sheetIds.join('\n')} sheetIds={sheetIds} sum={{ codes, names: [], dues: [], overdues: [], grades: codes.map(() => '0.00'), statuses: STATUSES.map(() => 0) }} />;
 }
 
 export const contribution = SheetPanel.fill({ order: -9, Component: Consolidated });

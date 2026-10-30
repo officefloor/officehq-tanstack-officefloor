@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateGradeMerge {
 
-    // Only a steward (a delegation included) merges a grade; both grades, trimmed, must be A, B or C, and differ. The
+    // Only a steward (a delegation included) merges a grade; both grades, trimmed, must be the sheet's, and differ. The
     // grade merged into must not be retired, as the person form refuses giving one.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody MergeRequest body, Grades grades,
             Settings settings, ServerHttpConnection connection, Out<MergedGrade> out) throws GradeRefusedException {
@@ -19,8 +19,8 @@ public class ValidateGradeMerge {
         }
         String from = body == null || body.from() == null ? "" : body.from().trim();
         String into = body == null || body.into() == null ? "" : body.into().trim();
-        if (!Grades.ALL.contains(from) || !Grades.ALL.contains(into)) {
-            throw new GradeRefusedException("The grades must be A, B or C.");
+        if (!grades.exists(sheet, from) || !grades.exists(sheet, into)) {
+            throw new GradeRefusedException("The grades must be the sheet's grades.");
         }
         if (from.equals(into)) {
             throw new GradeRefusedException("A grade cannot be merged into itself.");

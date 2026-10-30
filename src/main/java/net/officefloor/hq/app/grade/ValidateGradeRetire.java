@@ -6,13 +6,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateGradeRetire {
 
-    // The grade, trimmed, must be A, B or C and not already retired on the sheet.
+    // The grade, trimmed, must be one of the sheet's and not already retired on the sheet.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody GradeRequest body, Grades grades,
             Out<RetiredGrade> out) throws GradeRefusedException {
         String sheet = sheetId.trim();
         String grade = body == null || body.grade() == null ? "" : body.grade().trim();
-        if (!Grades.ALL.contains(grade)) {
-            throw new GradeRefusedException("The grade must be A, B or C.");
+        if (!grades.exists(sheet, grade)) {
+            throw new GradeRefusedException("The grade must be one of the sheet's grades.");
         }
         if (grades.retired(sheet, grade)) {
             throw new GradeRefusedException("Grade " + grade + " is already retired.");

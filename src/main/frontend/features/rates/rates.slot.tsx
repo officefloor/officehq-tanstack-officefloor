@@ -6,7 +6,7 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { GRADES } from '../people/peopleQuery';
+import { useGrades } from '../grades/gradesQuery';
 import type { Grade } from '../people/peopleQuery';
 import { claimsQuery } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
@@ -24,6 +24,7 @@ const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'
 function Rates({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const rates = useQuery(ratesQuery(sheetId));
+  const grades = useGrades(sheetId);
   const [grade, setGrade] = useState<Grade>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
@@ -89,7 +90,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               setError('');
             }}
           >
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -141,7 +142,7 @@ function Rates({ sheetId }: { sheetId: string }) {
       {rates.isError && <p data-testid="rates-load-error">Could not load the rates.</p>}
       <table data-testid="rates-current">
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateFor(list, g, today) ?? 'n/a'}</td>
@@ -160,7 +161,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             </tr>
           </thead>
           <tbody>
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <tr key={g}>
                 <td>{g}</td>
                 {MONTHS.map((m) => {
@@ -208,6 +209,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
   const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
   const rates = useQuery(ratesQuery(sheetId)).data ?? [];
+  const grades = useGrades(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const [grade, setGrade] = useState<Grade>('A');
@@ -243,7 +245,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
             changed();
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
