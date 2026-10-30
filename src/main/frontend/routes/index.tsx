@@ -12,6 +12,7 @@ import { PeriodPanel } from '../features/periods/PeriodPanel';
 import { PersonForm } from '../features/people/PersonForm';
 import { PeopleList } from '../features/people/PeopleList';
 import { SheetHeader } from '../features/header/SheetHeader';
+import { AuditViewer } from '../features/audit/AuditViewer';
 
 // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
 // picker, and — once a sheet is loaded — that sheet.
@@ -39,6 +40,7 @@ function Home() {
           <PeriodPanel />
           <PersonForm />
           <PeopleList />
+          <AuditViewer />
         </div>
       )}
       {sheet === '' && <p data-testid="home-empty">Nothing here yet.</p>}

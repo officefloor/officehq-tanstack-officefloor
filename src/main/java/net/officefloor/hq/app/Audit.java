@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import net.officefloor.hq.app.setting.Settings;
 import org.springframework.beans.factory.ObjectProvider;
@@ -97,6 +101,67 @@ public class Audit {
         } else {
             append(entry);
         }
+    }
+
+    /**
+     * The sheet's lines exactly as the file holds them, newest first. With a name (not blank), only
+     * the lines carrying name=<it> or person=<it>, compared as names are (case and surrounding
+     * spaces ignored). Read from the file: the viewer is not a second record.
+     */
+    public synchronized List<String> lines(String sheet, String name) {
+        String wanted = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        if (!Files.exists(file)) {
+            return found;
+        }
+        List<String> all;
+        try {
+            all = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        for (String line : all) {
+            List<String[]> fields = fields(line);
+            if (!has(fields, "sheet", sheet, false)) {
+                continue;
+            }
+            if (!wanted.isEmpty() && !has(fields, "name", wanted, true) && !has(fields, "person", wanted, true)) {
+                continue;
+            }
+            found.add(line);
+        }
+        Collections.reverse(found);
+        return found;
+    }
+
+    /** Whether a field key=value is among the line's fields (a name compared trimmed, case ignored). */
+    private static boolean has(List<String[]> fields, String key, String value, boolean asName) {
+        for (String[] field : fields) {
+            if (field[0].equals(key)) {
+                String v = asName ? field[1].trim().toLowerCase(Locale.ROOT) : field[1];
+                if (v.equals(value)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** A line's key=value fields; a word without key= continues the value before it (a name with spaces). */
+    private static List<String[]> fields(String line) {
+        List<String[]> fields = new ArrayList<>();
+        String[] words = line.split(" ");
+        for (int i = 1; i < words.length; i++) {
+            String word = words[i];
+            int eq = word.indexOf('=');
+            if (eq > 0 && word.substring(0, eq).matches("[a-z][a-z-]*")) {
+                fields.add(new String[] { word.substring(0, eq), word.substring(eq + 1) });
+            } else if (!fields.isEmpty()) {
+                String[] last = fields.get(fields.size() - 1);
+                last[1] = last[1] + " " + word;
+            }
+        }
+        return fields;
     }
 
     /** Remove the audit file. */
