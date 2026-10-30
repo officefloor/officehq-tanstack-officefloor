@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { poolsKey } from '../pools/usePools';
 import { usePersonAction } from './usePersonAction';
 import { peopleKey, type HoldFrom, type Person } from './usePeople';
 
@@ -27,6 +28,7 @@ export function HoldControl({ personId, holds }: { personId: string; holds: Hold
     onSuccess: () => {
       setFrom('');
       setTo('');
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
   });
