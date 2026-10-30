@@ -188,10 +188,10 @@ public class Person {
     /** Whether a hold of the person's covers the date. */
     public boolean heldOn(LocalDate date) { return holds.stream().anyMatch(h -> h.covers(date)); }
     /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED, but not OPEN or PENDING
-     *  when dated within one of the person's holds, unless a statement binds it. */
+     *  when held or dated within one of the person's holds, unless a statement binds it. */
     public boolean countsLive(Claim claim) {
         return claim.getStatus().counts()
-                && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
+                && !(claim.getStatus().isOpen() && !claim.isBound() && (claim.isHeld() || heldOn(claim.getDate())));
     }
     /** Whether the person's retirement date has been reached on the date (the sheet's today on or after it). */
     public boolean retiredOn(LocalDate today) {
@@ -205,11 +205,11 @@ public class Person {
     }
     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
-     *  dated within one of the person's holds or once their retirement date is reached. */
+     *  held, dated within one of the person's holds or once their retirement date is reached. */
     public boolean countsAtEnd(Claim claim, LocalDate end, LocalDate today) {
         ClaimStatus then = claim.statusAt(end);
         return then != null && then.counts() && !claim.isDeferredOn(today)
-                && !(claim.getStatus().isOpen() && !claim.isBound() && (heldOn(claim.getDate()) || retiredOn(today)));
+                && !(claim.getStatus().isOpen() && !claim.isBound() && (claim.isHeld() || heldOn(claim.getDate()) || retiredOn(today)));
     }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public java.util.List<Long> getPatronIds() { return patronIds; }

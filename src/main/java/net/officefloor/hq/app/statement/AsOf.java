@@ -179,6 +179,7 @@ public class AsOf {
                     claim.setCorrects(rs.getString("corrects"));
                     claim.setRateMark(rs.getLong("rate_mark"));
                     claim.setWaived(rs.getBoolean("waived"));
+                    claim.setHeld(rs.getBoolean("held"));
                     latest.put(claim.getId(), claim);
                 }, sheetId, end);
         List<Claim> own = new ArrayList<>();

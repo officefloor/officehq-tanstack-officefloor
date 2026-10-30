@@ -35,6 +35,8 @@ export type Claim = {
   log: string[];
   /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
   waived?: boolean;
+  /** Whether the claim is held: while OPEN or PENDING and unbound it counts in no live total, as a held person's claims. */
+  held?: boolean;
   /** The date the claim was last deferred until, "" if it was never deferred. */
   deferredUntil: string;
   /** The claim's proofs count. */
@@ -84,9 +86,9 @@ export const isDeferred = (c: { status?: string; deferredUntil?: string }, today
   c.status === 'OPEN' && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
 
 /** Whether a claim counts in the live totals: it counts, is not deferred on the sheet's today, and is not
- *  open, unbound and dated within one of its person's holds (`heldOn`). */
+ *  open, unbound and held or dated within one of its person's holds (`heldOn`). */
 export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
-  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
+  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
 
 /** The status a claim had at the end of the day, as its status log records it (each line dated the sheet's today
  *  when the change was made); undefined when it was added after that day. */
@@ -100,10 +102,10 @@ export function statusAt(c: Claim, end: string): ClaimStatus | undefined {
 }
 
 /** Whether a claim counts in a period ending on `end`: by the status it had at the end of that day, and, as in the
- *  live totals, not deferred on the sheet's today and not open, unbound and dated within one of its person's holds. */
+ *  live totals, not deferred on the sheet's today and not open, unbound and held or dated within one of its person's holds. */
 export const countsAtEnd = (c: Claim, end: string, heldOn: (date: string) => boolean, today: string | undefined) => {
   const then = statusAt(c, end);
-  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
+  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
 };
 
 export const claimsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'claims', asOf] as const;
