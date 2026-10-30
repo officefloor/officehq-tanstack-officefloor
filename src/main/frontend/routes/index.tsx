@@ -4,6 +4,7 @@ import { CurrentUser, SignIn } from '../features/session/SignIn';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
 import { RatePanel } from '../features/rates/RatePanel';
+import { SettingsPanel } from '../features/settings/SettingsPanel';
 import { PeriodPanel } from '../features/periods/PeriodPanel';
 import { PersonForm } from '../features/people/PersonForm';
 import { PeopleList } from '../features/people/PeopleList';
@@ -26,6 +27,7 @@ function Home() {
         <div key={sheet}>
           <SheetToday />
           <RatePanel />
+          <SettingsPanel />
           <PeriodPanel />
           <PersonForm />
           <PeopleList />

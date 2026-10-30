@@ -1,15 +1,17 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
-            Rates rates, Periods periods, Out<ClaimNumber> number)
+            Rates rates, Periods periods, Settings settings, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
         if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
             throw new ClaimStatusRefusedException("No claim dated inside a closed period can change status");
@@ -21,6 +23,19 @@ public class ApplyClaimStatus {
                 && claim.getOpenedBy().equals(request.user())) {
             // Four eyes: the user who opened a claim cannot settle it.
             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
+        }
+        if (request.target() == ClaimStatus.SETTLED
+                && !Settings.STEWARD.equals(settings.role(claim.getSheetId(), request.user()))) {
+            // A clerk settles only within the sheet's clerk limit, judged on the claim's due as shown;
+            // a due of n/a is within any limit.
+            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
+            BigDecimal fixed = ClaimResponse.fixedDue(claim);
+            BigDecimal due = fixed != null || claim.isStated() ? fixed
+                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()));
+            if (limit != null && due != null && due.compareTo(limit) > 0) {
+                throw new ClaimStatusRefusedException("A clerk cannot settle a claim whose due is above the clerk limit");
+            }
         }
         if (request.target() == ClaimStatus.OPEN) {
             claim.setNumber(sheets.nextClaimNumber(claim.getSheetId()));
