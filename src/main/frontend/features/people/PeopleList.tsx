@@ -1,5 +1,6 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
+import { BulkOpenButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
 import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
@@ -27,7 +28,8 @@ import { gradeOn, usePeople, type Person } from './usePeople';
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
-// order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown.
+// order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
+// with their select checkbox are opened together with the bulk open button.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
@@ -66,7 +68,7 @@ export function PeopleList() {
   const overdueTotal = (cs: typeof overdue) =>
     formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
   return (
-    <>
+    <ClaimSelection>
       <QuickAdd />
       <ShowRetired />
       <button
@@ -81,6 +83,7 @@ export function PeopleList() {
       >
         Export CSV
       </button>
+      <BulkOpenButton />
       <table data-testid="people">
         <thead>
           <tr>
@@ -155,6 +158,6 @@ export function PeopleList() {
         Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
       </p>
       <SummaryPanel people={people} claims={claims} today={today} totalOf={totalOf} />
-    </>
+    </ClaimSelection>
   );
 }

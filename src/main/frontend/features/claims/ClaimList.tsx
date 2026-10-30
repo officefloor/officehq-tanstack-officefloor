@@ -8,6 +8,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
+import { ClaimSelect } from './BulkOpen';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
 // person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies; an overdue claim gains the sheet's late percent of that figure for every full 30 days overdue), due-by (its date plus the sheet's terms), overdue (yes when it is OPEN and its due-by is before the sheet's today), the status buttons (open, settle, void —
@@ -62,6 +63,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
 
   return (
     <li data-testid={`claim-row-${c.id}`}>
+      <ClaimSelect claimId={c.id} />{' '}
       <span data-testid="claim-amount">{c.amount}</span>{' '}
       <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
