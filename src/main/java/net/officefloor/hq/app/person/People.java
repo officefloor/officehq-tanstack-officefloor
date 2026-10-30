@@ -81,7 +81,7 @@ public class People {
         }
         java.util.Map<Long, java.util.List<String>> statements = new java.util.HashMap<>();
         jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? AND NOT cancelled"
-                + " ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq", rs -> {
+                + " ORDER BY set_on NULLS FIRST, seq", rs -> {
             statements.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
                     .add(Person.statementLine(rs.getDate("statement_date"), rs.getBigDecimal("stated_total")));
         }, sheetId);

@@ -16,6 +16,7 @@ import { PeriodPanel } from '../features/periods/PeriodPanel';
 import { PersonForm } from '../features/people/PersonForm';
 import { PeopleList } from '../features/people/PeopleList';
 import { SheetHeader } from '../features/header/SheetHeader';
+import { StewardDashboard } from '../features/dashboard/StewardDashboard';
 import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
 import { TreeSearch } from '../features/search/TreeSearch';
 import { AuditViewer } from '../features/audit/AuditViewer';
@@ -38,6 +39,7 @@ function Home() {
       {sheet !== '' && (
         <div key={sheet}>
           <SheetHeader />
+          <StewardDashboard />
           <SheetToday />
           <ConsolidatedFigures />
           <AsOfControl />

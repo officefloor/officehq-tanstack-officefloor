@@ -21,6 +21,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonResponse;
 import net.officefloor.hq.app.rate.RateResponse;
+import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.DatedValue;
 import net.officefloor.hq.app.setting.DelegationResponse;
 import net.officefloor.hq.app.setting.RoleResponse;
@@ -150,7 +151,7 @@ public class AsOfView {
                 }, sheetId, end, end);
         Map<Long, List<String>> statements = new HashMap<>();
         jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ?" + UP_TO
-                + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq",
+                + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY set_on NULLS FIRST, seq",
                 (RowCallbackHandler) rs -> statements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                         .add(Person.statementLine(rs.getDate(2), rs.getBigDecimal(3))), sheetId, end, end);
         Map<Long, List<Long>> patrons = new HashMap<>();
@@ -267,6 +268,31 @@ public class AsOfView {
         List<RateResponse> rates = new ArrayList<>();
         byGrade.values().forEach(byFrom -> rates.addAll(byFrom.values()));
         return rates;
+    }
+
+    /** The sheet's ancestors as they stood at the end of the date: its parent as last set by then (none when never set by
+     *  then), that sheet's parent as last set by then, and so on, up to {@link Rates#ANCESTOR_LEVELS} levels up. A parent
+     *  set before its history was kept counts as of any date. */
+    public List<String> ancestors(String sheetId, LocalDate date) {
+        List<String> chain = new ArrayList<>();
+        String at = parentOn(sheetId, date);
+        while (at != null && chain.size() < Rates.ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
+            chain.add(at);
+            at = parentOn(at, date);
+        }
+        return chain;
+    }
+
+    private String parentOn(String sheetId, LocalDate date) {
+        List<String> set = jdbc.query("SELECT setting_value FROM plain_setting_history WHERE sheet_id = ? AND setting_key = ?"
+                + UP_TO + " ORDER BY seq", (rs, i) -> rs.getString(1), sheetId, Settings.PARENT, Date.valueOf(date));
+        if (!set.isEmpty()) {
+            String last = set.get(set.size() - 1);
+            return last.isBlank() ? null : last;
+        }
+        Integer recorded = jdbc.queryForObject("SELECT COUNT(*) FROM plain_setting_history WHERE sheet_id = ? AND setting_key = ?",
+                Integer.class, sheetId, Settings.PARENT);
+        return recorded != null && recorded > 0 ? null : sheets.parent(sheetId);
     }
 
     /** The periods added by the end of the date, by from-date, each closed (or soft-closed) as it stood then. */
