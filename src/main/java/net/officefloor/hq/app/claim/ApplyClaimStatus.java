@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.rate.Rates;
@@ -13,6 +14,7 @@ public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
             Rates rates, Periods periods, Settings settings, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
+        RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()));
         if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
             throw new ClaimStatusRefusedException("No claim dated inside a closed period can change status");
         }
@@ -33,9 +35,9 @@ public class ApplyClaimStatus {
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
             BigDecimal figure = fixed != null || claim.isStated() ? fixed
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId()));
+                    settings.floor(claim.getSheetId()), rounding);
             BigDecimal due = LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
-                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId()));
+                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId()), rounding);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 throw new ClaimStatusRefusedException("A clerk cannot settle a claim whose due is above the clerk limit");
             }
@@ -53,9 +55,9 @@ public class ApplyClaimStatus {
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             BigDecimal figure = claim.isStated() && claim.getStatedDue() != null ? claim.getStatedDue()
                     : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId()));
+                    settings.floor(claim.getSheetId()), rounding);
             claim.setSettledDue(LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId()),
-                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId())));
+                    settings.terms(claim.getSheetId()), sheets.today(claim.getSheetId()), rounding));
         }
         claim.setStatus(request.target());
     }

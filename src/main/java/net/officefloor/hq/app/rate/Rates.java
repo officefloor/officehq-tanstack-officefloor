@@ -38,15 +38,15 @@ public class Rates {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The due on an amount at a rate (a percent), rounded half to even to cents; null when there is no rate. */
-    public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
-        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+    /** The due on an amount at a rate (a percent), rounded to cents by the claim's rounding; null when there is no rate. */
+    public static BigDecimal due(BigDecimal amount, BigDecimal rate, RoundingMode rounding) {
+        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, rounding);
     }
 
     /** The live due on an amount at a rate, raised to the sheet's floor; null when there is no rate. A
      *  negative amount (a correction) has no floor. */
-    public static BigDecimal due(BigDecimal amount, BigDecimal rate, BigDecimal floor) {
-        BigDecimal due = due(amount, rate);
+    public static BigDecimal due(BigDecimal amount, BigDecimal rate, BigDecimal floor, RoundingMode rounding) {
+        BigDecimal due = due(amount, rate, rounding);
         return due == null || floor == null || amount.signum() < 0 || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
     }
 

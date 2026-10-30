@@ -2,7 +2,7 @@ import { countsLive, useClaims } from '../claims/useClaims';
 import { gradeOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { periodOf, usePeriods, type Period } from './usePeriods';
 
@@ -16,10 +16,11 @@ export function usePeriodDueTotal(sheet: string): (period: Period) => bigint {
   const rates = useRates(sheet);
   const floor = useFloor(sheet);
   const late = { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
+  const policy = usePolicyDate(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   return (period: Period) =>
     period.closed ? toCents(period.closedTotal) : claims
       .filter((c) => personOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date)?.name === period.name)
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n);
+      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n);
 }

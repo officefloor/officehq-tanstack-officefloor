@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
@@ -9,7 +9,9 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
 // a blank floor field leaves it as it is and saves the clerk limit), the terms (whole days; a claim's
 // due-by is its date plus them; saved when its field is filled, together with any other field filled), the late percent
-// (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms) and the role each user name holds (clerk unless set to steward).
+// (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms), the policy date (a claim dated
+// before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
+// filled or was the last one entered, together with any other field filled) and the role each user name holds (clerk unless set to steward).
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -21,6 +23,13 @@ export function SettingsPanel() {
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
+  const [policyDate, setPolicyDate] = useState('');
+  // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
+  const policyChosen = useRef(false);
+  // Entering another field leaves a blank policy date as it is.
+  const unchoosePolicy = () => {
+    if (policyDate.trim() === '') policyChosen.current = false;
+  };
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const saveSetting = useMutation({
@@ -30,6 +39,10 @@ export function SettingsPanel() {
       if (body.key === 'floor') setFloor('');
       else if (body.key === 'terms') setTerms('');
       else if (body.key === 'late-pct') setLatePct('');
+      else if (body.key === 'policy-date') {
+        setPolicyDate('');
+        policyChosen.current = false;
+      }
       else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
@@ -51,12 +64,14 @@ export function SettingsPanel() {
           e.preventDefault();
           submitSetting(() => {
             saveSetting.reset();
-            if (terms.trim() !== '' || latePct.trim() !== '') {
+            const policy = policyDate.trim() !== '' || policyChosen.current;
+            if (terms.trim() !== '' || latePct.trim() !== '' || policy) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
                 ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
+                ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => saveSetting.mutateAsync(body)), Promise.resolve());
             }
@@ -71,6 +86,7 @@ export function SettingsPanel() {
         Clerk limit: <span data-testid="setting-clerk-limit-current">{settings?.clerkLimit ?? ''}</span>{' '}
         <input
           data-testid="setting-clerk-limit"
+          onFocus={unchoosePolicy}
           value={limit}
           placeholder="Clerk limit (blank: none)"
           onChange={(e) => {
@@ -81,6 +97,7 @@ export function SettingsPanel() {
         Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>{' '}
         <input
           data-testid="setting-floor"
+          onFocus={unchoosePolicy}
           value={floor}
           placeholder="Floor (blank: unchanged)"
           onChange={(e) => {
@@ -91,6 +108,7 @@ export function SettingsPanel() {
         Terms (days): <span data-testid="setting-terms-current">{settings?.terms ?? ''}</span>{' '}
         <input
           data-testid="setting-terms"
+          onFocus={unchoosePolicy}
           value={terms}
           placeholder="Terms in days (blank: unchanged)"
           onChange={(e) => {
@@ -101,6 +119,7 @@ export function SettingsPanel() {
         Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>{' '}
         <input
           data-testid="setting-late-pct"
+          onFocus={unchoosePolicy}
           value={latePct}
           placeholder="Late percent (blank: unchanged)"
           onChange={(e) => {
@@ -108,8 +127,22 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Policy date: <span data-testid="setting-policy-date-current">{settings?.policyDate ?? ''}</span>{' '}
+        <input
+          data-testid="setting-policy-date"
+          value={policyDate}
+          placeholder="Policy date YYYY-MM-DD (blank: the sheet's today)"
+          onFocus={() => {
+            policyChosen.current = true;
+          }}
+          onChange={(e) => {
+            setPolicyDate(e.target.value);
+            policyChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

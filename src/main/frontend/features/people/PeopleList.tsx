@@ -5,7 +5,7 @@ import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
 import { claimDue, dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
@@ -38,6 +38,7 @@ export function PeopleList() {
   const floor = useFloor(sheet);
   const terms = useTerms(sheet);
   const late = { pct: useLatePct(sheet), terms, today };
+  const policy = usePolicyDate(sheet);
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   const live = claims.filter((c) => heldOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!));
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
@@ -48,6 +49,7 @@ export function PeopleList() {
       rateOn(rates, gradeOn(person, today), today),
       floor,
       late,
+      policy,
     );
   const byId = new Map(people.map((p) => [p.id, p]));
   const backing = (p: (typeof people)[number]) =>
@@ -60,7 +62,7 @@ export function PeopleList() {
   const overdue = live.filter((c) => isOverdue(c, terms, today));
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   const overdueTotal = (cs: typeof overdue) =>
-    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late) ?? 0n), 0n));
+    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
   return (
     <>
       <QuickAdd />

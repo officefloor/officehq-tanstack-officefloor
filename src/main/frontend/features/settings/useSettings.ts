@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { useSheetToday } from '../sheet/useSheetToday';
 
 /** A role a user name holds on the sheet: clerk (any name not listed) or steward. */
 export type Role = { user: string; role: string };
@@ -7,8 +8,8 @@ export type Role = { user: string; role: string };
 /** The sheet's settings: the clerk limit with two decimals ("" for no limit), the floor with two
  *  decimals (a claim's live due is at least it), the terms in days (a claim's due-by is its date
  *  plus them), the late percent with two decimals (an overdue claim gains it of its figure for every
- *  full 30 days overdue) and the roles set. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; roles: Role[] };
+ *  full 30 days overdue), the policy date ("" for blank: the sheet's today) and the roles set. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; roles: Role[] };
 
 /** The floor a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_FLOOR = '1.00';
@@ -43,4 +44,12 @@ export const DEFAULT_LATE_PCT = '0.00';
 /** The sheet's late percent. */
 export function useLatePct(sheet: string): string {
   return useSettings(sheet)?.latePct ?? DEFAULT_LATE_PCT;
+}
+
+/** The sheet's policy date: the one set, or the sheet's today when it is blank. A claim dated before
+ *  it rounds half up, one on or after it half to even. Undefined while loading. */
+export function usePolicyDate(sheet: string): string | undefined {
+  const set = useSettings(sheet)?.policyDate;
+  const today = useSheetToday(sheet);
+  return set ? set : today;
 }

@@ -10,6 +10,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SaveSetting {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidSetting setting, @Val RollupFigures before,
             Settings settings, Rollup rollup, Audit audit, ObjectResponse<SettingsResponse> response) {
+        if (ValidateSetting.POLICY_DATE.equals(setting.key())) {
+            settings.setPolicyDate(sheetId, setting.date());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + (setting.date() == null ? "" : setting.date().toString()));
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.FLOOR.equals(setting.key())) {
             settings.setFloor(sheetId, setting.value());
         } else if (ValidateSetting.LATE_PCT.equals(setting.key())) {

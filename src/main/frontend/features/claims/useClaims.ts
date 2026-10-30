@@ -22,6 +22,8 @@ export type Claim = {
   stated: boolean;
   /** The number of the SETTLED claim a correction (a negative amount) corrects, "" for any other claim. */
   corrects: string;
+  /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects. */
+  roundingDate: string;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */

@@ -25,6 +25,7 @@ public class ApplyClaim {
         ValidateClaim.checkCorrects(request, claim.getSheetId(), claim.getPersonId(), claims);
         claim.setAmount(request.amount());
         claim.setCorrects(request.corrects());
+        claim.setCorrectedDate(claims.correctedDate(claim.getSheetId(), claim.getPersonId(), request.corrects()));
         claim.setDate(date);
         claim.setNote(request.note());
     }

@@ -19,6 +19,7 @@ public class Claim {
     private boolean stated;
     private BigDecimal statedDue;
     private Long corrects;
+    private LocalDate correctedDate;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Long number, BigDecimal settledDue, String openedBy) {
@@ -63,6 +64,10 @@ public class Claim {
     /** The number of the SETTLED claim this correction corrects; null for any claim that is not a correction. */
     public Long getCorrects() { return corrects; }
     public void setCorrects(Long corrects) { this.corrects = corrects; }
+    /** The date of the claim this correction corrects; null when it is not a correction or that claim is not found. */
+    public void setCorrectedDate(LocalDate correctedDate) { this.correctedDate = correctedDate; }
+    /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects, any other claim's its own. */
+    public LocalDate getRoundingDate() { return correctedDate != null ? correctedDate : date; }
     /** A correction is a claim with a negative amount: its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

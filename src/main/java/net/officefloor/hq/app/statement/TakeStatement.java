@@ -1,12 +1,14 @@
 package net.officefloor.hq.app.statement;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimResponse;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
@@ -30,6 +32,7 @@ public class TakeStatement {
         BigDecimal floor = settings.floor(sheetId);
         BigDecimal latePct = settings.latePct(sheetId);
         int terms = settings.terms(sheetId);
+        LocalDate policyDate = settings.policyDate(sheetId);
         List<Claim> own = claims.ofPerson(sheetId, person.getId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean anyFigure = false;
@@ -39,14 +42,15 @@ public class TakeStatement {
                 claim.setStated(false);
                 claim.setStatedDue(null);
             } else {
+                RoundingMode rounding = Rounding.of(claim, policyDate);
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date.
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 anyFigure |= fixed != null;
                 if (figure != null) {
                     anyFigure = true;
-                    total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today));
+                    total = total.add(LateCharge.withCharge(claim, figure, latePct, terms, today, rounding));
                 }
                 claim.setStated(true);
                 claim.setStatedDue(figure);

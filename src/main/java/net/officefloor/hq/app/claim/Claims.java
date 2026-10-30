@@ -23,8 +23,14 @@ public class Claims {
         claim.setStated(rs.getBoolean("stated"));
         claim.setStatedDue(rs.getBigDecimal("stated_due"));
         claim.setCorrects(rs.getObject("corrects", Long.class));
+        java.sql.Date corrected = rs.getDate("corrected_date");
+        claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
     };
+
+    /** A claim with the date of the claim it corrects (same sheet, same person, by number). */
+    private static final String SELECT = "SELECT c.*, k.claim_date AS corrected_date FROM claim c LEFT JOIN claim k"
+            + " ON k.sheet_id = c.sheet_id AND k.person_id = c.person_id AND k.claim_number = c.corrects";
 
     private final JdbcTemplate jdbc;
 
@@ -34,16 +40,16 @@ public class Claims {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+        return jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.id DESC", ROW, sheetId);
     }
 
     /** A person's claims on the sheet, newest first. */
     public List<Claim> ofPerson(String sheetId, long personId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW, sheetId, personId);
+        return jdbc.query(SELECT + " WHERE c.sheet_id = ? AND c.person_id = ? ORDER BY c.id DESC", ROW, sheetId, personId);
     }
 
     public Claim find(String sheetId, long id) {
-        List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+        List<Claim> found = jdbc.query(SELECT + " WHERE c.sheet_id = ? AND c.id = ?", ROW, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -67,7 +73,16 @@ public class Claims {
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
         claim.setCorrects(corrects);
+        claim.setCorrectedDate(correctedDate(sheetId, personId, corrects));
         return claim;
+    }
+
+    /** The date of the person's claim with this number; null when there is none (or no number). */
+    public LocalDate correctedDate(String sheetId, long personId, Long number) {
+        if (number == null) return null;
+        List<LocalDate> found = jdbc.query("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
+                (rs, i) -> rs.getDate(1).toLocalDate(), sheetId, personId, number);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** Bind the claim to the figure a statement gives it (stated), or leave it unbound. */

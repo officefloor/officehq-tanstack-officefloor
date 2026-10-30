@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +17,8 @@ public class ValidateSetting {
 
     public static final String LATE_PCT = "late-pct";
 
+    public static final String POLICY_DATE = "policy-date";
+
     /** A number of days: 0 or more, whole. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
@@ -26,10 +30,23 @@ public class ValidateSetting {
 
     public void validate(@RequestBody SettingRequest request, Out<ValidSetting> body) throws InvalidSettingException {
         String key = request.key() == null ? "" : request.key().trim();
-        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)) {
+        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+                && !POLICY_DATE.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
+        if (POLICY_DATE.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null)); // blank: the sheet's today
+                return;
+            }
+            try {
+                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw)));
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The policy date must be a date (YYYY-MM-DD), or blank for the sheet's today");
+            }
+            return;
+        }
         if (TERMS.equals(key)) {
             if (!DAYS.matcher(raw).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more");

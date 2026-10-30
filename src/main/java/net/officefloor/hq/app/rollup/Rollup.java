@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,6 +12,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimResponse;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
@@ -52,6 +54,7 @@ public class Rollup {
         BigDecimal floor = settings.floor(sheetId);
         BigDecimal latePct = settings.latePct(sheetId);
         int terms = settings.terms(sheetId);
+        LocalDate policyDate = settings.policyDate(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -65,13 +68,14 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
+                RoundingMode rounding = Rounding.of(claim, policyDate);
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 anyFigure |= fixed != null;
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 if (figure != null) {
                     anyFigure = true;
-                    due = due.add(LateCharge.withCharge(claim, figure, latePct, terms, today));
+                    due = due.add(LateCharge.withCharge(claim, figure, latePct, terms, today, rounding));
                 }
             }
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).

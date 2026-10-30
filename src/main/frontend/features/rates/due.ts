@@ -1,7 +1,8 @@
 import { addDays } from '../claims/overdue';
 
 // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
-// due in millionths, then rounded half to even to cents. No float ever touches it.
+// due in millionths, then rounded to cents — half up for a claim dated before the sheet's policy date,
+// half to even for one dated on or after it. No float ever touches it.
 
 export const NA = 'n/a';
 
@@ -21,15 +22,16 @@ export function formatCents(cents: bigint): string {
   return `${negative ? '-' : ''}${abs / 100n}.${frac}`;
 }
 
-/** The due on an amount of cents at a rate ("12.50"), in cents; null when there is no rate. */
-export function dueCents(cents: bigint, rate: string | undefined): bigint | null {
+/** The due on an amount of cents at a rate ("12.50"), in cents, rounded half up or else half to
+ *  even; null when there is no rate. */
+export function dueCents(cents: bigint, rate: string | undefined, halfUp = false): bigint | null {
   if (rate === undefined) return null;
   const millionths = cents * toCents(rate);
   const negative = millionths < 0n;
   const abs = negative ? -millionths : millionths;
   const whole = abs / 10000n;
   const rest = abs % 10000n;
-  const rounded = rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+  const rounded = rest > 5000n || (rest === 5000n && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
   return negative ? -rounded : rounded;
 }
 
@@ -50,32 +52,39 @@ export type Late = { pct: string; terms: number; today: string | undefined };
 
 const DAY_MS = 86_400_000;
 
+/** Whether a claim's live figures round half up: its rounding date (a correction's is the date of
+ *  the claim it corrects) is before the sheet's policy date (blank: the sheet's today). */
+export const roundsHalfUp = (claim: { roundingDate?: string; date: string }, policy: string | undefined) =>
+  policy !== undefined && policy !== '' && (claim.roundingDate || claim.date) < policy;
+
 /** A claim with a negative amount is a correction: its due has no floor and no late charge. */
 export const isCorrection = (claim: { amount?: string }) => claim.amount !== undefined && toCents(claim.amount) < 0n;
 
 /** The late charge on a figure in cents: an OPEN claim whose due-by (its date plus the terms) is
  *  before today gains the late percent of its figure for every full 30 days it is overdue, rounded
  *  like due. Never bound by a statement; settling freezes it into the settled due. */
-export function lateCents(claim: { amount?: string; date: string; status?: string }, figure: bigint, late: Late | undefined): bigint {
+export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
   if (late === undefined || late.today === undefined || claim.status !== 'OPEN' || isCorrection(claim)) return 0n;
   const dueBy = addDays(claim.date, late.terms);
   const days = Math.round((Date.parse(late.today) - Date.parse(dueBy)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
-  return dueCents(figure * BigInt(periods), late.pct) ?? 0n;
+  return dueCents(figure * BigInt(periods), late.pct, roundsHalfUp(claim, policy)) ?? 0n;
 }
 
 /** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
  *  stays n/a), else its amount at the current rate, raised to the sheet's floor; an overdue claim's
- *  late charge is added on top. A correction is never floored and gains no late charge. */
+ *  late charge is added on top. A correction is never floored and gains no late charge. Live figures
+ *  round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
-  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean },
+  claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string },
   rate: string | undefined,
   floor: string,
   late?: Late,
+  policy?: string,
 ): bigint | null {
-  const live = dueCents(toCents(claim.amount), rate);
+  const live = dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
   const figure = claim.due !== '' ? toCents(claim.due) : claim.stated ? null : isCorrection(claim) ? live : floored(live, floor);
-  return figure === null ? null : figure + lateCents(claim, figure, late);
+  return figure === null ? null : figure + lateCents(claim, figure, late, policy);
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. With no rate for their
@@ -83,13 +92,14 @@ export function claimDue(
  *  in force on its date); then it is the sum of the figures there are. A claim whose figure is n/a
  *  adds nothing. */
 export function dueTotal(
-  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean }[],
+  claims: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string }[],
   rateOn: (date: string) => string | undefined,
   rateToday: string | undefined,
   floor: string,
   late?: Late,
+  policy?: string,
 ): bigint | null {
-  const figures = claims.map((c) => claimDue(c, rateOn(c.date), floor, late));
+  const figures = claims.map((c) => claimDue(c, rateOn(c.date), floor, late, policy));
   if (rateToday === undefined && figures.every((f) => f === null)) return null;
   return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
 }

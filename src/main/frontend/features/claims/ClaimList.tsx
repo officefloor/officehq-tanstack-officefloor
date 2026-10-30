@@ -5,7 +5,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, type Claim } from './useClaims';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { useFloor, useLatePct, useTerms } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 
@@ -34,6 +34,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
   const terms = useTerms(sheet);
   const today = useSheetToday(sheet);
   const latePct = useLatePct(sheet);
+  const policy = usePolicyDate(sheet);
 
   const status = useMutation({
     mutationFn: (action: 'open' | 'settle' | 'void') =>
@@ -66,7 +67,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
-      <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, terms, today }))}</span>{' '}
+      <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, terms, today }, policy))}</span>{' '}
       <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
       <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
