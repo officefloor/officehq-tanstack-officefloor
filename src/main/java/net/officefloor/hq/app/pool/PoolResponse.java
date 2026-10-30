@@ -6,7 +6,8 @@ import java.util.List;
  *  that total is exactly 100.00. */
 public record PoolResponse(String name, String totalShare, boolean balanced, List<Member> members) {
 
-    /** A member: the person's id and name, their share (two decimals) and whether a retirement date is set. */
-    public record Member(String personId, String name, String share, boolean retired) {
+    /** A member: the person's id and name, their share (two decimals), whether a retirement date is set and their
+     *  cut of the sheet's pot (two decimals; "" when the pool is not balanced or the sheet has no pot). */
+    public record Member(String personId, String name, String share, boolean retired, String cut) {
     }
 }

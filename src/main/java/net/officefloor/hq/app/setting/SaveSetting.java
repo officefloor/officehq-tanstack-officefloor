@@ -56,6 +56,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.POT.equals(setting.key())) {
+            settings.setPot(sheetId, setting.value());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + (setting.value() == null ? "" : setting.value().toPlainString()));
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         // Recorded from its from-date (the sheet's today when none was given), keeping the values recorded from other dates.
         settings.setFrom(sheetId, setting.key(), setting.from() != null ? setting.from() : sheets.today(sheetId), setting.value());
         audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

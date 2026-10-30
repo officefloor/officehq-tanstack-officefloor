@@ -48,6 +48,9 @@ public class ValidateSetting {
     /** Not dated: when the sheet's today is changed, an open period whose to-date plus them is before it is closed; blank: off. */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** Not dated: each member of a balanced pool shows their cut of it; blank: none. */
+    public static final String POT = "pot";
+
     /** An action's permission: perm-<action>, the roles that may take it. */
     public static final String PERM = "perm-";
 
@@ -67,7 +70,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !POT.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
@@ -99,6 +102,17 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank for off");
             }
             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
+            return;
+        }
+        if (POT.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
+                return;
+            }
+            if (!AMOUNT.matcher(raw).matches()) {
+                throw new InvalidSettingException("The pot must be an amount of 0.00 or more with at most two decimals, or blank for none");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, null));
             return;
         }
         // A dated setting's from-date: blank for the sheet's today.

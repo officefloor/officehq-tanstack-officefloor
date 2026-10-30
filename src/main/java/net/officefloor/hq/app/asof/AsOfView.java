@@ -327,7 +327,7 @@ public class AsOfView {
                 cap == null ? "" : cap.setScale(2).toPlainString(), datedShown,
                 threshold == null ? "" : threshold.setScale(2).toPlainString(), perms, plain.getOrDefault(Settings.GRACE, ""),
                 delegations, noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(),
-                plain.getOrDefault(Settings.ENTRY, ""));
+                plain.getOrDefault(Settings.ENTRY, ""), plain.getOrDefault(Settings.POT, ""));
     }
 
     private static LocalDate local(Date date) {

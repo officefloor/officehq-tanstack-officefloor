@@ -219,6 +219,19 @@ public class Settings {
         plainHistory(sheetId, GRACE, days == null ? "" : String.valueOf(days));
     }
 
+    /** The sheet's pot at two decimals; null when none. */
+    public BigDecimal pot(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the pot
+        BigDecimal pot = jdbc.queryForObject("SELECT pot FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
+        return pot == null ? null : pot.setScale(2);
+    }
+
+    public void setPot(String sheetId, BigDecimal pot) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+        plainHistory(sheetId, POT, pot == null ? "" : pot.setScale(2).toPlainString());
+    }
+
     /** The role the user name acts in on the sheet: a steward while a delegation to them covers the sheet's today,
      *  else the role set for them. */
     public String role(String sheetId, String user) {
@@ -282,7 +295,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -322,6 +335,7 @@ public class Settings {
         LocalDate numbering = periodNumberingFrom(sheetId);
         Integer grace = graceDays(sheetId);
         LocalDate entry = entryDate(sheetId);
+        BigDecimal pot = pot(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
@@ -346,6 +360,6 @@ public class Settings {
                         "SELECT user_name, from_date, to_date, delegated_by FROM sheet_delegation WHERE sheet_id = ? ORDER BY seq",
                         (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
-                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString());
+                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString());
     }
 }

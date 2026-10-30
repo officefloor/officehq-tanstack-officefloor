@@ -9,7 +9,8 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // The sheet's pools and the form that adds one (a blank name, or one already a pool, is refused). Each
 // pool lists its members with their shares, its total share (a retired member counting 0.00) and whether
 // it is balanced (the total is exactly 100.00), and adds a member from its row: a person already in the
-// pool, or a share not more than 0.00 and at most 100.00 with two decimals, is refused.
+// pool, or a share not more than 0.00 and at most 100.00 with two decimals, is refused. Each member of a balanced
+// pool shows their cut of the sheet's pot (empty while the pool is unbalanced or the sheet has no pot).
 export function PoolPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -82,7 +83,8 @@ function PoolRow({ pool, people, sheet, user }: { pool: Pool; people: Person[]; 
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
             <span data-testid="pool-member-name">{m.name}</span>{' '}
-            <span data-testid="pool-share">{m.share}</span>
+            <span data-testid="pool-share">{m.share}</span>{' '}
+            cut <span data-testid="pool-cut">{m.cut}</span>
             {m.retired && ' (retired)'}
           </li>
         ))}
