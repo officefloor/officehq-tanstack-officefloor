@@ -86,6 +86,8 @@ public class Settings {
         }
         return dated;
     }
+    /** The policy settings: every save of one of them is a new policy version (see {@link #policyVersions}). */
+    public static final List<String> POLICY = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
@@ -158,6 +160,18 @@ public class Settings {
         return values.isEmpty() ? "" : values.get(0);
     }
 
+    /** Records a save of the policy setting as the sheet's next policy version, from the from-date (null: none, so always). */
+    public void recordVersion(String sheetId, String key, LocalDate from) {
+        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date) SELECT ?, COALESCE(MAX(version_no), 0) + 1, ?, ?"
+                + " FROM policy_version WHERE sheet_id = ?", sheetId, key, from == null ? null : java.sql.Date.valueOf(from), sheetId);
+    }
+
+    /** The from-dates (yyyy-MM-dd, null for none) of the sheet's policy versions, in the order made: the current version is how many there are. */
+    public List<String> policyVersions(String sheetId) {
+        return jdbc.query("SELECT from_date FROM " + AsOf.table("policy_version") + " WHERE sheet_id = ? ORDER BY version_no",
+                (rs, n) -> rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(), sheetId);
+    }
+
     /** A dated setting's values, by from-date. */
     public List<DatedValue> history(String sheetId, String key) {
         return jdbc.query("SELECT from_date, setting_value FROM " + AsOf.table("setting_from") + " WHERE sheet_id = ? AND setting_key = ? ORDER BY from_date",
@@ -174,9 +188,9 @@ public class Settings {
         return on(sheetId, key, sheets.today(sheetId));
     }
 
-    /** The clerk limit in force on the sheet's today; null when there is none. */
-    public BigDecimal clerkLimit(String sheetId) {
-        String value = current(sheetId, CLERK_LIMIT);
+    /** The clerk limit in force on the date; null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, LocalDate date) {
+        String value = on(sheetId, CLERK_LIMIT, date);
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 
@@ -185,18 +199,18 @@ public class Settings {
         return CLERK_LIMIT + "-" + grade;
     }
 
-    /** The clerk limit in force for the claim: its person's grade's own on the sheet's today when one is set (blank is none), else the sheet's; null when there is none. */
+    /** The clerk limit in force for the claim: its person's grade's (on the sheet's today) own in force on the claim's date when one is (blank is none), else the sheet's in force on its date; null when there is none. */
     public BigDecimal clerkLimit(Claim claim) {
         Person person = people.find(claim.sheetId(), claim.personId());
         LocalDate today = sheets.today(claim.sheetId());
         String grade = person == null ? null : person.gradeOn(today);
-        String value = grade == null ? "" : on(claim.sheetId(), gradeClerkLimitKey(grade), today);
-        return value.isEmpty() ? clerkLimit(claim.sheetId()) : new BigDecimal(value);
+        String value = grade == null ? "" : on(claim.sheetId(), gradeClerkLimitKey(grade), claim.date());
+        return value.isEmpty() ? clerkLimit(claim.sheetId(), claim.date()) : new BigDecimal(value);
     }
 
-    /** The cap in force on the sheet's today, with two decimals: what a person's due-total is at most; null when there is none. */
-    public BigDecimal cap(String sheetId) {
-        String value = current(sheetId, CAP);
+    /** The cap in force on the date, with two decimals: what a person's due-total is at most; null when there is none. */
+    public BigDecimal cap(String sheetId, LocalDate date) {
+        String value = on(sheetId, CAP, date);
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 
@@ -235,9 +249,12 @@ public class Settings {
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 
-    /** A person's due-total held to the sheet's cap less their cut total, not below 0.00; null (n/a) stays null. */
-    public BigDecimal capped(String sheetId, BigDecimal dueTotal, BigDecimal cutTotal) {
-        BigDecimal cap = cap(sheetId);
+    /**
+     * A person's due-total held to the sheet's cap less their cut total, not below 0.00; null (n/a) stays null. The cap is the one in
+     * force on {@code latest}, the date of their latest claim that counts (the sheet's today when null: they have none).
+     */
+    public BigDecimal capped(String sheetId, BigDecimal dueTotal, BigDecimal cutTotal, LocalDate latest) {
+        BigDecimal cap = cap(sheetId, latest == null ? sheets.today(sheetId) : latest);
         return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap.subtract(cutTotal).max(BigDecimal.ZERO.setScale(2)));
     }
 

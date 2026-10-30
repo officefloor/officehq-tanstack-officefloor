@@ -2,7 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { peopleKey } from '../people/peopleQuery';
 import { capLess, sumDue } from '../rates/ratesQuery';
-import { useCap } from '../settings/settingsQuery';
+import { claimsQuery, counts } from '../claims/claimsQuery';
+import { peopleQuery } from '../people/peopleQuery';
+import { valueOn } from '../settings/dated';
+import { useCaps } from '../settings/settingsQuery';
+import { useSheetToday } from '../sheet/useSheetToday';
 
 /** A member of a pool: the person's id and name, their share percent with two decimals, whether they are retired, and their
  *  cut of the pool's pot with two decimals ("" when the pool is not balanced, there is no pot, every member is retired, or the member's dates do
@@ -37,9 +41,18 @@ export function cutTotal(pools: Pool[], personId: number): string {
   return sumDue(cuts);
 }
 
-/** The cap a person's due-total is held to, by person id: the sheet's cap less their cut total, not below 0.00 ("" for no cap). */
+/** The cap a person's due-total is held to, by person id: the sheet's cap in force on the date of their latest claim that counts
+ *  (the sheet's today when they have none) less their cut total, not below 0.00 ("" for no cap). */
 export function useCapFor(sheetId: string): (personId: number) => string {
-  const cap = useCap(sheetId);
+  const caps = useCaps(sheetId);
+  const today = useSheetToday(sheetId);
+  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+  const people = useQuery(peopleQuery(sheetId)).data ?? [];
   const pools = useQuery(poolsQuery(sheetId)).data ?? [];
-  return (personId) => capLess(cap, cutTotal(pools, personId));
+  return (personId) => {
+    const latest = claims
+      .filter((c) => c.personId === personId && counts(c, people, today))
+      .reduce((max, c) => (c.date > max ? c.date : max), '');
+    return capLess(valueOn(caps, latest || today) ?? '', cutTotal(pools, personId));
+  };
 }

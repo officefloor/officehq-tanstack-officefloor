@@ -54,6 +54,8 @@ public class SheetClones {
                 + "FROM setting WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO setting_from (sheet_id, setting_key, from_date, setting_value) "
                 + "SELECT ?, setting_key, from_date, setting_value FROM setting_from WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date) "
+                + "SELECT ?, version_no, setting_key, from_date FROM policy_version WHERE sheet_id = ? ORDER BY version_no", to, from);
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role "
                 + "WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) SELECT ?, grade, rate, from_date, to_date, "

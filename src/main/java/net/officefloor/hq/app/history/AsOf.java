@@ -25,6 +25,7 @@ public final class AsOf {
             Map.entry("rate", List.of("sheet_id", "grade", "from_date")),
             Map.entry("setting", List.of("sheet_id", "setting_key")),
             Map.entry("setting_from", List.of("sheet_id", "setting_key", "from_date")),
+            Map.entry("policy_version", List.of("sheet_id", "version_no")),
             Map.entry("sheet", List.of("id")),
             Map.entry("statement", List.of("id")),
             Map.entry("period", List.of("sheet_id", "name")),

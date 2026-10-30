@@ -93,7 +93,12 @@ public class ApplySettings {
         }
     }
 
+    // A save of a policy setting is the sheet's next policy version, from the date it is recorded from.
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {
-        store.set(settings.sheetId(), key, settings.from().getOrDefault(key, today), value);
+        LocalDate from = settings.from().getOrDefault(key, today);
+        store.set(settings.sheetId(), key, from, value);
+        if (Settings.POLICY.contains(key)) {
+            store.recordVersion(settings.sheetId(), key, from);
+        }
     }
 }

@@ -73,6 +73,7 @@ public class Rollup {
             BigDecimal settled = ZERO;
             int overdueCount = 0;
             boolean anyFigure = false;
+            LocalDate latest = null;
             for (Claim claim : counting) {
                 List<ClaimShare> claimShares = shared.getOrDefault(claim.id(), List.of());
                 boolean own = claim.personId() == person.id();
@@ -88,6 +89,9 @@ public class Rollup {
                 }
                 if (!counts(claim, owner, today)) {
                     continue;
+                }
+                if (own && (latest == null || claim.date().isAfter(latest))) {
+                    latest = claim.date();
                 }
                 BigDecimal figure = figure(claim, owner, today);
                 if (own && settings.overdue(claim, today)) {
@@ -110,8 +114,8 @@ public class Rollup {
             }
             // With no rate today and no figure, the due-total is n/a.
             boolean none = !anyFigure && rates.on(sheetId, person.gradeOn(today), today) == null;
-            // Otherwise it is held to the sheet's cap less their cut total.
-            due = settings.capped(sheetId, due, cuts.getOrDefault(person.id(), ZERO));
+            // Otherwise it is held to the cap in force on their latest claim's date less their cut total.
+            due = settings.capped(sheetId, due, cuts.getOrDefault(person.id(), ZERO), latest);
             claimedTotal = claimedTotal.add(claimed);
             if (!none) {
                 dues.add(due);

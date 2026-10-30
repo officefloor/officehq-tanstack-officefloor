@@ -73,6 +73,7 @@ public class TakeStatement {
         Map<Long, BigDecimal> figures = new LinkedHashMap<>();
         Map<Long, List<ClaimShare>> shared = shares.of(person.sheetId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
+        LocalDate latest = null;
         for (Claim claim : claims.list(person.sheetId())) {
             if (claim.status() != ClaimStatus.SETTLED && !claim.status().isOpen()) {
                 continue;
@@ -80,6 +81,9 @@ public class TakeStatement {
             List<ClaimShare> claimShares = shared.getOrDefault(claim.id(), List.of());
             if (claim.personId() == person.id()) {
                 if ((claim.status() == ClaimStatus.SETTLED && !claim.deferredOn(today)) || Rollup.counts(claim, person, today)) {
+                    if (latest == null || claim.date().isAfter(latest)) {
+                        latest = claim.date();
+                    }
                     BigDecimal due = due(claim, person, today, rates, settings);
                     figures.put(claim.id(), due);
                     if (due != null) {
@@ -103,7 +107,7 @@ public class TakeStatement {
         boolean none = rates.on(person.sheetId(), person.gradeOn(today), today) == null
                 && figures.values().stream().allMatch(Objects::isNull);
         return new Stated(figures, none ? "n/a" : settings.capped(person.sheetId(), total,
-                poolCuts.totals(person.sheetId()).getOrDefault(person.id(), BigDecimal.ZERO.setScale(2))).toPlainString());
+                poolCuts.totals(person.sheetId()).getOrDefault(person.id(), BigDecimal.ZERO.setScale(2)), latest).toPlainString());
     }
 
     /**
