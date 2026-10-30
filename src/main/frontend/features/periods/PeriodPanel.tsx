@@ -66,7 +66,23 @@ export function PeriodPanel() {
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
   });
-  const generated = generateFy.submittedAt > generate.submittedAt ? generateFy : generate;
+  // Generate a calendar year's four quarters, named yyyy-Q1 to yyyy-Q4, each as the period form would add it (a
+  // quarter already named or overlapping a period is left out); its count shows in the same place.
+  const [qYear, setQYear] = useState('');
+  const generateQuarters = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ generated: number; periods: Period[] }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/generate-quarters`,
+        { ...body, user },
+      ),
+    onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
+  });
+  const generated = [generate, generateFy, generateQuarters].reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
+  const resetGenerated = () => {
+    generate.reset();
+    generateFy.reset();
+    generateQuarters.reset();
+  };
   // Close a period (open or soft-closed), soft-close an open one, or reopen a closed or soft-closed one (each by the roles the sheet's permission allows; by default
   // close by clerk and steward, reopen by a steward only).
   const act = useMutation({
@@ -229,8 +245,7 @@ export function PeriodPanel() {
         onSubmit={(e) => {
           e.preventDefault();
           submitOnce(() => {
-            generate.reset();
-            generateFy.reset();
+            resetGenerated();
             return generate.mutateAsync({ from: genFrom.trim(), to: genTo.trim() });
           });
         }}
@@ -265,6 +280,8 @@ export function PeriodPanel() {
             {' '}
             {generated === generateFy
               ? 'Could not generate the fiscal year: it must be a year (YYYY).'
+              : generated === generateQuarters
+              ? 'Could not generate the quarters: the year must be a year (YYYY).'
               : 'Could not generate periods: the to-date must be on or after the from-date (YYYY-MM-DD).'}
           </span>
         )}
@@ -274,8 +291,7 @@ export function PeriodPanel() {
         onSubmit={(e) => {
           e.preventDefault();
           submitOnce(() => {
-            generate.reset();
-            generateFy.reset();
+            resetGenerated();
             return generateFy.mutateAsync({ year: fyYear.trim() });
           });
         }}
@@ -290,6 +306,27 @@ export function PeriodPanel() {
           }}
         />{' '}
         <button type="submit" data-testid="period-generate-fy">Generate fiscal year</button>
+      </form>
+      <form
+        data-testid="period-generate-quarters-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitOnce(() => {
+            resetGenerated();
+            return generateQuarters.mutateAsync({ year: qYear.trim() });
+          });
+        }}
+      >
+        <input
+          data-testid="period-generate-quarters-year"
+          value={qYear}
+          placeholder="Year (YYYY)"
+          onChange={(e) => {
+            setQYear(e.target.value);
+            generateQuarters.reset();
+          }}
+        />{' '}
+        <button type="submit" data-testid="period-generate-quarters">Generate quarters</button>
       </form>
       <ImportOpenings />
     </>
