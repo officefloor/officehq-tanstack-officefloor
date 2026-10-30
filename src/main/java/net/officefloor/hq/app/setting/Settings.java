@@ -160,16 +160,27 @@ public class Settings {
         return values.isEmpty() ? "" : values.get(0);
     }
 
-    /** Records a save of the policy setting as the sheet's next policy version, from the from-date (null: none, so always). */
-    public void recordVersion(String sheetId, String key, LocalDate from) {
-        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date) SELECT ?, COALESCE(MAX(version_no), 0) + 1, ?, ?"
-                + " FROM policy_version WHERE sheet_id = ?", sheetId, key, from == null ? null : java.sql.Date.valueOf(from), sheetId);
+    /** Records a save of the policy setting's value as the sheet's next policy version, from the from-date (null: none, so always). */
+    public void recordVersion(String sheetId, String key, LocalDate from, String value) {
+        jdbc.update("INSERT INTO policy_version (sheet_id, version_no, setting_key, from_date, setting_value) SELECT ?, COALESCE(MAX(version_no), 0) + 1, ?, ?, ?"
+                + " FROM policy_version WHERE sheet_id = ?", sheetId, key, from == null ? null : java.sql.Date.valueOf(from), value, sheetId);
     }
 
     /** The from-dates (yyyy-MM-dd, null for none) of the sheet's policy versions, in the order made: the current version is how many there are. */
     public List<String> policyVersions(String sheetId) {
         return jdbc.query("SELECT from_date FROM " + AsOf.table("policy_version") + " WHERE sheet_id = ? ORDER BY version_no",
                 (rs, n) -> rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(), sheetId);
+    }
+
+    /** The sheet's policy versions, in the order made: each one's from-date (yyyy-MM-dd, null for none), setting key and the value saved ("" when not known). */
+    public List<PolicyVersion> policyVersionDetails(String sheetId) {
+        return jdbc.query("SELECT from_date, setting_key, setting_value FROM " + AsOf.table("policy_version") + " WHERE sheet_id = ? ORDER BY version_no",
+                (rs, n) -> new PolicyVersion(rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(),
+                        rs.getString("setting_key"), rs.getString("setting_value") == null ? "" : rs.getString("setting_value")), sheetId);
+    }
+
+    /** A policy version: its from-date (yyyy-MM-dd, null for none), the policy setting saved and the value saved. */
+    public record PolicyVersion(String from, String key, String value) {
     }
 
     /** A dated setting's values, by from-date. */

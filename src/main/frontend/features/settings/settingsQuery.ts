@@ -18,8 +18,12 @@ import type { DatedValue } from './dated';
  *  (clerk-limit, clerk-limit-<grade>, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, grace-<grade>, rounding; a blank grace or grade's proof threshold is none (a grade with none uses the sheet's proof threshold); a blank clerk limit, cap, proof threshold, note threshold or review threshold is none).
  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void, close and today
  *  by clerk and steward; reassign and reopen by steward).
- *  `policyVersions` are the from-dates (yyyy-mm-dd, null for none) of the policy versions, in the order made: every save of the rounding, floor, cap, terms, late percent or clerk limit is one. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; pendingSla: string; maxOpen: string; scoreMid: string; scoreHigh: string; scoreLog: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string>; policyVersions: (string | null)[] };
+ *  `policyVersions` are the from-dates (yyyy-mm-dd, null for none) of the policy versions, in the order made: every save of the rounding, floor, cap, terms, late percent or clerk limit is one.
+ *  `policyLines` are the same versions, in the order made, each with its from-date (null for none), the setting saved and the value saved. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; pot: string; alertThreshold: string; escalateAfter: string; reviewSla: string; pendingSla: string; maxOpen: string; scoreMid: string; scoreHigh: string; scoreLog: string; proofKinds: string; defaultGrade: string; parent: string; fiscalStartMonth: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string>; policyVersions: (string | null)[]; policyLines: PolicyVersion[] };
+
+/** A policy version: its from-date (yyyy-mm-dd, null for none), the policy setting saved and the value saved. */
+export type PolicyVersion = { from: string | null; key: string; value: string };
 
 /** The actions the permission matrix decides; each is kept (not dated) under perm-<action>. */
 export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
@@ -138,6 +142,11 @@ export function useCaps(sheetId: string): DatedValue[] {
 /** The from-dates (null for none) of the sheet's policy versions, in the order made; the current version is how many there are. */
 export function usePolicyVersions(sheetId: string): (string | null)[] {
   return useQuery(settingsQuery(sheetId)).data?.policyVersions ?? [];
+}
+
+/** The sheet's policy versions, in the order made, each with the setting and value it saved. */
+export function usePolicyVersionLines(sheetId: string): PolicyVersion[] {
+  return useQuery(settingsQuery(sheetId)).data?.policyLines ?? [];
 }
 
 /** The policy version in force on the date (yyyy-mm-dd): how many versions are from it or before (one with no from-date always counts). */

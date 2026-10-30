@@ -26,7 +26,8 @@ public class RespondWithSettings {
                 settings.get(sheet, Settings.PROOF_KINDS), settings.get(sheet, Settings.DEFAULT_GRADE),
                 settings.get(sheet, Settings.SCORE_MID), settings.get(sheet, Settings.SCORE_HIGH),
                 settings.get(sheet, Settings.SCORE_LOG), settings.get(sheet, Settings.MAX_OPEN),
-                settings.get(sheet, Settings.PENDING_SLA), settings.policyVersions(sheet)));
+                settings.get(sheet, Settings.PENDING_SLA), settings.policyVersions(sheet),
+                settings.policyVersionDetails(sheet)));
     }
 
     private static Map<String, String> gradeTerms(Settings settings, String sheet, LocalDate today, List<String> grades) {

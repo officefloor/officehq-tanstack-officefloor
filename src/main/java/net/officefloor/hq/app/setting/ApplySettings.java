@@ -98,7 +98,7 @@ public class ApplySettings {
         LocalDate from = settings.from().getOrDefault(key, today);
         store.set(settings.sheetId(), key, from, value);
         if (Settings.POLICY.contains(key)) {
-            store.recordVersion(settings.sheetId(), key, from);
+            store.recordVersion(settings.sheetId(), key, from, value);
         }
     }
 }
