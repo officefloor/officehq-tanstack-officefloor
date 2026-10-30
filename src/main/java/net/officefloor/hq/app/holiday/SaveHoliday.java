@@ -12,7 +12,7 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * Adds the holiday and re-fixes the due-by of every claim not SETTLED or VOID whose due-by is on or after it: worked
+ * Adds the holiday and re-fixes the due-by of every claim not SETTLED, VOID or DELETED whose due-by is on or after it: worked
  * out again from the claim's date, with the terms it was fixed with, over the holidays now on the sheet.
  */
 public class SaveHoliday {
@@ -21,6 +21,7 @@ public class SaveHoliday {
         holidays.add(sheetId, holiday.date());
         for (Claim claim : claims.list(sheetId)) {
             if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID
+                    || claim.getStatus() == ClaimStatus.DELETED
                     || claim.getDueBy() == null || claim.getTerms() == null || claim.getDueBy().isBefore(holiday.date())) {
                 continue;
             }

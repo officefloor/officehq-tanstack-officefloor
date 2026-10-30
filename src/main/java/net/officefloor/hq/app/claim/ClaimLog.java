@@ -33,6 +33,13 @@ public class ClaimLog {
         return dates.isEmpty() ? null : dates.get(0).toLocalDate();
     }
 
+    /** The date the claim was last deleted (its latest DELETED line), null if never. */
+    public java.time.LocalDate deletedOn(Claim claim) {
+        List<Date> dates = jdbc.queryForList("SELECT log_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ?"
+                + " ORDER BY id DESC", Date.class, claim.getSheetId(), claim.getId(), ClaimStatus.DELETED.name());
+        return dates.isEmpty() ? null : dates.get(0).toLocalDate();
+    }
+
     /** The status of the claim's latest log line, null if it has none. */
     public String lastStatus(Claim claim) {
         List<String> statuses = jdbc.queryForList("SELECT status FROM claim_log WHERE sheet_id = ? AND claim_id = ?"

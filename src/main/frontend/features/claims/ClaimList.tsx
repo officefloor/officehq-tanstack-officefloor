@@ -48,6 +48,9 @@ import { peopleKey, type Person } from '../people/usePeople';
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 // A claim is commented with the comment text and button (an empty comment is refused with the claim's error); its comments
 // are shown oldest first, each as "<user> on <date>: <text>", the date being the sheet's today when it was written.
+// A DRAFT claim is deleted with the delete button (any other status, or a claim whose due-by is inside a closed period, is
+// refused with the claim's error): it is DELETED, counts nowhere and cannot be edited, opened or voided. On the same
+// sheet-today it was deleted the restore button makes it a DRAFT again; on a later day that is refused with the claim's error.
 export function ClaimList({
   claims,
   people,
@@ -80,7 +83,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const settings = useSettings(sheet);
 
   const status = useMutation({
-    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject'; reason?: string }) =>
+    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore'; reason?: string }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/status`,
         { action, user, reason },
@@ -368,6 +371,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       >
         Void
       </button>{' '}
+      <button type="button" data-testid="claim-delete" onClick={() => act(() => status.mutate({ action: 'delete' }))}>
+        Delete
+      </button>{' '}
+      <button type="button" data-testid="claim-restore" onClick={() => act(() => status.mutate({ action: 'restore' }))}>
+        Restore
+      </button>{' '}
       <button type="button" data-testid="claim-approve" onClick={() => act(() => status.mutate({ action: 'approve' }))}>
         Approve
       </button>{' '}
@@ -461,7 +470,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim whose due-by is inside a closed period can change status).
+          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, only a DRAFT claim can be deleted and a DELETED one restored only on the sheet-today it was deleted, and no claim whose due-by is inside a closed period can change status).
         </span>
       )}
       {resettle.isError && (

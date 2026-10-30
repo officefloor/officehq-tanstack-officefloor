@@ -33,6 +33,8 @@ public class ApplyClaimStatus {
             String action = switch (request.target()) {
                 case OPEN -> "open";
                 case SETTLED -> "settle";
+                case DELETED -> "delete";
+                case DRAFT -> "restore";
                 default -> "void";
             };
             if (!settings.allows(claim.getSheetId(), request.user(), action)) {
@@ -49,6 +51,13 @@ public class ApplyClaimStatus {
             }
         } else if (!claim.getStatus().canBecome(request.target())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), request.target());
+        }
+        if (request.target() == ClaimStatus.DRAFT) {
+            // A deleted claim is restored only on the same sheet-today it was deleted.
+            java.time.LocalDate deletedOn = log.deletedOn(claim);
+            if (deletedOn == null || !deletedOn.equals(sheets.today(claim.getSheetId()))) {
+                throw new ClaimStatusRefusedException("A deleted claim can be restored only on the sheet-today it was deleted");
+            }
         }
         if (request.target() == ClaimStatus.SETTLED && claim.getOpenedBy() != null
                 && claim.getOpenedBy().equals(request.user())) {

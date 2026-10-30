@@ -22,7 +22,8 @@ public class AuditClaimStatus {
                 case PENDING -> "CLAIM_PENDING";
                 case SETTLED -> "CLAIM_SETTLED";
                 case VOID -> "CLAIM_VOIDED";
-                case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
+                case DELETED -> "CLAIM_DELETED";
+                case DRAFT -> "CLAIM_RESTORED";
             };
         };
         net.officefloor.hq.app.person.Person person = people.find(claim.getSheetId(), claim.getPersonId());

@@ -27,6 +27,8 @@ public class ValidateClaimStatus {
                 }
                 yield new ValidClaimStatus(ClaimStatus.VOID, request.user(), ValidClaimStatus.Decision.NONE, reason);
             }
+            case "delete" -> new ValidClaimStatus(ClaimStatus.DELETED, request.user(), ValidClaimStatus.Decision.NONE, null);
+            case "restore" -> new ValidClaimStatus(ClaimStatus.DRAFT, request.user(), ValidClaimStatus.Decision.NONE, null);
             case "approve" -> new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.APPROVE, null);
             case "reject" -> {
                 if (reason.isEmpty()) throw new InvalidClaimException("A rejection needs a reason");
