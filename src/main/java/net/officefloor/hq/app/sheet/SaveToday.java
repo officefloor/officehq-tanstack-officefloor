@@ -15,6 +15,6 @@ public class SaveToday {
         sheets.setToday(sheetId, today);
         closer.closeDue(sheetId, request.user());
         rollup.recordChanges(sheetId, request.user(), before);
-        response.send(new TodayResponse(sheetId, today.toString()));
+        response.send(TodayResponse.of(sheetId, sheets));
     }
 }

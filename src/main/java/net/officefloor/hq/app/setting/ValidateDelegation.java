@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateDelegation {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DelegationRequest request,
             Out<ValidDelegation> body, Settings settings, Sheets sheets) throws InvalidSettingException {
+        if (sheets.archived(sheetId)) {
+            throw new InvalidSettingException("The sheet is archived: nothing on it can change");
+        }
         if (!Settings.STEWARD.equals(settings.roleSet(sheetId, request.user()))) {
             throw new InvalidSettingException("Only a steward can delegate the steward role");
         }

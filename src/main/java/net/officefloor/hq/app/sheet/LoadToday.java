@@ -6,6 +6,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class LoadToday {
     public void service(@PathVariable("sheetId") String sheetId, Sheets sheets,
             ObjectResponse<TodayResponse> response) {
-        response.send(new TodayResponse(sheetId, sheets.today(sheetId).toString()));
+        response.send(TodayResponse.of(sheetId, sheets));
     }
 }

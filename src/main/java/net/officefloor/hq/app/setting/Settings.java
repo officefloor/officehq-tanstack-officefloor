@@ -180,8 +180,11 @@ public class Settings {
         return found.isEmpty() ? CLERK : found.get(0);
     }
 
-    /** Refuses a change asked for by a user who is a viewer on the sheet. */
+    /** Refuses a change asked for on an archived sheet, or by a user who is a viewer on the sheet. */
     public void refuseViewer(String sheetId, String user) throws ViewerRefusedException {
+        if (sheets.archived(sheetId)) {
+            throw new net.officefloor.hq.app.sheet.SheetArchivedException();
+        }
         if (VIEWER.equals(role(sheetId, user))) {
             throw new ViewerRefusedException();
         }
@@ -225,8 +228,12 @@ public class Settings {
     }
 
     /** Whether the user's role may take the action on the sheet: by its permission when set, else by the standing
-     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). A viewer takes none. */
+     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). A viewer takes none,
+     *  and no one takes any on an archived sheet. */
     public boolean allows(String sheetId, String user, String action) {
+        if (sheets.archived(sheetId)) {
+            return false;
+        }
         String role = role(sheetId, user);
         if (VIEWER.equals(role)) {
             return false;

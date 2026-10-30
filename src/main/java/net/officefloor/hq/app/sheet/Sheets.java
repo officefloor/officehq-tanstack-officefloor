@@ -50,4 +50,15 @@ public class Sheets {
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }
+
+    /** Whether the sheet is archived: everything on it stays visible and every change to it is refused. */
+    public boolean archived(String sheetId) {
+        today(sheetId); // the sheet's row holds the flag
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT archived FROM sheet WHERE id = ?", Boolean.class, sheetId));
+    }
+
+    public void archive(String sheetId) {
+        today(sheetId);
+        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", sheetId);
+    }
 }
