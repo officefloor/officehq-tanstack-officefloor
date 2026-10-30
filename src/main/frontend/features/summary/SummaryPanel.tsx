@@ -6,17 +6,19 @@ import { usePeriods } from '../periods/usePeriods';
 import { formatCents } from '../rates/due';
 
 // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
-// are on it today (retired people left out) and their due-totals added up (skipping n/a). Per
-// period: its due-total, as the period list shows it. Per status: how many claims have it.
+// are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
+// of them are active. Per period: its due-total, as the period list shows it. Per status: how many claims have it.
 export function SummaryPanel({
   people,
   today,
   totalOf,
+  isActive,
   statusCount,
 }: {
   people: Person[];
   today: string | undefined;
   totalOf: (person: Person) => bigint | null;
+  isActive: (person: Person) => boolean;
   statusCount: (status: (typeof STATUSES)[number]) => number;
 }) {
   const [sheet] = useSearchParam('sheet', asString);
@@ -32,6 +34,7 @@ export function SummaryPanel({
             <th>Grade</th>
             <th>People</th>
             <th>Due</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
@@ -43,6 +46,7 @@ export function SummaryPanel({
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>{formatCents(due)}</td>
+                <td data-testid={`summary-grade-${g}-active`}>{onGrade.filter(isActive).length}</td>
               </tr>
             );
           })}

@@ -1,4 +1,4 @@
-import { countsLive, useClaims } from '../claims/useClaims';
+import { countsLive, isOpen, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
 import { capped, claimDue, dueTotal, excess, formatCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
@@ -47,10 +47,15 @@ export function useSheetFigures(sheet: string) {
   const sheetDueTotal = formatCents(trimmedSum(people.map(totalOf).filter((due): due is bigint => due !== null)));
   // The sheet's overdue-total: each person's overdue-total (always a figure) added up, trimmed.
   const sheetOverdueTotal = formatCents(trimmedSum(people.map((p) => overdueSum(overdue.filter((c) => c.personId === p.id)))));
+  // Active: an OPEN or PENDING claim that counts, dated within the 30 days up to and including today.
+  const activeFrom = today === undefined ? undefined : daysBefore(today, 29);
+  const isActive = (person: Person) =>
+    activeFrom !== undefined &&
+    live.some((c) => c.personId === person.id && isOpen(c) && c.date >= activeFrom && c.date <= today!);
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
@@ -61,4 +66,11 @@ function trimmedSum(figures: bigint[]): bigint {
   const max = figures.reduce((a, b) => (b > a ? b : a));
   const min = figures.reduce((a, b) => (b < a ? b : a));
   return sum - max - min;
+}
+
+// The ISO date `days` days before `date`.
+function daysBefore(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
 }

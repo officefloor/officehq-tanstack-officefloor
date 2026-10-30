@@ -40,7 +40,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -81,6 +81,7 @@ export function PeopleList() {
             <th>Claimed</th>
             <th>Due</th>
             <th>Excess</th>
+            <th>Active</th>
             {periods.map((period) => (
               <th key={period.name}>Due {period.name}</th>
             ))}
@@ -110,6 +111,7 @@ export function PeopleList() {
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
                 <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
+                <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
                 {periods.map((period) => (
                   <td key={period.name} data-testid={`person-period-${period.name}-due-total`}>
                     {formatCents(periodDueOf(period, p.id))}
@@ -157,7 +159,7 @@ export function PeopleList() {
       <p>
         Overdue total: <span data-testid="rollup-overdue-total">{sheetOverdueTotal}</span>
       </p>
-      <SummaryPanel people={people} today={today} totalOf={totalOf} statusCount={statusCount} />
+      <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} />
     </ClaimSelection>
   );
 }
