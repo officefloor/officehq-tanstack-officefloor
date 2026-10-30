@@ -1,0 +1,116 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index f46aaea9..bf8d4893 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -1,3 +1,4 @@
++import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+@@ -8,7 +9,8 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
+ // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
+ // person's last statement bound it) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
+ // one the claim's status does not allow is refused with the claim's error) and an edit button that
+-// opens the claim in the person's claim form (cancel closes it again).
++// opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim is
++// refused with the claim's error — to change an open claim, void it and add a new one.
+ export function ClaimList({ claims, rateOn }: { claims: Claim[]; rateOn: (date: string) => string | undefined }) {
+   return (
+     <ul data-testid="claims">
+@@ -35,12 +37,21 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
+ 
++  const [editRefused, setEditRefused] = useState(false);
++
+   // The next action on the row removes an old error.
+   const act = (run: () => void) => {
+     status.reset();
++    setEditRefused(false);
+     run();
+   };
+ 
++  const edit = () =>
++    act(() => {
++      if (c.status === 'DRAFT') setEditing(c.id);
++      else setEditRefused(true);
++    });
++
+   return (
+     <li data-testid={`claim-row-${c.id}`}>
+       <span data-testid="claim-amount">{c.amount}</span>{' '}
+@@ -66,10 +77,16 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
+           Cancel
+         </button>
+       ) : (
+-        <button type="button" data-testid="claim-edit" onClick={() => act(() => setEditing(c.id))}>
++        <button type="button" data-testid="claim-edit" onClick={edit}>
+           Edit
+         </button>
+       )}
++      {editRefused && (
++        <span data-testid="claim-error" role="alert">
++          {' '}
++          Not allowed: only a DRAFT claim can be edited; to change a {c.status} claim, void it and add a new one.
++        </span>
++      )}
+       {status.isError && (
+         <span data-testid="claim-error" role="alert">
+           {' '}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index db9f52a9..8c780e06 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
+- *  opened, "" for a draft or a voided claim; `due` is the due fixed when it was settled, else the
++ *  opened (a voided claim keeps it), "" for a draft; `due` is the due fixed when it was settled, else the
+  *  figure the person's last statement bound it to, "" while its due is live (worked from the current
+  *  rate) or bound to n/a; `stated` is whether the last statement bound it. */
+ export type Claim = {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index d85364ee..a1f3df08 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -8,6 +8,10 @@ import net.officefloor.plugin.variable.Val;
+ public class ApplyClaim {
+     public void apply(@Val ValidClaim request, @Val Claim claim, Sheets sheets, Periods periods)
+             throws InvalidClaimException {
++        if (claim.getStatus() != ClaimStatus.DRAFT) {
++            // Only a draft can be edited; to change an open claim, void it and add a new one.
++            throw new InvalidClaimException("Only a DRAFT claim can be edited");
++        }
+         LocalDate date = request.date() != null ? request.date() : sheets.today(claim.getSheetId());
+         if (periods.isClosed(claim.getSheetId(), claim.getDate()) || periods.isClosed(claim.getSheetId(), date)) {
+             throw new InvalidClaimException("No claim dated inside a closed period can be edited");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 8e23225a..8bdb977f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -26,10 +26,8 @@ public class ApplyClaimStatus {
+             claim.setNumber(sheets.nextClaimNumber(claim.getSheetId()));
+             claim.setOpenedBy(request.user());
+         }
++        // A voided claim keeps its number; numbers are never reused.
+         number.set(new ClaimNumber(claim.getNumber()));
+-        if (request.target() == ClaimStatus.VOID) {
+-            claim.setNumber(null);
+-        }
+         if (request.target() == ClaimStatus.SETTLED) {
+             // Settling fixes the due at the rate in force on the claim's date; with no rate it stays live (n/a until one is set).
+             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 022a9c96..8ea6f1d8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -40,7 +40,7 @@ public class Claim {
+     public LocalDate getDate() { return date; }
+     public String getNote() { return note; }
+     public ClaimStatus getStatus() { return status; }
+-    /** The number given when the claim was opened; null for a draft or a voided claim. */
++    /** The number given when the claim was opened; null for a draft (a voided claim keeps the number it had). */
+     public Long getNumber() { return number; }
+     /** The due fixed when the claim was settled; null while its due is live. */
+     public BigDecimal getSettledDue() { return settledDue; }
