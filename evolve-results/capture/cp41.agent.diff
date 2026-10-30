@@ -1,0 +1,245 @@
+diff --git a/src/main/frontend/features/header/SheetHeader.tsx b/src/main/frontend/features/header/SheetHeader.tsx
+new file mode 100644
+index 00000000..4e63ded9
+--- /dev/null
++++ b/src/main/frontend/features/header/SheetHeader.tsx
+@@ -0,0 +1,22 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { STATUSES, useSheetFigures } from '../people/useSheetFigures';
++
++// The sheet's counters, always on show: its people (retired included), its claims per status (as
++// the summary counts them) and its due-total and overdue-total (as the sheet's totals show them).
++export function SheetHeader() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const { people, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
++  return (
++    <header data-testid="header">
++      People: <span data-testid="header-people-count">{people.length}</span>
++      {STATUSES.map((s) => (
++        <span key={s}>
++          {' · '}
++          {s}: <span data-testid={`header-claims-${s}-count`}>{statusCount(s)}</span>
++        </span>
++      ))}
++      {' · '}Due: <span data-testid="header-due-total">{sheetDueTotal}</span>
++      {' · '}Overdue: <span data-testid="header-overdue-total">{overdueTotal(overdue)}</span>
++    </header>
++  );
++}
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 3ab381c8..3da063a4 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -2,12 +2,9 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { ClaimForm } from '../claims/ClaimForm';
+ import { BulkOpenButton, ClaimSelection } from '../claims/BulkOpen';
+ import { ClaimList } from '../claims/ClaimList';
+-import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
+-import { isOverdue } from '../claims/overdue';
+-import { claimDue, dueTotal, formatCents, showDue } from '../rates/due';
+-import { rateOn, useRates } from '../rates/useRates';
+-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+-import { useSheetToday } from '../sheet/useSheetToday';
++import { sumAmounts } from '../claims/useClaims';
++import { formatCents, showDue } from '../rates/due';
++import { rateOn } from '../rates/useRates';
+ import { StatementButton } from '../statements/StatementButton';
+ import { SummaryPanel } from '../summary/SummaryPanel';
+ import { HoldControl } from './HoldControl';
+@@ -16,7 +13,8 @@ import { QuickAdd } from './QuickAdd';
+ import { RetireControl } from './RetireControl';
+ import { downloadCsv } from './csv';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+-import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
++import { gradeOn } from './usePeople';
++import { useSheetFigures } from './useSheetFigures';
+ 
+ // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
+ // sum of their OPEN and SETTLED claims), due-total (the
+@@ -33,30 +31,9 @@ import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
+ export function PeopleList() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+-  const people = usePeople(sheet);
++  const { people, claims, rates, today, byId, live, totalOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const listed = showRetired ? people : people.filter((p) => !p.retired);
+-  const claims = useClaims(sheet);
+-  const rates = useRates(sheet);
+-  const today = useSheetToday(sheet);
+-  const floor = useFloor(sheet);
+-  const late = { pct: useLatePct(sheet), today };
+-  const policy = usePolicyDate(sheet);
+-  const byId = new Map(people.map((p) => [p.id, p]));
+-  const live = claims.filter((c) => {
+-    const person = byId.get(c.personId);
+-    return person !== undefined && countsLive(c, (date) => heldOn(person, date));
+-  });
+-  // A claim is worked at the grade in force on its date; the row shows the one in force today.
+-  const totalOf = (person: Person) =>
+-    dueTotal(
+-      live.filter((c) => c.personId === person.id),
+-      (date) => rateOn(rates, gradeOn(person, date), date),
+-      rateOn(rates, gradeOn(person, today), today),
+-      floor,
+-      late,
+-      policy,
+-    );
+   const backing = (p: (typeof people)[number]) =>
+     formatCents(p.patronIds.reduce((sum, id) => {
+       const patron = byId.get(id);
+@@ -64,10 +41,7 @@ export function PeopleList() {
+       return due === null ? sum : sum + due;
+     }, 0n));
+ 
+-  const overdue = live.filter((c) => isOverdue(c, today));
+   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
+-  const overdueTotal = (cs: typeof overdue) =>
+-    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
+   return (
+     <ClaimSelection>
+       <QuickAdd />
+@@ -147,10 +121,7 @@ export function PeopleList() {
+         Claimed total: <span data-testid="rollup-claimed-total">{sumAmounts(live)}</span>
+       </p>
+       <p>
+-        Due total: <span data-testid="rollup-due-total">{formatCents(people.reduce((sum, p) => {
+-          const due = totalOf(p);
+-          return due === null ? sum : sum + due;
+-        }, 0n))}</span>
++        Due total: <span data-testid="rollup-due-total">{sheetDueTotal}</span>
+       </p>
+       <p>
+         Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>
+@@ -158,7 +129,7 @@ export function PeopleList() {
+       <p>
+         Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
+       </p>
+-      <SummaryPanel people={people} claims={claims} today={today} totalOf={totalOf} />
++      <SummaryPanel people={people} today={today} totalOf={totalOf} statusCount={statusCount} />
+     </ClaimSelection>
+   );
+ }
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+new file mode 100644
+index 00000000..f8648f43
+--- /dev/null
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -0,0 +1,48 @@
++import { countsLive, useClaims } from '../claims/useClaims';
++import { isOverdue } from '../claims/overdue';
++import { claimDue, dueTotal, formatCents } from '../rates/due';
++import { rateOn, useRates } from '../rates/useRates';
++import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
++import { useSheetToday } from '../sheet/useSheetToday';
++import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
++
++export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
++
++// The figures the people list, its totals, the summary and the header are all worked from, so
++// every place that repeats a figure shows the same one.
++export function useSheetFigures(sheet: string) {
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const floor = useFloor(sheet);
++  const late = { pct: useLatePct(sheet), today };
++  const policy = usePolicyDate(sheet);
++  const byId = new Map(people.map((p) => [p.id, p]));
++  const live = claims.filter((c) => {
++    const person = byId.get(c.personId);
++    return person !== undefined && countsLive(c, (date) => heldOn(person, date));
++  });
++  // A claim is worked at the grade in force on its date; the row shows the one in force today.
++  const totalOf = (person: Person) =>
++    dueTotal(
++      live.filter((c) => c.personId === person.id),
++      (date) => rateOn(rates, gradeOn(person, date), date),
++      rateOn(rates, gradeOn(person, today), today),
++      floor,
++      late,
++      policy,
++    );
++  const overdue = live.filter((c) => isOverdue(c, today));
++  const overdueTotal = (cs: typeof overdue) =>
++    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
++  // The sheet's due-total: the people's due-totals added up, skipping n/a.
++  const sheetDueTotal = formatCents(people.reduce((sum, p) => {
++    const due = totalOf(p);
++    return due === null ? sum : sum + due;
++  }, 0n));
++  const onSheet = new Set(people.map((p) => p.id));
++  const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
++  const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
++  return { people, claims, rates, today, byId, live, totalOf, overdue, overdueTotal, sheetDueTotal, statusCount };
++}
+diff --git a/src/main/frontend/features/summary/SummaryPanel.tsx b/src/main/frontend/features/summary/SummaryPanel.tsx
+index 8a6ce897..929b6acc 100644
+--- a/src/main/frontend/features/summary/SummaryPanel.tsx
++++ b/src/main/frontend/features/summary/SummaryPanel.tsx
+@@ -1,32 +1,28 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+-import type { Claim } from '../claims/useClaims';
+ import { GRADES, gradeOn, type Person } from '../people/usePeople';
++import { STATUSES } from '../people/useSheetFigures';
+ import { usePeriodDueTotal } from '../periods/usePeriodDueTotal';
+ import { usePeriods } from '../periods/usePeriods';
+ import { formatCents } from '../rates/due';
+ 
+-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+-
+ // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
+ // are on it today (retired people left out) and their due-totals added up (skipping n/a). Per
+ // period: its due-total, as the period list shows it. Per status: how many claims have it.
+ export function SummaryPanel({
+   people,
+-  claims,
+   today,
+   totalOf,
++  statusCount,
+ }: {
+   people: Person[];
+-  claims: Claim[];
+   today: string | undefined;
+   totalOf: (person: Person) => bigint | null;
++  statusCount: (status: (typeof STATUSES)[number]) => number;
+ }) {
+   const [sheet] = useSearchParam('sheet', asString);
+   const periods = usePeriods(sheet);
+   const periodDueTotal = usePeriodDueTotal(sheet);
+   const current = people.filter((p) => !p.retired);
+-  const onSheet = new Set(people.map((p) => p.id));
+-  const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
+   return (
+     <section data-testid="summary">
+       <h3>Summary</h3>
+@@ -79,7 +75,7 @@ export function SummaryPanel({
+           {STATUSES.map((s) => (
+             <tr key={s}>
+               <td>{s}</td>
+-              <td data-testid={`summary-status-${s}-count`}>{sheetClaims.filter((c) => c.status === s).length}</td>
++              <td data-testid={`summary-status-${s}-count`}>{statusCount(s)}</td>
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index a039ced3..ecc349ab 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -8,6 +8,7 @@ import { SettingsPanel } from '../features/settings/SettingsPanel';
+ import { PeriodPanel } from '../features/periods/PeriodPanel';
+ import { PersonForm } from '../features/people/PersonForm';
+ import { PeopleList } from '../features/people/PeopleList';
++import { SheetHeader } from '../features/header/SheetHeader';
+ 
+ // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
+ // picker, and — once a sheet is loaded — that sheet.
+@@ -25,6 +26,7 @@ function Home() {
+       <SheetPicker />
+       {sheet !== '' && (
+         <div key={sheet}>
++          <SheetHeader />
+           <SheetToday />
+           <RatePanel />
+           <SettingsPanel />
