@@ -7,7 +7,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
 /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
  *  opened (a voided claim keeps it), "" for a draft; `due` is the due fixed when it was settled, else the
  *  figure the person's last statement bound it to, "" while its due is live (worked from the current
- *  rate) or bound to n/a (a PENDING claim is never bound: its due is live); `stated` is whether the last statement bound it. A claim with a negative
+ *  rate) or bound to n/a; `stated` is whether the last statement bound it. A claim with a negative
  *  amount is a correction: its due has no floor and no late charge. */
 export type Claim = {
   id: string;
@@ -64,8 +64,8 @@ export const isOpen = (c: { status?: string }) => c.status === 'OPEN' || c.statu
 /** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** Whether a statement binds the claim's figure now: a PENDING claim is never bound. */
-export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
+/** Whether a statement binds the claim's figure now (a PENDING claim included). */
+export const isBound = (c: Claim) => c.stated;
 
 /** Whether a claim is deferred on the sheet's today: OPEN and deferred until a later date. A deferred claim
  *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */

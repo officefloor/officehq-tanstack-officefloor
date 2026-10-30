@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.util.List;
 
 /** amount is shown with two decimals; status is DRAFT, OPEN, PENDING, SETTLED, VOID or DELETED; number is "" when none;
- *  due is the due fixed when the claim was settled, else (unless PENDING) the figure its person's last statement bound
+ *  due is the due fixed when the claim was settled, else the figure its person's last statement bound
  *  it to, "" while it is live (or bound to n/a); openedBy is "" when never opened; stated is whether
  *  the last statement bound it; corrects is the number a correction corrects, "" for any other claim;
  *  roundingDate is the date its rounding goes by (a correction's: the date of the claim it corrects);

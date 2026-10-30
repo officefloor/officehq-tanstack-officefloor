@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -87,10 +89,11 @@ public class People {
         return found;
     }
 
-    /** Keeps a SNAPSHOT line for the person: their due-total as shown, dated the sheet's today (the day being left). */
-    public void recordSnapshot(String sheetId, long personId, String dueTotal) {
-        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, due_total, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
-                sheetId, personId, dueTotal, sheetId);
+    /** Keeps a SNAPSHOT line for the person: their due-total as shown, dated the sheet's today (the day being left), taken on
+     *  the day the sheet moves to. */
+    public void recordSnapshot(String sheetId, long personId, String dueTotal, LocalDate takenOn) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, due_total, set_on, taken_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                sheetId, personId, dueTotal, sheetId, takenOn == null ? null : Date.valueOf(takenOn));
     }
 
     /** Fills in each person's dated grades and the sheet's today (the grade in force on it is shown). */

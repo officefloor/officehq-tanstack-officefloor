@@ -126,11 +126,13 @@ public class AsOfView {
         jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> retirements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                         .add(new Person.Retirement(rs.getDate(2).toLocalDate(), rs.getDate(3).toLocalDate())), sheetId, end);
-        // A snapshot is taken as its day is left, so one dated the date itself was not yet taken at its end.
+        // A snapshot is taken on the day the sheet moves to (dated the day it left): one taken after the date was not yet
+        // taken at its end (a line kept without that day: taken once its own day was left).
         Map<Long, List<String>> snapshots = new HashMap<>();
-        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ? AND set_on < ? ORDER BY seq",
+        jdbc.query("SELECT person_id, set_on, due_total FROM person_snapshot WHERE sheet_id = ?"
+                + " AND (taken_on <= ? OR (taken_on IS NULL AND set_on < ?)) ORDER BY seq",
                 (RowCallbackHandler) rs -> snapshots.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
-                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)), sheetId, end);
+                        .add(rs.getDate(2).toLocalDate() + " " + rs.getString(3)), sheetId, end, end);
         Map<Long, LocalDate> retired = new HashMap<>();
         jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> retired.put(rs.getLong(1), local(rs.getDate(2))), sheetId, end);

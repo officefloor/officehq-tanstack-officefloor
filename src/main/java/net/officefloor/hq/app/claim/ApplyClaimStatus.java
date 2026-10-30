@@ -139,7 +139,7 @@ public class ApplyClaimStatus {
         // A voided claim keeps its number; numbers are never reused.
         ClaimNumber number = new ClaimNumber(claim.getNumber());
         if (target == ClaimStatus.SETTLED) {
-            // Settling (or approving) fixes the due: the figure a statement bound it to (never while PENDING), else its amount
+            // Settling (or approving) fixes the due: the figure a statement bound it to, else its amount
             // at the rate in force on the claim's date, with its late charge as of today on top and raised to the floor, frozen in;
             // with no figure it stays live (n/a until a rate is set).
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());

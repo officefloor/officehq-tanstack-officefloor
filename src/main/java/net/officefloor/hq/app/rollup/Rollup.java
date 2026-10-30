@@ -118,10 +118,10 @@ public class Rollup {
 
     /** Audit (on commit) one SNAPSHOT line per person, in list order, with their due-total in {@code before}, and keep
      *  it on the person dated the sheet's today (so call it before today moves). */
-    public void recordSnapshots(String sheetId, String user, RollupFigures before) {
+    public void recordSnapshots(String sheetId, String user, RollupFigures before, LocalDate takenOn) {
         String prefix = " sheet=" + sheetId + " by=" + user;
         before.people().forEach((id, was) -> {
-            people.recordSnapshot(sheetId, id, was.dueTotal());
+            people.recordSnapshot(sheetId, id, was.dueTotal(), takenOn);
             audit.recordOnCommit("SNAPSHOT" + prefix + " name=" + was.name() + " due-total=" + was.dueTotal());
         });
     }

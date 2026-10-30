@@ -64,8 +64,8 @@ public class Claim {
     public boolean isStated() { return stated; }
     /** The figure the last statement bound this claim to; null when unbound or when it was n/a. */
     public BigDecimal getStatedDue() { return statedDue; }
-    /** Whether the last statement binds this claim's figure now: a PENDING claim is not bound (it shows its live figure). */
-    public boolean isBound() { return stated && status != ClaimStatus.PENDING; }
+    /** Whether the last statement binds this claim's figure now (a PENDING claim included). */
+    public boolean isBound() { return stated; }
     public void setStated(boolean stated) { this.stated = stated; }
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
