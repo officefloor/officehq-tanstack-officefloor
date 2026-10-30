@@ -47,7 +47,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -194,6 +194,13 @@ export function PeopleList() {
         {tagTotals.map(({ tag, total }) => (
           <li key={tag}>
             Tag {tag} due total: <span data-testid={`tag-${tag}-due-total`}>{total}</span>
+          </li>
+        ))}
+      </ul>
+      <ul>
+        {monthTotals.map(({ month, total }) => (
+          <li key={month}>
+            Month {month} due total: <span data-testid={`month-${month}-due-total`}>{total}</span>
           </li>
         ))}
       </ul>
