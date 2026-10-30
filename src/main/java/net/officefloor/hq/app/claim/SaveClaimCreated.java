@@ -18,15 +18,15 @@ public class SaveClaimCreated {
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         String sheetId = person.getSheetId();
         LocalDate date = request.date() != null ? request.date() : settings.claimDate(sheetId);
-        if (periods.isClosed(sheetId, date)) {
+        LocalDate dueBy = date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+        if (periods.isClosed(sheetId, dueBy)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }
         if (!person.allowsClaimOn(date)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date");
         }
         ValidateClaim.checkCorrects(request, sheetId, person.getId(), claims);
-        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects(),
-                date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
+        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects(), dueBy);
         log.record(claim, person, request.user());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         LateEntry.mark(claim, person, request.user(), claims, periods, audit);

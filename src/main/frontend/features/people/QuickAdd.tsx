@@ -55,7 +55,7 @@ export function QuickAdd() {
       />{' '}
       <button type="submit" data-testid="quick-submit">Quick add</button>
       {add.isError && (
-        <span data-testid="quick-error" role="alert"> Could not add: a name is required, the amount must be 0.00 or more, with at most two decimals, and no claim can be dated inside a closed period.</span>
+        <span data-testid="quick-error" role="alert"> Could not add: a name is required, the amount must be 0.00 or more, with at most two decimals, and no claim whose due-by falls inside a closed period can be added.</span>
       )}
     </form>
   );

@@ -9,8 +9,8 @@ public class ApplyLock {
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw new ClaimStatusRefusedException("Only a DRAFT claim can be edited");
         }
-        if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
-            throw new ClaimStatusRefusedException("No claim dated inside a closed period can be edited");
+        if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
+            throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can be edited");
         }
         String lockedBy = claims.lockedBy(claim);
         if (lockedBy != null && !lockedBy.equals(request.user())) {

@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Re-settles a SETTLED claim; only a steward re-settles, and not a claim dated inside a closed period.
+ * Re-settles a SETTLED claim; only a steward re-settles, and not a claim whose due-by is inside a closed period.
  * The settled due is frozen again at the figure the claim would have today as an open claim bound by no
  * statement: its amount at the rate of its person's grade in force on its date, with its late charge as of
  * today on top, raised to the floor in force on its date.
@@ -26,8 +26,8 @@ public class ApplyResettle {
         if (claim.getStatus() != ClaimStatus.SETTLED) {
             throw new ClaimStatusRefusedException("Only a SETTLED claim can be re-settled");
         }
-        if (periods.isClosed(sheetId, claim.getDate())) {
-            throw new ClaimStatusRefusedException("No claim dated inside a closed period can be re-settled");
+        if (periods.isClosed(sheetId, claim.getPeriodDate())) {
+            throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can be re-settled");
         }
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId));
         String grade = people.find(sheetId, claim.getPersonId()).gradeOn(claim.getDate());

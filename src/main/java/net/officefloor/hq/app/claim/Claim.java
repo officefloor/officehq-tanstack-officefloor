@@ -80,6 +80,8 @@ public class Claim {
     /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The date that places the claim in its period: its due-by as fixed at creation (its date when it has none). */
+    public LocalDate getPeriodDate() { return dueBy != null ? dueBy : date; }
     /** The date the claim was last deferred until; null if it was never deferred. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }

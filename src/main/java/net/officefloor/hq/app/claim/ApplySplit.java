@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Splits an amount (more than 0.00, less than the claim's) off an OPEN claim that is not deferred and not dated inside a
+ * Splits an amount (more than 0.00, less than the claim's) off an OPEN claim that is not deferred and whose due-by is not inside a
  * closed period; only the roles the sheet's open permission allows split a claim, as the new claim is theirs to open.
  * The claim keeps the rest of its amount and loses any figure a statement bound it to.
  */
@@ -22,8 +22,8 @@ public class ApplySplit {
         if (claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be split");
         }
-        if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
-            throw new ClaimStatusRefusedException("No claim dated inside a closed period can be split");
+        if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
+            throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can be split");
         }
         if (request.amount().compareTo(claim.getAmount()) >= 0) {
             throw new ClaimStatusRefusedException("The amount to split off must be less than the claim's amount");

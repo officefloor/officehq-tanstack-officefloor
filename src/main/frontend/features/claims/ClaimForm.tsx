@@ -94,7 +94,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
       />{' '}
       <button type="submit" data-testid="claim-form-submit">{editing !== '' ? 'Save claim' : 'Add claim'}</button>
       {save.isError && (
-        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim can be dated inside a closed period, and none after the person's retirement date.</span>
+        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must have at most two decimals, a negative amount is a correction that must name by number a SETTLED claim of the same person (and only a correction names one), no claim whose due-by falls inside a closed period can be added or changed, and none after the person's retirement date.</span>
       )}
     </form>
   );

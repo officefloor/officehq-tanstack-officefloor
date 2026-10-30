@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimNumbering {
 
-    /** The prefix of the sequence of claims dated in no period. */
+    /** The prefix of the sequence of claims whose due-by is in no period. */
     public static final String NO_PERIOD = "X";
 
     private final JdbcTemplate jdbc;

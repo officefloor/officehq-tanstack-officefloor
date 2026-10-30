@@ -24,8 +24,8 @@ public class ApplyClaimStatus {
             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log)
             throws ClaimStatusRefusedException {
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()));
-        if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
-            throw new ClaimStatusRefusedException("No claim dated inside a closed period can change status");
+        if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
+            throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can change status");
         }
         boolean steward = Settings.STEWARD.equals(settings.role(claim.getSheetId(), request.user()));
         if (request.decision() == ValidClaimStatus.Decision.NONE) {
@@ -92,7 +92,7 @@ public class ApplyClaimStatus {
             }
         }
         if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
-            claim.setNumber(numbering.next(claim.getSheetId(), claim.getDate()));
+            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
             claim.setOpenedBy(request.user());
         }
         // A voided claim keeps its number; numbers are never reused.

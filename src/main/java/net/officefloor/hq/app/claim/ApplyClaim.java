@@ -19,8 +19,8 @@ public class ApplyClaim {
             throw new InvalidClaimException("The claim is being edited by " + lockedBy);
         }
         LocalDate date = request.date() != null ? request.date() : sheets.today(claim.getSheetId());
-        if (periods.isClosed(claim.getSheetId(), claim.getDate()) || periods.isClosed(claim.getSheetId(), date)) {
-            throw new InvalidClaimException("No claim dated inside a closed period can be edited");
+        if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
+            throw new InvalidClaimException("No claim whose due-by is inside a closed period can be edited");
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         if (person != null && !person.allowsClaimOn(date)) {

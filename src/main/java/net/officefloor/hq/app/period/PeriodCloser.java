@@ -19,7 +19,7 @@ import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
-/** Closes a period, fixing its due-total as it is now: the dues as shown now of the claims dated in it that counted
+/** Closes a period, fixing its due-total as it is now: the dues as shown now of the claims whose due-by is in it that counted
  *  at the end of its last day (see {@link Person#countsAtEnd}), each with its late charge, and each person's share of it (a person's unbound OPEN claims dated within one of their holds count in none; a claim whose due is n/a adds nothing).
  *  Used by a close by hand and by the auto close when the sheet's today is changed (see {@link #closeDue}). */
 @Service
@@ -67,7 +67,7 @@ public class PeriodCloser {
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsAtEnd(claim, to, today)
-                        || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
+                        || claim.getPeriodDate().isBefore(from) || claim.getPeriodDate().isAfter(to)) {
                     continue;
                 }
                 RoundingMode rounding = Rounding.of(claim, policyDate);

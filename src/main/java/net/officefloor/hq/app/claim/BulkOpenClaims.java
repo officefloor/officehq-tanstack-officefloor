@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /**
  * Opens the selected claims in list order (people in the order they were added, newest claim first
  * within a person), numbering each as it opens and auditing it as a single open would be. A selected
- * claim that cannot be opened (not DRAFT, dated inside a closed period, the user's role may not open, or its note is empty while its due is above the note threshold) is left as it is and counted
+ * claim that cannot be opened (not DRAFT, its due-by inside a closed period, the user's role may not open, or its note is empty while its due is above the note threshold) is left as it is and counted
  * as refused; so is a selected id that is not a claim on the sheet.
  */
 public class BulkOpenClaims {
@@ -37,7 +37,7 @@ public class BulkOpenClaims {
                     continue;
                 }
                 if (!allowed || !claim.getStatus().canBecome(ClaimStatus.OPEN)
-                        || periods.isClosed(sheetId, claim.getDate())) {
+                        || periods.isClosed(sheetId, claim.getPeriodDate())) {
                     continue;
                 }
                 try {
@@ -47,7 +47,7 @@ public class BulkOpenClaims {
                     continue;
                 }
                 RollupFigures before = rollup.figures(sheetId);
-                claim.setNumber(numbering.next(sheetId, claim.getDate()));
+                claim.setNumber(numbering.next(sheetId, claim.getPeriodDate()));
                 claim.setOpenedBy(request.user());
                 claim.setStatus(ClaimStatus.OPEN);
                 claims.save(claim);

@@ -35,7 +35,8 @@ public class SavePasteClaims {
                 throw new InvalidClaimException("Claim " + number + ": no one on the sheet is named " + line.name());
             }
             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
-            if (periods.isClosed(sheetId, date)) {
+            LocalDate dueBy = date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
+            if (periods.isClosed(sheetId, dueBy)) {
                 throw new InvalidClaimException("Claim " + number + ": no claim can be added inside a closed period");
             }
             if (!person.allowsClaimOn(date)) {

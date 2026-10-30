@@ -11,13 +11,13 @@ import { dueBy, isOverdue } from './overdue';
 import { ClaimSelect } from './BulkOpen';
 import { peopleKey, type Person } from '../people/usePeople';
 
-// A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
+// A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
 // person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies; an overdue claim gains, for each full 30 days overdue, the late percent in force on that boundary date (due-by plus 30, 60, 90 ... days) of that figure (the rate or bound one), the charges added up; then the floor in force on the claim's date is applied last: the greater of it and the figure plus its charge), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's, each as in force on that date), overdue (yes when it is OPEN or PENDING and its due-by is before the sheet's today), the status buttons (open, settle, void —
 // one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
 // claim to PENDING, which shows its live due unbound by any statement; a steward may void a SETTLED claim within 7 days of
 // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
 // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener cannot approve it) and an edit button that
-// opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one dated inside a closed
+// opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one whose due-by is inside a closed
 // period, or one another user's open editor locks, is refused with the claim's error — to change an open claim, void it and
 // add a new one. An open editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes. A steward (or the roles the sheet's
 // reassign permission allows) moves a DRAFT, OPEN or
@@ -30,9 +30,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 // that date it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. Each claim shows
 // deferred (yes while it is deferred) and the date it was deferred until.
 // A steward re-dates an OPEN or PENDING claim with the new date and re-date button: its due-by stays as it was fixed, a figure a
-// statement bound it to stays bound, and its period follows the new date (with per-period numbering on, a claim moved to another
-// period takes the next number of that period's sequence). A date after the person's retirement, a claim dated inside a closed
-// period or a new date inside one, or a re-dating by anyone but a steward, is refused with the claim's error.
+// statement bound it to stays bound, and, as its period goes by its due-by, it keeps its period and number. A date after the
+// person's retirement, a claim whose due-by is inside a closed period, or a re-dating by anyone but a steward, is refused with the claim's error.
 // Each claim shows its proofs count, raised by one with the proof button (a SETTLED or VOID claim, or one dated inside a closed
 // period, is refused with the claim's error). A claim whose due is above the proof threshold in force on its date cannot be
 // settled or approved while its proofs count is 0: that is refused with the claim's error, before the clerk limit is considered.
@@ -65,7 +64,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const [user] = useSearchParam('user', asString);
   const [editing, setEditing] = useSearchParam('editClaim', asString);
   const queryClient = useQueryClient();
-  const period = periodOf(usePeriods(sheet), c.date);
+  const period = periodOf(usePeriods(sheet), dueBy(c));
   const floor = useFloor(sheet);
   const today = useSheetToday(sheet);
   const latePct = useLatePct(sheet);
@@ -343,37 +342,37 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
+          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim whose due-by is inside a closed period can change status).
         </span>
       )}
       {resettle.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: only a steward can re-settle a claim, only a SETTLED one, and not one dated inside a closed period.
+          Not allowed: only a steward can re-settle a claim, only a SETTLED one, and not one whose due-by is inside a closed period.
         </span>
       )}
       {proof.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a SETTLED or VOID claim, or one dated inside a closed period, cannot take a proof.
+          Not allowed: a SETTLED or VOID claim, or one whose due-by is inside a closed period, cannot take a proof.
         </span>
       )}
       {defer.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one dated inside a closed period.
+          Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one whose due-by is inside a closed period.
         </span>
       )}
       {redate.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: only a steward can re-date a claim, only an OPEN or PENDING one, not to a date after the person's retirement, and not one dated inside a closed period or to a date inside one.
+          Not allowed: only a steward can re-date a claim, only an OPEN or PENDING one, not to a date after the person's retirement, and not one whose due-by is inside a closed period.
         </span>
       )}
       {split.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: only an OPEN claim that is not deferred and not dated inside a closed period can be split, by a role that may open a claim, and the amount split off must be more than 0.00 and less than the claim's amount.
+          Not allowed: only an OPEN claim that is not deferred and whose due-by is not inside a closed period can be split, by a role that may open a claim, and the amount split off must be more than 0.00 and less than the claim's amount.
         </span>
       )}
       {reassign.isError && (

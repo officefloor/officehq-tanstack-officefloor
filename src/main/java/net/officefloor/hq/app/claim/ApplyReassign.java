@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the sheet's reassign permission allows
- * (by default a steward) move a claim, and none dated inside a closed period moves.
+ * (by default a steward) move a claim, and none whose due-by is inside a closed period moves.
  * It keeps its number and date but loses any figure a statement bound it to: it is live again until
  * its new person's next statement.
  */
@@ -23,8 +23,8 @@ public class ApplyReassign {
         if (status != ClaimStatus.DRAFT && status != ClaimStatus.OPEN && status != ClaimStatus.PENDING) {
             throw new ClaimStatusRefusedException("A " + status + " claim cannot move to another person");
         }
-        if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
-            throw new ClaimStatusRefusedException("No claim dated inside a closed period can move to another person");
+        if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
+            throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can move to another person");
         }
         Person to = null;
         try {

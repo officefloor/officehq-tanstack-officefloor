@@ -61,7 +61,7 @@ export function PasteClaims() {
         <span data-testid="paste-error" role="alert">
           {' '}
           Nothing was added: every line needs a name on the sheet and an amount of 0.00 or more with at most two
-          decimals, and no claim can be dated inside a closed period or after the person's retirement date.
+          decimals, and no claim whose due-by falls inside a closed period can be added or after the person's retirement date.
         </span>
       )}
     </form>
