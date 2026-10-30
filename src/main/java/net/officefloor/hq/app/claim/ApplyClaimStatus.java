@@ -109,6 +109,9 @@ public class ApplyClaimStatus {
                     settings.grace(claim.getSheetId(), grade, claim.getDate())));
         }
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
+        if (target == ClaimStatus.VOID) {
+            claim.setVoidReason(request.reason());
+        }
         claim.setStatus(target);
         return number;
     }

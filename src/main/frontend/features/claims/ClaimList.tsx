@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, isDeferred, tagList, type Claim } from './useClaims';
+import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicyDate, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -84,11 +85,14 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       ),
     onSuccess: (_, { action }) => {
       if (action === 'reject') setReason('');
+      if (action === 'void') setVoidReason('');
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
   });
 
   const [reason, setReason] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const voidReasons = useVoidReasons(sheet);
   const [toPersonId, setToPersonId] = useState('');
 
   const reassign = useMutation({
@@ -307,7 +311,25 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-resettle" onClick={() => act(() => resettle.mutate())}>
         Re-settle
       </button>{' '}
-      <button type="button" data-testid="claim-void" onClick={() => act(() => status.mutate({ action: 'void' }))}>
+      {voidReasons.length > 0 && (
+        <>
+          <select
+            data-testid="claim-void-reason"
+            value={voidReason}
+            onChange={(e) => act(() => setVoidReason(e.target.value))}
+          >
+            <option value="">Void reason…</option>
+            {voidReasons.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>{' '}
+        </>
+      )}
+      <button
+        type="button"
+        data-testid="claim-void"
+        onClick={() => act(() => status.mutate(voidReasons.length > 0 ? { action: 'void', reason: voidReason } : { action: 'void' }))}
+      >
         Void
       </button>{' '}
       <button type="button" data-testid="claim-approve" onClick={() => act(() => status.mutate({ action: 'approve' }))}>

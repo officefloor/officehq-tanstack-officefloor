@@ -41,6 +41,9 @@ public class AuditClaimStatus {
         if (request.decision() == ValidClaimStatus.Decision.REJECT) {
             line += " reason=" + request.reason();
         }
+        if (claim.getStatus() == ClaimStatus.VOID && request.reason() != null) {
+            line += " reason=" + request.reason();
+        }
         audit.recordOnCommit(line);
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             // Settled or approved: each user watching the person is notified, after the claim's own line.

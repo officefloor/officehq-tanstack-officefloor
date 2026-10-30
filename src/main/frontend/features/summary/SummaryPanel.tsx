@@ -4,26 +4,31 @@ import { STATUSES } from '../people/useSheetFigures';
 import { usePeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { usePeriods } from '../periods/usePeriods';
 import { formatCents } from '../rates/due';
+import { useVoidReasons } from '../voidreasons/useVoidReasons';
 
 // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
 // are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
 // of them are active. Per period: its due-total, as the period list shows it. Per status: how many claims have it.
+// Per reason on the sheet's void list: how many VOID claims were voided with it.
 export function SummaryPanel({
   people,
   today,
   totalOf,
   isActive,
   statusCount,
+  voidReasonCount,
 }: {
   people: Person[];
   today: string | undefined;
   totalOf: (person: Person) => bigint | null;
   isActive: (person: Person) => boolean;
   statusCount: (status: (typeof STATUSES)[number]) => number;
+  voidReasonCount: (reason: string) => number;
 }) {
   const [sheet] = useSearchParam('sheet', asString);
   const periods = usePeriods(sheet);
   const periodDueTotal = usePeriodDueTotal(sheet);
+  const voidReasons = useVoidReasons(sheet);
   const current = people.filter((p) => !p.retired);
   return (
     <section data-testid="summary">
@@ -80,6 +85,22 @@ export function SummaryPanel({
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{statusCount(s)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voidReasons.map((r) => (
+            <tr key={r}>
+              <td>{r}</td>
+              <td data-testid={`summary-void-${r}-count`}>{voidReasonCount(r)}</td>
             </tr>
           ))}
         </tbody>

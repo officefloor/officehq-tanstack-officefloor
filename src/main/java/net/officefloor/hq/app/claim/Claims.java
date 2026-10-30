@@ -40,6 +40,7 @@ public class Claims {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
+        claim.setVoidReason(rs.getString("void_reason"));
         return claim;
     };
 
@@ -252,9 +253,9 @@ public class Claims {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, corrects = ?, ref = ?, tags = ?, void_reason = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(),
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getVoidReason(),
                 claim.getSheetId(), claim.getId());
         recordTags(claim.getSheetId(), claim.getTags());
         history(claim.getSheetId(), claim.getId());

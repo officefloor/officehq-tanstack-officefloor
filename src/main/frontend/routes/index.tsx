@@ -6,6 +6,7 @@ import { SheetToday } from '../features/sheet/SheetToday';
 import { AsOfControl } from '../features/asof/AsOfControl';
 import { RatePanel } from '../features/rates/RatePanel';
 import { HolidayPanel } from '../features/holidays/HolidayPanel';
+import { VoidReasonPanel } from '../features/voidreasons/VoidReasonPanel';
 import { SettingsPanel } from '../features/settings/SettingsPanel';
 import { PeriodPanel } from '../features/periods/PeriodPanel';
 import { PersonForm } from '../features/people/PersonForm';
@@ -33,6 +34,7 @@ function Home() {
           <AsOfControl />
           <RatePanel />
           <HolidayPanel />
+          <VoidReasonPanel />
           <SettingsPanel />
           <PeriodPanel />
           <PersonForm />

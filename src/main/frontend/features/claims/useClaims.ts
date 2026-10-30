@@ -45,6 +45,8 @@ export type Claim = {
   lateEntry?: boolean;
   /** The last day (the sheet's today then) a reminder was written for the claim, "" if never. */
   remindedOn?: string;
+  /** The reason the claim was voided with, from the sheet's list; "" for none. */
+  voidReason?: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

@@ -116,6 +116,11 @@ public class Claim {
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
 
+    /** The reason the claim was voided with, from the sheet's list; null when none. */
+    private String voidReason;
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+
     /** The user whose open editor locks the claim; null when unlocked. */
     private String lockedBy;
     public String getLockedBy() { return lockedBy; }
