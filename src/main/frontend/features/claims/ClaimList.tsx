@@ -11,6 +11,7 @@ import { useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 import { useGrace } from './useGrace';
 import { ClaimSelect } from './BulkOpen';
+import { ClaimTimeline } from './ClaimTimeline';
 import { peopleKey, type Person } from '../people/usePeople';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
@@ -349,6 +350,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
           </li>
         ))}
       </ol>{' '}
+      <ClaimTimeline claimId={c.id} />{' '}
       <ol data-testid="claim-comments">
         {(c.comments ?? []).map((line, i) => (
           <li key={i} data-testid="claim-comments-line">

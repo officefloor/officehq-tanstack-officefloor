@@ -134,6 +134,46 @@ public class Audit {
         return found;
     }
 
+    /**
+     * A claim's timeline: the sheet's lines about it exactly as the file holds them, newest first. With a number,
+     * the lines carrying number=<it>; without one, the lines carrying no number that name its person (compared as
+     * names are), amount and date together. Read from the file: the timeline is not a second record.
+     */
+    public synchronized List<String> claimLines(String sheet, String number, String person, String amount,
+            String date) {
+        String wanted = person.trim().toLowerCase(Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        if (!Files.exists(file)) {
+            return found;
+        }
+        List<String> all;
+        try {
+            all = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        for (String line : all) {
+            List<String[]> fields = fields(line);
+            if (!has(fields, "sheet", sheet, false)) {
+                continue;
+            }
+            boolean about = number != null && !number.isEmpty()
+                    ? has(fields, "number", number, false)
+                    : !hasKey(fields, "number") && has(fields, "person", wanted, true)
+                            && has(fields, "amount", amount, false) && has(fields, "date", date, false);
+            if (about) {
+                found.add(line);
+            }
+        }
+        Collections.reverse(found);
+        return found;
+    }
+
+    /** Whether the line carries a field with the key. */
+    private static boolean hasKey(List<String[]> fields, String key) {
+        return fields.stream().anyMatch(field -> field[0].equals(key));
+    }
+
     /** Whether a field key=value is among the line's fields (a name compared trimmed, case ignored). */
     private static boolean has(List<String[]> fields, String key, String value, boolean asName) {
         for (String[] field : fields) {
