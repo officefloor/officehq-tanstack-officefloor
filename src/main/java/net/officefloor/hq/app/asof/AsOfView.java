@@ -135,15 +135,22 @@ public class AsOfView {
         jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> retired.put(rs.getLong(1), local(rs.getDate(2))), sheetId, end);
         // The statements taken by the end of the date and not cancelled by then: how many, and the last one's figures.
+        // (A statement a merge or a transfer brought over counts, and shows among the lines, but is never the last one.)
         Map<Long, Integer> statementCount = new HashMap<>();
-        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ?" + UP_TO
+        jdbc.query("SELECT person_id, stated_total, statement_date, brought FROM person_statement WHERE sheet_id = ?" + UP_TO
                 + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY seq", (RowCallbackHandler) rs -> {
                     Person then = byId.get(rs.getLong(1));
                     if (then == null) return;
                     statementCount.merge(then.getId(), 1, Integer::sum);
+                    if (rs.getBoolean(4)) return;
                     then.setStatedTotal(rs.getBigDecimal(2));
                     then.setStatementDate(local(rs.getDate(3)));
                 }, sheetId, end, end);
+        Map<Long, List<String>> statements = new HashMap<>();
+        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ?" + UP_TO
+                + " AND NOT (cancelled AND cancelled_on <= ?) ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq",
+                (RowCallbackHandler) rs -> statements.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                        .add(Person.statementLine(rs.getDate(2), rs.getBigDecimal(3))), sheetId, end, end);
         Map<Long, List<Long>> patrons = new HashMap<>();
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> patrons.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>()).add(rs.getLong(2)),
@@ -163,6 +170,7 @@ public class AsOfView {
             then.setRetirements(new ArrayList<>(retirements.getOrDefault(then.getId(), List.of())));
             then.setSnapshots(new ArrayList<>(snapshots.getOrDefault(then.getId(), List.of())));
             then.setStatementCount(statementCount.getOrDefault(then.getId(), 0));
+            then.setStatements(new ArrayList<>(statements.getOrDefault(then.getId(), List.of())));
             List<Long> ids = new ArrayList<>();
             List<String> names = new ArrayList<>();
             for (Long patronId : patrons.getOrDefault(then.getId(), List.of())) {

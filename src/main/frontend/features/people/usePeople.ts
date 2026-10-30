@@ -43,6 +43,8 @@ export type Person = {
   retirements: string[];
   /** The person's SNAPSHOT lines, each "<the day being left> <due-total>" ("n/a" for none), oldest first. */
   snapshots: string[];
+  /** Their statements still standing, each "<statement date> <due-total>", oldest first. */
+  statements: string[];
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */

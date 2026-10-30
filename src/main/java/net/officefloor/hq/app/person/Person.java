@@ -134,6 +134,18 @@ public class Person {
     private java.util.List<String> snapshots = new java.util.ArrayList<>();
     public java.util.List<String> getSnapshots() { return snapshots; }
     public void setSnapshots(java.util.List<String> snapshots) { this.snapshots = snapshots; }
+
+    /** The person's statements still standing, each "<statement date> <due-total>" (due-total "n/a" when it was n/a),
+     *  oldest first — those a merge or a transfer brought over among them, by date. */
+    private java.util.List<String> statements = new java.util.ArrayList<>();
+    public java.util.List<String> getStatements() { return statements; }
+    public void setStatements(java.util.List<String> statements) { this.statements = statements; }
+
+    /** A statement line: "<statement date> <due-total>". */
+    public static String statementLine(java.sql.Date date, BigDecimal dueTotal) {
+        return (date == null ? "" : date.toLocalDate().toString()) + " "
+                + (dueTotal == null ? "n/a" : dueTotal.setScale(2).toPlainString());
+    }
     /** A hold from a date to an optional to-date (null: open-ended), both days included. */
     public record Hold(LocalDate from, LocalDate to) {
         public boolean covers(LocalDate date) {

@@ -75,6 +75,15 @@ public class People {
         for (Person person : found) {
             person.setSnapshots(new java.util.ArrayList<>(snapshots.getOrDefault(person.getId(), List.of())));
         }
+        java.util.Map<Long, java.util.List<String>> statements = new java.util.HashMap<>();
+        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? AND NOT cancelled"
+                + " ORDER BY statement_date NULLS FIRST, set_on NULLS FIRST, seq", rs -> {
+            statements.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
+                    .add(Person.statementLine(rs.getDate("statement_date"), rs.getBigDecimal("stated_total")));
+        }, sheetId);
+        for (Person person : found) {
+            person.setStatements(new java.util.ArrayList<>(statements.getOrDefault(person.getId(), List.of())));
+        }
         return found;
     }
 
@@ -395,8 +404,9 @@ public class People {
     }
 
     /** The person receiving another (merged or transferred into them, or arriving as them) takes their statements:
-     *  the count becomes their own plus the other's; their last statement stays theirs, or, having none, becomes the
-     *  other's, with the other's statement history (so it can be cancelled as the other's could). */
+     *  the count becomes their own plus the other's and the other's statement history joins theirs; their last
+     *  statement stays theirs (the other's come over as brought), or, having none, becomes the other's (so it can be
+     *  cancelled as the other's could). */
     private void takeStatements(Person from, Person into) {
         if (from.getStatementCount() == 0) {
             return;
@@ -406,11 +416,11 @@ public class People {
         if (hadNone) {
             into.setStatedTotal(from.getStatedTotal());
             into.setStatementDate(from.getStatementDate());
-            jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, set_on, cancelled, cancelled_on)"
-                    + " SELECT ?, ?, stated_total, statement_date, set_on, cancelled, cancelled_on FROM person_statement"
-                    + " WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
-                    into.getSheetId(), into.getId(), from.getSheetId(), from.getId());
         }
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, set_on, cancelled, cancelled_on, brought)"
+                + " SELECT ?, ?, stated_total, statement_date, set_on, cancelled, cancelled_on, " + (hadNone ? "brought" : "TRUE")
+                + " FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                into.getSheetId(), into.getId(), from.getSheetId(), from.getId());
         saveStatement(into);
     }
 
@@ -551,7 +561,7 @@ public class People {
     /** Marks the person's last statement cancelled in their history (kept, dated, for the as-of view) and sets the person's statement to the one
      *  before it (no due-total or date when there is none, or it is not known). The count goes down by one. */
     public void cancelStatement(Person person) {
-        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY seq DESC LIMIT 1",
+        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY brought, seq DESC LIMIT 1",
                 (rs, i) -> rs.getLong(1), person.getSheetId(), person.getId());
         if (!last.isEmpty()) {
             jdbc.update("UPDATE person_statement SET cancelled = TRUE, cancelled_on = (SELECT today FROM sheet WHERE id = ?) WHERE seq = ?",
@@ -560,7 +570,7 @@ public class People {
         person.setStatementCount(person.getStatementCount() - 1);
         person.setStatedTotal(null);
         person.setStatementDate(null);
-        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY seq DESC LIMIT 1",
+        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled AND NOT brought ORDER BY seq DESC LIMIT 1",
                 rs -> {
                     person.setStatedTotal(rs.getBigDecimal("stated_total"));
                     java.sql.Date date = rs.getDate("statement_date");

@@ -216,6 +216,7 @@ export function PeopleList() {
             {shown('statement-count') && <th>Statements</th>}
             {shown('stated-total') && <th>Last stated</th>}
             {shown('statement-date') && <th>Stated on</th>}
+            <th>Statement lines</th>
             <th>Claims</th>
           </tr>
         </thead>
@@ -301,6 +302,13 @@ export function PeopleList() {
                 {shown('statement-count') && <td data-testid="person-statement-count">{p.statementCount}</td>}
                 {shown('stated-total') && <td data-testid="person-stated-total">{p.statedTotal}</td>}
                 {shown('statement-date') && <td data-testid="person-statement-date">{p.statementDate}</td>}
+                <td>
+                  {(p.statements ?? []).map((line, i) => (
+                    <div key={i} data-testid="person-statement-line-line">
+                      {line}
+                    </div>
+                  ))}
+                </td>
                 <td>
                   <PlanControl personId={p.id} />
                   <ClaimList claims={own} people={people} rateOn={(c) => claimRate(rates, gradeOn(p, c.date), c)} />
