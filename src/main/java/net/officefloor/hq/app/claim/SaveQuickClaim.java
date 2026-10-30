@@ -25,7 +25,7 @@ public class SaveQuickClaim {
 
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidQuickClaim request, People people, Claims claims,
             Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup,
-            net.officefloor.hq.app.setting.Settings settings,
+            net.officefloor.hq.app.setting.Settings settings, ClaimLog log,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         LocalDate date = sheets.today(sheetId);
         // Refuse before anything is written.
@@ -46,6 +46,7 @@ public class SaveQuickClaim {
         }
         Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, "",
                 date.plusDays(settings.termsFor(sheetId, person.gradeOn(date))));
+        log.record(claim, person, request.user());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), beforeClaim);
         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));

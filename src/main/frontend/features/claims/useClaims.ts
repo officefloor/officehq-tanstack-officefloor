@@ -26,6 +26,8 @@ export type Claim = {
   roundingDate: string;
   /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on that date. */
   dueBy: string;
+  /** The claim's status log, oldest first: "<STATUS> by <user> on <date> due=<due>" per status it has had. */
+  log: string[];
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

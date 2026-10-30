@@ -5,7 +5,10 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -45,7 +48,19 @@ public class Claims {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.listed_seq DESC, c.id DESC", ROW, sheetId);
+        return withLogs(sheetId, jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.listed_seq DESC, c.id DESC", ROW, sheetId));
+    }
+
+    /** The claims with their status logs (see {@link ClaimLog}), oldest line first. */
+    private List<Claim> withLogs(String sheetId, List<Claim> claims) {
+        Map<Long, List<String>> logs = new HashMap<>();
+        jdbc.query("SELECT claim_id, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+            logs.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>())
+                    .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
+                            + rs.getDate("log_date").toLocalDate() + " due=" + rs.getString("due"));
+        }, sheetId);
+        claims.forEach(claim -> claim.setLog(logs.getOrDefault(claim.getId(), List.of())));
+        return claims;
     }
 
     /** A person's claims on the sheet, newest first. */

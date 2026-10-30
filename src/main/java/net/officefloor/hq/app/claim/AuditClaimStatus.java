@@ -7,7 +7,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.plugin.variable.Val;
 
 public class AuditClaimStatus {
-    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup) {
+    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log) {
         String event = switch (request.decision()) {
             case APPROVE -> "CLAIM_APPROVED";
             case REJECT -> "CLAIM_REJECTED";
@@ -19,8 +19,9 @@ public class AuditClaimStatus {
                 case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
             };
         };
-        String line = ClaimAudit.line(event, request.user(),
-                people.find(claim.getSheetId(), claim.getPersonId()), claim, number.value());
+        net.officefloor.hq.app.person.Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        log.record(claim, person, request.user());
+        String line = ClaimAudit.line(event, request.user(), person, claim, number.value());
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
         }

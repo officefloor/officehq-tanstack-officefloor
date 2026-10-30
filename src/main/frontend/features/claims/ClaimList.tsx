@@ -20,6 +20,7 @@ import { peopleKey, type Person } from '../people/usePeople';
 // refused with the claim's error — to change an open claim, void it and add a new one. A steward moves a DRAFT, OPEN or
 // PENDING claim to another person on the sheet with the reassign button (it is listed first under them, live again until
 // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
+// Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 export function ClaimList({
   claims,
   people,
@@ -110,6 +111,13 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
+      <ol data-testid="claim-log">
+        {(c.log ?? []).map((line, i) => (
+          <li key={i} data-testid="claim-log-line">
+            {line}
+          </li>
+        ))}
+      </ol>{' '}
       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate({ action: 'open' }))}>
         Open
       </button>{' '}

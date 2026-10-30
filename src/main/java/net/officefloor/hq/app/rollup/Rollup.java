@@ -67,14 +67,10 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
-                RoundingMode rounding = Rounding.of(claim, policyDate);
-                BigDecimal fixed = ClaimResponse.fixedDue(claim);
-                anyFigure |= fixed != null;
-                BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
+                BigDecimal figure = due(claim, person, today, floor, latePct, policyDate);
                 if (figure != null) {
                     anyFigure = true;
-                    due = due.add(LateCharge.withCharge(claim, figure, latePct, today, rounding));
+                    due = due.add(figure);
                 }
             }
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
@@ -87,6 +83,25 @@ public class Rollup {
                     show(claimed), na ? NA : show(due)));
         }
         return new RollupFigures(byPerson, show(claimedTotal), show(dueTotal));
+    }
+
+    /** A claim's due as the screen shows it now; null for n/a. */
+    public BigDecimal due(Claim claim, Person person) {
+        String sheetId = claim.getSheetId();
+        return due(claim, person, sheets.today(sheetId), settings.floor(sheetId), settings.latePct(sheetId),
+                settings.policyDate(sheetId));
+    }
+
+    /** A claim's due: fixed when settled or bound by a statement, else its amount (raised to the floor) at the rate
+     *  of its person's grade in force on its date; with its late charge as of today on top. */
+    private BigDecimal due(Claim claim, Person person, LocalDate today, BigDecimal floor, BigDecimal latePct,
+            LocalDate policyDate) {
+        RoundingMode rounding = Rounding.of(claim, policyDate);
+        BigDecimal fixed = ClaimResponse.fixedDue(claim);
+        BigDecimal figure = fixed != null || claim.isBound() ? fixed
+                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate()),
+                        floor, rounding);
+        return LateCharge.withCharge(claim, figure, latePct, today, rounding);
     }
 
     /** Audit (on commit) the figures that moved since {@code before}, as taken by {@code user}. */

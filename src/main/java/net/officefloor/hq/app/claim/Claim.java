@@ -21,6 +21,7 @@ public class Claim {
     private String corrects;
     private LocalDate correctedDate;
     private LocalDate dueBy;
+    private java.util.List<String> log = java.util.List.of();
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
@@ -77,4 +78,7 @@ public class Claim {
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     /** A correction is a claim with a negative amount: its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
+    /** The claim's status log, oldest first: one "<STATUS> by <user> on <date> due=<due>" line per status it has had. */
+    public java.util.List<String> getLog() { return log; }
+    public void setLog(java.util.List<String> log) { this.log = log; }
 }

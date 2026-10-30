@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
-            Claims claims, People people, Periods periods, ClaimNumbering numbering, Rollup rollup, Audit audit,
+            Claims claims, People people, Periods periods, ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log,
             ObjectResponse<BulkOpenResponse> response) {
         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
         List<Claim> all = claims.list(sheetId);
@@ -40,6 +40,7 @@ public class BulkOpenClaims {
                 claim.setOpenedBy(request.user());
                 claim.setStatus(ClaimStatus.OPEN);
                 claims.save(claim);
+                log.record(claim, person, request.user());
                 audit.recordOnCommit(ClaimAudit.line("CLAIM_OPENED", request.user(), person, claim, claim.getNumber()));
                 rollup.recordChanges(sheetId, request.user(), before);
                 opened++;
