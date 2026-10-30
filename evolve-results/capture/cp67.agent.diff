@@ -1,0 +1,118 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 4f87ad51..8f3fff6a 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -40,7 +40,7 @@ export function PeopleList() {
+   const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+   const watched = useWatches(sheet, user);
+-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount } = useSheetFigures(sheet);
++  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+@@ -81,6 +81,7 @@ export function PeopleList() {
+             <th>Claimed</th>
+             <th>Due</th>
+             <th>Excess</th>
++            <th>Active</th>
+             {periods.map((period) => (
+               <th key={period.name}>Due {period.name}</th>
+             ))}
+@@ -110,6 +111,7 @@ export function PeopleList() {
+                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
+                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
+                 <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
++                <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
+                 {periods.map((period) => (
+                   <td key={period.name} data-testid={`person-period-${period.name}-due-total`}>
+                     {formatCents(periodDueOf(period, p.id))}
+@@ -157,7 +159,7 @@ export function PeopleList() {
+       <p>
+         Overdue total: <span data-testid="rollup-overdue-total">{sheetOverdueTotal}</span>
+       </p>
+-      <SummaryPanel people={people} today={today} totalOf={totalOf} statusCount={statusCount} />
++      <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} />
+     </ClaimSelection>
+   );
+ }
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 8dd9acba..1a2e01da 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -1,4 +1,4 @@
+-import { countsLive, useClaims } from '../claims/useClaims';
++import { countsLive, isOpen, useClaims } from '../claims/useClaims';
+ import { isOverdue } from '../claims/overdue';
+ import { capped, claimDue, dueTotal, excess, formatCents } from '../rates/due';
+ import { rateOn, useRates } from '../rates/useRates';
+@@ -47,10 +47,15 @@ export function useSheetFigures(sheet: string) {
+   const sheetDueTotal = formatCents(trimmedSum(people.map(totalOf).filter((due): due is bigint => due !== null)));
+   // The sheet's overdue-total: each person's overdue-total (always a figure) added up, trimmed.
+   const sheetOverdueTotal = formatCents(trimmedSum(people.map((p) => overdueSum(overdue.filter((c) => c.personId === p.id)))));
++  // Active: an OPEN or PENDING claim that counts, dated within the 30 days up to and including today.
++  const activeFrom = today === undefined ? undefined : daysBefore(today, 29);
++  const isActive = (person: Person) =>
++    activeFrom !== undefined &&
++    live.some((c) => c.personId === person.id && isOpen(c) && c.date >= activeFrom && c.date <= today!);
+   const onSheet = new Set(people.map((p) => p.id));
+   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
+   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
+-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount };
++  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive };
+ }
+ 
+ // People's figures added up, leaving out the single highest and the single lowest when there are
+@@ -62,3 +67,10 @@ function trimmedSum(figures: bigint[]): bigint {
+   const min = figures.reduce((a, b) => (b < a ? b : a));
+   return sum - max - min;
+ }
++
++// The ISO date `days` days before `date`.
++function daysBefore(date: string, days: number): string {
++  const d = new Date(`${date}T00:00:00Z`);
++  d.setUTCDate(d.getUTCDate() - days);
++  return d.toISOString().slice(0, 10);
++}
+diff --git a/src/main/frontend/features/summary/SummaryPanel.tsx b/src/main/frontend/features/summary/SummaryPanel.tsx
+index 929b6acc..2ebab457 100644
+--- a/src/main/frontend/features/summary/SummaryPanel.tsx
++++ b/src/main/frontend/features/summary/SummaryPanel.tsx
+@@ -6,17 +6,19 @@ import { usePeriods } from '../periods/usePeriods';
+ import { formatCents } from '../rates/due';
+ 
+ // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
+-// are on it today (retired people left out) and their due-totals added up (skipping n/a). Per
+-// period: its due-total, as the period list shows it. Per status: how many claims have it.
++// are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
++// of them are active. Per period: its due-total, as the period list shows it. Per status: how many claims have it.
+ export function SummaryPanel({
+   people,
+   today,
+   totalOf,
++  isActive,
+   statusCount,
+ }: {
+   people: Person[];
+   today: string | undefined;
+   totalOf: (person: Person) => bigint | null;
++  isActive: (person: Person) => boolean;
+   statusCount: (status: (typeof STATUSES)[number]) => number;
+ }) {
+   const [sheet] = useSearchParam('sheet', asString);
+@@ -32,6 +34,7 @@ export function SummaryPanel({
+             <th>Grade</th>
+             <th>People</th>
+             <th>Due</th>
++            <th>Active</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -43,6 +46,7 @@ export function SummaryPanel({
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>{formatCents(due)}</td>
++                <td data-testid={`summary-grade-${g}-active`}>{onGrade.filter(isActive).length}</td>
+               </tr>
+             );
+           })}
