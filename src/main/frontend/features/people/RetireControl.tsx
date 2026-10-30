@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { usePersonAction } from './usePersonAction';
 import { peopleKey, type Person } from './usePeople';
+import { poolsKey } from '../pools/usePools';
 
 // Retires the person from a date (blank takes the sheet's today): from then on no claim of theirs
 // may be dated after it, and the list leaves them out unless "show retired" is on. A refusal shows
@@ -24,7 +25,11 @@ export function RetireControl({ personId }: { personId: string }) {
       }),
     onSuccess: () => {
       setDate('');
-      return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      // A retired member's share counts 0.00, so the pools' totals and cuts change too.
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]);
     },
   });
   const taken = usePersonAction(personId, () => retire.reset());

@@ -3,7 +3,7 @@ import { ClaimForm } from '../claims/ClaimForm';
 import { BulkOpenButton, BulkReassignButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts } from '../claims/useClaims';
-import { formatCents, showDue } from '../rates/due';
+import { formatCents, showDue, toCents } from '../rates/due';
 import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
@@ -28,6 +28,7 @@ import { gradeOn, patronShares, sharedCents } from './usePeople';
 import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { usePeriods } from '../periods/usePeriods';
 import { useSheetFigures } from './useSheetFigures';
+import { usePools } from '../pools/usePools';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
@@ -48,6 +49,8 @@ import { useSheetFigures } from './useSheetFigures';
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
 // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
+// Each person also shows their cut total: their cuts across every pool they are a member of, added up (a pool showing
+// no cut adds nothing); the sheet's cut total is everyone's added up.
 // Names sorted without regard to case, then by case (as the server sorts them).
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const BY_NAME = (a: string, b: string) => cmp(a.toLowerCase(), b.toLowerCase()) || cmp(a, b);
@@ -61,6 +64,13 @@ export function PeopleList() {
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
+  const pools = usePools(sheet);
+  const cutOf = (personId: string) =>
+    pools.reduce(
+      (sum, pool) => pool.members.reduce((s, m) => (m.personId === personId && m.cut !== '' ? s + toCents(m.cut) : s), sum),
+      0n,
+    );
+  const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
   const listed = showRetired ? people : people.filter((p) => !p.retired);
   const backing = (p: (typeof people)[number]) =>
     formatCents(sharedCents(patronShares(p).reduce((sum, { id, share }) => {
@@ -123,6 +133,7 @@ export function PeopleList() {
             {periods.map((period) => (
               <th key={period.name}>Due {period.name}</th>
             ))}
+            <th>Cut</th>
             <th>Patrons</th>
             <th>Backing</th>
             <th>Overdue</th>
@@ -167,6 +178,7 @@ export function PeopleList() {
                     {formatCents(periodDueOf(period, p.id))}
                   </td>
                 ))}
+                <td data-testid="person-cut-total">{formatCents(cutOf(p.id))}</td>
                 <td data-testid="person-patrons">{patronsOf(p)}</td>
                 <td data-testid="person-backing">{backing(p)}</td>
                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
@@ -216,6 +228,9 @@ export function PeopleList() {
       </p>
       <p>
         Open total: <span data-testid="rollup-open-total">{sheetOpenTotal}</span>
+      </p>
+      <p>
+        Cut total: <span data-testid="rollup-cut-total">{formatCents(sheetCutTotal)}</span>
       </p>
       <p>
         Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>
