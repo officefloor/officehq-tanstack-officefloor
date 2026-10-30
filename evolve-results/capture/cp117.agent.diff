@@ -1,0 +1,263 @@
+diff --git a/src/main/frontend/features/people/MoveControl.tsx b/src/main/frontend/features/people/MoveControl.tsx
+new file mode 100644
+index 00000000..fb3edfb3
+--- /dev/null
++++ b/src/main/frontend/features/people/MoveControl.tsx
+@@ -0,0 +1,49 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { usePersonAction } from './usePersonAction';
++import { peopleKey, type Person } from './usePeople';
++
++// Moves the person up or down the list, swapping them with their neighbour that way. The top person
++// cannot move up nor the bottom person down: a refusal shows the person's error.
++export function MoveControl({ personId }: { personId: string }) {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const queryClient = useQueryClient();
++  const once = useSubmitOnce();
++
++  const move = useMutation({
++    mutationFn: (up: boolean) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/move`, {
++        up,
++        user,
++      }),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++  });
++  const taken = usePersonAction(personId, () => move.reset());
++
++  const button = (up: boolean) => (
++    <button
++      type="button"
++      data-testid={up ? 'person-move-up' : 'person-move-down'}
++      onClick={() => {
++        taken();
++        once(() => move.mutateAsync(up));
++      }}
++    >
++      {up ? 'Up' : 'Down'}
++    </button>
++  );
++  return (
++    <>
++      {button(true)} {button(false)}
++      {move.isError && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          The person could not be moved.
++        </span>
++      )}
++    </>
++  );
++}
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index f5b73d2c..0cdb1eeb 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -13,6 +13,7 @@ import { openedEditor } from './editorOpens';
+ import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
+ import { HoldControl } from './HoldControl';
+ import { MergeControl } from './MergeControl';
++import { MoveControl } from './MoveControl';
+ import { PasteClaims } from './PasteClaims';
+ import { ImportPeople } from './ImportPeople';
+ import { PatronControl } from './PatronControl';
+@@ -177,6 +178,7 @@ export function PeopleList() {
+                   }}>
+                     Edit
+                   </button>{' '}
++                  <MoveControl personId={p.id} />{' '}
+                   <StatementButton personId={p.id} />{' '}
+                   <UnstateButton personId={p.id} />{' '}
+                   <RetireControl personId={p.id} />{' '}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 60876eb3..ad856539 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -80,7 +80,7 @@ public class AsOfView {
+         return new TodayResponse(sheetId, date.toString(), archived);
+     }
+ 
+-    /** The people on the sheet by the end of the date, each as they stood then, in the order they were added. */
++    /** The people on the sheet by the end of the date, each as they stood then, in list order (by place). */
+     public List<PersonResponse> people(String sheetId, LocalDate date) {
+         Date end = Date.valueOf(date);
+         List<Person> found = new ArrayList<>();
+@@ -91,7 +91,7 @@ public class AsOfView {
+         for (Person merged : people.mergedAfter(sheetId, date)) {
+             if (merged.getAddedOn() == null || !merged.getAddedOn().isAfter(date)) found.add(merged);
+         }
+-        found.sort(Comparator.comparingLong(Person::getId));
++        found.sort(Comparator.comparingLong(Person::getPlace).thenComparingLong(Person::getId));
+         Map<Long, Person> byId = new LinkedHashMap<>();
+         for (Person now : found) {
+             Person then = new Person(now.getId(), sheetId, now.getName(), now.getGrades().get(now.getGrades().firstKey()),
+diff --git a/src/main/java/net/officefloor/hq/app/person/MovePerson.java b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+new file mode 100644
+index 00000000..a8f0ef55
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Swaps the person with their neighbour above or below in the list; the top person cannot move up nor the
++ *  bottom person down. */
++public class MovePerson {
++    public void move(@Val MoveRequest request, @Val Person person, People people, Audit audit) throws InvalidPersonException {
++        int position = people.move(person, request.up());
++        if (position == 0) {
++            throw new InvalidPersonException(request.up() ? "The person is already at the top of the list"
++                    : "The person is already at the bottom of the list");
++        }
++        audit.recordOnCommit("PERSON_MOVED sheet=" + person.getSheetId() + " by=" + request.user()
++                + " name=" + person.getName() + " position=" + position);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MoveRequest.java b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+new file mode 100644
+index 00000000..cd72802e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.person;
++
++/** Body of POST /api/sheets/{sheetId}/people/{personId}/move: whether the person moves up (true) or down
++ *  (false) the list, swapping places with their neighbour that way. */
++public record MoveRequest(boolean up, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index ae13f82f..338ad731 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -26,6 +26,8 @@ public class People {
+         person.setRetiredFrom(retired == null ? null : retired.toLocalDate());
+         java.sql.Date added = rs.getDate("added_on");
+         person.setAddedOn(added == null ? null : added.toLocalDate());
++        long place = rs.getLong("place");
++        person.setPlace(rs.wasNull() ? person.getId() : place);
+         return person;
+     };
+ 
+@@ -105,9 +107,31 @@ public class People {
+                 person.getSheetId(), person.getId(), person.getSheetId(), person.getName(), person.getTerms(), person.getContact());
+     }
+ 
+-    /** The sheet's people in the order they were added. */
++    /** The sheet's people in list order: by their place. */
+     public List<Person> list(String sheetId) {
+-        return withClashing(sheetId, withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId)))));
++        return withClashing(sheetId, withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY place, id", ROW, sheetId)))));
++    }
++
++    /** Swaps the person's place with their neighbour's, above (up) or below; returns the person's new position in
++     *  the list counting from 1, or 0 (nothing written) when they have no neighbour that way. */
++    public int move(Person person, boolean up) {
++        List<long[]> places = jdbc.query("SELECT id, place FROM person WHERE sheet_id = ? ORDER BY place, id",
++                (rs, i) -> new long[] { rs.getLong(1), rs.getLong(2) }, person.getSheetId());
++        int at = -1;
++        for (int i = 0; i < places.size(); i++) {
++            if (places.get(i)[0] == person.getId()) {
++                at = i;
++            }
++        }
++        int to = up ? at - 1 : at + 1;
++        if (at < 0 || to < 0 || to >= places.size()) {
++            return 0;
++        }
++        long[] mine = places.get(at);
++        long[] theirs = places.get(to);
++        jdbc.update("UPDATE person SET place = ? WHERE sheet_id = ? AND id = ?", theirs[1], person.getSheetId(), mine[0]);
++        jdbc.update("UPDATE person SET place = ? WHERE sheet_id = ? AND id = ?", mine[1], person.getSheetId(), theirs[0]);
++        return to + 1;
+     }
+ 
+     /** A name as names are compared: without regard to case or outer spaces. */
+@@ -413,6 +437,9 @@ public class People {
+             return ps;
+         }, keys);
+         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
++        // A new person goes to the end of the list.
++        jdbc.update("UPDATE person SET place = id WHERE id = ?", person.getId());
++        person.setPlace(person.getId());
+         person.setTerms(terms);
+         person.setContact(contact);
+         writeHistory(person);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 7a2c154b..621c1122 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -171,5 +171,10 @@ public class Person {
+     private LocalDate addedOn;
+     public LocalDate getAddedOn() { return addedOn; }
+     public void setAddedOn(LocalDate addedOn) { this.addedOn = addedOn; }
++
++    /** The person's place in the sheet's list: people are listed by place, lowest first. */
++    private long place;
++    public long getPlace() { return place; }
++    public void setPlace(long place) { this.place = place; }
+     public void setVersion(int version) { this.version = version; }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateMove.java b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+new file mode 100644
+index 00000000..ace3d81c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateMove {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody MoveRequest request, Out<MoveRequest> body,
++            Sheets sheets, Settings settings) throws InvalidPersonException, ViewerRefusedException {
++        if (sheets.archived(sheetId)) {
++            throw new InvalidPersonException("The sheet is archived: nothing on it can change");
++        }
++        settings.refuseViewer(sheetId, request.user()); // a viewer changes nothing
++        body.set(request);
++    }
++}
+diff --git a/src/main/resources/db/migration/V66__person_place.sql b/src/main/resources/db/migration/V66__person_place.sql
+new file mode 100644
+index 00000000..3067cb19
+--- /dev/null
++++ b/src/main/resources/db/migration/V66__person_place.sql
+@@ -0,0 +1,6 @@
++-- A person's place in the sheet's list: people are listed by place, lowest first. A new person takes a place after
++-- everyone's (their id); moving a person up or down swaps places with their neighbour.
++ALTER TABLE person ADD COLUMN place BIGINT;
++UPDATE person SET place = id;
++ALTER TABLE person_merged ADD COLUMN place BIGINT BEFORE merged_on;
++UPDATE person_merged SET place = id;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml
+new file mode 100644
+index 00000000..449951c1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml
+@@ -0,0 +1,15 @@
++# Move the person up or down the list, swapping places with their neighbour that way.
++validate:
++  class: net.officefloor.hq.app.person.ValidateMove
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: move
++move:
++  class: net.officefloor.hq.app.person.MovePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
