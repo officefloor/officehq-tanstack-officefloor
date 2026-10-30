@@ -3,8 +3,9 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, type Claim } from './useClaims';
+import { periodOf, usePeriods } from '../periods/usePeriods';
 
-// A person's claims, newest first, each with its amount, date, note, status, number, opened-by, stated (yes when the
+// A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
 // person's last statement bound it) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
 // one the claim's status does not allow is refused with the claim's error) and an edit button that
 // opens the claim in the person's claim form (cancel closes it again).
@@ -23,6 +24,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
   const [user] = useSearchParam('user', asString);
   const [editing, setEditing] = useSearchParam('editClaim', asString);
   const queryClient = useQueryClient();
+  const period = periodOf(usePeriods(sheet), c.date);
 
   const status = useMutation({
     mutationFn: (action: 'open' | 'settle' | 'void') =>
@@ -48,6 +50,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate))}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
+      <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate('open'))}>
         Open
