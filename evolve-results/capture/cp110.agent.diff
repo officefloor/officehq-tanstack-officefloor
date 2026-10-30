@@ -1,0 +1,168 @@
+diff --git a/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx b/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
+new file mode 100644
+index 00000000..302ab2c9
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
+@@ -0,0 +1,45 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useSheetFigures } from '../people/useSheetFigures';
++import { formatCents, toCents } from '../rates/due';
++import { useDescendants } from './useDescendants';
++
++type Totals = { people: number; due: bigint; overdue: bigint };
++
++// The figures over the sheet and all its descendants: their people, and each sheet's due-total and
++// overdue-total as that sheet shows them, added up. A sheet with no children shows its own.
++export function ConsolidatedFigures() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const descendants = useDescendants(sheet);
++  return <Add sheets={[sheet, ...descendants]} totals={{ people: 0, due: 0n, overdue: 0n }} />;
++}
++
++// Adds the first sheet's figures to the totals and passes on to the rest: one sheet's hooks per
++// component, so the number of sheets can change.
++function Add({ sheets, totals }: { sheets: string[]; totals: Totals }) {
++  if (sheets.length === 0) return <Shown totals={totals} />;
++  return <AddSheet key={sheets[0]} sheets={sheets} totals={totals} />;
++}
++
++function AddSheet({ sheets, totals }: { sheets: string[]; totals: Totals }) {
++  const { people, sheetDueTotal, sheetOverdueTotal } = useSheetFigures(sheets[0]);
++  return (
++    <Add
++      sheets={sheets.slice(1)}
++      totals={{
++        people: totals.people + people.length,
++        due: totals.due + toCents(sheetDueTotal),
++        overdue: totals.overdue + toCents(sheetOverdueTotal),
++      }}
++    />
++  );
++}
++
++function Shown({ totals }: { totals: Totals }) {
++  return (
++    <section data-testid="consolidated">
++      Consolidated — People: <span data-testid="consolidated-people-count">{totals.people}</span>
++      {' · '}Due: <span data-testid="consolidated-due-total">{formatCents(totals.due)}</span>
++      {' · '}Overdue: <span data-testid="consolidated-overdue-total">{formatCents(totals.overdue)}</span>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/consolidated/useDescendants.ts b/src/main/frontend/features/consolidated/useDescendants.ts
+new file mode 100644
+index 00000000..cad52369
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/useDescendants.ts
+@@ -0,0 +1,14 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++export const descendantsKey = (sheet: string) => ['sheet', sheet, 'descendants'] as const;
++
++/** The sheet's descendants: the sheets naming it as their parent, their children and so on. */
++export function useDescendants(sheet: string): string[] {
++  const { data } = useQuery({
++    queryKey: descendantsKey(sheet),
++    queryFn: () => getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheet)}/descendants`),
++    enabled: sheet !== '',
++  });
++  return data?.sheets ?? [];
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index dfb368e5..83ee5267 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -14,6 +14,7 @@ import { PeriodPanel } from '../features/periods/PeriodPanel';
+ import { PersonForm } from '../features/people/PersonForm';
+ import { PeopleList } from '../features/people/PeopleList';
+ import { SheetHeader } from '../features/header/SheetHeader';
++import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
+ import { AuditViewer } from '../features/audit/AuditViewer';
+ 
+ // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
+@@ -34,6 +35,7 @@ function Home() {
+         <div key={sheet}>
+           <SheetHeader />
+           <SheetToday />
++          <ConsolidatedFigures />
+           <AsOfControl />
+           <RatePanel />
+           <HolidayPanel />
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/DescendantsResponse.java b/src/main/java/net/officefloor/hq/app/sheet/DescendantsResponse.java
+new file mode 100644
+index 00000000..48ec5438
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/DescendantsResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++
++/** The sheet's descendants (its children, their children and so on), nearest first. */
++public record DescendantsResponse(List<String> sheets) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadDescendants.java b/src/main/java/net/officefloor/hq/app/sheet/LoadDescendants.java
+new file mode 100644
+index 00000000..7ce2e03a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadDescendants.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The sheet's descendants: the sheets naming it as their parent, and theirs, and so on. */
++public class LoadDescendants {
++    public void service(@PathVariable("sheetId") String sheetId, Sheets sheets,
++            ObjectResponse<DescendantsResponse> response) {
++        response.send(new DescendantsResponse(sheets.descendants(sheetId)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+index 896f7bab..9e038598 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+@@ -2,7 +2,10 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashSet;
+ import java.util.List;
++import java.util.Set;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -71,6 +74,21 @@ public class Sheets {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** The sheet's descendants: the sheets naming it as their parent, their children and so on, nearest first. */
++    public List<String> descendants(String sheetId) {
++        List<String> found = new ArrayList<>();
++        Set<String> seen = new HashSet<>(List.of(sheetId));
++        for (int at = -1; at < found.size(); at++) {
++            String of = at < 0 ? sheetId : found.get(at);
++            for (String child : jdbc.query("SELECT id FROM sheet WHERE parent = ? ORDER BY id", (rs, i) -> rs.getString(1), of)) {
++                if (seen.add(child)) {
++                    found.add(child);
++                }
++            }
++        }
++        return found;
++    }
++
+     public void setParent(String sheetId, String parent) {
+         today(sheetId);
+         jdbc.update("UPDATE sheet SET parent = ? WHERE id = ?", parent, sheetId);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 00000000..4fc48b90
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,3 @@
++service:
++  class: net.officefloor.hq.app.sheet.LoadDescendants
++  govern: [ transaction ]
