@@ -56,6 +56,10 @@ import { peopleKey, type Person } from '../people/usePeople';
 // date and note, the next number, opened by the user and its due-by fixed now is listed under the person, showing the
 // original's number as split-from. A PENDING, deferred or settled claim, one dated inside a closed period, or a split by a
 // role that may not open a claim, is refused with the claim's error.
+// An OPEN claim is part-settled with the part amount and button: the amount is split off as the split button does and the
+// new claim is settled at once by the user as the settle button does (PENDING above the clerk limit). The four-eyes and
+// proof rules are judged on the original claim; a split or settle that would be refused refuses the whole action with the
+// claim's error and changes nothing.
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 // A claim is commented with the comment text and button (an empty comment is refused with the claim's error); its comments
 // are shown oldest first, each as "<user> on <date>: <text>", the date being the sheet's today when it was written.
@@ -244,6 +248,23 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const [settlePartAmount, setSettlePartAmount] = useState('');
+
+  const settlePart = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/settle-part`,
+        { amount, user },
+      ),
+    onSuccess: () => {
+      setSettlePartAmount('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   const [commentText, setCommentText] = useState('');
 
   const comment = useMutation({
@@ -333,6 +354,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     redate.reset();
     proof.reset();
     split.reset();
+    settlePart.reset();
     comment.reset();
     line.reset();
     lock.reset();
@@ -548,6 +570,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-split" onClick={() => act(() => split.mutate(splitAmount))}>
         Split
       </button>{' '}
+      <input
+        data-testid="claim-settle-part-amount"
+        value={settlePartAmount}
+        placeholder="Amount to settle"
+        onChange={(e) => act(() => setSettlePartAmount(e.target.value))}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-settle-part"
+        onClick={() => act(() => settlePart.mutate(settlePartAmount))}
+      >
+        Settle part
+      </button>{' '}
       <select
         data-testid="claim-reassign-to"
         value={toPersonId}
@@ -660,6 +695,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only an OPEN claim that is not deferred and whose due-by is not inside a closed period can be split, by a role that may open a claim, and the amount split off must be more than 0.00 and less than the claim's amount.
+        </span>
+      )}
+      {settlePart.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: the part must split off as the split button allows and then settle as the settle button allows, and neither the user who opened nor who last edited the claim may settle part of it, nor without a proof when its due is above the proof threshold.
         </span>
       )}
       {reassign.isError && (

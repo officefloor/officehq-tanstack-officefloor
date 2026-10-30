@@ -30,6 +30,14 @@ public class ApplyClaimStatus {
     static ClaimNumber change(ValidClaimStatus request, Claim claim, Sheets sheets, People people,
             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log)
             throws ClaimStatusRefusedException {
+        return change(request, claim, sheets, people, rates, periods, settings, numbering, log, true);
+    }
+
+    /** As a single change; without {@code ownRules} the four-eyes and proof rules are left out, as a part-settle
+     *  judges them on the original claim instead (see {@link #refuseSettleRules}). */
+    static ClaimNumber change(ValidClaimStatus request, Claim claim, Sheets sheets, People people,
+            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, boolean ownRules)
+            throws ClaimStatusRefusedException {
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()), on -> settings.roundingMode(claim.getSheetId(), on));
         if (periods.isClosed(claim.getSheetId(), claim.getPeriodDate())) {
             throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can change status");
@@ -74,15 +82,8 @@ public class ApplyClaimStatus {
                 throw new ClaimStatusRefusedException("A deleted claim can be restored only on the sheet-today it was deleted");
             }
         }
-        if (request.target() == ClaimStatus.SETTLED && claim.getOpenedBy() != null
-                && claim.getOpenedBy().equals(request.user())) {
-            // Four eyes: the user who opened a claim cannot settle (or approve) it.
-            throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
-        }
-        if (request.target() == ClaimStatus.SETTLED && claim.getEditedBy() != null
-                && claim.getEditedBy().equals(request.user())) {
-            // Four eyes: nor can the user who last edited it.
-            throw new ClaimStatusRefusedException("The user who last edited a claim cannot settle it");
+        if (ownRules && request.target() == ClaimStatus.SETTLED) {
+            refuseSettleRules(claim, request.user(), sheets, people, rates, settings, rounding);
         }
         if (request.target() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until its deferred-until date");
@@ -106,19 +107,6 @@ public class ApplyClaimStatus {
                 claim.setOpenedBy(request.user());
                 claim.setStatus(ClaimStatus.REVIEW);
                 return new ClaimNumber(claim.getNumber());
-            }
-        }
-        java.util.List<String> kinds = target == ClaimStatus.SETTLED ? settings.proofKinds(claim.getSheetId()) : java.util.List.of();
-        if (target == ClaimStatus.SETTLED && (claim.getProofs() == 0 || kinds.stream().anyMatch(k -> claim.proofsOf(k) == 0))) {
-            // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
-            // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
-            // The person's grade's own threshold in force then, when one is set, takes the place of the sheet's.
-            // While the sheet's proof kinds are set, it needs at least one proof of each listed kind.
-            BigDecimal threshold = settings.proofThresholdFor(claim.getSheetId(),
-                    people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate()), claim.getDate());
-            BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
-            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
-                throw new ClaimStatusRefusedException("A claim whose due is above the proof threshold needs a proof to be settled");
             }
         }
         if (target == ClaimStatus.SETTLED && request.decision() == ValidClaimStatus.Decision.NONE && !steward) {
@@ -158,6 +146,35 @@ public class ApplyClaimStatus {
         }
         claim.setStatus(target);
         return number;
+    }
+
+    /** Refuses settling (or approving) the claim by the user under the four-eyes rules and the proof rule.
+     *  A part-settle judges them on the original claim. */
+    static void refuseSettleRules(Claim claim, String user, Sheets sheets, People people, Rates rates, Settings settings,
+            RoundingMode rounding) throws ClaimStatusRefusedException {
+        if (claim.getOpenedBy() != null
+                && claim.getOpenedBy().equals(user)) {
+            // Four eyes: the user who opened a claim cannot settle (or approve) it.
+            throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
+        }
+        if (claim.getEditedBy() != null
+                && claim.getEditedBy().equals(user)) {
+            // Four eyes: nor can the user who last edited it.
+            throw new ClaimStatusRefusedException("The user who last edited a claim cannot settle it");
+        }
+        java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
+        if (claim.getProofs() == 0 || kinds.stream().anyMatch(k -> claim.proofsOf(k) == 0)) {
+            // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
+            // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
+            // The person's grade's own threshold in force then, when one is set, takes the place of the sheet's.
+            // While the sheet's proof kinds are set, it needs at least one proof of each listed kind.
+            BigDecimal threshold = settings.proofThresholdFor(claim.getSheetId(),
+                    people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate()), claim.getDate());
+            BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
+            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                throw new ClaimStatusRefusedException("A claim whose due is above the proof threshold needs a proof to be settled");
+            }
+        }
     }
 
     /** Refuses opening a claim that belongs to a capped period (by its period date) when its person already has
