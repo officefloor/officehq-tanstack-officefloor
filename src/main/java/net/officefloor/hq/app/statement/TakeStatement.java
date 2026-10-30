@@ -83,7 +83,9 @@ public class TakeStatement {
                     BigDecimal due = due(claim, person, today, rates, settings);
                     figures.put(claim.id(), due);
                     if (due != null) {
-                        total = total.add(claimShares.stream().map(sh -> sh.part(due)).reduce(due, BigDecimal::subtract));
+                        total = total.add(claimShares.stream()
+                                .map(sh -> Rollup.holderPart(claim, sh, people.find(person.sheetId(), sh.personId()), rates, settings))
+                                .filter(Objects::nonNull).reduce(due, BigDecimal::subtract));
                     }
                 }
                 continue;
@@ -91,9 +93,9 @@ public class TakeStatement {
             ClaimShare holding = claimShares.stream().filter(sh -> sh.personId() == person.id()).findFirst().orElse(null);
             Person owner = holding == null ? null : people.find(person.sheetId(), claim.personId());
             if (owner != null && ((claim.status() == ClaimStatus.SETTLED && !claim.deferredOn(today)) || Rollup.counts(claim, owner, today))) {
-                BigDecimal due = due(claim, owner, today, rates, settings);
-                if (due != null) {
-                    total = total.add(holding.part(due));
+                BigDecimal part = Rollup.holderPart(claim, holding, person, rates, settings);
+                if (part != null) {
+                    total = total.add(part);
                 }
             }
         }

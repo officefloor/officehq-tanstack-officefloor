@@ -1,7 +1,7 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
 import { counts, isCorrection, isDeferred, isOpen } from '../claims/claimsQuery';
-import type { Claim } from '../claims/claimsQuery';
+import type { Claim, ClaimShare } from '../claims/claimsQuery';
 import { gradeOn } from '../people/peopleQuery';
 import type { Grade, Person } from '../people/peopleQuery';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, valueOn } from '../settings/dated';
@@ -183,25 +183,44 @@ function floored(live: string, floor: string): string {
 
 /**
  * The holder's part of a claim's figure: the figure times their share percent divided by 100, rounded half to even
- * (n/a when the figure is).
+ * (n/a when the figure is). How a settled claim's parts stay frozen.
  */
 export function sharePart(figure: string, share: string): string {
   return figure === 'n/a' ? 'n/a' : sumOfShares([[figure, share]]);
 }
 
 /**
+ * The holder's part of an unsettled claim: its amount times their share divided by 100, times the rate of the holder's
+ * own grade in force on the claim's date divided by 100, rounded like the claim (see `roundsHalfUp`); n/a when their
+ * grade has no rate (it counts as 0.00 against the claim's own person).
+ */
+export function holderPart(claim: Claim, holder: Person | undefined, share: string, rates: Rate[], late: Late): string {
+  const rate = rateFor(rates, gradeOn(holder, claim.date), claim.date, claim.id);
+  if (rate === undefined) return 'n/a';
+  const signed = hundredths(claim.amount) * hundredths(share) * hundredths(rate);
+  const product = signed < 0n ? -signed : signed;
+  const cents = product / 100000000n;
+  const rest = product % 100000000n;
+  const rounded = rest > 50000000n || (rest === 50000000n && (roundsHalfUp(claim, late) || cents % 2n === 1n)) ? cents + 1n : cents;
+  return show(signed < 0n ? -rounded : rounded);
+}
+
+/**
  * What the person counts of the claim's figure (null when it is neither theirs nor shared with them): a holder their
- * part (see `sharePart`), the claim's own person the figure less every holder's part. The figure is worked out for the
- * claim's own person.
+ * part (see `holderPart`; a settled claim's frozen parts see `sharePart`), the claim's own person the figure less every
+ * holder's part. The figure is worked out for the claim's own person.
  */
 export function personPart(claim: Claim, person: Person, people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string | null {
   const own = claim.personId === person.id;
   const holding = own ? undefined : claim.shares.find((s) => s.personId === person.id);
   if (!own && !holding) return null;
   const whole = figure(claim, rates, people.find((p) => p.id === claim.personId), floor, late);
+  const part = (s: ClaimShare) => claim.status === 'SETTLED'
+    ? sharePart(whole, s.share)
+    : holderPart(claim, people.find((p) => p.id === s.personId), s.share, rates, late);
+  if (holding) return part(holding);
   if (whole === 'n/a') return whole;
-  if (holding) return sharePart(whole, holding.share);
-  return difference(whole, sumDue(claim.shares.map((s) => sharePart(whole, s.share))));
+  return difference(whole, sumDue(claim.shares.map(part)));
 }
 
 /**

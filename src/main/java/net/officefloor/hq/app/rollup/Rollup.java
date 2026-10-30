@@ -94,7 +94,8 @@ public class Rollup {
                     overdueCount++;
                 }
                 // A holder counts their part of the figure; the claim's own person the rest.
-                BigDecimal part = figure == null ? null : own ? remainder(figure, claimShares) : holding.part(figure);
+                BigDecimal part = own ? (figure == null ? null : remainder(claim, figure, claimShares, byId))
+                        : holderPart(claim, holding, byId.get(holding.personId()), rates, settings);
                 // The score's settled-total leaves out corrections.
                 if (part != null && claim.status() == ClaimStatus.SETTLED && claim.corrects() == null) {
                     settled = settled.add(part);
@@ -123,9 +124,23 @@ public class Rollup {
                 trimmed(overdues).toPlainString());
     }
 
-    /** What the claim's own person counts of its figure: the figure less each holder's part. */
-    private static BigDecimal remainder(BigDecimal figure, List<ClaimShare> claimShares) {
-        return claimShares.stream().map(sh -> sh.part(figure)).reduce(figure, BigDecimal::subtract);
+    /** What the claim's own person counts of its figure: the figure less each holder's part (one with none counting 0.00). */
+    private BigDecimal remainder(Claim claim, BigDecimal figure, List<ClaimShare> claimShares, Map<Long, Person> byId) {
+        return claimShares.stream().map(sh -> holderPart(claim, sh, byId.get(sh.personId()), rates, settings))
+                .filter(java.util.Objects::nonNull).reduce(figure, BigDecimal::subtract);
+    }
+
+    /**
+     * The holder's part of the claim (null when there is none): of a settled claim, its frozen parts (its frozen due times
+     * the share divided by 100); otherwise its amount times the share divided by 100, times the rate of the holder's own
+     * grade in force on the claim's date divided by 100, rounded like the claim (null when that grade has no rate).
+     */
+    public static BigDecimal holderPart(Claim claim, ClaimShare share, Person holder, Rates rates, Settings settings) {
+        if (claim.status() == ClaimStatus.SETTLED) {
+            return claim.settledDue() == null ? null : share.part(claim.settledDue());
+        }
+        BigDecimal rate = holder == null ? null : rates.forClaim(claim, holder.gradeOn(claim.date()));
+        return share.part(claim.amount(), rate, settings.rounding(claim));
     }
 
     /** A person's score, as the screen shows it: their settled-total (corrections left out) / 100, minus 5 per overdue claim of theirs that counts, rounded half to even. */
