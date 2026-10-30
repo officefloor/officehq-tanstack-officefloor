@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, isDeferred, type Claim } from './useClaims';
@@ -207,6 +207,27 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
 
   const [editRefused, setEditRefused] = useState(false);
 
+  const [inlineAmount, setInlineAmount] = useState('');
+
+  // The amount changed in the row: the claim form's save, keeping the claim's other values.
+  const inline = useMutation({
+    mutationFn: (amount: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}`, {
+        amount,
+        date: c.date,
+        note: c.note,
+        corrects: c.corrects,
+        user,
+      }),
+    onSuccess: () => {
+      setInlineAmount('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   // The next action on the row removes an old error.
   const act = (run: () => void) => {
     status.reset();
@@ -218,6 +239,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     proof.reset();
     split.reset();
     lock.reset();
+    inline.reset();
     setEditRefused(false);
     run();
   };
@@ -343,6 +365,16 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-reassign" onClick={() => act(() => reassign.mutate(toPersonId))}>
         Reassign
       </button>{' '}
+      <input
+        data-testid="claim-inline-amount"
+        value={inlineAmount}
+        placeholder="Amount"
+        inputMode="decimal"
+        onChange={(e) => act(() => setInlineAmount(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-inline-save" onClick={() => act(() => inline.mutate(inlineAmount.trim()))}>
+        Save amount
+      </button>{' '}
       {editing === c.id ? (
         <button type="button" data-testid="claim-cancel" onClick={cancel}>
           Cancel
@@ -356,6 +388,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only a DRAFT claim outside any closed period can be edited, and not while another user's editor has it open; to change a {c.status} claim, void it and add a new one.
+        </span>
+      )}
+      {inline.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a DRAFT claim outside any closed period can be edited, not by a viewer and not while another user's editor has it open, and the amount must have at most two decimals (a negative amount is a correction that must name a SETTLED claim of the same person).
         </span>
       )}
       {status.isError && (
