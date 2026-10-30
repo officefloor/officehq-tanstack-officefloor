@@ -4,6 +4,7 @@ import { ClaimList } from '../claims/ClaimList';
 import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
 import { dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
+import { useFloor } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
 import { HoldControl } from './HoldControl';
@@ -28,6 +29,7 @@ export function PeopleList() {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
+  const floor = useFloor(sheet);
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   const live = claims.filter((c) => heldOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!));
   const totalOf = (personId: string, grade: string) =>
@@ -35,6 +37,7 @@ export function PeopleList() {
       live.filter((c) => c.personId === personId),
       (date) => rateOn(rates, grade, date),
       rateOn(rates, grade, today),
+      floor,
     );
   return (
     <>

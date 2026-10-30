@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,
-            Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
+            Settings settings, Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
         PeriodResponse period = periods.lock(sheetId, name);
         if (period == null) {
             throw new InvalidPeriodException("No period named " + name + " is on the sheet");
@@ -30,6 +31,7 @@ public class ClosePeriod {
         LocalDate from = LocalDate.parse(period.from());
         LocalDate to = LocalDate.parse(period.to());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> all = claims.list(sheetId);
         for (Person person : people.list(sheetId)) {
             for (Claim claim : all) {
@@ -39,7 +41,7 @@ public class ClosePeriod {
                 }
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()));
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
                     total = total.add(figure);
                 }

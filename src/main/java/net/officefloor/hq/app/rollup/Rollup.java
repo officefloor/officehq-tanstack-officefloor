@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
@@ -32,19 +33,22 @@ public class Rollup {
     private final Claims claims;
     private final Rates rates;
     private final Sheets sheets;
+    private final Settings settings;
     private final Audit audit;
 
-    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Audit audit) {
+    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Audit audit) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
+        this.settings = settings;
         this.audit = audit;
     }
 
     /** The sheet's figures now. */
     public RollupFigures figures(String sheetId) {
         LocalDate today = sheets.today(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -61,7 +65,7 @@ public class Rollup {
                 BigDecimal fixed = ClaimResponse.fixedDue(claim);
                 anyFixed |= fixed != null;
                 BigDecimal figure = fixed != null || claim.isStated() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()));
+                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
                     due = due.add(figure);
                 }

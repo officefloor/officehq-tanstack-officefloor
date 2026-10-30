@@ -43,6 +43,12 @@ public class Rates {
         return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 
+    /** The live due on an amount at a rate, raised to the sheet's floor; null when there is no rate. */
+    public static BigDecimal due(BigDecimal amount, BigDecimal rate, BigDecimal floor) {
+        BigDecimal due = due(amount, rate);
+        return due == null || floor == null || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
+    }
+
     /** Set the grade's rate from a date (null: from the beginning of time), replacing one already there. */
     public void set(String sheetId, String grade, LocalDate from, BigDecimal rate) {
         Date fromDate = from == null ? null : Date.valueOf(from);

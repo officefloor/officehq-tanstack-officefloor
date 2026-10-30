@@ -6,7 +6,8 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { settingsKey, useSettings, type Settings } from './useSettings';
 
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
-// blank: no limit) and the role each user name holds (clerk unless set to steward).
+// blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
+// a blank floor field leaves it as it is and saves the clerk limit) and the role each user name holds (clerk unless set to steward).
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -15,13 +16,15 @@ export function SettingsPanel() {
   const submitSetting = useSubmitOnce();
   const submitRole = useSubmitOnce();
   const [limit, setLimit] = useState('');
+  const [floor, setFloor] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const saveSetting = useMutation({
     mutationFn: (body: { key: string; value: string }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`, { ...body, user }),
-    onSuccess: (saved) => {
-      setLimit('');
+    onSuccess: (saved, body) => {
+      if (body.key === 'floor') setFloor('');
+      else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
   });
@@ -42,11 +45,15 @@ export function SettingsPanel() {
           e.preventDefault();
           submitSetting(() => {
             saveSetting.reset();
-            return saveSetting.mutateAsync({ key: 'clerk-limit', value: limit.trim() });
+            if (floor.trim() === '') return saveSetting.mutateAsync({ key: 'clerk-limit', value: limit.trim() });
+            const saveFloor = () => saveSetting.mutateAsync({ key: 'floor', value: floor.trim() });
+            return limit.trim() === ''
+              ? saveFloor()
+              : saveSetting.mutateAsync({ key: 'clerk-limit', value: limit.trim() }).then(saveFloor);
           });
         }}
       >
-        Clerk limit: <span data-testid="setting-clerk-limit-current">{settings?.clerkLimit || 'none'}</span>{' '}
+        Clerk limit: <span data-testid="setting-clerk-limit-current">{settings?.clerkLimit ?? ''}</span>{' '}
         <input
           data-testid="setting-clerk-limit"
           value={limit}
@@ -56,8 +63,18 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>{' '}
+        <input
+          data-testid="setting-floor"
+          value={floor}
+          placeholder="Floor (blank: unchanged)"
+          onChange={(e) => {
+            setFloor(e.target.value);
+            saveSetting.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

@@ -36,11 +36,18 @@ export function showDue(due: bigint | null): string {
   return due === null ? NA : formatCents(due);
 }
 
+/** A live due raised to the sheet's floor ("1.00"); n/a stays n/a. */
+export function floored(due: bigint | null, floor: string): bigint | null {
+  if (due === null) return null;
+  const min = toCents(floor);
+  return due < min ? min : due;
+}
+
 /** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
- *  stays n/a), else its amount at the current rate. */
-export function claimDue(claim: { amount: string; due: string; stated?: boolean }, rate: string | undefined): bigint | null {
+ *  stays n/a), else its amount at the current rate, raised to the sheet's floor. */
+export function claimDue(claim: { amount: string; due: string; stated?: boolean }, rate: string | undefined, floor: string): bigint | null {
   if (claim.due !== '') return toCents(claim.due);
-  return claim.stated ? null : dueCents(toCents(claim.amount), rate);
+  return claim.stated ? null : floored(dueCents(toCents(claim.amount), rate), floor);
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. With no rate for their
@@ -50,7 +57,8 @@ export function dueTotal(
   claims: { amount: string; due: string; date: string; stated?: boolean }[],
   rateOn: (date: string) => string | undefined,
   rateToday: string | undefined,
+  floor: string,
 ): bigint | null {
   if (rateToday === undefined && !claims.some((c) => c.due !== '')) return null;
-  return claims.reduce((sum, c) => sum + (claimDue(c, rateOn(c.date)) ?? 0n), 0n);
+  return claims.reduce((sum, c) => sum + (claimDue(c, rateOn(c.date), floor) ?? 0n), 0n);
 }

@@ -7,6 +7,7 @@ import { countsLive, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { claimDue, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
+import { useFloor } from '../settings/useSettings';
 import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 // The sheet's periods, each with its dates and due-total (the dues of the claims that count whose
@@ -20,6 +21,7 @@ export function PeriodPanel() {
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const floor = useFloor(sheet);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -48,7 +50,7 @@ export function PeriodPanel() {
   const dueTotalOf = (period: Period) =>
     period.closed ? toCents(period.closedTotal) : claims
       .filter((c) => gradeOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!) && periodOf(periods, c.date) === period)
-      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date)) ?? 0n), 0n);
+      .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor) ?? 0n), 0n);
   return (
     <>
       <table data-testid="periods">
