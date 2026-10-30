@@ -1,6 +1,6 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
-import { BulkOpenButton, ClaimSelection } from '../claims/BulkOpen';
+import { BulkOpenButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts } from '../claims/useClaims';
 import { formatCents, showDue } from '../rates/due';
@@ -59,6 +59,7 @@ export function PeopleList() {
         Export CSV
       </button>
       <BulkOpenButton />
+      <BulkSettleButton />
       <table data-testid="people">
         <thead>
           <tr>

@@ -94,3 +94,56 @@ export function BulkOpenButton() {
     </p>
   );
 }
+
+// Settles the selected claims together: the server settles each by the rules of settling one claim, in
+// list order, by the signed-in user; a claim sent to PENDING counts as settled, one that cannot be
+// settled is left as it is. Then shows how many were settled and how many were refused, and clears
+// the selection; pressing again removes the old counts until the new ones are in.
+export function BulkSettleButton() {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+  const { selected, clear } = useClaimSelection();
+
+  const settle = useMutation({
+    mutationFn: (claimIds: string[]) =>
+      postJson<{ settled: number; refused: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/bulk-settle`,
+        { claimIds, user },
+      ),
+    onSuccess: () => {
+      clear();
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+
+  return (
+    <p>
+      <button
+        type="button"
+        data-testid="bulk-settle"
+        onClick={() => {
+          settle.reset();
+          const ids = [...selected];
+          once(() => settle.mutateAsync(ids));
+        }}
+      >
+        Settle selected
+      </button>
+      {settle.isSuccess && (
+        <>
+          {' '}
+          Settled <span data-testid="bulk-settled">{settle.data.settled}</span>, refused{' '}
+          <span data-testid="bulk-settle-refused">{settle.data.refused}</span>
+        </>
+      )}
+      {settle.isError && (
+        <span data-testid="bulk-settle-error" role="alert">
+          {' '}
+          The selected claims could not be settled.
+        </span>
+      )}
+    </p>
+  );
+}

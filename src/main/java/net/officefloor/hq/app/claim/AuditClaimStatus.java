@@ -8,6 +8,11 @@ import net.officefloor.plugin.variable.Val;
 
 public class AuditClaimStatus {
     public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log) {
+        record(request, claim, number, people, audit, before, rollup, log);
+    }
+
+    /** Logs and audits a status change that went through, as a single change does. Bulk settle uses it too. */
+    static void record(ValidClaimStatus request, Claim claim, ClaimNumber number, People people, Audit audit, RollupFigures before, Rollup rollup, ClaimLog log) {
         String event = switch (request.decision()) {
             case APPROVE -> "CLAIM_APPROVED";
             case REJECT -> "CLAIM_REJECTED";

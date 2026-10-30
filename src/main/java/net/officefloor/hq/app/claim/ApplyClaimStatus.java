@@ -14,6 +14,14 @@ public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
+        number.set(change(request, claim, sheets, people, rates, periods, settings, numbering));
+    }
+
+    /** Applies a status change to the claim by the rules of a single change, returning its number;
+     *  throws, leaving the claim as it is, when the change is refused. Bulk settle uses it too. */
+    static ClaimNumber change(ValidClaimStatus request, Claim claim, Sheets sheets, People people,
+            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering)
+            throws ClaimStatusRefusedException {
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()));
         if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
             throw new ClaimStatusRefusedException("No claim dated inside a closed period can change status");
@@ -57,7 +65,7 @@ public class ApplyClaimStatus {
             claim.setOpenedBy(request.user());
         }
         // A voided claim keeps its number; numbers are never reused.
-        number.set(new ClaimNumber(claim.getNumber()));
+        ClaimNumber number = new ClaimNumber(claim.getNumber());
         if (target == ClaimStatus.SETTLED) {
             // Settling (or approving) fixes the due: the figure a statement bound it to (never while PENDING), else its amount (raised to the floor)
             // at the rate in force on the claim's date, with its late charge as of today frozen in; with no
@@ -71,5 +79,6 @@ public class ApplyClaimStatus {
         }
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
         claim.setStatus(target);
+        return number;
     }
 }
