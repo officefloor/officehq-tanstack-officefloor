@@ -1,0 +1,571 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 26339430..dcfdde46 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -4,8 +4,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { claimDue, showDue } from '../rates/due';
+ import { claimsKey, type Claim } from './useClaims';
+ 
+-// A person's claims, newest first, each with its amount, date, note, status, number, opened-by and due (fixed when it
+-// was settled; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
++// A person's claims, newest first, each with its amount, date, note, status, number, opened-by, stated (yes when the
++// person's last statement bound it) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
+ // one the claim's status does not allow is refused with the claim's error) and an edit button that
+ // opens the claim in the person's claim form (cancel closes it again).
+ export function ClaimList({ claims, rateOn }: { claims: Claim[]; rateOn: (date: string) => string | undefined }) {
+@@ -48,6 +48,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
+       <span data-testid="claim-number">{c.number}</span>{' '}
+       <span data-testid="claim-due">{showDue(claimDue(c, rate))}</span>{' '}
+       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
++      <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate('open'))}>
+         Open
+       </button>{' '}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 57e90775..db9f52a9 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -4,8 +4,9 @@ import { getJson } from '../../api/http';
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
+- *  opened, "" for a draft or a voided claim; `due` is the due fixed when it was settled, "" while
+- *  its due is live (worked from the current rate). */
++ *  opened, "" for a draft or a voided claim; `due` is the due fixed when it was settled, else the
++ *  figure the person's last statement bound it to, "" while its due is live (worked from the current
++ *  rate) or bound to n/a; `stated` is whether the last statement bound it. */
+ export type Claim = {
+   id: string;
+   personId: string;
+@@ -17,6 +18,7 @@ export type Claim = {
+   due: string;
+   /** The user who opened the claim, "" if it was never opened. */
+   openedBy: string;
++  stated: boolean;
+ };
+ 
+ /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 5c0aa2f2..974910b4 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -5,11 +5,13 @@ import { counts, sumAmounts, useClaims } from '../claims/useClaims';
+ import { dueTotal, formatCents, showDue } from '../rates/due';
+ import { rateOn, useRates } from '../rates/useRates';
+ import { useSheetToday } from '../sheet/useSheetToday';
++import { StatementButton } from '../statements/StatementButton';
+ import { usePeople } from './usePeople';
+ 
+ // Every person on the sheet in the order they were added, with their name, grade, claimed (the
+ // sum of their OPEN and SETTLED claims), due-total (the
+-// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled claim keeps a figure) and their claims; then the
++// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
++// their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+ // sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
+ export function PeopleList() {
+   const [sheet] = useSearchParam('sheet', asString);
+@@ -35,6 +37,9 @@ export function PeopleList() {
+             <th>Claimed</th>
+             <th>Due</th>
+             <th />
++            <th>Statements</th>
++            <th>Last stated</th>
++            <th>Stated on</th>
+             <th>Claims</th>
+           </tr>
+         </thead>
+@@ -50,8 +55,12 @@ export function PeopleList() {
+                 <td>
+                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
+                     Edit
+-                  </button>
++                  </button>{' '}
++                  <StatementButton personId={p.id} />
+                 </td>
++                <td data-testid="person-statement-count">{p.statementCount}</td>
++                <td data-testid="person-stated-total">{p.statedTotal}</td>
++                <td data-testid="person-statement-date">{p.statementDate}</td>
+                 <td>
+                   <ClaimList claims={own} rateOn={(date) => rateOn(rates, p.grade, date)} />
+                   <ClaimForm personId={p.id} claims={own} />
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index a2dfd7ac..7850e3bf 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -2,8 +2,18 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+ /** `version` goes up on every save; an editor sends back the version it loaded, so a save over
+- *  someone else's newer one is refused. */
+-export type Person = { id: string; name: string; grade: string; version: number };
++ *  someone else's newer one is refused. `statementCount` is how many statements were taken;
++ *  `statedTotal` is the last one's due-total ("n/a" possible, "" when none) and `statementDate` the
++ *  sheet's today when it was taken ("" when none). */
++export type Person = {
++  id: string;
++  name: string;
++  grade: string;
++  version: number;
++  statementCount: number;
++  statedTotal: string;
++  statementDate: string;
++};
+ 
+ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index c9641d32..bbfa34e1 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -36,16 +36,18 @@ export function showDue(due: bigint | null): string {
+   return due === null ? NA : formatCents(due);
+ }
+ 
+-/** A claim's due: the one fixed when it was settled, else its amount at the current rate. */
+-export function claimDue(claim: { amount: string; due: string }, rate: string | undefined): bigint | null {
+-  return claim.due !== '' ? toCents(claim.due) : dueCents(toCents(claim.amount), rate);
++/** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
++ *  stays n/a), else its amount at the current rate. */
++export function claimDue(claim: { amount: string; due: string; stated?: boolean }, rate: string | undefined): bigint | null {
++  if (claim.due !== '') return toCents(claim.due);
++  return claim.stated ? null : dueCents(toCents(claim.amount), rate);
+ }
+ 
+ /** A person's due-total: the sum of the figures of their claims that count. With no rate for their
+  *  grade today it is n/a, unless a settled claim keeps a figure; then it is the sum of the figures
+  *  there are. A claim whose figure is n/a adds nothing. */
+ export function dueTotal(
+-  claims: { amount: string; due: string; date: string }[],
++  claims: { amount: string; due: string; date: string; stated?: boolean }[],
+   rateOn: (date: string) => string | undefined,
+   rateToday: string | undefined,
+ ): bigint | null {
+diff --git a/src/main/frontend/features/statements/StatementButton.tsx b/src/main/frontend/features/statements/StatementButton.tsx
+new file mode 100644
+index 00000000..88a8364c
+--- /dev/null
++++ b/src/main/frontend/features/statements/StatementButton.tsx
+@@ -0,0 +1,46 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { claimsKey } from '../claims/useClaims';
++import { peopleKey, type Person } from '../people/usePeople';
++
++// Takes a statement for the person: the server records their due-total now and binds each of their
++// counting claims to its figure now (the rest are left unbound). A refusal shows the person's error.
++export function StatementButton({ personId }: { personId: string }) {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const queryClient = useQueryClient();
++  const once = useSubmitOnce();
++
++  const take = useMutation({
++    mutationFn: () =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/statement`, { user }),
++    onSuccess: () =>
++      Promise.all([
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++      ]),
++  });
++
++  return (
++    <>
++      <button
++        type="button"
++        data-testid="person-statement"
++        onClick={() => {
++          take.reset();
++          once(() => take.mutateAsync());
++        }}
++      >
++        Statement
++      </button>
++      {take.isError && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          The statement could not be taken.
++        </span>
++      )}
++    </>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 3842c117..022a9c96 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -16,6 +16,8 @@ public class Claim {
+     private Long number;
+     private BigDecimal settledDue;
+     private String openedBy;
++    private boolean stated;
++    private BigDecimal statedDue;
+ 
+     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             ClaimStatus status, Long number, BigDecimal settledDue, String openedBy) {
+@@ -49,6 +51,12 @@ public class Claim {
+     public void setNote(String note) { this.note = note; }
+     public void setStatus(ClaimStatus status) { this.status = status; }
+     public void setNumber(Long number) { this.number = number; }
++    /** Whether the person's last statement bound this claim to a figure. */
++    public boolean isStated() { return stated; }
++    /** The figure the last statement bound this claim to; null when unbound or when it was n/a. */
++    public BigDecimal getStatedDue() { return statedDue; }
++    public void setStated(boolean stated) { this.stated = stated; }
++    public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
+     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
+     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index bd5cfe93..c0ce7e11 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -3,16 +3,24 @@ package net.officefloor.hq.app.claim;
+ import java.util.List;
+ 
+ /** amount is shown with two decimals; status is DRAFT, OPEN, SETTLED or VOID; number is "" when none;
+- *  due is the due fixed when the claim was settled, "" while it is live; openedBy is "" when never opened. */
++ *  due is the due fixed when the claim was settled, else the figure its person's last statement bound
++ *  it to, "" while it is live (or bound to n/a); openedBy is "" when never opened; stated is whether
++ *  the last statement bound it. */
+ public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
+-        String number, String due, String openedBy) {
++        String number, String due, String openedBy, boolean stated) {
+ 
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
+                 claim.getAmount().setScale(2).toPlainString(), claim.getDate().toString(), claim.getNote(),
+                 claim.getStatus().name(), claim.getNumber() == null ? "" : String.valueOf(claim.getNumber()),
+-                claim.getSettledDue() == null ? "" : claim.getSettledDue().setScale(2).toPlainString(),
+-                claim.getOpenedBy() == null ? "" : claim.getOpenedBy());
++                fixedDue(claim) == null ? "" : fixedDue(claim).setScale(2).toPlainString(),
++                claim.getOpenedBy() == null ? "" : claim.getOpenedBy(), claim.isStated());
++    }
++
++    /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */
++    public static java.math.BigDecimal fixedDue(Claim claim) {
++        if (claim.getSettledDue() != null) return claim.getSettledDue();
++        return claim.isStated() ? claim.getStatedDue() : null;
+     }
+ 
+     public static List<ClaimResponse> from(List<Claim> claims) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 9a2c0d7e..bfce6308 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -15,10 +15,15 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Claims {
+ 
+-    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+-            rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
+-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+-            rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
++    private static final RowMapper<Claim> ROW = (rs, i) -> {
++        Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
++                rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
++                rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
++                rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
++        claim.setStated(rs.getBoolean("stated"));
++        claim.setStatedDue(rs.getBigDecimal("stated_due"));
++        return claim;
++    };
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -31,6 +36,11 @@ public class Claims {
+         return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+     }
+ 
++    /** A person's claims on the sheet, newest first. */
++    public List<Claim> ofPerson(String sheetId, long personId) {
++        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW, sheetId, personId);
++    }
++
+     public Claim find(String sheetId, long id) {
+         List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+         return found.isEmpty() ? null : found.get(0);
+@@ -52,6 +62,12 @@ public class Claims {
+         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+     }
+ 
++    /** Bind the claim to the figure a statement gives it (stated), or leave it unbound. */
++    public void bind(Claim claim) {
++        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
++                claim.isStated(), claim.getStatedDue(), claim.getSheetId(), claim.getId());
++    }
++
+     public void save(Claim claim) {
+         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ?",
+                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 6211b6c6..62aabf58 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -12,8 +12,15 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class People {
+ 
+-    private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
+-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getInt("version"));
++    private static final RowMapper<Person> ROW = (rs, i) -> {
++        Person person = new Person(rs.getLong("id"),
++                rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getInt("version"));
++        person.setStatementCount(rs.getInt("statement_count"));
++        person.setStatedTotal(rs.getBigDecimal("stated_total"));
++        java.sql.Date stated = rs.getDate("statement_date");
++        person.setStatementDate(stated == null ? null : stated.toLocalDate());
++        return person;
++    };
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -53,6 +60,15 @@ public class People {
+         return new Person(keys.getKey().longValue(), sheetId, name, grade);
+     }
+ 
++    /** Records a statement taken for the person: one more, with its due-total and date. The person's
++     *  version is left as it is — a statement is not an edit. */
++    public void saveStatement(Person person) {
++        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE sheet_id = ? AND id = ?",
++                person.getStatementCount(), person.getStatedTotal(),
++                person.getStatementDate() == null ? null : java.sql.Date.valueOf(person.getStatementDate()),
++                person.getSheetId(), person.getId());
++    }
++
+     /** Saves the person over the version it was loaded at, moving it on by one; false (nothing
+      *  written) when someone else has saved the person since. */
+     public boolean save(Person person) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index d02c50d4..45a1be6d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -1,6 +1,9 @@
+ package net.officefloor.hq.app.person;
+ 
+ /** A person on a sheet. Mutable so an Apply step can change it in place. */
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
+ public class Person {
+ 
+     private final long id;
+@@ -8,6 +11,9 @@ public class Person {
+     private String name;
+     private String grade;
+     private int version;
++    private int statementCount;
++    private BigDecimal statedTotal;
++    private LocalDate statementDate;
+ 
+     public Person(long id, String sheetId, String name, String grade) {
+         this(id, sheetId, name, grade, 0);
+@@ -26,6 +32,15 @@ public class Person {
+     public String getName() { return name; }
+     public String getGrade() { return grade; }
+     public int getVersion() { return version; }
++    /** How many statements have been taken for the person. */
++    public int getStatementCount() { return statementCount; }
++    /** The last statement's due-total; null when none was taken or it was n/a. */
++    public BigDecimal getStatedTotal() { return statedTotal; }
++    /** The sheet's today when the last statement was taken; null when none was. */
++    public LocalDate getStatementDate() { return statementDate; }
++    public void setStatementCount(int statementCount) { this.statementCount = statementCount; }
++    public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }
++    public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
+     public void setName(String name) { this.name = name; }
+     public void setGrade(String grade) { this.grade = grade; }
+     public void setVersion(int version) { this.version = version; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 5422034d..2d097fa3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -2,10 +2,17 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
+ 
+-public record PersonResponse(String id, String name, String grade, int version) {
++/** statementCount is how many statements were taken; statedTotal is the last one's due-total ("n/a" when it
++ *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none). */
++public record PersonResponse(String id, String name, String grade, int version, int statementCount,
++        String statedTotal, String statementDate) {
+ 
+     public static PersonResponse from(Person person) {
+-        return new PersonResponse(String.valueOf(person.getId()), person.getName(), person.getGrade(), person.getVersion());
++        boolean stated = person.getStatementCount() > 0;
++        return new PersonResponse(String.valueOf(person.getId()), person.getName(), person.getGrade(), person.getVersion(),
++                person.getStatementCount(),
++                !stated ? "" : person.getStatedTotal() == null ? "n/a" : person.getStatedTotal().setScale(2).toPlainString(),
++                person.getStatementDate() == null ? "" : person.getStatementDate().toString());
+     }
+ 
+     public static List<PersonResponse> from(List<Person> people) {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java b/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java
+new file mode 100644
+index 00000000..f1a91cf4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.statement;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++public class AuditStatement {
++    public void audit(@Val StatementRequest request, @Val Person person, @Val Statement statement, Audit audit) {
++        audit.recordOnCommit("STATEMENT sheet=" + person.getSheetId() + " by=" + request.user()
++                + " name=" + person.getName()
++                + " due-total=" + (statement.dueTotal() == null ? "n/a" : statement.dueTotal().toPlainString())
++                + " claims=" + statement.claims());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statement.java b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+new file mode 100644
+index 00000000..bc24ac95
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.statement;
++
++import java.math.BigDecimal;
++
++/** A statement taken: the person's due-total at that moment (null when n/a) and how many claims counted. */
++public record Statement(BigDecimal dueTotal, int claims) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+new file mode 100644
+index 00000000..f1efeb91
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.statement;
++
++/** Body of POST /api/sheets/{sheetId}/people/{personId}/statement: who takes it. */
++public record StatementRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+new file mode 100644
+index 00000000..f6e9e3d1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -0,0 +1,58 @@
++package net.officefloor.hq.app.statement;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.List;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimResponse;
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Takes a statement: the person's due-total as the screen shows it now (the sum of their counting
++ * claims' figures — fixed or at the rate in force on each claim's date; n/a when their grade has no
++ * rate today and no claim keeps a figure), and binds each counting claim to its figure now. A claim
++ * that does not count is left unbound.
++ */
++public class TakeStatement {
++    public void take(@Val Person person, Claims claims, Rates rates, Sheets sheets, People people,
++            Out<Statement> statement) {
++        String sheetId = person.getSheetId();
++        LocalDate today = sheets.today(sheetId);
++        List<Claim> own = claims.ofPerson(sheetId, person.getId());
++        BigDecimal total = BigDecimal.ZERO.setScale(2);
++        boolean anyFixed = false;
++        int counted = 0;
++        for (Claim claim : own) {
++            if (!claim.getStatus().counts()) {
++                claim.setStated(false);
++                claim.setStatedDue(null);
++            } else {
++                BigDecimal fixed = ClaimResponse.fixedDue(claim);
++                // A bound claim keeps its figure (even n/a); a live one is worked at the rate on its date.
++                BigDecimal figure = fixed != null || claim.isStated() ? fixed
++                        : Rates.due(claim.getAmount(), rates.find(sheetId, person.getGrade(), claim.getDate()));
++                anyFixed |= fixed != null;
++                if (figure != null) {
++                    total = total.add(figure);
++                }
++                claim.setStated(true);
++                claim.setStatedDue(figure);
++                counted++;
++            }
++            claims.bind(claim);
++        }
++        boolean na = !anyFixed && rates.find(sheetId, person.getGrade(), today) == null;
++        BigDecimal dueTotal = na ? null : total;
++        person.setStatementCount(person.getStatementCount() + 1);
++        person.setStatedTotal(dueTotal);
++        person.setStatementDate(today);
++        people.saveStatement(person);
++        statement.set(new Statement(dueTotal, counted));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+new file mode 100644
+index 00000000..500f2256
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.statement;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateStatement {
++    public void validate(@RequestBody StatementRequest request, Out<StatementRequest> body) {
++        body.set(request);
++    }
++}
+diff --git a/src/main/resources/db/migration/V11__statement.sql b/src/main/resources/db/migration/V11__statement.sql
+new file mode 100644
+index 00000000..da85f635
+--- /dev/null
++++ b/src/main/resources/db/migration/V11__statement.sql
+@@ -0,0 +1,12 @@
++-- A statement binds each of a person's claims that count at that moment to the figure it has then
++-- (stated_due; null when that figure was n/a): from then on the claim shows and totals that figure
++-- whatever rates or grades do, until the person's next statement rebinds it. A claim that does not
++-- count at a statement is left unbound (stated false, its due live again). A settled claim's
++-- settled_due still comes first.
++ALTER TABLE claim ADD COLUMN stated BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE claim ADD COLUMN stated_due DECIMAL(14,2);
++-- The person's statements: how many were taken, and the last one's due-total (null when it was
++-- n/a) and date (the sheet's today when it was taken).
++ALTER TABLE person ADD COLUMN statement_count INT DEFAULT 0 NOT NULL;
++ALTER TABLE person ADD COLUMN stated_total DECIMAL(14,2);
++ALTER TABLE person ADD COLUMN statement_date DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+new file mode 100644
+index 00000000..308770bd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -0,0 +1,19 @@
++# Take a statement for the person: record their due-total now and bind their counting claims to their figures.
++validate:
++  class: net.officefloor.hq.app.statement.ValidateStatement
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: take
++take:
++  class: net.officefloor.hq.app.statement.TakeStatement
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.statement.AuditStatement
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
