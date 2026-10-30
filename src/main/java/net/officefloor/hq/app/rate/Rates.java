@@ -24,12 +24,13 @@ public class Rates {
 
     /** The sheet's rates, by grade then from-date (from the beginning of time first). */
     public List<RateResponse> list(String sheetId) {
-        return jdbc.query("SELECT grade, rate, from_date, to_date FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
+        return jdbc.query("SELECT grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
                 (rs, i) -> {
                     Date from = rs.getDate("from_date");
                     Date to = rs.getDate("to_date");
                     return new RateResponse(rs.getString("grade"), rs.getBigDecimal("rate").setScale(2).toPlainString(),
-                            from == null ? "" : from.toLocalDate().toString(), to == null ? "" : to.toLocalDate().toString());
+                            from == null ? "" : from.toLocalDate().toString(), to == null ? "" : to.toLocalDate().toString(),
+                            rs.getInt("version"));
                 },
                 sheetId);
     }
@@ -89,16 +90,17 @@ public class Rates {
     }
 
     /** Set the grade's rate from a date (null: from the beginning of time) through a date (null: no
-     *  end), replacing one already there from the same date. */
+     *  end) as a new version: one already there from the same date is kept as an older version. */
     public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal rate) {
         Date fromDate = from == null ? null : Date.valueOf(from);
-        if (fromDate == null) {
-            jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NULL", sheetId, grade);
-        } else {
-            jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date = ?", sheetId, grade, fromDate);
-        }
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to));
+        String sameFrom = fromDate == null ? " AND from_date IS NULL" : " AND from_date = ?";
+        Object[] key = fromDate == null ? new Object[] { sheetId, grade } : new Object[] { sheetId, grade, fromDate };
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date)"
+                + " SELECT sheet_id, grade, from_date, version, rate, to_date FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key);
+        Integer latest = jdbc.queryForObject("SELECT MAX(version) FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, Integer.class, key);
+        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
+                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), latest == null ? 1 : latest + 1);
         jdbc.update("INSERT INTO rate_history (sheet_id, set_on, grade, rate, from_date, to_date) VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?)",
                 sheetId, sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to));
     }

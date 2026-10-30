@@ -12,7 +12,8 @@ import { rateOn, ratesKey, useRates, type Rate } from './useRates';
 
 // The rate in force on the sheet's today for each grade (n/a where none applies), every rate set with
 // the dates it applies from and through, and the form that sets one (a blank from-date: from the
-// beginning of time; a blank to-date: no end), and a preview of a candidate rate for a grade.
+// beginning of time; a blank to-date: no end; one already there from the same date is kept as an older
+// version and the row shows its version count), and a preview of a candidate rate for a grade.
 export function RatePanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -59,6 +60,7 @@ export function RatePanel() {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -68,6 +70,7 @@ export function RatePanel() {
               <td data-testid="rate-from">{r.from || 'start'}</td>
               <td data-testid="rate-to">{r.to}</td>
               <td data-testid="rate-pct">{r.rate}</td>
+              <td data-testid="rate-version">{r.version}</td>
             </tr>
           ))}
         </tbody>

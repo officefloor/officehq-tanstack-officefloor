@@ -238,9 +238,12 @@ public class AsOfView {
                     LocalDate from = local(rs.getDate(3));
                     LocalDate to = local(rs.getDate(4));
                     String grade = rs.getString(1).trim();
-                    byGrade.computeIfAbsent(grade, g -> new TreeMap<>()).put(from == null ? LocalDate.MIN : from,
-                            new RateResponse(grade, rs.getBigDecimal(2).setScale(2).toPlainString(),
-                                    from == null ? "" : from.toString(), to == null ? "" : to.toString()));
+                    TreeMap<LocalDate, RateResponse> byFrom = byGrade.computeIfAbsent(grade, g -> new TreeMap<>());
+                    LocalDate key = from == null ? LocalDate.MIN : from;
+                    RateResponse replaced = byFrom.get(key);
+                    byFrom.put(key, new RateResponse(grade, rs.getBigDecimal(2).setScale(2).toPlainString(),
+                            from == null ? "" : from.toString(), to == null ? "" : to.toString(),
+                            replaced == null ? 1 : replaced.version() + 1));
                 }, sheetId, Date.valueOf(date));
         List<RateResponse> rates = new ArrayList<>();
         byGrade.values().forEach(byFrom -> rates.addAll(byFrom.values()));

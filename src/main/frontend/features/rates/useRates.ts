@@ -4,9 +4,10 @@ import { getJson } from '../../api/http';
 import { readPath, useAsOf } from '../asof/useAsOf';
 
 /** A grade's rate: a percent shown with two decimals ("12.50"), in force from a date (YYYY-MM-DD;
- *  "" for from the beginning of time) through a date ("" for no end). One inherited from an ancestor
+ *  "" for from the beginning of time) through a date ("" for no end), and its version: how many times a
+ *  rate has been set for the grade and from-date, this the newest. One inherited from an ancestor
  *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above; the sheet's own have none. */
-export type Rate = { grade: string; rate: string; from: string; to: string; level?: number };
+export type Rate = { grade: string; rate: string; from: string; to: string; version: number; level?: number };
 
 export const ratesKey = (sheet: string, asOf = '') => ['sheet', sheet, 'rates', asOf] as const;
 
