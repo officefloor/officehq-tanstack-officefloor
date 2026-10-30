@@ -91,6 +91,13 @@ public class Settings {
         return found == null ? null : found.value();
     }
 
+    /** The proof threshold a claim of a person of this grade dated on the date takes: the grade's own in force then
+     *  when one is set, else the sheet's then; null for none. */
+    public BigDecimal proofThresholdFor(String sheetId, String grade, LocalDate on) {
+        InForce own = grade == null ? null : on(sheetId, ValidateSetting.GRADE_PROOF_THRESHOLD + grade, on);
+        return own != null && own.value() != null ? own.value() : proofThreshold(sheetId, on);
+    }
+
     /** The sheet's note threshold in force on a date (a claim's: its date); null for none. */
     public BigDecimal noteThreshold(String sheetId, LocalDate on) {
         InForce found = on(sheetId, ValidateSetting.NOTE_THRESHOLD, on);

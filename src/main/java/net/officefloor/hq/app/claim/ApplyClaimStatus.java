@@ -80,7 +80,9 @@ public class ApplyClaimStatus {
         if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {
             // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
             // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
-            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
+            // The person's grade's own threshold in force then, when one is set, takes the place of the sheet's.
+            BigDecimal threshold = settings.proofThresholdFor(claim.getSheetId(),
+                    people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate()), claim.getDate());
             BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
             if (threshold != null && due != null && due.compareTo(threshold) > 0) {
                 throw new ClaimStatusRefusedException("A claim whose due is above the proof threshold needs a proof to be settled");

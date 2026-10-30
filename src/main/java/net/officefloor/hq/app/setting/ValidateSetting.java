@@ -20,6 +20,9 @@ public class ValidateSetting {
     /** Above it (in force on a claim's date) a claim needs a proof to be settled or approved; blank: none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** A grade's proof threshold: proof-threshold-<grade>; dated; blank: none (the sheet's applies). */
+    public static final String GRADE_PROOF_THRESHOLD = "proof-threshold-";
+
     /** Above it (in force on a claim's date) a claim cannot be opened with an empty note; blank: none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
@@ -67,7 +70,8 @@ public class ValidateSetting {
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
-                && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))) {
+                && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
+                && !(key.startsWith(GRADE_PROOF_THRESHOLD) && GRADES.contains(key.substring(GRADE_PROOF_THRESHOLD.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
@@ -179,7 +183,7 @@ public class ValidateSetting {
             body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
             return;
         }
-        if (PROOF_THRESHOLD.equals(key)) {
+        if (PROOF_THRESHOLD.equals(key) || key.startsWith(GRADE_PROOF_THRESHOLD)) {
             if (raw.isEmpty()) {
                 body.set(new ValidSetting(key, null, request.user(), null, from)); // blank: none
                 return;

@@ -34,6 +34,8 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // Each grade's grace days (dated; whole days; blank: none; saved like the cap): a claim whose person's grade in force on its
 // date has grace days in force on that date is overdue only once its due-by plus them is before the sheet's today, and its
 // late charge's 30-day boundaries count from its due-by plus them. Its due-by is shown as it is.
+// Each grade's proof threshold (dated; two decimals; blank: none; saved like the cap): a claim whose person's grade in force
+// on its date has one in force on that date takes it in place of the sheet's proof threshold.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -51,6 +53,9 @@ export function SettingsPanel() {
   // Each grade's grace days, by grade, as typed; each may be saved blank (none), so entering its field marks it as one to save.
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const graceGradeChosen = useRef(new Set<string>());
+  // Each grade's proof threshold, by grade, as typed; likewise each may be saved blank (none).
+  const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
+  const proofGradeChosen = useRef(new Set<string>());
   const today = useSheetToday(sheet);
   const [policyDate, setPolicyDate] = useState('');
   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
@@ -109,12 +114,18 @@ export function SettingsPanel() {
   const unchooseGradeGrace = () => {
     for (const g of GRADES) {
       if ((gradeGrace[g] ?? '').trim() === '') graceGradeChosen.current.delete(g);
+      if ((gradeProof[g] ?? '').trim() === '') proofGradeChosen.current.delete(g);
     }
   };
   // Entering a grade's grace days (or their from-date) marks them as one to save, as they are.
   const focusGradeGrace = (grade: string) => {
     unchoosePolicy();
     graceGradeChosen.current.add(grade);
+  };
+  // Entering a grade's proof threshold (or its from-date) marks it as one to save, as it is.
+  const focusGradeProof = (grade: string) => {
+    unchoosePolicy();
+    proofGradeChosen.current.add(grade);
   };
   // Entering a permission marks it as one to save, as it is.
   const focusPerm = (action: string) => {
@@ -231,6 +242,11 @@ export function SettingsPanel() {
         setEntryDate('');
         entryChosen.current = false;
       }
+      else if (body.key.startsWith('proof-threshold-')) {
+        const grade = body.key.slice('proof-threshold-'.length);
+        setGradeProof((t) => ({ ...t, [grade]: '' }));
+        proofGradeChosen.current.delete(grade);
+      }
       else if (body.key === 'proof-threshold') {
         setProofThreshold('');
         proofChosen.current = false;
@@ -282,8 +298,9 @@ export function SettingsPanel() {
             const entered = entryDate.trim() !== '' || entryChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
+            const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
-            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed
+            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
                 || noted || graced || entered || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
@@ -296,6 +313,7 @@ export function SettingsPanel() {
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
                 ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
                 ...(proofed ? [{ key: 'proof-threshold', value: proofThreshold.trim() }] : []),
+                ...ownProof.map((g) => ({ key: `proof-threshold-${g}`, value: (gradeProof[g] ?? '').trim() })),
                 ...(noted ? [{ key: 'note-threshold', value: noteThreshold.trim() }] : []),
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
@@ -462,6 +480,24 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('proof-threshold', focusProof)}{' '}
+        {GRADES.map((g) => (
+          <span key={g}>
+            Proof threshold for grade {g}: <span data-testid={`setting-proof-threshold-${g}-current`}>{today === undefined ? '' : inForce(settings, `proof-threshold-${g}`, today, '')}</span>{' '}
+            <input
+              data-testid={`setting-proof-threshold-${g}`}
+              onFocus={() => focusGradeProof(g)}
+              value={gradeProof[g] ?? ''}
+              placeholder={`Grade ${g} proof threshold (blank: none)`}
+              onChange={(e) => {
+                const value = e.target.value;
+                setGradeProof((t) => ({ ...t, [g]: value }));
+                proofGradeChosen.current.add(g);
+                saveSetting.reset();
+              }}
+            />{' '}
+            {fromField(`proof-threshold-${g}`, () => focusGradeProof(g))}{' '}
+          </span>
+        ))}
         Note threshold: <span data-testid="setting-note-threshold-current">{settings?.noteThreshold ?? ''}</span>{' '}
         <input
           data-testid="setting-note-threshold"
