@@ -72,6 +72,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.ALERT_THRESHOLD.equals(setting.key())) {
+            settings.setAlertThreshold(sheetId, setting.value());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + (setting.value() == null ? "" : setting.value().toPlainString()));
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.POT.equals(setting.key())) {
             settings.setPot(sheetId, setting.value());
             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

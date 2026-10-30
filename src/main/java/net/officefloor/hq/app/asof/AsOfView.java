@@ -343,7 +343,7 @@ public class AsOfView {
                 delegations, noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(),
                 plain.getOrDefault(Settings.ENTRY, ""), plain.getOrDefault(Settings.POT, ""),
                 Objects.toString(sheets.parent(sheetId), ""), // the parent is not dated: as it is now
-                plain.getOrDefault(Settings.FISCAL, "1"));
+                plain.getOrDefault(Settings.FISCAL, "1"), plain.getOrDefault(Settings.ALERT, ""));
     }
 
     private static LocalDate local(Date date) {

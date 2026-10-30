@@ -232,6 +232,19 @@ public class Settings {
         plainHistory(sheetId, POT, pot == null ? "" : pot.setScale(2).toPlainString());
     }
 
+    /** The sheet's alert threshold at two decimals; null when off. */
+    public BigDecimal alertThreshold(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the alert threshold
+        BigDecimal threshold = jdbc.queryForObject("SELECT alert_threshold FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
+        return threshold == null ? null : threshold.setScale(2);
+    }
+
+    public void setAlertThreshold(String sheetId, BigDecimal threshold) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET alert_threshold = ? WHERE id = ?", threshold, sheetId);
+        plainHistory(sheetId, ALERT, threshold == null ? "" : threshold.setScale(2).toPlainString());
+    }
+
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set. */
     public int fiscalStartMonth(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the fiscal start month
@@ -318,7 +331,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -359,6 +372,7 @@ public class Settings {
         Integer grace = graceDays(sheetId);
         LocalDate entry = entryDate(sheetId);
         BigDecimal pot = pot(sheetId);
+        BigDecimal alert = alertThreshold(sheetId);
         String parent = parent(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
@@ -385,6 +399,7 @@ public class Settings {
                         (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
                 noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString(),
-                parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)));
+                parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)),
+                alert == null ? "" : alert.toPlainString());
     }
 }

@@ -27,7 +27,9 @@ import org.springframework.stereotype.Service;
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
  * totals changed. The sheet's due-total and overdue-total leave out the single highest and the single
- * lowest person's figure when three or more people have one (n/a is no figure).
+ * lowest person's figure when three or more people have one (n/a is no figure). While the sheet has an
+ * alert threshold, after those lines one ALERT line per person (in list order) whose due-total went from
+ * at or below it (or none) to above it.
  */
 @Service
 public class Rollup {
@@ -137,6 +139,20 @@ public class Rollup {
             audit.recordOnCommit("TOTALS" + prefix + " claimed-total=" + after.claimedTotal()
                     + " due-total=" + after.dueTotal() + " overdue-total=" + after.overdueTotal());
         }
+        BigDecimal threshold = settings.alertThreshold(sheetId);
+        if (threshold != null) {
+            after.people().forEach((id, now) -> {
+                RollupFigures.PersonFigures was = before.people().get(id);
+                if (above(now.dueTotal(), threshold) && (was == null || !above(was.dueTotal(), threshold))) {
+                    audit.recordOnCommit("ALERT" + prefix + " name=" + now.name() + " due-total=" + now.dueTotal());
+                }
+            });
+        }
+    }
+
+    /** Whether a due-total as shown is above the threshold (n/a is no due-total). */
+    private static boolean above(String dueTotal, BigDecimal threshold) {
+        return !NA.equals(dueTotal) && new BigDecimal(dueTotal).compareTo(threshold) > 0;
     }
 
     /** The grace days of the claim's person's grade in force on its date, as in force on that date (0 for none). */
