@@ -7,7 +7,7 @@ import { useRates } from '../rates/useRates';
 import { usePeople } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade, claimed (the
-// sum of their claims), due-total (claimed at their grade's rate) and their claims; then the
+// sum of their OPEN and SETTLED claims), due-total (claimed at their grade's rate) and their claims; then the
 // sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
