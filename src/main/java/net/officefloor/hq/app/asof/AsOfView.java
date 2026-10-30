@@ -266,23 +266,17 @@ public class AsOfView {
         for (PeriodResponse now : periods.list(sheetId)) {
             Date added = addedOn.get(now.name());
             if (added != null && added.toLocalDate().isAfter(date)) continue;
-            byName.put(now.name(), new PeriodResponse(now.name(), now.from(), now.to(), false, "", new LinkedHashMap<>(), false, now.cap()));
+            byName.put(now.name(), new PeriodResponse(now.name(), now.from(), now.to(), false, "", new LinkedHashMap<>(), false, now.cap(),
+                    new LinkedHashMap<>()));
         }
-        jdbc.query("SELECT name, closed, soft_closed, closed_total, person_totals FROM period_history WHERE sheet_id = ?"
+        jdbc.query("SELECT name, closed, soft_closed, closed_total, person_totals, person_carried FROM period_history WHERE sheet_id = ?"
                 + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
                     PeriodResponse was = byName.get(rs.getString(1));
                     if (was == null) return;
                     BigDecimal total = rs.getBigDecimal(4);
-                    Map<String, String> personTotals = new LinkedHashMap<>();
-                    String totals = rs.getString(5);
-                    if (totals != null && !totals.isEmpty()) {
-                        for (String entry : totals.split(";")) {
-                            String[] pair = entry.split("=", 2);
-                            personTotals.put(pair[0], new BigDecimal(pair[1]).setScale(2).toPlainString());
-                        }
-                    }
                     byName.put(was.name(), new PeriodResponse(was.name(), was.from(), was.to(), rs.getBoolean(2),
-                            total == null ? "" : total.setScale(2).toPlainString(), personTotals, rs.getBoolean(3), was.cap()));
+                            total == null ? "" : total.setScale(2).toPlainString(), byPerson(rs.getString(5)), rs.getBoolean(3),
+                            was.cap(), byPerson(rs.getString(6))));
                 }, sheetId, end);
         return new ArrayList<>(byName.values());
     }
@@ -363,6 +357,18 @@ public class AsOfView {
                 plain.getOrDefault(Settings.FISCAL, "1"), plain.getOrDefault(Settings.ALERT, ""),
                 net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)),
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString());
+    }
+
+    /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */
+    private static Map<String, String> byPerson(String joined) {
+        Map<String, String> figures = new LinkedHashMap<>();
+        if (joined != null && !joined.isEmpty()) {
+            for (String entry : joined.split(";")) {
+                String[] pair = entry.split("=", 2);
+                figures.put(pair[0], new BigDecimal(pair[1]).setScale(2).toPlainString());
+            }
+        }
+        return figures;
     }
 
     private static LocalDate local(Date date) {

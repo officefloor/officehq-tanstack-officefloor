@@ -9,6 +9,7 @@ import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimResponse;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.claim.Rounding;
@@ -63,29 +64,58 @@ public class PeriodCloser {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+        Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
+        List<PeriodResponse> allPeriods = periods.list(sheetId);
         for (Person person : people.list(sheetId)) {
+            personCarried.put(person.getId(), carried(sheetId, person, all, allPeriods, from, to, policyDate, today));
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsAtEnd(claim, to, today)
                         || claim.getPeriodDate().isBefore(from) || claim.getPeriodDate().isAfter(to)) {
                     continue;
                 }
-                RoundingMode rounding = Rounding.of(claim, policyDate, on -> settings.roundingMode(sheetId, on));
-                BigDecimal fixed = ClaimResponse.fixedDue(claim);
-                BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                        : Rates.due(claim.getAmount(), rates.find(claim, person.gradeOn(claim.getDate())), rounding);
-                if (figure != null) {
-                    personTotal = personTotal.add(LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()),
-                            on -> settings.latePct(sheetId, on), today, rounding,
-                            settings.grace(sheetId, person.gradeOn(claim.getDate()), claim.getDate())));
-                }
+                personTotal = personTotal.add(due(sheetId, person, claim, policyDate, today));
             }
             personTotals.put(person.getId(), personTotal);
             total = total.add(personTotal);
         }
-        periods.close(sheetId, period.name(), total, personTotals, soft);
+        periods.close(sheetId, period.name(), total, personTotals, personCarried, soft);
         audit.recordOnCommit((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + user
                 + " period=" + period.name() + " total=" + total.toPlainString() + (auto ? " auto=yes" : ""));
+    }
+
+    /** A claim's due as shown now, its late charge included; 0.00 when it is n/a. */
+    private BigDecimal due(String sheetId, Person person, Claim claim, LocalDate policyDate, LocalDate today) {
+        RoundingMode rounding = Rounding.of(claim, policyDate, on -> settings.roundingMode(sheetId, on));
+        BigDecimal fixed = ClaimResponse.fixedDue(claim);
+        BigDecimal figure = fixed != null || claim.isBound() ? fixed
+                : Rates.due(claim.getAmount(), rates.find(claim, person.gradeOn(claim.getDate())), rounding);
+        if (figure == null) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        return LateCharge.due(claim, figure, settings.floor(sheetId, claim.getDate()), on -> settings.latePct(sheetId, on),
+                today, rounding, settings.grace(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+    }
+
+    /** A person's carried figure for the period from-to: the dues as shown now of their claims whose due-by falls in a
+     *  period ending before this one starts that counted at the end of its last day and were then still OPEN or PENDING. */
+    private BigDecimal carried(String sheetId, Person person, List<Claim> all, List<PeriodResponse> allPeriods,
+            LocalDate from, LocalDate to, LocalDate policyDate, LocalDate today) {
+        BigDecimal carried = BigDecimal.ZERO.setScale(2);
+        for (Claim claim : all) {
+            if (claim.getPersonId() != person.getId()) {
+                continue;
+            }
+            LocalDate dueBy = claim.getPeriodDate();
+            boolean earlier = allPeriods.stream().anyMatch(p -> !LocalDate.parse(p.from()).isAfter(dueBy)
+                    && !LocalDate.parse(p.to()).isBefore(dueBy) && LocalDate.parse(p.to()).isBefore(from));
+            ClaimStatus then = claim.statusAt(to);
+            if (!earlier || (then != ClaimStatus.OPEN && then != ClaimStatus.PENDING) || !person.countsAtEnd(claim, to, today)) {
+                continue;
+            }
+            carried = carried.add(due(sheetId, person, claim, policyDate, today));
+        }
+        return carried;
     }
 
     /** The auto close, once the sheet's today is set: with grace days set, every open period whose to-date plus

@@ -31,7 +31,9 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
 
 /** A person's carried figure for a period: the dues as shown now, late charges included, of their claims whose due-by
  *  falls in a period ending before this one starts that counted at the end of this period's last day (see countsAtEnd)
- *  and were then still OPEN or PENDING by the status log; 0 when nothing is carried. */
+ *  and were then still OPEN or PENDING by the status log; 0 when nothing is carried. A closed or soft-closed period
+ *  gives the figure fixed when it was closed (0.00 for a person added later; worked as above for a close made before
+ *  carried figures were kept). */
 export function usePersonPeriodCarried(sheet: string): (period: Period, personId: string) => bigint {
   const periods = usePeriods(sheet);
   const people = usePeople(sheet);
@@ -42,6 +44,11 @@ export function usePersonPeriodCarried(sheet: string): (period: Period, personId
   const policy = usePolicy(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
   return (period: Period, personId: string) => {
+    if (period.closed || period.softClosed) {
+      const fixed = period.closedPersonCarried?.[personId];
+      if (fixed !== undefined) return toCents(fixed);
+      if (period.closedPersonTotals[personId] === undefined) return 0n;
+    }
     const person = personOf.get(personId);
     if (!person) return 0n;
     return claims

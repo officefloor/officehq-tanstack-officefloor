@@ -22,7 +22,8 @@ public class Periods {
         return new PeriodResponse(rs.getString("name"), rs.getDate("from_date").toLocalDate().toString(),
                 rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
                 total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>(),
-                rs.getBoolean("soft_closed"), rs.getObject("claim_cap") == null ? "" : String.valueOf(rs.getInt("claim_cap")));
+                rs.getBoolean("soft_closed"), rs.getObject("claim_cap") == null ? "" : String.valueOf(rs.getInt("claim_cap")),
+                new LinkedHashMap<>());
     };
 
     private final JdbcTemplate jdbc;
@@ -36,12 +37,17 @@ public class Periods {
         List<PeriodResponse> periods = jdbc.query("SELECT * FROM period WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId);
         Map<String, PeriodResponse> byName = new HashMap<>();
         periods.forEach(p -> byName.put(p.name(), p));
-        jdbc.query("SELECT period_name, person_id, total FROM period_person_total WHERE sheet_id = ? ORDER BY person_id",
+        jdbc.query("SELECT period_name, person_id, total, carried FROM period_person_total WHERE sheet_id = ? ORDER BY person_id",
                 (RowCallbackHandler) rs -> {
                     PeriodResponse period = byName.get(rs.getString("period_name"));
                     if (period != null) {
                         period.closedPersonTotals().put(String.valueOf(rs.getLong("person_id")),
                                 rs.getBigDecimal("total").setScale(2).toPlainString());
+                        BigDecimal carried = rs.getBigDecimal("carried");
+                        if (carried != null) {
+                            period.closedPersonCarried().put(String.valueOf(rs.getLong("person_id")),
+                                    carried.setScale(2).toPlainString());
+                        }
                     }
                 }, sheetId);
         return periods;
@@ -54,26 +60,32 @@ public class Periods {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Close (or soft-close) the named period, fixing its due-total and each person's due-total for it. */
-    public void close(String sheetId, String name, BigDecimal total, Map<Long, BigDecimal> personTotals, boolean soft) {
+    /** Close (or soft-close) the named period, fixing its due-total and each person's due-total and carried figure for it. */
+    public void close(String sheetId, String name, BigDecimal total, Map<Long, BigDecimal> personTotals,
+            Map<Long, BigDecimal> personCarried, boolean soft) {
         jdbc.update("UPDATE period SET closed = ?, soft_closed = ?, closed_total = ? WHERE sheet_id = ? AND name = ?",
                 !soft, soft, total, sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
         personTotals.forEach((personId, personTotal) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
-                sheetId, name, personId, personTotal));
-        history(sheetId, name, !soft, soft, total, personTotals);
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                sheetId, name, personId, personTotal, personCarried.getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
+        history(sheetId, name, !soft, soft, total, personTotals, personCarried);
     }
 
     /** Records a close, soft-close or reopen of the period in its history, dated the sheet's today. */
     private void history(String sheetId, String name, boolean closed, boolean soft, BigDecimal total,
-            Map<Long, BigDecimal> personTotals) {
-        StringBuilder totals = new StringBuilder();
-        personTotals.forEach((personId, personTotal) -> totals.append(totals.isEmpty() ? "" : ";").append(personId)
-                .append('=').append(personTotal.setScale(2).toPlainString()));
-        jdbc.update("INSERT INTO period_history (sheet_id, name, set_on, closed, soft_closed, closed_total, person_totals)"
-                + " VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?)", sheetId, name, sheetId, closed, soft,
-                total, totals.toString());
+            Map<Long, BigDecimal> personTotals, Map<Long, BigDecimal> personCarried) {
+        jdbc.update("INSERT INTO period_history (sheet_id, name, set_on, closed, soft_closed, closed_total, person_totals,"
+                + " person_carried) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?, ?)", sheetId, name, sheetId,
+                closed, soft, total, joined(personTotals), joined(personCarried));
+    }
+
+    /** Figures by person id as "<person id>=<figure>" joined by ";". */
+    private static String joined(Map<Long, BigDecimal> figures) {
+        StringBuilder joined = new StringBuilder();
+        figures.forEach((personId, figure) -> joined.append(joined.isEmpty() ? "" : ";").append(personId)
+                .append('=').append(figure.setScale(2).toPlainString()));
+        return joined.toString();
     }
 
     /** Reopen the named period, dropping its fixed due-total. */
@@ -81,7 +93,7 @@ public class Periods {
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
                 sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
-        history(sheetId, name, false, false, null, Map.of());
+        history(sheetId, name, false, false, null, Map.of(), Map.of());
     }
 
     /** Whether a date falls inside a closed period of the sheet. */
