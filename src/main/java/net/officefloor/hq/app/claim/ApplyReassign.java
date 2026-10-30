@@ -10,12 +10,13 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the sheet's reassign permission allows
  * (by default a steward) move a claim, and none whose due-by is inside a closed period moves.
- * It keeps its number and date but loses any figure a statement bound it to: it is live again until
+ * It keeps its date, takes the next number in the sequence it would be numbered in now (its old number is
+ * never used again; a DRAFT, having none, gets none), but loses any figure a statement bound it to: it is live again until
  * its new person's next statement.
  */
 public class ApplyReassign {
     public void apply(@Val ReassignRequest request, @Val Claim claim, People people, Settings settings, Periods periods,
-            Out<ClaimMove> move) throws ClaimStatusRefusedException {
+            ClaimNumbering numbering, Out<ClaimMove> move) throws ClaimStatusRefusedException {
         if (!settings.allows(claim.getSheetId(), request.user(), "reassign")) {
             throw new ClaimStatusRefusedException("Your role may not move a claim to another person");
         }
@@ -42,6 +43,9 @@ public class ApplyReassign {
         claim.setPersonId(to.getId());
         claim.setStated(false);
         claim.setStatedDue(null);
+        if (claim.getNumber() != null) {
+            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
+        }
         move.set(new ClaimMove(from, to));
     }
 }

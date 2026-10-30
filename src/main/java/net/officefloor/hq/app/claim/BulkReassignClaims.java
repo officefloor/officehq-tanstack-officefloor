@@ -19,13 +19,14 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Moves the selected claims to one person, in list order (people in the order they were added, newest
  * claim first within a person, as listed before any of them moved), each by the rules of moving one
  * claim — the roles the reassign permission allows, a DRAFT, OPEN or PENDING claim, no due-by inside a
- * closed period, and no claim dated after the person's retirement — and audited as a single move would
+ * closed period, and no claim dated after the person's retirement — renumbered as a single move would be,
+ * and audited as a single move would
  * be. A selected claim that cannot move is left as it is and counted as refused; so is a selected id
  * that is not a claim on the sheet.
  */
 public class BulkReassignClaims {
     public void reassign(@PathVariable("sheetId") String sheetId, @RequestBody BulkReassignRequest request,
-            Claims claims, People people, Periods periods, Settings settings, Rollup rollup, Audit audit,
+            Claims claims, People people, Periods periods, Settings settings, ClaimNumbering numbering, Rollup rollup, Audit audit,
             ObjectResponse<BulkReassignResponse> response) {
         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
         Person to = null;
@@ -59,6 +60,9 @@ public class BulkReassignClaims {
                 claim.setPersonId(to.getId());
                 claim.setStated(false);
                 claim.setStatedDue(null);
+                if (claim.getNumber() != null) {
+                    claim.setNumber(numbering.next(sheetId, claim.getPeriodDate()));
+                }
                 claims.reassign(claim);
                 audit.recordOnCommit(ClaimAudit.line("CLAIM_REASSIGNED", request.user(), to, claim, claim.getNumber())
                         + " from=" + from.getName() + " to=" + to.getName());

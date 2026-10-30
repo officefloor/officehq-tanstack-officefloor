@@ -202,8 +202,8 @@ public class Claims {
 
     /** Moves the claim to its (new) person, listed as their newest claim, and leaves it unbound. */
     public void reassign(Claim claim) {
-        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, listed_seq = " + NEXT_LISTED
-                + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
+        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, claim_number = ?, listed_seq = " + NEXT_LISTED
+                + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(), claim.getNumber(),
                 claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
     }
