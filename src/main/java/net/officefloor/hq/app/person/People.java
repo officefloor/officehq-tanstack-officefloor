@@ -34,6 +34,8 @@ public class People {
         person.setOrigin(rs.getString("origin"));
         java.sql.Date arrived = rs.getDate("arrived_on");
         person.setArrivedOn(arrived == null ? null : arrived.toLocalDate());
+        java.sql.Date flagUntil = rs.getDate("flag_until");
+        person.setFlag(rs.getString("flag_reason"), flagUntil == null ? null : flagUntil.toLocalDate());
         return person;
     };
 
@@ -645,6 +647,14 @@ public class People {
                 person.getSheetId(), person.getId(), java.sql.Date.valueOf(hold.from()),
                 hold.to() == null ? null : java.sql.Date.valueOf(hold.to()), person.getSheetId());
         person.getHolds().add(hold);
+    }
+
+    /** Flags the person with a reason until a date, replacing any flag they had. The person's version is left as it
+     *  is — flagging is not an edit of the person form. */
+    public void flag(Person person, String reason, LocalDate until) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE sheet_id = ? AND id = ?",
+                reason, java.sql.Date.valueOf(until), person.getSheetId(), person.getId());
+        person.setFlag(reason, until);
     }
 
     /** Saves the person over the version it was loaded at, moving it on by one, with any grade the

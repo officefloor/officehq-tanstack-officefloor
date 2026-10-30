@@ -82,9 +82,10 @@ public class Person {
     /** The person's own terms in days; null when none. */
     public Integer getTerms() { return terms; }
     public void setTerms(Integer terms) { this.terms = terms; }
-    /** Sets the terms the form gave, noting whether they differ from those the person had. */
+    /** Sets the terms the form gave, noting whether they differ from those the person had or from those in force
+     *  on the sheet's today. */
     public void editTerms(Integer terms) {
-        termsChanged = !java.util.Objects.equals(this.terms, terms);
+        termsChanged = !java.util.Objects.equals(this.terms, terms) || !java.util.Objects.equals(getTermsShown(), terms);
         this.terms = terms;
     }
     public boolean isTermsChanged() { return termsChanged; }
@@ -249,4 +250,20 @@ public class Person {
     public LocalDate getArrivedOn() { return arrivedOn; }
     public void setArrivedOn(LocalDate arrivedOn) { this.arrivedOn = arrivedOn; }
     public void setVersion(int version) { this.version = version; }
+
+    /** A steward's flag: its reason and until date; null when never flagged. */
+    private String flagReason;
+    private LocalDate flagUntil;
+    public String getFlagReason() { return flagReason; }
+    public LocalDate getFlagUntil() { return flagUntil; }
+    public void setFlag(String reason, LocalDate until) {
+        this.flagReason = reason;
+        this.flagUntil = until;
+    }
+    /** Whether the person's flag is in force on a date: on or before its until date. */
+    public boolean flaggedOn(LocalDate date) {
+        return flagReason != null && flagUntil != null && date != null && !date.isAfter(flagUntil);
+    }
+    /** The flag's reason while it is in force on the sheet's today; "" otherwise. */
+    public String getFlagShown() { return flaggedOn(today) ? flagReason : ""; }
 }

@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Takes the pasted claims in order, each arriving OPEN. Every line is checked against the sheet first
  * (the person is on the sheet, by name or alias, matched as names are compared; the date is not inside a
- * closed period nor after the person's retirement). A line whose person, date and note match one of the
+ * closed period nor after the person's retirement; a person flagged on the sheet's today only by a steward). A line whose person, date and note match one of the
  * person's claims as they stood before the paste (not VOID nor DELETED) updates the newest such DRAFT to
  * the line's amount (CLAIM_EDITED when it changes) instead of adding one; matches with no DRAFT among
  * them refuse the paste. Any other line is added as a DRAFT (CLAIM_ADDED). Each is then opened by the
@@ -36,12 +36,16 @@ public class SavePasteClaims {
         List<Person> persons = new ArrayList<>();
         List<LocalDate> dates = new ArrayList<>();
         List<Claim> matched = new ArrayList<>();
+        boolean steward = Settings.STEWARD.equals(settings.role(sheetId, request.user()));
         int number = 0;
         for (ValidPasteClaims.Line line : request.lines()) {
             number++;
             Person person = people.findByName(sheetId, line.name());
             if (person == null) {
                 throw new InvalidClaimException("Claim " + number + ": no one on the sheet is named " + line.name());
+            }
+            if (!steward && person.flaggedOn(sheets.today(sheetId))) {
+                throw new InvalidClaimException("Claim " + number + ": only a steward can open a claim of a flagged person");
             }
             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
             LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));

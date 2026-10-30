@@ -99,6 +99,7 @@ public class ApplyClaimStatus {
         }
         ClaimStatus target = request.target();
         if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
+            refuseFlagged(claim, sheets, people, steward);
             refuseNoteless(claim, sheets, people, rates, settings, rounding);
             if (needsReview(claim, sheets, people, rates, settings, rounding)) {
                 // Above the review threshold the claim awaits a steward's review, unnumbered; who opened it is kept.
@@ -176,6 +177,14 @@ public class ApplyClaimStatus {
         if (held >= Integer.parseInt(period.cap())) {
             throw new ClaimStatusRefusedException("The person already has " + period.cap()
                     + " OPEN or PENDING claims in period " + period.name() + ", its cap");
+        }
+    }
+
+    /** Refuses opening a claim of a person whose flag is in force on the sheet's today, unless by a steward.
+     *  Bulk open uses it too. */
+    static void refuseFlagged(Claim claim, Sheets sheets, People people, boolean steward) throws ClaimStatusRefusedException {
+        if (!steward && people.find(claim.getSheetId(), claim.getPersonId()).flaggedOn(sheets.today(claim.getSheetId()))) {
+            throw new ClaimStatusRefusedException("Only a steward can open a claim of a flagged person");
         }
     }
 

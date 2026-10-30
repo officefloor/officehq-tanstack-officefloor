@@ -11,6 +11,7 @@ import { SummaryPanel } from '../summary/SummaryPanel';
 import { AliasControl } from './AliasControl';
 import { openedEditor } from './editorOpens';
 import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
+import { FlagControl } from './FlagControl';
 import { HoldControl } from './HoldControl';
 import { InlineGrade } from './InlineGrade';
 import { MergeControl } from './MergeControl';
@@ -276,6 +277,7 @@ export function PeopleList() {
                   <RetireControl personId={p.id} />{' '}
                   <UnretireButton personId={p.id} />{' '}
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
+                  <FlagControl personId={p.id} shown={p.flag ?? ''} />{' '}
                   <PatronControl personId={p.id} people={people} />{' '}
                   <AliasControl personId={p.id} />{' '}
                   <MergeControl personId={p.id} people={people} />{' '}

@@ -3,13 +3,13 @@ package net.officefloor.hq.app.person;
 import java.util.List;
 
 /** statementCount is how many statements were taken; statedTotal is the last one's due-total ("n/a" when it
- *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days in force on the sheet's today ("" for none) and baseTerms those from the beginning of time; contact is the person's contact ("" for none); tags are the person's tags, sorted and comma separated ("" for none); aliases are the person's aliases, sorted as names are compared; clashing says whether their name or an alias is used by someone else on a sheet of the sheet's tree; origin is the sheet they were transferred from ("" for none); retirements are their past retirements, each "<from> to <to>", in the order they ended; snapshots are their SNAPSHOT lines, each "<the day being left> <due-total>", oldest first; statements are their statements still standing, each "<statement date> <due-total>", in the order taken. */
+ *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days in force on the sheet's today ("" for none) and baseTerms those from the beginning of time; contact is the person's contact ("" for none); tags are the person's tags, sorted and comma separated ("" for none); aliases are the person's aliases, sorted as names are compared; clashing says whether their name or an alias is used by someone else on a sheet of the sheet's tree; origin is the sheet they were transferred from ("" for none); retirements are their past retirements, each "<from> to <to>", in the order they ended; snapshots are their SNAPSHOT lines, each "<the day being left> <due-total>", oldest first; statements are their statements still standing, each "<statement date> <due-total>", in the order taken; flag is the reason of a steward's flag while the sheet's today is on or before its until date ("" otherwise). */
 public record PersonResponse(String id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom, boolean held,
         List<HoldFrom> holds,
         List<String> patrons, List<String> patronIds, List<GradeFrom> grades, String terms, String contact, String tags,
         List<String> aliases, boolean clashing, String origin, List<String> retirements, List<String> snapshots,
-        List<String> statements, String baseTerms) {
+        List<String> statements, String baseTerms, String flag) {
 
     /** A grade in force from a date (YYYY-MM-DD; "" for the beginning of time). */
     public record GradeFrom(String from, String grade) {
@@ -40,7 +40,8 @@ public record PersonResponse(String id, String name, String grade, int version, 
                 person.getRetirements().stream().map(r -> r.from() + " to " + r.to()).toList(),
                 List.copyOf(person.getSnapshots()),
                 List.copyOf(person.getStatements()),
-                person.getTerms() == null ? "" : String.valueOf(person.getTerms()));
+                person.getTerms() == null ? "" : String.valueOf(person.getTerms()),
+                person.getFlagShown());
     }
 
     public static List<PersonResponse> from(List<Person> people) {
