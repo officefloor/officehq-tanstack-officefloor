@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them — each person's claimed and due-total, and the
- * sheet's claimed-total and due-total, each person's due-total held to the sheet's cap — worked out on the server so a change can audit what it
+ * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap — worked out on the server so a change can audit what it
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
  * totals changed.
@@ -59,9 +59,11 @@ public class Rollup {
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
+        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
+            BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             boolean anyFigure = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsLive(claim)) {
@@ -72,6 +74,9 @@ public class Rollup {
                 if (figure != null) {
                     anyFigure = true;
                     due = due.add(figure);
+                    if (isOverdue(claim, today)) {
+                        overdue = overdue.add(figure);
+                    }
                 }
             }
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
@@ -81,10 +86,11 @@ public class Rollup {
             if (!na) {
                 dueTotal = dueTotal.add(due);
             }
+            overdueTotal = overdueTotal.add(overdue);
             byPerson.put(person.getId(), new RollupFigures.PersonFigures(person.getName(),
-                    show(claimed), na ? NA : show(due)));
+                    show(claimed), na ? NA : show(due), show(overdue)));
         }
-        return new RollupFigures(byPerson, show(claimedTotal), show(dueTotal));
+        return new RollupFigures(byPerson, show(claimedTotal), show(dueTotal), show(overdueTotal));
     }
 
     /** A claim's due as the screen shows it now; null for n/a. */
@@ -113,15 +119,22 @@ public class Rollup {
         after.people().forEach((id, now) -> {
             RollupFigures.PersonFigures was = before.people().get(id);
             if (was == null || !Objects.equals(was.claimed(), now.claimed())
-                    || !Objects.equals(was.dueTotal(), now.dueTotal())) {
+                    || !Objects.equals(was.dueTotal(), now.dueTotal())
+                    || !Objects.equals(was.overdueTotal(), now.overdueTotal())) {
                 audit.recordOnCommit("ROLLUP" + prefix + " person=" + now.name()
-                        + " claimed=" + now.claimed() + " due-total=" + now.dueTotal());
+                        + " claimed=" + now.claimed() + " due-total=" + now.dueTotal() + " overdue-total=" + now.overdueTotal());
             }
         });
-        if (!before.claimedTotal().equals(after.claimedTotal()) || !before.dueTotal().equals(after.dueTotal())) {
+        if (!before.claimedTotal().equals(after.claimedTotal()) || !before.dueTotal().equals(after.dueTotal())
+                || !before.overdueTotal().equals(after.overdueTotal())) {
             audit.recordOnCommit("TOTALS" + prefix + " claimed-total=" + after.claimedTotal()
-                    + " due-total=" + after.dueTotal());
+                    + " due-total=" + after.dueTotal() + " overdue-total=" + after.overdueTotal());
         }
+    }
+
+    /** A claim is overdue when it is OPEN (or PENDING) and its due-by is before the sheet's today. */
+    private static boolean isOverdue(Claim claim, LocalDate today) {
+        return claim.getStatus().isOpen() && claim.getDueBy() != null && claim.getDueBy().isBefore(today);
     }
 
     private static String show(BigDecimal value) {
