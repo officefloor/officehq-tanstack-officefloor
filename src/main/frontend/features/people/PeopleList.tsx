@@ -2,7 +2,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
 import { BulkOpenButton, BulkReassignButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
-import { sumAmounts } from '../claims/useClaims';
+import { sumAmounts, tagList } from '../claims/useClaims';
 import { claimDue, formatCents, showDue, toCents } from '../rates/due';
 import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
@@ -158,6 +158,7 @@ export function PeopleList() {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>Tags</th>
             <th>Claimed</th>
             <th>Due</th>
             <th>Excess</th>
@@ -203,6 +204,7 @@ export function PeopleList() {
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-terms">{p.terms}</td>
                 <td data-testid="person-contact">{p.contact}</td>
+                <td data-testid="person-tags">{tagList(p.tags)}</td>
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
                 <td data-testid="person-excess">{formatCents(excessOf(p))}</td>

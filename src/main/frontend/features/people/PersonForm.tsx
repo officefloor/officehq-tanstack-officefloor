@@ -4,6 +4,7 @@ import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSheetToday } from '../sheet/useSheetToday';
+import { tagList, tagsKey } from '../claims/useClaims';
 import { useEditorOpens } from './editorOpens';
 import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
 
@@ -16,6 +17,7 @@ import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople'
 // A person's own terms (whole days, blank for none) come first in fixing a new claim's due-by.
 // A contact (blank for none) is stored trimmed and lower-cased; one another person on the sheet
 // already has is refused.
+// Tags are comma separated: each is trimmed and lower-cased, and repeats are dropped (by the server).
 // Terms that are not a whole number are refused here, before anything is sent: the error shows and
 // the editor (if one was open) closes, so the form is back to adding.
 export function PersonForm() {
@@ -34,6 +36,7 @@ export function PersonForm() {
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
   const [contact, setContact] = useState('');
+  const [tags, setTags] = useState('');
   const [termsRefused, setTermsRefused] = useState(false);
   const today = useSheetToday(sheet);
   const [version, setVersion] = useState<number | undefined>(undefined);
@@ -41,18 +44,20 @@ export function PersonForm() {
   const submitOnce = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: ({ editing, ...body }: { editing: string; name: string; grade: string; gradeFrom: string; terms: string; contact: string }) =>
+    mutationFn: ({ editing, ...body }: { editing: string; name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string }) =>
       editing !== ''
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(editing)}`, { ...body, user, version })
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people`, { ...body, user }),
     onSuccess: (_saved, { editing }) => {
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: tagsKey(sheet) });
       if (editing !== editingNow.current) return;
       setName('');
       setGrade('A');
       setGradeFrom('');
       setTerms('');
       setContact('');
+      setTags('');
       if (editing !== '') setEditing(undefined);
     },
     onError: async (error) => {
@@ -69,6 +74,7 @@ export function PersonForm() {
         setGrade(gradeOn(current, today));
         setTerms(current.terms);
         setContact(current.contact);
+        setTags(tagList(current.tags));
         setVersion(current.version);
       }
     },
@@ -91,6 +97,7 @@ export function PersonForm() {
       setGradeFrom('');
       setTerms(edited.terms);
       setContact(edited.contact);
+      setTags(tagList(edited.tags));
       setVersion(edited.version);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,12 +118,13 @@ export function PersonForm() {
             setGradeFrom('');
             setTerms('');
             setContact('');
+            setTags('');
           }
           return;
         }
         submitOnce(() => {
           clearError();
-          return save.mutateAsync({ editing, name, grade, gradeFrom, terms, contact });
+          return save.mutateAsync({ editing, name, grade, gradeFrom, terms, contact, tags });
         });
       }}
     >
@@ -170,6 +178,15 @@ export function PersonForm() {
           clearError();
         }}
       />{' '}
+      <input
+        data-testid="person-form-tags"
+        value={tags}
+        placeholder="Tags"
+        onChange={(e) => {
+          setTags(e.target.value);
+          clearError();
+        }}
+      />{' '}
       <button type="submit" data-testid="person-form-submit">{editing !== '' ? 'Save' : 'Add person'}</button>
       {editing !== '' && (
         <button
@@ -182,6 +199,7 @@ export function PersonForm() {
             setGradeFrom('');
             setTerms('');
             setContact('');
+            setTags('');
             clearError();
           }}
         >

@@ -20,7 +20,8 @@ public class SavePersonCreated {
         }
         Person person = people.add(sheetId, request.name(), request.grade(),
                 request.terms().isEmpty() ? null : Integer.valueOf(request.terms()),
-                request.contact().isEmpty() ? null : request.contact());
+                request.contact().isEmpty() ? null : request.contact(),
+                request.tags().isEmpty() ? null : request.tags());
         audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
                 + " name=" + person.getName() + " grade=" + person.getGrade()
                 + (person.getTerms() == null ? "" : " terms=" + person.getTerms())

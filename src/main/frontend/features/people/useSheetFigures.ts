@@ -88,13 +88,13 @@ export function useSheetFigures(sheet: string) {
     }
     return buckets;
   };
-  // Each tag ever used on the sheet with its due-total: the dues of the counting claims that carry it
-  // (a claim with two tags counts in both); n/a adds nothing.
+  // Each tag ever used on the sheet with its due-total: the dues of the counting claims that carry it,
+  // or whose person carries it, each claim once (a claim with two tags counts in both); n/a adds nothing.
   const tagTotals = tags.map((tag) => ({
     tag,
     total: formatCents(
       live
-        .filter((c) => hasTag(c, tag))
+        .filter((c) => hasTag(c, tag) || hasTag(byId.get(c.personId)!, tag))
         .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n),
     ),
   }));

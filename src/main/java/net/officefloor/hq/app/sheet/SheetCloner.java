@@ -99,8 +99,8 @@ public class SheetCloner {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, retired_from, added_on, terms, contact, origin)"
-                            + " SELECT ?, name, grade, retired_from, added_on, terms, contact, origin FROM person"
+                    "INSERT INTO person (sheet_id, name, grade, retired_from, added_on, terms, contact, tags, origin)"
+                            + " SELECT ?, name, grade, retired_from, added_on, terms, contact, tags, origin FROM person"
                             + " WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, to);

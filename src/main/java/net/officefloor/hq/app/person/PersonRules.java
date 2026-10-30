@@ -36,6 +36,7 @@ public final class PersonRules {
             terms = String.valueOf(Integer.parseInt(terms));
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
-        return new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms, contact);
+        String tags = net.officefloor.hq.app.claim.Tags.normalise(request.tags());
+        return new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms, contact, tags == null ? "" : tags);
     }
 }

@@ -166,7 +166,7 @@ public class Claims {
         }
     }
 
-    /** Every tag ever used on the sheet's claims, sorted. */
+    /** Every tag ever used on the sheet's claims and people, sorted. */
     public List<String> tagsUsed(String sheetId) {
         return jdbc.queryForList("SELECT tag FROM sheet_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
     }

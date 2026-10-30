@@ -19,6 +19,7 @@ public class People {
         int terms = rs.getInt("terms");
         person.setTerms(rs.wasNull() ? null : terms);
         person.setContact(rs.getString("contact"));
+        person.setTags(rs.getString("tags"));
         person.setStatedTotal(rs.getBigDecimal("stated_total"));
         java.sql.Date stated = rs.getDate("statement_date");
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
@@ -454,17 +455,23 @@ public class People {
 
     /** Adds a person with their own terms in days (null for none) and contact (null for none). */
     public Person add(String sheetId, String name, String grade, Integer terms, String contact) {
+        return add(sheetId, name, grade, terms, contact, null);
+    }
+
+    /** Adds a person with their own terms in days, contact and tags (comma separated); each null for none. */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact, String tags) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on) VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, added_on) VALUES (?, ?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
             ps.setObject(4, terms, java.sql.Types.INTEGER);
             ps.setString(5, contact);
-            ps.setString(6, sheetId);
+            ps.setString(6, tags);
+            ps.setString(7, sheetId);
             return ps;
         }, keys);
         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
@@ -473,6 +480,8 @@ public class People {
         person.setPlace(person.getId());
         person.setTerms(terms);
         person.setContact(contact);
+        person.setTags(tags);
+        recordTags(sheetId, tags);
         writeHistory(person);
         // The first grade a person is given applies from the beginning of time.
         person.recordGrade(Person.BEGINNING, grade);
@@ -554,14 +563,23 @@ public class People {
      *  edit recorded; false (nothing written) when someone else has saved the person since. */
     public boolean save(Person person) {
         int updated = jdbc.update(
-                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getContact(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getContact(), person.getTags(), person.getSheetId(), person.getId(), person.getVersion());
         if (updated == 0) {
             return false;
         }
         writeRecordedGrade(person);
         writeHistory(person);
+        recordTags(person.getSheetId(), person.getTags());
         person.setVersion(person.getVersion() + 1);
         return true;
+    }
+
+    /** Remembers each of the person's tags (comma separated; null for none) as used on the sheet. */
+    private void recordTags(String sheetId, String tags) {
+        if (tags == null) return;
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO sheet_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
     }
 }

@@ -100,6 +100,10 @@ public class Person {
         this.contact = contact;
     }
     public boolean isContactChanged() { return contactChanged; }
+    /** The person's tags: lower-cased, sorted and comma separated; null when they have none. */
+    private String tags;
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
     /** How many statements have been taken for the person. */
     public int getStatementCount() { return statementCount; }
     /** The last statement's due-total; null when none was taken or it was n/a. */

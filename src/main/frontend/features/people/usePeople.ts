@@ -30,6 +30,8 @@ export type Person = {
   terms: string;
   /** The person's contact, trimmed and lower-cased; "" for none. */
   contact: string;
+  /** The person's tags, lower-cased, sorted and comma separated ("a,b"); "" for none. */
+  tags: string;
   /** The person's aliases, sorted as names are compared. */
   aliases: string[];
   /** Whether the person's name or an alias is used by someone else on a sheet of the sheet's tree. */

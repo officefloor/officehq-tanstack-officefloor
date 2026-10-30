@@ -46,16 +46,9 @@ public class ValidateClaim {
         return new ValidClaim(amount, date, note, request.user(), corrects, ref.isEmpty() ? null : ref, tags(request.tags()));
     }
 
-    /** A claim's tags from the form's comma separated text: each trimmed and lower-cased, blanks and repeats
-     *  dropped, sorted and joined by commas; null when there are none. */
+    /** A claim's tags from the form's comma separated text (see {@link Tags#normalise}). */
     static String tags(String raw) {
-        if (raw == null) return null;
-        java.util.TreeSet<String> tags = new java.util.TreeSet<>();
-        for (String tag : raw.split(",")) {
-            String t = tag.trim().toLowerCase(java.util.Locale.ROOT);
-            if (!t.isEmpty()) tags.add(t);
-        }
-        return tags.isEmpty() ? null : String.join(",", tags);
+        return Tags.normalise(raw);
     }
 
     /** The claim form's amount: with at most two decimals; a negative one is a correction. */

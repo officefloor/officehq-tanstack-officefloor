@@ -19,6 +19,7 @@ public class ApplyPerson {
         person.setName(request.name());
         person.editTerms(request.terms().isEmpty() ? null : Integer.valueOf(request.terms()));
         person.editContact(request.contact().isEmpty() ? null : request.contact());
+        person.setTags(request.tags().isEmpty() ? null : request.tags());
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the
         // grades already recorded; a save leaving the grade as the row showed it with no from-date
         // records nothing.
