@@ -15,6 +15,8 @@ export type Claim = {
   status: ClaimStatus;
   number: string;
   due: string;
+  /** The user who opened the claim, "" if it was never opened. */
+  openedBy: string;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */

@@ -13,8 +13,14 @@ public class ApplyClaimStatus {
         if (!claim.getStatus().canBecome(request.target())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), request.target());
         }
+        if (request.target() == ClaimStatus.SETTLED && claim.getOpenedBy() != null
+                && claim.getOpenedBy().equals(request.user())) {
+            // Four eyes: the user who opened a claim cannot settle it.
+            throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
+        }
         if (request.target() == ClaimStatus.OPEN) {
             claim.setNumber(sheets.nextClaimNumber(claim.getSheetId()));
+            claim.setOpenedBy(request.user());
         }
         number.set(new ClaimNumber(claim.getNumber()));
         if (request.target() == ClaimStatus.VOID) {

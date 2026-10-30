@@ -5,4 +5,8 @@ public class ClaimStatusRefusedException extends Exception {
     public ClaimStatusRefusedException(ClaimStatus from, ClaimStatus to) {
         super("A " + from + " claim cannot become " + to);
     }
+
+    public ClaimStatusRefusedException(String message) {
+        super(message);
+    }
 }

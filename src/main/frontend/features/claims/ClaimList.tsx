@@ -4,7 +4,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, type Claim } from './useClaims';
 
-// A person's claims, newest first, each with its amount, date, note, status, number and due (fixed when it
+// A person's claims, newest first, each with its amount, date, note, status, number, opened-by and due (fixed when it
 // was settled; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
 // one the claim's status does not allow is refused with the claim's error) and an edit button that
 // opens the claim in the person's claim form (cancel closes it again).
@@ -47,6 +47,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate))}</span>{' '}
+      <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate('open'))}>
         Open
       </button>{' '}
@@ -68,7 +69,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change.
+          Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle it).
         </span>
       )}
     </li>
