@@ -21,6 +21,7 @@ public class Claim {
     private String corrects;
     private LocalDate correctedDate;
     private LocalDate dueBy;
+    private LocalDate deferredUntil;
     private java.util.List<String> log = java.util.List.of();
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
@@ -76,6 +77,14 @@ public class Claim {
     /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on that date. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The date the claim was last deferred until; null if it was never deferred. */
+    public LocalDate getDeferredUntil() { return deferredUntil; }
+    public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+    /** Whether the claim is deferred on the date: OPEN and deferred until a later date. A deferred claim counts in no
+     *  total, is not overdue, cannot be settled and is left unbound by a statement. */
+    public boolean isDeferredOn(LocalDate today) {
+        return status == ClaimStatus.OPEN && deferredUntil != null && today.isBefore(deferredUntil);
+    }
     /** A correction is a claim with a negative amount: its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
     /** The claim's status log, oldest first: one "<STATUS> by <user> on <date> due=<due>" line per status it has had. */

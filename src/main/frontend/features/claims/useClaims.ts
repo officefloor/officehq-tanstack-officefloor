@@ -28,6 +28,8 @@ export type Claim = {
   dueBy: string;
   /** The claim's status log, oldest first: "<STATUS> by <user> on <date> due=<due>" per status it has had. */
   log: string[];
+  /** The date the claim was last deferred until, "" if it was never deferred. */
+  deferredUntil: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold
@@ -40,10 +42,15 @@ export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 /** Whether a statement binds the claim's figure now: a PENDING claim is never bound. */
 export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
-/** Whether a claim counts in the live totals: it counts, and is not open, unbound and dated within
- *  one of its person's holds (`heldOn`). */
-export const countsLive = (c: Claim, heldOn: (date: string) => boolean) =>
-  counts(c) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
+/** Whether a claim is deferred on the sheet's today: OPEN and deferred until a later date. A deferred claim
+ *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+export const isDeferred = (c: { status?: string; deferredUntil?: string }, today: string | undefined) =>
+  c.status === 'OPEN' && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
+
+/** Whether a claim counts in the live totals: it counts, is not deferred on the sheet's today, and is not
+ *  open, unbound and dated within one of its person's holds (`heldOn`). */
+export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
+  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
 

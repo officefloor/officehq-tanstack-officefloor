@@ -30,6 +30,8 @@ public class Claims {
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         java.sql.Date dueBy = rs.getDate("due_by");
         claim.setDueBy(dueBy == null ? null : dueBy.toLocalDate());
+        java.sql.Date deferredUntil = rs.getDate("deferred_until");
+        claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
         return claim;
     };
 
@@ -128,6 +130,12 @@ public class Claims {
         jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, listed_seq = " + NEXT_LISTED
                 + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
                 claim.getSheetId(), claim.getId());
+    }
+
+    /** Defers the claim until its deferred-until date. */
+    public void defer(Claim claim) {
+        jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
     }
 
     public void save(Claim claim) {

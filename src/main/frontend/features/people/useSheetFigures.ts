@@ -22,7 +22,7 @@ export function useSheetFigures(sheet: string) {
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
-    return person !== undefined && countsLive(c, (date) => heldOn(person, date));
+    return person !== undefined && countsLive(c, (date) => heldOn(person, date), today);
   });
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
   // The sum of a person's figures, before the cap.

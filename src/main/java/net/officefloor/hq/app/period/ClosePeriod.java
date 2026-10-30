@@ -44,7 +44,7 @@ public class ClosePeriod {
         for (Person person : people.list(sheetId)) {
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
-                if (claim.getPersonId() != person.getId() || !person.countsLive(claim)
+                if (claim.getPersonId() != person.getId() || !person.countsLive(claim, today)
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }

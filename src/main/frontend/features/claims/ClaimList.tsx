@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
-import { claimsKey, type Claim } from './useClaims';
+import { claimsKey, isDeferred, type Claim } from './useClaims';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -22,6 +22,10 @@ import { peopleKey, type Person } from '../people/usePeople';
 // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
 // A steward re-settles a SETTLED claim (outside any closed period) with the re-settle button: its due is frozen again at the
 // figure it would have today as an open claim bound by no statement, and its log gains a SETTLED line; else it is refused with the claim's error.
+// An OPEN claim is deferred to a date after the sheet's today with the defer date and button (a claim that is not OPEN, a date
+// not after today or a claim dated inside a closed period is refused with the claim's error): until the sheet's today reaches
+// that date it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. Each claim shows
+// deferred (yes while it is deferred) and the date it was deferred until.
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 export function ClaimList({
   claims,
@@ -95,6 +99,23 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       ]),
   });
 
+  const [deferUntil, setDeferUntil] = useState('');
+
+  const defer = useMutation({
+    mutationFn: (until: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/defer`,
+        { until, user },
+      ),
+    onSuccess: () => {
+      setDeferUntil('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   const [editRefused, setEditRefused] = useState(false);
 
   // The next action on the row removes an old error.
@@ -102,6 +123,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     status.reset();
     reassign.reset();
     resettle.reset();
+    defer.reset();
     setEditRefused(false);
     run();
   };
@@ -127,6 +149,8 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
+      <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <ol data-testid="claim-log">
         {(c.log ?? []).map((line, i) => (
           <li key={i} data-testid="claim-log-line">
@@ -157,6 +181,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       />{' '}
       <button type="button" data-testid="claim-reject" onClick={() => act(() => status.mutate({ action: 'reject', reason }))}>
         Reject
+      </button>{' '}
+      <input
+        type="date"
+        data-testid="claim-defer-date"
+        value={deferUntil}
+        onChange={(e) => act(() => setDeferUntil(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-defer" onClick={() => act(() => defer.mutate(deferUntil))}>
+        Defer
       </button>{' '}
       <select
         data-testid="claim-reassign-to"
@@ -193,13 +226,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle or approve it, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
+          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
         </span>
       )}
       {resettle.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only a steward can re-settle a claim, only a SETTLED one, and not one dated inside a closed period.
+        </span>
+      )}
+      {defer.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one dated inside a closed period.
         </span>
       )}
       {reassign.isError && (

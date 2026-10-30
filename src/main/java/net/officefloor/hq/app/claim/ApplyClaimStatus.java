@@ -43,6 +43,9 @@ public class ApplyClaimStatus {
             // Four eyes: the user who opened a claim cannot settle (or approve) it.
             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
         }
+        if (request.target() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
+            throw new ClaimStatusRefusedException("A deferred claim cannot be settled until its deferred-until date");
+        }
         ClaimStatus target = request.target();
         if (target == ClaimStatus.SETTLED && request.decision() == ValidClaimStatus.Decision.NONE && !steward) {
             // A clerk settles only within the sheet's clerk limit, judged on the claim's due as shown;

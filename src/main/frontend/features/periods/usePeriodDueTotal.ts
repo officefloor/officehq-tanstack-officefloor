@@ -23,7 +23,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
     const person = personOf.get(personId);
     if (!person) return 0n;
     return claims
-      .filter((c) => c.personId === personId && countsLive(c, (date) => heldOn(person, date)) && periodOf(periods, c.date)?.name === period.name)
+      .filter((c) => c.personId === personId && countsLive(c, (date) => heldOn(person, date), late.today) && periodOf(periods, c.date)?.name === period.name)
       .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
   };
 }

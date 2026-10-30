@@ -101,6 +101,10 @@ public class Person {
         return claim.getStatus().counts()
                 && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
     }
+    /** Whether the claim counts in the live totals on the sheet's today: as {@link #countsLive(Claim)}, and not deferred. */
+    public boolean countsLive(Claim claim, LocalDate today) {
+        return countsLive(claim) && !claim.isDeferredOn(today);
+    }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public java.util.List<Long> getPatronIds() { return patronIds; }
     /** The names of the person's patrons, sorted. */
