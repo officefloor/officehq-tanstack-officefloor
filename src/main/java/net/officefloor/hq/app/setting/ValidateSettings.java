@@ -312,7 +312,7 @@ public class ValidateSettings {
         if (body != null && body.perms() != null) {
             for (String action : body.perms().keySet()) {
                 if (!Settings.PERM_ACTIONS.contains(action)) {
-                    throw new InvalidSettingException("Permissions are set only for open, settle, void, reassign, close and reopen.");
+                    throw new InvalidSettingException("Permissions are set only for open, settle, void, reassign, close, reopen and today.");
                 }
             }
             for (String action : Settings.PERM_ACTIONS) {

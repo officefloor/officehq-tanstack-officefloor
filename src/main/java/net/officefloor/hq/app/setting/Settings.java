@@ -95,7 +95,7 @@ public class Settings {
     /** The roles a sheet gives user names. */
     public static final List<String> ROLES = List.of(CLERK, STEWARD);
     /** The actions the permission matrix decides, each kept (undated) under {@link #permKey}. */
-    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     private final JdbcTemplate jdbc;
     private final Sheets sheets;
@@ -462,7 +462,7 @@ public class Settings {
         return get(sheetId, permKey(action));
     }
 
-    /** The standing rule: reassign and reopen by steward; open, settle, void and close by clerk and steward. */
+    /** The standing rule: reassign and reopen by steward; open, settle, void, close and today by clerk and steward (anyone but a viewer). */
     private static List<String> standing(String action) {
         return action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : ROLES;
     }
