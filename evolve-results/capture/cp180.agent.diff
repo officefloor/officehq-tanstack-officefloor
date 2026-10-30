@@ -1,0 +1,129 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 7347d64a..c6141c61 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -16,7 +16,7 @@ import { isReviewLate } from './reviewLate';
+ import { peopleKey, type Person } from '../people/usePeople';
+ 
+ // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
+-// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies; an overdue claim gains, for each full 30 days overdue, the late percent in force on that boundary date (due-by plus 30, 60, 90 ... days) of that figure (the rate or bound one), the charges added up; then the floor in force on the claim's date is applied last: the greater of it and the figure plus its charge), due-by (fixed when it was created: its date plus the terms of its person's grade in force on that date — the grade's own, else the sheet's, each as in force on that date), overdue (yes when it is OPEN or PENDING and its due-by plus the grace days of its person's grade in force on its date is before the sheet's today; the late charge's boundaries count from there too), the status buttons (open, settle, void —
++// person's last statement bound it), corrects (the number a correction corrects, blank for other claims) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies; an overdue claim gains, for each full 30 days overdue, the late percent in force on that boundary date (due-by plus 30, 60, 90 ... days) of that figure (the rate or bound one), the charges added up; then the floor in force on the claim's date is applied last: the greater of it and the figure plus its charge), due-by (fixed when it was created: its date plus the terms in force on the day it was created (the sheet's today then) — the person's own, else those of the grade they had that day, else the sheet's, each as in force on that day), overdue (yes when it is OPEN or PENDING and its due-by plus the grace days of its person's grade in force on its date is before the sheet's today; the late charge's boundaries count from there too), the status buttons (open, settle, void —
+ // one the claim's status, or the sheet's permission for the user's role, does not allow is refused with the claim's error; a clerk settling above the clerk limit sends the
+ // claim to PENDING, which keeps any figure a statement bound it to; a steward may void a SETTLED claim within 7 days of
+ // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+index 22eb086f..fe85370e 100644
+--- a/src/main/frontend/features/people/PersonForm.tsx
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -15,7 +15,7 @@ import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople'
+ // blank), except that leaving the grade as the row showed it with a blank from-date records nothing.
+ // A person's first grade applies from the beginning of time, so an add takes no from-date.
+ // A person's own terms (whole days, blank for none) come first in fixing a new claim's due-by: those
+-// in force on the claim's date. Terms with a from-date are recorded from it, keeping those already
++// in force on the day the claim is created (the sheet's today). Terms with a from-date are recorded from it, keeping those already
+ // recorded; with a blank from-date they are the terms from the beginning of time, which the editor
+ // opens with (the row shows those in force on the sheet's today).
+ // A contact (blank for none) is stored trimmed and lower-cased; one another person on the sheet
+diff --git a/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
+index 80f6aeed..2ed91c2c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
+@@ -46,7 +46,7 @@ public class GeneratePlanClaims {
+             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
+             for (LocalDate date : plan.dates(last)) {
+                 if (plans.made(plan.id(), date)) continue;
+-                LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));
++                LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person));
+                 if (periods.isClosed(sheetId, dueBy) || !person.allowsClaimOn(date)) continue;
+                 Claim claim = claims.add(sheetId, person.getId(), plan.amount(), date, "", null, dueBy, null);
+                 plans.recordMade(plan.id(), date, claim.getId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
+index e709c254..c5197667 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
+@@ -18,7 +18,7 @@ public class SaveClaimCreated {
+             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
+         String sheetId = person.getSheetId();
+         LocalDate date = request.date() != null ? request.date() : settings.claimDate(sheetId);
+-        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));
++        LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person));
+         if (periods.isClosed(sheetId, dueBy)) {
+             throw new InvalidClaimException("No claim can be added inside a closed period");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+index b182b04a..67a591bc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+@@ -48,7 +48,7 @@ public class SavePasteClaims {
+                 throw new InvalidClaimException("Claim " + number + ": only a steward can open a claim of a flagged person");
+             }
+             LocalDate date = line.claim().date() != null ? line.claim().date() : today;
+-            LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date));
++            LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person));
+             if (periods.isClosed(sheetId, dueBy)) {
+                 throw new InvalidClaimException("Claim " + number + ": no claim can be added inside a closed period");
+             }
+@@ -76,7 +76,7 @@ public class SavePasteClaims {
+             Claim claim = matched.get(i);
+             if (claim == null) {
+                 claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(), null,
+-                        holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.termsOn(date), person.gradeOn(date), date)), valid.ref());
++                        holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person)), valid.ref());
+                 log.record(claim, person, request.user());
+                 audit.recordOnCommit(ClaimAudit.added(request.user(), person, claim));
+                 LateEntry.mark(claim, person, request.user(), claims, periods, audit);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
+index bda06eb8..c425783c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveQuickClaim.java
+@@ -31,8 +31,8 @@ public class SaveQuickClaim {
+         Person person = people.findByName(sheetId, request.name());
+         // Refuse before anything is written: the claim's period goes by the due-by it would be fixed with.
+         LocalDate dueBy = holidays.dueBy(sheetId, date, person != null
+-                ? settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)
+-                : settings.termsFor(sheetId, GRADE, date));
++                ? settings.termsOnCreation(sheetId, person)
++                : settings.termsFor(sheetId, GRADE, sheets.today(sheetId)));
+         if (periods.isClosed(sheetId, dueBy)) {
+             throw new InvalidClaimException("No claim can be added inside a closed period");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index dcb5ffb0..3cfc42cd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Saves the split claim and adds the new OPEN claim with the split-off amount, the same date and note, the next
+- *  number, opened by the user, its due-by fixed now from the terms in force on the date, split from the claim, carrying its tags, and a
++ *  number, opened by the user, its due-by fixed now from the terms in force on the sheet's today, split from the claim, carrying its tags, and a
+  *  late entry when the claim is one. */
+ public class SaveSplit {
+     public void save(@Val ValidSplit request, @Val Claim claim, Claims claims, People people, Settings settings,
+@@ -17,7 +17,7 @@ public class SaveSplit {
+         String sheetId = claim.getSheetId();
+         Person person = people.find(sheetId, claim.getPersonId());
+         Claim into = claims.add(sheetId, person.getId(), request.amount(), claim.getDate(), claim.getNote(),
+-                holidays.dueBy(sheetId, claim.getDate(), settings.termsFor(sheetId, person.termsOn(claim.getDate()), person.gradeOn(claim.getDate()), claim.getDate())));
++                holidays.dueBy(sheetId, claim.getDate(), settings.termsOnCreation(sheetId, person)));
+         into.setStatus(ClaimStatus.OPEN);
+         into.setNumber(numbering.next(sheetId, into.getPeriodDate()));
+         into.setOpenedBy(request.user());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 0c93b841..4a260f2a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -151,6 +151,13 @@ public class Settings {
+         return personTerms != null ? personTerms : termsFor(sheetId, grade, on);
+     }
+ 
++    /** The terms a claim of the person created now takes: the terms in force on the day it is created (the sheet's
++     *  today), not on its date — the person's own terms then, else the terms of the grade they had then, else the sheet's then. */
++    public int termsOnCreation(String sheetId, net.officefloor.hq.app.person.Person person) {
++        LocalDate today = sheets.today(sheetId);
++        return termsFor(sheetId, person.termsOn(today), person.gradeOn(today), today);
++    }
++
+     /** A grade's grace days in force on a date (a claim's: its date); 0 when it has none then. */
+     public int grace(String sheetId, String grade, LocalDate on) {
+         if (grade == null) {
