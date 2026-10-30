@@ -262,6 +262,12 @@ public class People {
                 grade);
     }
 
+    /** Make every grade record of the person on {@code from} (their first grade and any given since) {@code into}. */
+    public void regrade(long id, String from, String into) {
+        jdbc.update("UPDATE person SET grade = ? WHERE id = ? AND grade = ?", into, id, from);
+        jdbc.update("UPDATE person_grade SET grade = ? WHERE person_id = ? AND grade = ?", into, id, from);
+    }
+
     /** Record the person's own terms from the date on (null: none), replacing any recorded from that same date. */
     public void termsFrom(long id, LocalDate from, Integer terms) {
         jdbc.update("DELETE FROM person_terms WHERE person_id = ? AND from_date = ?", id, Date.valueOf(from));
