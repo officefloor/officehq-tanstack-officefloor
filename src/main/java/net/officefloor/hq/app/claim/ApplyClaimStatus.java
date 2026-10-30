@@ -26,10 +26,8 @@ public class ApplyClaimStatus {
             claim.setNumber(sheets.nextClaimNumber(claim.getSheetId()));
             claim.setOpenedBy(request.user());
         }
+        // A voided claim keeps its number; numbers are never reused.
         number.set(new ClaimNumber(claim.getNumber()));
-        if (request.target() == ClaimStatus.VOID) {
-            claim.setNumber(null);
-        }
         if (request.target() == ClaimStatus.SETTLED) {
             // Settling fixes the due at the rate in force on the claim's date; with no rate it stays live (n/a until one is set).
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();

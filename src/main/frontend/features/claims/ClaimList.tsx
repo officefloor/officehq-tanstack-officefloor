@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
@@ -8,7 +9,8 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
 // person's last statement bound it) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date, n/a when none applies), the status buttons (open, settle, void —
 // one the claim's status does not allow is refused with the claim's error) and an edit button that
-// opens the claim in the person's claim form (cancel closes it again).
+// opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim is
+// refused with the claim's error — to change an open claim, void it and add a new one.
 export function ClaimList({ claims, rateOn }: { claims: Claim[]; rateOn: (date: string) => string | undefined }) {
   return (
     <ul data-testid="claims">
@@ -35,11 +37,20 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  const [editRefused, setEditRefused] = useState(false);
+
   // The next action on the row removes an old error.
   const act = (run: () => void) => {
     status.reset();
+    setEditRefused(false);
     run();
   };
+
+  const edit = () =>
+    act(() => {
+      if (c.status === 'DRAFT') setEditing(c.id);
+      else setEditRefused(true);
+    });
 
   return (
     <li data-testid={`claim-row-${c.id}`}>
@@ -66,9 +77,15 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
           Cancel
         </button>
       ) : (
-        <button type="button" data-testid="claim-edit" onClick={() => act(() => setEditing(c.id))}>
+        <button type="button" data-testid="claim-edit" onClick={edit}>
           Edit
         </button>
+      )}
+      {editRefused && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a DRAFT claim can be edited; to change a {c.status} claim, void it and add a new one.
+        </span>
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">

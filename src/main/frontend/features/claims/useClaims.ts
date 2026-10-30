@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
- *  opened, "" for a draft or a voided claim; `due` is the due fixed when it was settled, else the
+ *  opened (a voided claim keeps it), "" for a draft; `due` is the due fixed when it was settled, else the
  *  figure the person's last statement bound it to, "" while its due is live (worked from the current
  *  rate) or bound to n/a; `stated` is whether the last statement bound it. */
 export type Claim = {

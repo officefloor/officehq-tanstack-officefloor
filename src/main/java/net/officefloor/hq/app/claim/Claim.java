@@ -40,7 +40,7 @@ public class Claim {
     public LocalDate getDate() { return date; }
     public String getNote() { return note; }
     public ClaimStatus getStatus() { return status; }
-    /** The number given when the claim was opened; null for a draft or a voided claim. */
+    /** The number given when the claim was opened; null for a draft (a voided claim keeps the number it had). */
     public Long getNumber() { return number; }
     /** The due fixed when the claim was settled; null while its due is live. */
     public BigDecimal getSettledDue() { return settledDue; }
