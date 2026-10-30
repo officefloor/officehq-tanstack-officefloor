@@ -15,6 +15,15 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyRedate {
     public void apply(@Val ValidRedate request, @Val Claim claim, Settings settings, People people, Periods periods,
             Out<ClaimRedate> redate) throws ClaimStatusRefusedException {
+        refuse(claim, request, settings, people, periods);
+        redate.set(new ClaimRedate(claim.getDate()));
+        // The claim's period goes by its due-by, which a re-dating leaves as it is: it keeps its period and number.
+        claim.setDate(request.date());
+    }
+
+    /** Refuses a re-dating these rules do not allow; a bulk re-date applies the same rules to each claim. */
+    static void refuse(Claim claim, ValidRedate request, Settings settings, People people, Periods periods)
+            throws ClaimStatusRefusedException {
         String sheetId = claim.getSheetId();
         if (!Settings.STEWARD.equals(settings.role(sheetId, request.user()))) {
             throw new ClaimStatusRefusedException("Only a steward can re-date a claim");
@@ -29,8 +38,5 @@ public class ApplyRedate {
         if (periods.isClosed(sheetId, claim.getPeriodDate())) {
             throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can be re-dated");
         }
-        redate.set(new ClaimRedate(claim.getDate()));
-        // The claim's period goes by its due-by, which a re-dating leaves as it is: it keeps its period and number.
-        claim.setDate(request.date());
     }
 }

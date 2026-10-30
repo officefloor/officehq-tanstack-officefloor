@@ -227,3 +227,70 @@ export function BulkReassignButton() {
     </p>
   );
 }
+
+// Re-dates the selected claims to the entered date together: the server re-dates each by the rules of re-dating one
+// claim, in list order, by the signed-in user, and leaves each that cannot be re-dated as it is. Then shows how many
+// were re-dated and how many were refused, and clears the selection; pressing again removes the old counts until the
+// new ones are in.
+export function BulkRedateButton() {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+  const { selected, clear } = useClaimSelection();
+  const [date, setDate] = useState('');
+
+  const redate = useMutation({
+    mutationFn: ({ claimIds, date }: { claimIds: string[]; date: string }) =>
+      postJson<{ redated: number; refused: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/bulk-redate`,
+        { claimIds, date, user },
+      ),
+    onSuccess: () => {
+      clear();
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
+  return (
+    <p>
+      <input
+        type="date"
+        data-testid="bulk-redate-date"
+        value={date}
+        onChange={(e) => {
+          redate.reset();
+          setDate(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="bulk-redate"
+        onClick={() => {
+          redate.reset();
+          const claimIds = [...selected];
+          const to = date;
+          once(() => redate.mutateAsync({ claimIds, date: to }));
+        }}
+      >
+        Re-date selected
+      </button>
+      {redate.isSuccess && (
+        <>
+          {' '}
+          Re-dated <span data-testid="bulk-redated">{redate.data.redated}</span>, refused{' '}
+          <span data-testid="bulk-redate-refused">{redate.data.refused}</span>
+        </>
+      )}
+      {redate.isError && (
+        <span data-testid="bulk-redate-error" role="alert">
+          {' '}
+          The selected claims could not be re-dated.
+        </span>
+      )}
+    </p>
+  );
+}

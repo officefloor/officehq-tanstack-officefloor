@@ -1,6 +1,6 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
-import { BulkOpenButton, BulkReassignButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
+import { BulkOpenButton, BulkReassignButton, BulkRedateButton, BulkSettleButton, ClaimSelection } from '../claims/BulkOpen';
 import { ClaimList } from '../claims/ClaimList';
 import { sumAmounts, tagList } from '../claims/useClaims';
 import { claimDue, formatCents, showDue, toCents } from '../rates/due';
@@ -167,6 +167,7 @@ export function PeopleList() {
       <BulkOpenButton />
       <BulkSettleButton />
       <BulkReassignButton />
+      <BulkRedateButton />
       <BulkGrade />
       <BulkRetire />
       <table data-testid="people">
