@@ -6,7 +6,8 @@ import { getJson } from '../../api/http';
  *  `statedTotal` is the last one's due-total ("n/a" possible, "" when none) and `statementDate` the
  *  sheet's today when it was taken ("" when none). `retired` is whether a retirement date is set
  *  (retired at once, whatever the date) and `retiredFrom` is that date ("" when none). `held` is
- *  whether the person is on hold: their OPEN claims then count in no live total. `patrons` are the
+ *  whether the person has any hold and `holds` lists each (from, to; to "" when open-ended): their
+ *  OPEN claims dated within one, unless bound by a statement, count in no live total. `patrons` are the
  *  names of the people they named as patrons, sorted, and `patronIds` those people's ids. `grade`
  *  is the grade in force on the sheet's today when loaded and `grades` every grade recorded. */
 export type Person = {
@@ -20,10 +21,18 @@ export type Person = {
   retired: boolean;
   retiredFrom: string;
   held: boolean;
+  holds: HoldFrom[];
   patrons: string[];
   patronIds: string[];
   grades: GradeFrom[];
 };
+
+/** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */
+export type HoldFrom = { from: string; to: string };
+
+/** Whether one of the person's holds covers the date. */
+export const heldOn = (person: Person, date: string) =>
+  person.holds.some((h) => h.from <= date && (h.to === '' || date <= h.to));
 
 /** A grade in force from a date (YYYY-MM-DD; "" for the beginning of time). */
 export type GradeFrom = { from: string; grade: string };

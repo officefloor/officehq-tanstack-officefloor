@@ -21,7 +21,6 @@ public class People {
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
         java.sql.Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired == null ? null : retired.toLocalDate());
-        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -37,6 +36,23 @@ public class People {
         this.sheets = sheets;
     }
 
+    /** Fills in each person's holds, in the order they were added. */
+    private List<Person> withHolds(String sheetId, List<Person> found) {
+        if (found.isEmpty()) {
+            return found;
+        }
+        java.util.Map<Long, java.util.List<Person.Hold>> holds = new java.util.HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY seq", rs -> {
+            java.sql.Date to = rs.getDate("to_date");
+            holds.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>())
+                    .add(new Person.Hold(rs.getDate("from_date").toLocalDate(), to == null ? null : to.toLocalDate()));
+        }, sheetId);
+        for (Person person : found) {
+            person.setHolds(new java.util.ArrayList<>(holds.getOrDefault(person.getId(), List.of())));
+        }
+        return found;
+    }
+
     /** Fills in each person's dated grades and the sheet's today (the grade in force on it is shown). */
     private List<Person> withGrades(String sheetId, List<Person> found) {
         if (found.isEmpty()) {
@@ -49,6 +65,7 @@ public class People {
             grades.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.HashMap<>())
                     .put(from == null ? Person.BEGINNING : from.toLocalDate(), rs.getString("grade"));
         }, sheetId);
+        withHolds(sheetId, found);
         for (Person person : found) {
             person.setGrades(grades.getOrDefault(person.getId(), java.util.Map.of()));
             person.setToday(today);
@@ -167,11 +184,13 @@ public class People {
                 person.getSheetId(), person.getId());
     }
 
-    /** Records whether the person is on hold. The person's version is left as it is — holding is
-     *  not an edit of the person form. */
-    public void saveHeld(Person person) {
-        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?",
-                person.isHeld(), person.getSheetId(), person.getId());
+    /** Adds a hold to the person. The person's version is left as it is — holding is not an edit of
+     *  the person form. */
+    public void addHold(Person person, Person.Hold hold) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), java.sql.Date.valueOf(hold.from()),
+                hold.to() == null ? null : java.sql.Date.valueOf(hold.to()));
+        person.getHolds().add(hold);
     }
 
     /** Saves the person over the version it was loaded at, moving it on by one, with any grade the

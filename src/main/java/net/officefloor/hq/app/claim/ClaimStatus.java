@@ -23,7 +23,7 @@ public enum ClaimStatus {
         return this == OPEN || this == PENDING || this == SETTLED;
     }
 
-    /** OPEN and PENDING claims are open: their due is live, they go overdue and a hold takes them out of the totals. */
+    /** OPEN and PENDING claims are open: their due is live, they go overdue and a hold covering their date takes them out of the totals (unless bound). */
     public boolean isOpen() {
         return this == OPEN || this == PENDING;
     }

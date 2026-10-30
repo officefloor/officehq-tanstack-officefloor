@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
  * claims' figures — fixed or at the rate in force on each claim's date, raised to the sheet's floor; n/a when their grade has no
  * rate today and no claim keeps a figure; an overdue claim's late charge included), and binds each
  * counting claim to its figure now — never its late charge, which keeps following the sheet's today.
- * A claim that does not count (a held person's OPEN claims included) is left unbound.
+ * A claim that does not count (an unbound OPEN claim dated within one of its person's holds included) is left unbound.
  */
 public class TakeStatement {
     public void take(@Val Person person, Claims claims, Rates rates, Sheets sheets, People people,

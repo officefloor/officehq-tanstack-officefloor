@@ -37,8 +37,13 @@ export const isOpen = (c: { status?: string }) => c.status === 'OPEN' || c.statu
 /** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** Whether a claim counts in the live totals: it counts, and is not open while its person is held. */
-export const countsLive = (c: Claim, held: boolean) => counts(c) && !(held && isOpen(c));
+/** Whether a statement binds the claim's figure now: a PENDING claim is never bound. */
+export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
+
+/** Whether a claim counts in the live totals: it counts, and is not open, unbound and dated within
+ *  one of its person's holds (`heldOn`). */
+export const countsLive = (c: Claim, heldOn: (date: string) => boolean) =>
+  counts(c) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
 

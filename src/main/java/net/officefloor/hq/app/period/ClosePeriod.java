@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Closes a period, fixing its due-total as it is now: the dues of the claims that count dated in
- *  it, each with its late charge (a held person's OPEN claims count in none; a claim whose due is n/a adds nothing). */
+ *  it, each with its late charge (a person's unbound OPEN claims dated within one of their holds count in none; a claim whose due is n/a adds nothing). */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,

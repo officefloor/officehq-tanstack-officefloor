@@ -16,13 +16,13 @@ import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
-import { gradeOn, usePeople, type Person } from './usePeople';
+import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
 // sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
-// whether they are retired and from when, whether they are on hold (a held person's OPEN claims count
-// in neither their figures nor the sheet's totals; their SETTLED claims still do), their overdue count and
+// whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
+// statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
 // patrons (names, sorted) and backing (their patrons' due-totals added up, skipping n/a; 0.00 with no patrons),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
@@ -42,8 +42,11 @@ export function PeopleList() {
   const floor = useFloor(sheet);
   const late = { pct: useLatePct(sheet), today };
   const policy = usePolicyDate(sheet);
-  const heldOf = new Map(people.map((p) => [p.id, p.held]));
-  const live = claims.filter((c) => heldOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!));
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const live = claims.filter((c) => {
+    const person = byId.get(c.personId);
+    return person !== undefined && countsLive(c, (date) => heldOn(person, date));
+  });
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
   const totalOf = (person: Person) =>
     dueTotal(
@@ -54,7 +57,6 @@ export function PeopleList() {
       late,
       policy,
     );
-  const byId = new Map(people.map((p) => [p.id, p]));
   const backing = (p: (typeof people)[number]) =>
     formatCents(p.patronIds.reduce((sum, id) => {
       const patron = byId.get(id);
@@ -123,7 +125,7 @@ export function PeopleList() {
                   </button>{' '}
                   <StatementButton personId={p.id} />{' '}
                   <RetireControl personId={p.id} />{' '}
-                  <HoldControl personId={p.id} held={p.held} />{' '}
+                  <HoldControl personId={p.id} holds={p.holds} />{' '}
                   <PatronControl personId={p.id} people={people} />
                 </td>
                 <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>

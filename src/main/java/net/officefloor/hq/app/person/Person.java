@@ -25,7 +25,8 @@ public class Person {
     private BigDecimal statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
-    private boolean held;
+    /** The person's holds, in the order they were added. */
+    private java.util.List<Hold> holds = new java.util.ArrayList<>();
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
     private java.util.List<String> patronNames = new java.util.ArrayList<>();
 
@@ -81,12 +82,24 @@ public class Person {
     public boolean isRetired() { return retiredFrom != null; }
     /** Whether a claim may be dated on this date: never after the person's retirement date. */
     public boolean allowsClaimOn(LocalDate date) { return retiredFrom == null || !date.isAfter(retiredFrom); }
-    /** Whether the person is on hold: their OPEN and PENDING claims then count in no live total. */
-    public boolean isHeld() { return held; }
-    public void setHeld(boolean held) { this.held = held; }
-    /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED, but not OPEN or PENDING while the person is held. */
+    /** A hold from a date to an optional to-date (null: open-ended), both days included. */
+    public record Hold(LocalDate from, LocalDate to) {
+        public boolean covers(LocalDate date) {
+            return date != null && !date.isBefore(from) && (to == null || !date.isAfter(to));
+        }
+    }
+    /** Whether the person has any hold. */
+    public boolean isHeld() { return !holds.isEmpty(); }
+    /** The person's holds, in the order they were added. */
+    public java.util.List<Hold> getHolds() { return holds; }
+    public void setHolds(java.util.List<Hold> holds) { this.holds = holds; }
+    /** Whether a hold of the person's covers the date. */
+    public boolean heldOn(LocalDate date) { return holds.stream().anyMatch(h -> h.covers(date)); }
+    /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED, but not OPEN or PENDING
+     *  when dated within one of the person's holds, unless a statement binds it. */
     public boolean countsLive(Claim claim) {
-        return claim.getStatus().counts() && !(held && claim.getStatus().isOpen());
+        return claim.getStatus().counts()
+                && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
     }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public java.util.List<Long> getPatronIds() { return patronIds; }
