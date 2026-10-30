@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.claim.Rounding;
+import net.officefloor.hq.app.opening.Openings;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
@@ -33,9 +34,11 @@ public class PeriodCloser {
     private final Settings settings;
     private final Sheets sheets;
     private final Audit audit;
+    private final Openings openings;
 
     public PeriodCloser(Periods periods, People people, Claims claims, Rates rates, Settings settings, Sheets sheets,
-            Audit audit) {
+            Audit audit, Openings openings) {
+        this.openings = openings;
         this.periods = periods;
         this.people = people;
         this.claims = claims;
@@ -66,8 +69,10 @@ public class PeriodCloser {
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
         Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
         List<PeriodResponse> allPeriods = periods.list(sheetId);
+        Map<Long, BigDecimal> opening = openings.forPeriod(sheetId, period.name());
         for (Person person : people.list(sheetId)) {
-            personCarried.put(person.getId(), carried(sheetId, person, all, allPeriods, from, to, policyDate, today));
+            personCarried.put(person.getId(), carried(sheetId, person, all, allPeriods, from, to, policyDate, today)
+                    .add(opening.getOrDefault(person.getId(), BigDecimal.ZERO.setScale(2))));
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsAtEnd(claim, to, today)
@@ -98,7 +103,8 @@ public class PeriodCloser {
     }
 
     /** A person's carried figure for the period from-to: the dues as shown now of their claims whose due-by falls in a
-     *  period ending before this one starts that counted at the end of its last day and were then still OPEN or PENDING. */
+     *  period ending before this one starts that counted at the end of its last day and were then still OPEN or PENDING
+     *  (the person's opening balance for the period is added to it by the close). */
     private BigDecimal carried(String sheetId, Person person, List<Claim> all, List<PeriodResponse> allPeriods,
             LocalDate from, LocalDate to, LocalDate policyDate, LocalDate today) {
         BigDecimal carried = BigDecimal.ZERO.setScale(2);

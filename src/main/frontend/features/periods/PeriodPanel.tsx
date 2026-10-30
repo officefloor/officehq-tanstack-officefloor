@@ -5,6 +5,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { formatCents } from '../rates/due';
 import { usePeriodDueTotal } from './usePeriodDueTotal';
+import { ImportOpenings } from './ImportOpenings';
 import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
@@ -263,6 +264,7 @@ export function PeriodPanel() {
         />{' '}
         <button type="submit" data-testid="period-generate-fy">Generate fiscal year</button>
       </form>
+      <ImportOpenings />
     </>
   );
 }

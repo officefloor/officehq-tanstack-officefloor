@@ -5,6 +5,7 @@ import { useGrace } from '../claims/useGrace';
 import { claimRate, useRates } from '../rates/useRates';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
+import { useOpenings } from './useOpenings';
 import { periodOf, usePeriods, type Period } from './usePeriods';
 
 /** A person's due-total for a period: the dues as shown now, late charges included, of their claims whose due-by
@@ -31,7 +32,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
 
 /** A person's carried figure for a period: the dues as shown now, late charges included, of their claims whose due-by
  *  falls in a period ending before this one starts that counted at the end of this period's last day (see countsAtEnd)
- *  and were then still OPEN or PENDING by the status log; 0 when nothing is carried. A closed or soft-closed period
+ *  and were then still OPEN or PENDING by the status log, plus their opening balance for it; 0 when nothing is carried. A closed or soft-closed period
  *  gives the figure fixed when it was closed (0.00 for a person added later; worked as above for a close made before
  *  carried figures were kept). */
 export function usePersonPeriodCarried(sheet: string): (period: Period, personId: string) => bigint {
@@ -42,6 +43,7 @@ export function usePersonPeriodCarried(sheet: string): (period: Period, personId
   const floor = useFloor(sheet);
   const late = { pct: useLatePct(sheet), today: useSheetToday(sheet), grace: useGrace(sheet) };
   const policy = usePolicy(sheet);
+  const openings = useOpenings(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
   return (period: Period, personId: string) => {
     if (period.closed || period.softClosed) {
@@ -51,7 +53,10 @@ export function usePersonPeriodCarried(sheet: string): (period: Period, personId
     }
     const person = personOf.get(personId);
     if (!person) return 0n;
-    return claims
+    const opening = openings
+      .filter((o) => o.personId === personId && o.period === period.name)
+      .reduce((sum, o) => sum + toCents(o.amount), 0n);
+    return opening + claims
       .filter((c) => {
         if (c.personId !== personId) return false;
         const from = periodOf(periods, c.dueBy);
