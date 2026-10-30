@@ -1,0 +1,114 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index a2131b04..5c0aa2f2 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -1,14 +1,15 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { ClaimForm } from '../claims/ClaimForm';
+ import { ClaimList } from '../claims/ClaimList';
+-import { sumAmounts, useClaims } from '../claims/useClaims';
+-import { dueCents, formatCents, showDue, toCents } from '../rates/due';
++import { counts, sumAmounts, useClaims } from '../claims/useClaims';
++import { dueTotal, formatCents, showDue } from '../rates/due';
+ import { rateOn, useRates } from '../rates/useRates';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { usePeople } from './usePeople';
+ 
+ // Every person on the sheet in the order they were added, with their name, grade, claimed (the
+-// sum of their OPEN and SETTLED claims), due-total (claimed at their grade's rate in force on the sheet's today) and their claims; then the
++// sum of their OPEN and SETTLED claims), due-total (the
++// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled claim keeps a figure) and their claims; then the
+ // sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
+ export function PeopleList() {
+   const [sheet] = useSearchParam('sheet', asString);
+@@ -18,6 +19,12 @@ export function PeopleList() {
+   const rates = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const onSheet = new Set(people.map((p) => p.id));
++  const totalOf = (personId: string, grade: string) =>
++    dueTotal(
++      claims.filter((c) => c.personId === personId && counts(c)),
++      (date) => rateOn(rates, grade, date),
++      rateOn(rates, grade, today),
++    );
+   return (
+     <>
+       <table data-testid="people">
+@@ -34,13 +41,12 @@ export function PeopleList() {
+         <tbody>
+           {people.map((p) => {
+             const own = claims.filter((c) => c.personId === p.id);
+-            const rate = rateOn(rates, p.grade, today);
+             return (
+               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                 <td data-testid="person-name">{p.name}</td>
+                 <td data-testid="person-grade">{p.grade}</td>
+                 <td data-testid="person-claimed">{sumAmounts(own)}</td>
+-                <td data-testid="person-due-total">{showDue(dueCents(toCents(sumAmounts(own)), rate))}</td>
++                <td data-testid="person-due-total">{showDue(totalOf(p.id, p.grade))}</td>
+                 <td>
+                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
+                     Edit
+@@ -60,7 +66,7 @@ export function PeopleList() {
+       </p>
+       <p>
+         Due total: <span data-testid="rollup-due-total">{formatCents(people.reduce((sum, p) => {
+-          const due = dueCents(toCents(sumAmounts(claims.filter((c) => c.personId === p.id))), rateOn(rates, p.grade, today));
++          const due = totalOf(p.id, p.grade);
+           return due === null ? sum : sum + due;
+         }, 0n))}</span>
+       </p>
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index 61bb3086..c9641d32 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -1,5 +1,5 @@
+ // Due is worked in exact integers: an amount in cents times a rate in hundredths of a percent is
+-// due in millionths, then rounded half up (away from zero) to cents. No float ever touches it.
++// due in millionths, then rounded half to even to cents. No float ever touches it.
+ 
+ export const NA = 'n/a';
+ 
+@@ -25,7 +25,9 @@ export function dueCents(cents: bigint, rate: string | undefined): bigint | null
+   const millionths = cents * toCents(rate);
+   const negative = millionths < 0n;
+   const abs = negative ? -millionths : millionths;
+-  const rounded = (abs + 5000n) / 10000n;
++  const whole = abs / 10000n;
++  const rest = abs % 10000n;
++  const rounded = rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+   return negative ? -rounded : rounded;
+ }
+ 
+@@ -38,3 +40,15 @@ export function showDue(due: bigint | null): string {
+ export function claimDue(claim: { amount: string; due: string }, rate: string | undefined): bigint | null {
+   return claim.due !== '' ? toCents(claim.due) : dueCents(toCents(claim.amount), rate);
+ }
++
++/** A person's due-total: the sum of the figures of their claims that count. With no rate for their
++ *  grade today it is n/a, unless a settled claim keeps a figure; then it is the sum of the figures
++ *  there are. A claim whose figure is n/a adds nothing. */
++export function dueTotal(
++  claims: { amount: string; due: string; date: string }[],
++  rateOn: (date: string) => string | undefined,
++  rateToday: string | undefined,
++): bigint | null {
++  if (rateToday === undefined && !claims.some((c) => c.due !== '')) return null;
++  return claims.reduce((sum, c) => sum + (claimDue(c, rateOn(c.date)) ?? 0n), 0n);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index 3eae8d85..f7b4543d 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -38,9 +38,9 @@ public class Rates {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
+-    /** The due on an amount at a rate (a percent), rounded half up to cents; null when there is no rate. */
++    /** The due on an amount at a rate (a percent), rounded half to even to cents; null when there is no rate. */
+     public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
+-        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
++        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+     }
+ 
+     /** Set the grade's rate from a date (null: from the beginning of time), replacing one already there. */
