@@ -90,6 +90,11 @@ export const isDeferred = (c: { status?: string; deferredUntil?: string }, today
 export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
   counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
 
+/** Whether a claim counts toward claimed: as `countsLive`, except that a hold (the person's or the claim's) does not
+ *  take it out — only its due leaves the totals while held. `retiredOn` tells whether its person is retired today. */
+export const countsClaimed = (c: Claim, retired: boolean, today: string | undefined) =>
+  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && retired);
+
 /** The status a claim had at the end of the day, as its status log records it (each line dated the sheet's today
  *  when the change was made); undefined when it was added after that day. */
 export function statusAt(c: Claim, end: string): ClaimStatus | undefined {

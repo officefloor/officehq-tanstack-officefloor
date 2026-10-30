@@ -1,4 +1,4 @@
-import { countsLive, hasTag, isOpen, useClaims, useTags } from '../claims/useClaims';
+import { countsClaimed, countsLive, hasTag, isOpen, useClaims, useTags } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { isReviewLate } from '../claims/reviewLate';
@@ -28,6 +28,11 @@ export function useSheetFigures(sheet: string) {
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
     return person !== undefined && countsLive(c, (date) => heldOn(person, date) || retiredOn(person, today), today);
+  });
+  // The claims that count toward claimed: a held claim still does (only its due leaves the totals).
+  const claimedLive = claims.filter((c) => {
+    const person = byId.get(c.personId);
+    return person !== undefined && countsClaimed(c, retiredOn(person, today), today);
   });
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
   // The sum of a person's figures, before the cap.
@@ -116,7 +121,7 @@ export function useSheetFigures(sheet: string) {
   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
