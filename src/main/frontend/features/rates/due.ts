@@ -50,7 +50,7 @@ export function floored(due: bigint | null, floor: string): bigint | null {
 /** The value of a dated setting in force on a date (a claim's: its date), e.g. "1.00". */
 export type On = (date: string) => string;
 
-/** What a late charge needs: the sheet's late percent in force on a date ("10.00") and its today. */
+/** What a late charge needs: the sheet's late percent in force on a date (a boundary's, "10.00") and its today. */
 export type Late = { pct: On; today: string | undefined };
 
 const DAY_MS = 86_400_000;
@@ -64,18 +64,24 @@ export const roundsHalfUp = (claim: { roundingDate?: string; date: string }, pol
 export const isCorrection = (claim: { amount?: string }) => claim.amount !== undefined && toCents(claim.amount) < 0n;
 
 /** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
- *  before today (and that is not deferred) gains the late percent of its figure for every full 30 days it is overdue, rounded
- *  like due. Never bound by a statement; settling freezes it into the settled due. */
+ *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
+ *  boundary date (its due-by plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due. */
 export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string }, figure: bigint, late: Late | undefined, policy?: string): bigint {
   if (late === undefined || late.today === undefined || !claim.dueBy || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
   const days = Math.round((Date.parse(late.today) - Date.parse(claim.dueBy)) / DAY_MS);
   const periods = days > 0 ? Math.floor(days / 30) : 0;
-  return dueCents(figure * BigInt(periods), late.pct(claim.date), roundsHalfUp(claim, policy)) ?? 0n;
+  const halfUp = roundsHalfUp(claim, policy);
+  let charge = 0n;
+  for (let n = 1; n <= periods; n++) {
+    const boundary = new Date(Date.parse(claim.dueBy) + n * 30 * DAY_MS).toISOString().slice(0, 10);
+    charge += dueCents(figure, late.pct(boundary), halfUp) ?? 0n;
+  }
+  return charge;
 }
 
 /** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
  *  stays n/a; a PENDING claim is never bound), else its amount at the current rate, raised to the floor in force on its date; an overdue claim's
- *  late charge (at the late percent in force on its date) is added on top. A correction is never floored and gains no late charge. Live figures
+ *  late charge (each 30-day boundary at the late percent in force on it) is added on top. A correction is never floored and gains no late charge. Live figures
  *  round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
   claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string },

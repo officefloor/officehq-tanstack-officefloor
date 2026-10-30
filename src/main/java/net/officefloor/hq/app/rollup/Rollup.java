@@ -98,7 +98,7 @@ public class Rollup {
     }
 
     /** A claim's due: fixed when settled or bound by a statement, else its amount (raised to the floor in force on its date) at the rate
-     *  of its person's grade in force on its date; with its late charge (at the late percent in force on its date) as of today on top. */
+     *  of its person's grade in force on its date; with its late charge (each 30-day boundary at the late percent in force on it) as of today on top. */
     private BigDecimal due(Claim claim, Person person, LocalDate today, LocalDate policyDate) {
         String sheetId = claim.getSheetId();
         RoundingMode rounding = Rounding.of(claim, policyDate);
@@ -106,7 +106,7 @@ public class Rollup {
         BigDecimal figure = fixed != null || claim.isBound() ? fixed
                 : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate()),
                         settings.floor(sheetId, claim.getDate()), rounding);
-        return LateCharge.withCharge(claim, figure, settings.latePct(sheetId, claim.getDate()), today, rounding);
+        return LateCharge.withCharge(claim, figure, on -> settings.latePct(sheetId, on), today, rounding);
     }
 
     /** Audit (on commit) the figures that moved since {@code before}, as taken by {@code user}. */

@@ -48,7 +48,7 @@ public class TakeStatement {
                 anyFigure |= fixed != null;
                 if (figure != null) {
                     anyFigure = true;
-                    total = total.add(LateCharge.withCharge(claim, figure, settings.latePct(sheetId, claim.getDate()), today, rounding));
+                    total = total.add(LateCharge.withCharge(claim, figure, on -> settings.latePct(sheetId, on), today, rounding));
                 }
                 claim.setStated(true);
                 claim.setStatedDue(figure);

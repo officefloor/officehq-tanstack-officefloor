@@ -118,8 +118,8 @@ public class Settings {
         return own != null ? own : terms(sheetId, on);
     }
 
-    /** The sheet's late percent in force on a date (a claim's: its date): an overdue claim gains it of its figure
-     *  for every full 30 days overdue. */
+    /** The sheet's late percent in force on a date (a late charge's: each 30-day boundary of an overdue
+     *  claim, its due-by plus 30, 60, 90 ... days, adds it of the claim's figure). */
     public BigDecimal latePct(String sheetId, LocalDate on) {
         InForce found = on(sheetId, ValidateSetting.LATE_PCT, on);
         return found == null || found.value() == null ? START_LATE_PCT : found.value();

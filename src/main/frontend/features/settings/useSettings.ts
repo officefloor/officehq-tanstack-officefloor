@@ -55,7 +55,7 @@ export function useFloor(sheet: string): (date: string) => string {
 /** The late percent a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_LATE_PCT = '0.00';
 
-/** The sheet's late percent in force on a date (a claim's: its date). */
+/** The sheet's late percent in force on a date (a late charge's: each 30-day boundary of an overdue claim). */
 export function useLatePct(sheet: string): (date: string) => string {
   const settings = useSettings(sheet);
   return (date) => inForce(settings, 'late-pct', date, DEFAULT_LATE_PCT);
