@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/periods/usePeriodDueTotal.ts b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+index 0f5b2eff..bc60f679 100644
+--- a/src/main/frontend/features/periods/usePeriodDueTotal.ts
++++ b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+@@ -1,4 +1,4 @@
+-import { countsAtEnd, useClaims } from '../claims/useClaims';
++import { countsAtEnd, countsLive, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
+ import { claimDue, toCents } from '../rates/due';
+ import { useGrace } from '../claims/useGrace';
+@@ -35,3 +35,25 @@ export function usePeriodDueTotal(sheet: string): (period: Period) => bigint {
+   const personDueTotal = usePersonPeriodDueTotal(sheet);
+   return (period: Period) => people.reduce((sum, p) => sum + personDueTotal(period, p.id), 0n);
+ }
++
++/** A period's classic due-total: the dues as shown now, late charges included, of every person's claims whose due-by
++ *  falls in it, each counted by its status now (as the live totals count it) rather than its status at the period's
++ *  end; a closed or soft-closed period gives the figure fixed when it was closed. */
++export function useClassicPeriodDueTotal(sheet: string): (period: Period) => bigint {
++  const periods = usePeriods(sheet);
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const floor = useFloor(sheet);
++  const late = { pct: useLatePct(sheet), today: useSheetToday(sheet), grace: useGrace(sheet) };
++  const policy = usePolicy(sheet);
++  return (period: Period) => {
++    if (period.closed || period.softClosed) return toCents(period.closedTotal || '0.00');
++    return people.reduce((sum, person) => {
++      const held = (date: string) => heldOn(person, date) || retiredOn(person, late.today);
++      return claims
++        .filter((c) => c.personId === person.id && countsLive(c, held, late.today) && periodOf(periods, c.dueBy)?.name === period.name)
++        .reduce((s, c) => s + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), sum);
++    }, 0n);
++  };
++}
+diff --git a/src/main/frontend/features/summary/SummaryPanel.tsx b/src/main/frontend/features/summary/SummaryPanel.tsx
+index 149e0f50..6bee41ae 100644
+--- a/src/main/frontend/features/summary/SummaryPanel.tsx
++++ b/src/main/frontend/features/summary/SummaryPanel.tsx
+@@ -1,7 +1,7 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { GRADES, gradeOn, type Person } from '../people/usePeople';
+ import { STATUSES } from '../people/useSheetFigures';
+-import { usePeriodDueTotal } from '../periods/usePeriodDueTotal';
++import { useClassicPeriodDueTotal, usePeriodDueTotal } from '../periods/usePeriodDueTotal';
+ import { usePeriods } from '../periods/usePeriods';
+ import { formatCents } from '../rates/due';
+ import { useVoidReasons } from '../voidreasons/useVoidReasons';
+@@ -10,7 +10,9 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
+ // are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
+ // of them are active. Per period: its due-total, as the period list shows it, and its change from
+ // the period before it by start date (blank for the earliest). Per status: how many claims have it.
+-// Per reason on the sheet's void list: how many VOID claims were voided with it.
++// Per reason on the sheet's void list: how many VOID claims were voided with it. Beside it, the classic
++// summary: per period, its due-total counting each claim by its status now (a closed period shows the figure
++// fixed when it closed), and the sheet's due-total untrimmed: everyone's due-total added up.
+ export function SummaryPanel({
+   people,
+   today,
+@@ -29,6 +31,7 @@ export function SummaryPanel({
+   const [sheet] = useSearchParam('sheet', asString);
+   const periods = usePeriods(sheet);
+   const periodDueTotal = usePeriodDueTotal(sheet);
++  const classicPeriodDueTotal = useClassicPeriodDueTotal(sheet);
+   const voidReasons = useVoidReasons(sheet);
+   const current = people.filter((p) => !p.retired);
+   const byStart = [...periods].sort((a, b) => a.from.localeCompare(b.from));
+@@ -113,6 +116,29 @@ export function SummaryPanel({
+           ))}
+         </tbody>
+       </table>
++      <h3>Classic summary</h3>
++      <table data-testid="classic-summary">
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name}>
++              <td>{p.name}</td>
++              <td data-testid={`classic-period-${p.name}-due-total`}>{formatCents(classicPeriodDueTotal(p))}</td>
++            </tr>
++          ))}
++        </tbody>
++        <tfoot>
++          <tr>
++            <td>Sheet</td>
++            <td data-testid="classic-due-total">{formatCents(people.reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n))}</td>
++          </tr>
++        </tfoot>
++      </table>
+     </section>
+   );
+ }
