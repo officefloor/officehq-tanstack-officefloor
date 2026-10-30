@@ -107,7 +107,7 @@ public class People {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return withGrades(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId)));
+        return withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId))));
     }
 
     /** Fills in each person's patrons (ids in the order named, names sorted). */
@@ -132,6 +132,32 @@ public class People {
         return found;
     }
 
+    /** Fills in each person's aliases, sorted as names are compared. */
+    private List<Person> withAliases(String sheetId, List<Person> found) {
+        if (found.isEmpty()) {
+            return found;
+        }
+        java.util.Map<Long, java.util.List<String>> aliases = new java.util.HashMap<>();
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY seq",
+                rs -> {
+                    aliases.computeIfAbsent(rs.getLong("person_id"), k -> new java.util.ArrayList<>()).add(rs.getString("alias"));
+                }, sheetId);
+        for (Person person : found) {
+            java.util.List<String> sorted = new java.util.ArrayList<>(aliases.getOrDefault(person.getId(), List.of()));
+            sorted.sort(BY_NAME);
+            person.setAliases(sorted);
+        }
+        return found;
+    }
+
+    /** Records the alias as one of the person's. The person's version is left as it is. */
+    public void addAlias(Person person, String alias) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), alias, person.getSheetId());
+        person.getAliases().add(alias);
+        person.getAliases().sort(BY_NAME);
+    }
+
     /** Records the patron as one of the person's patrons. The person's version is left as it is. */
     public void addPatron(Person person, Person patron) {
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
@@ -142,24 +168,33 @@ public class People {
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = withGrades(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)));
+        List<Person> found = withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))));
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The person on the sheet with this name, compared without regard to case or outer spaces; null when none. */
+    /** The person on the sheet with this name or alias, compared without regard to case or outer spaces; null when none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = withGrades(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id",
-                ROW, sheetId, name));
+        List<Person> found = withGrades(sheetId, withAliases(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id",
+                ROW, sheetId, name)));
+        if (found.isEmpty()) {
+            found = withGrades(sheetId, withAliases(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id IN"
+                    + " (SELECT person_id FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))) ORDER BY id",
+                    ROW, sheetId, sheetId, name)));
+        }
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Whether another person on the sheet already has this name, compared without regard to case. */
+    /** Whether another person on the sheet already has this name, or anyone on the sheet has it as an alias,
+     *  compared without regard to case. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
                         + (exceptId == null ? "" : " AND id <> " + exceptId.longValue()),
                 Integer.class, sheetId, name);
-        return count != null && count > 0;
+        Integer aliases = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))",
+                Integer.class, sheetId, name);
+        return (count != null && count > 0) || (aliases != null && aliases > 0);
     }
 
     /** Whether another person on the sheet already has this contact. */

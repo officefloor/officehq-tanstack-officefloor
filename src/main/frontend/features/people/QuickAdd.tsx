@@ -7,7 +7,7 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 import { peopleKey } from './usePeople';
 
 // The quick-add bar on the people list: a name and an amount make a DRAFT claim dated the sheet's
-// today, with an empty note, for the person of that name (case and outer spaces ignored) — adding
+// today, with an empty note, for the person of that name or alias (case and outer spaces ignored) — adding
 // the person with grade A first when no one on the sheet has it. The person form's and the claim
 // form's rules apply; a refusal adds no one and nothing.
 export function QuickAdd() {

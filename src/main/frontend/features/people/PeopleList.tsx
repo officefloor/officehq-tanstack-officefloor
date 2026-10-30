@@ -8,6 +8,7 @@ import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
+import { AliasControl } from './AliasControl';
 import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
 import { PasteClaims } from './PasteClaims';
@@ -32,7 +33,7 @@ import { useSheetFigures } from './useSheetFigures';
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
 // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
-// patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
+// aliases (sorted as names are compared, comma and space separated), patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
 // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
@@ -86,6 +87,7 @@ export function PeopleList() {
           <tr>
             <th />
             <th>Name</th>
+            <th>Aliases</th>
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
@@ -126,6 +128,7 @@ export function PeopleList() {
                   <PersonSelect personId={p.id} />
                 </td>
                 <td data-testid="person-name">{p.name}</td>
+                <td data-testid="person-aliases">{p.aliases.join(', ')}</td>
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-terms">{p.terms}</td>
                 <td data-testid="person-contact">{p.contact}</td>
@@ -156,6 +159,7 @@ export function PeopleList() {
                   <RetireControl personId={p.id} />{' '}
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
                   <PatronControl personId={p.id} people={people} />{' '}
+                  <AliasControl personId={p.id} />{' '}
                   <WatchControl personId={p.id} watched={watched.includes(p.id)} />
                 </td>
                 <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>

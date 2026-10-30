@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
-import { claimsKey, isDeferred, tagList, type Claim } from './useClaims';
+import { claimsKey, deferredShown, tagList, type Claim } from './useClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicyDate, useSettings } from '../settings/useSettings';
@@ -305,7 +305,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
-      <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-deferred">{deferredShown(c, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}

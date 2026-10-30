@@ -8,7 +8,7 @@ import { peopleKey } from './usePeople';
 
 // The paste box: one claim per line as name,amount,date,note (the note may hold commas; a blank date
 // is the sheet's entry date while set, else its today; the note may be absent). Each line adds a DRAFT claim, in order, for the person
-// of that name already on the sheet (case and outer spaces ignored). Every line is checked first by the
+// of that name or alias already on the sheet (case and outer spaces ignored). Every line is checked first by the
 // claim form's rules; one refused line adds nothing. Then shows how many were added; pressing again
 // removes the old count until the new one is in. A note ending " #<reference>" gives the claim that
 // reference (not part of the note); a reference used on the sheet, or twice in the paste, refuses it all.
@@ -24,10 +24,9 @@ export function PasteClaims() {
       postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheet)}/paste-claims`, { text: pasted, user }),
     onSuccess: () => {
       setText('');
-      return Promise.all([
-        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
-        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
-      ]);
+      // Not awaited: the count shows as soon as the paste is in, never after the rows it added.
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
   });
 

@@ -33,6 +33,8 @@ public class Person {
     private java.util.List<Hold> holds = new java.util.ArrayList<>();
     private java.util.List<Long> patronIds = new java.util.ArrayList<>();
     private java.util.List<String> patronNames = new java.util.ArrayList<>();
+    /** The person's aliases, sorted as names are compared. */
+    private java.util.List<String> aliases = new java.util.ArrayList<>();
 
     public Person(long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -152,6 +154,9 @@ public class Person {
         this.patronIds = ids;
         this.patronNames = names;
     }
+    /** The person's aliases, sorted as names are compared. */
+    public java.util.List<String> getAliases() { return aliases; }
+    public void setAliases(java.util.List<String> aliases) { this.aliases = aliases; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public void setStatementCount(int statementCount) { this.statementCount = statementCount; }
     public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Adds the pasted claims as DRAFTs, in order, each audited as CLAIM_ADDED. Every line is checked
- * against the sheet first (the person is on the sheet, matched as names are compared; the date is not
+ * against the sheet first (the person is on the sheet, by name or alias, matched as names are compared; the date is not
  * inside a closed period nor after the person's retirement), so one refused line writes nothing.
  */
 public class SavePasteClaims {

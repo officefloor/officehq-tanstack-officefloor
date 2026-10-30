@@ -30,6 +30,8 @@ export type Person = {
   terms: string;
   /** The person's contact, trimmed and lower-cased; "" for none. */
   contact: string;
+  /** The person's aliases, sorted as names are compared. */
+  aliases: string[];
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */

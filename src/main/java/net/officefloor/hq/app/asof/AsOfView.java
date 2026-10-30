@@ -131,7 +131,14 @@ public class AsOfView {
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
                 (RowCallbackHandler) rs -> patrons.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>()).add(rs.getLong(2)),
                 sheetId, end);
+        Map<Long, List<String>> aliases = new HashMap<>();
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                (RowCallbackHandler) rs -> aliases.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>()).add(rs.getString(2)),
+                sheetId, end);
         for (Person then : byId.values()) {
+            List<String> aliasNames = new ArrayList<>(aliases.getOrDefault(then.getId(), List.of()));
+            aliasNames.sort(BY_NAME);
+            then.setAliases(aliasNames);
             then.setGrades(grades.getOrDefault(then.getId(), Map.of()));
             then.setToday(date);
             then.setHolds(new ArrayList<>(holds.getOrDefault(then.getId(), List.of())));
