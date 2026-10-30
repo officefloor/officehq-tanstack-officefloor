@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes a statement: the person's due-total as the screen shows it now (the sum of their counting
  * claims' figures — fixed or at the rate in force on each claim's date, raised to the sheet's floor; n/a when their grade has no
- * rate today and no claim keeps a figure; an overdue claim's late charge included), and binds each
+ * rate today and no claim keeps a figure; an overdue claim's late charge included; held to the sheet's cap), and binds each
  * counting claim to its figure now — never its late charge, which keeps following the sheet's today.
  * A claim that does not count (an unbound OPEN claim dated within one of its person's holds included) is left unbound.
  */
@@ -59,7 +59,7 @@ public class TakeStatement {
         }
         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
         boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
-        BigDecimal dueTotal = na ? null : total;
+        BigDecimal dueTotal = na ? null : Settings.capped(total, settings.cap(sheetId));
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);

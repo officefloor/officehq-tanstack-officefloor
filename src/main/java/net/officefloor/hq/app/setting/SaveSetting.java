@@ -23,7 +23,9 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
-        if (ValidateSetting.FLOOR.equals(setting.key())) {
+        if (ValidateSetting.CAP.equals(setting.key())) {
+            settings.setCap(sheetId, setting.value());
+        } else if (ValidateSetting.FLOOR.equals(setting.key())) {
             settings.setFloor(sheetId, setting.value());
         } else if (ValidateSetting.LATE_PCT.equals(setting.key())) {
             settings.setLatePct(sheetId, setting.value());

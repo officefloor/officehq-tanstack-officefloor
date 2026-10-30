@@ -14,7 +14,8 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms), the policy date (a claim dated
 // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
 // filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
-// a claim opened is numbered within its period; blank: off; saved like the policy date) and the role each user name holds (clerk unless set to steward).
+// a claim opened is numbered within its period; blank: off; saved like the policy date), the cap (two decimals; a person's
+// due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward).
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -34,10 +35,14 @@ export function SettingsPanel() {
   const [numberingFrom, setNumberingFrom] = useState('');
   // Likewise the period numbering from may be saved blank (off).
   const numberingChosen = useRef(false);
-  // Entering another field leaves a blank policy date (and a blank period numbering from) as it is.
+  const [cap, setCap] = useState('');
+  // Likewise the cap may be saved blank (none).
+  const capChosen = useRef(false);
+  // Entering another field leaves a blank policy date (and a blank period numbering from, and a blank cap) as it is.
   const unchoosePolicy = () => {
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (cap.trim() === '') capChosen.current = false;
   };
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -56,6 +61,10 @@ export function SettingsPanel() {
       else if (body.key === 'period-numbering-from') {
         setNumberingFrom('');
         numberingChosen.current = false;
+      }
+      else if (body.key === 'cap') {
+        setCap('');
+        capChosen.current = false;
       }
       else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -80,8 +89,9 @@ export function SettingsPanel() {
             saveSetting.reset();
             const policy = policyDate.trim() !== '' || policyChosen.current;
             const numbering = numberingFrom.trim() !== '' || numberingChosen.current;
+            const capped = cap.trim() !== '' || capChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
-            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering) {
+            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -90,6 +100,7 @@ export function SettingsPanel() {
                 ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
                 ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
+                ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => saveSetting.mutateAsync(body)), Promise.resolve());
             }
@@ -168,6 +179,7 @@ export function SettingsPanel() {
           placeholder="Policy date YYYY-MM-DD (blank: the sheet's today)"
           onFocus={() => {
             if (numberingFrom.trim() === '') numberingChosen.current = false;
+            if (cap.trim() === '') capChosen.current = false;
             policyChosen.current = true;
           }}
           onChange={(e) => {
@@ -183,6 +195,7 @@ export function SettingsPanel() {
           placeholder="Period numbering from YYYY-MM-DD (blank: off)"
           onFocus={() => {
             if (policyDate.trim() === '') policyChosen.current = false;
+            if (cap.trim() === '') capChosen.current = false;
             numberingChosen.current = true;
           }}
           onChange={(e) => {
@@ -191,8 +204,24 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Cap: <span data-testid="setting-cap-current">{settings?.cap ?? ''}</span>{' '}
+        <input
+          data-testid="setting-cap"
+          value={cap}
+          placeholder="Cap (blank: none)"
+          onFocus={() => {
+            if (policyDate.trim() === '') policyChosen.current = false;
+            if (numberingFrom.trim() === '') numberingChosen.current = false;
+            capChosen.current = true;
+          }}
+          onChange={(e) => {
+            setCap(e.target.value);
+            capChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

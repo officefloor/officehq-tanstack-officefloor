@@ -1,8 +1,8 @@
 import { countsLive, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
-import { claimDue, dueTotal, formatCents } from '../rates/due';
+import { capped, claimDue, dueTotal, excess, formatCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+import { useCap, useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
 
@@ -18,13 +18,15 @@ export function useSheetFigures(sheet: string) {
   const floor = useFloor(sheet);
   const late = { pct: useLatePct(sheet), today };
   const policy = usePolicyDate(sheet);
+  const cap = useCap(sheet);
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
     return person !== undefined && countsLive(c, (date) => heldOn(person, date));
   });
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
-  const totalOf = (person: Person) =>
+  // The sum of a person's figures, before the cap.
+  const uncappedOf = (person: Person) =>
     dueTotal(
       live.filter((c) => c.personId === person.id),
       (date) => rateOn(rates, gradeOn(person, date), date),
@@ -33,6 +35,10 @@ export function useSheetFigures(sheet: string) {
       late,
       policy,
     );
+  // A person's due-total: at most the sheet's cap (n/a is not capped); everything that adds up
+  // due-totals uses it. Their excess is how far the sum of their figures is above the cap.
+  const totalOf = (person: Person) => capped(uncappedOf(person), cap);
+  const excessOf = (person: Person) => excess(uncappedOf(person), cap);
   const overdue = live.filter((c) => isOverdue(c, today));
   const overdueTotal = (cs: typeof overdue) =>
     formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
@@ -44,5 +50,5 @@ export function useSheetFigures(sheet: string) {
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, overdue, overdueTotal, sheetDueTotal, statusCount };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, statusCount };
 }

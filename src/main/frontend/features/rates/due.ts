@@ -102,3 +102,16 @@ export function dueTotal(
   if (rateToday === undefined && figures.every((f) => f === null)) return null;
   return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
 }
+
+/** A due-total held to the sheet's cap ("" for none): the cap when it is above it. n/a is not capped. */
+export function capped(total: bigint | null, cap: string): bigint | null {
+  if (total === null || cap === '') return total;
+  const max = toCents(cap);
+  return total > max ? max : total;
+}
+
+/** How far a due-total is above the sheet's cap; 0 when it is not, or is n/a. */
+export function excess(total: bigint | null, cap: string): bigint {
+  const held = capped(total, cap);
+  return total === null || held === null ? 0n : total - held;
+}

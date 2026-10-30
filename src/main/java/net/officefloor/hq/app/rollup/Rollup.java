@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them — each person's claimed and due-total, and the
- * sheet's claimed-total and due-total — worked out on the server so a change can audit what it
+ * sheet's claimed-total and due-total, each person's due-total held to the sheet's cap — worked out on the server so a change can audit what it
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
  * totals changed.
@@ -54,6 +54,7 @@ public class Rollup {
         BigDecimal floor = settings.floor(sheetId);
         BigDecimal latePct = settings.latePct(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
+        BigDecimal cap = settings.cap(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -75,6 +76,7 @@ public class Rollup {
             }
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
             boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
+            due = Settings.capped(due, cap);
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dueTotal = dueTotal.add(due);

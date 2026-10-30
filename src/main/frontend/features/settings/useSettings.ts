@@ -10,8 +10,8 @@ export type Role = { user: string; role: string };
  *  plus them, unless its person's grade has its own terms), the late percent with two decimals (an overdue claim gains it of its figure for every
  *  full 30 days overdue), the policy date ("" for blank: the sheet's today), the period numbering from ("" for off: from it,
  *  a claim opened is numbered within its period), the roles set and each grade's own terms in days, by grade
- *  (a grade not listed uses the sheet's terms). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string> };
+ *  (a grade not listed uses the sheet's terms), and the cap with two decimals ("" for none: a person's due-total is at most it). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string };
 
 /** The floor a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_FLOOR = '1.00';
@@ -46,4 +46,9 @@ export function usePolicyDate(sheet: string): string | undefined {
   const set = useSettings(sheet)?.policyDate;
   const today = useSheetToday(sheet);
   return set ? set : today;
+}
+
+/** The sheet's cap ("" for none): a person's due-total is at most it. */
+export function useCap(sheet: string): string {
+  return useSettings(sheet)?.cap ?? '';
 }

@@ -36,6 +36,22 @@ public class Settings {
         jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
     }
 
+    /** The sheet's cap: a person's due-total is at most it; null for no cap. */
+    public BigDecimal cap(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the cap
+        return jdbc.queryForObject("SELECT due_cap FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
+    }
+
+    public void setCap(String sheetId, BigDecimal cap) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET due_cap = ? WHERE id = ?", cap, sheetId);
+    }
+
+    /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
+    public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
+        return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+    }
+
     /** The sheet's floor: a claim's live due is at least it. */
     public BigDecimal floor(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the floor
@@ -130,9 +146,10 @@ public class Settings {
                 sheetId, user, role);
     }
 
-    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent, the policy date ("" for blank), the period numbering from ("" for off), every role set, by user name, and each grade's own terms. */
+    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent, the policy date ("" for blank), the period numbering from ("" for off), every role set, by user name, each grade's own terms and the cap ("" for none). */
     public SettingsResponse load(String sheetId) {
         BigDecimal limit = clerkLimit(sheetId);
+        BigDecimal cap = cap(sheetId);
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         List<RoleResponse> roles = jdbc.query(
@@ -144,6 +161,7 @@ public class Settings {
         return new SettingsResponse(limit == null ? "" : limit.setScale(2).toPlainString(),
                 floor(sheetId).setScale(2).toPlainString(), String.valueOf(terms(sheetId)),
                 latePct(sheetId).setScale(2).toPlainString(), policy == null ? "" : policy.toString(),
-                numbering == null ? "" : numbering.toString(), roles, gradeTerms);
+                numbering == null ? "" : numbering.toString(), roles, gradeTerms,
+                cap == null ? "" : cap.setScale(2).toPlainString());
     }
 }

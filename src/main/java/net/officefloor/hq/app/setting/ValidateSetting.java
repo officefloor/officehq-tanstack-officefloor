@@ -13,6 +13,8 @@ public class ValidateSetting {
 
     public static final String FLOOR = "floor";
 
+    public static final String CAP = "cap";
+
     public static final String TERMS = "terms";
 
     /** A grade's own terms: terms-<grade>. */
@@ -37,7 +39,7 @@ public class ValidateSetting {
 
     public void validate(@RequestBody SettingRequest request, Out<ValidSetting> body) throws InvalidSettingException {
         String key = request.key() == null ? "" : request.key().trim();
-        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
@@ -77,6 +79,17 @@ public class ValidateSetting {
         if (LATE_PCT.equals(key)) {
             if (!PERCENT.matcher(raw).matches()) {
                 throw new InvalidSettingException("The late percent must be a percent of 0.00 or more with at most two decimals");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user()));
+            return;
+        }
+        if (CAP.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user())); // blank: no cap
+                return;
+            }
+            if (!AMOUNT.matcher(raw).matches()) {
+                throw new InvalidSettingException("The cap must be an amount of 0.00 or more with at most two decimals, or blank for none");
             }
             body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user()));
             return;

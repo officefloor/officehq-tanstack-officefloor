@@ -18,7 +18,7 @@ import { useSheetFigures } from './useSheetFigures';
 
 // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
-// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+// sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
 // patrons (names, sorted) and backing (their patrons' due-totals added up, skipping n/a; 0.00 with no patrons),
@@ -31,7 +31,7 @@ import { useSheetFigures } from './useSheetFigures';
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
-  const { people, claims, rates, today, byId, live, totalOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const listed = showRetired ? people : people.filter((p) => !p.retired);
   const backing = (p: (typeof people)[number]) =>
@@ -66,6 +66,7 @@ export function PeopleList() {
             <th>Grade</th>
             <th>Claimed</th>
             <th>Due</th>
+            <th>Excess</th>
             <th>Patrons</th>
             <th>Backing</th>
             <th>Overdue</th>
@@ -89,6 +90,7 @@ export function PeopleList() {
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
+                <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
                 <td data-testid="person-patrons">{p.patrons.join(', ')}</td>
                 <td data-testid="person-backing">{backing(p)}</td>
                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
