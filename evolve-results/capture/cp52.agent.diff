@@ -1,0 +1,140 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 75dfb677..58267e85 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -54,6 +54,24 @@ export const isDeferred = (c: { status?: string; deferredUntil?: string }, today
+ export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
+   counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
+ 
++/** The status a claim had at the end of the day, as its status log records it (each line dated the sheet's today
++ *  when the change was made); undefined when it was added after that day. */
++export function statusAt(c: Claim, end: string): ClaimStatus | undefined {
++  let at: ClaimStatus | undefined;
++  for (const line of c.log ?? []) {
++    const m = / on (\d{4}-\d{2}-\d{2}) due=[^ ]*$/.exec(line);
++    if (m && m[1] <= end) at = line.slice(0, line.indexOf(' ')) as ClaimStatus;
++  }
++  return at;
++}
++
++/** Whether a claim counts in a period ending on `end`: by the status it had at the end of that day, and, as in the
++ *  live totals, not deferred on the sheet's today and not open, unbound and dated within one of its person's holds. */
++export const countsAtEnd = (c: Claim, end: string, heldOn: (date: string) => boolean, today: string | undefined) => {
++  const then = statusAt(c, end);
++  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
++};
++
+ export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
+ 
+ /** The sheet's claims, newest first. */
+diff --git a/src/main/frontend/features/periods/PeriodPanel.tsx b/src/main/frontend/features/periods/PeriodPanel.tsx
+index 33b03f46..35b6bb3d 100644
+--- a/src/main/frontend/features/periods/PeriodPanel.tsx
++++ b/src/main/frontend/features/periods/PeriodPanel.tsx
+@@ -7,8 +7,8 @@ import { formatCents } from '../rates/due';
+ import { usePeriodDueTotal } from './usePeriodDueTotal';
+ import { periodsKey, usePeriods, type Period } from './usePeriods';
+ 
+-// The sheet's periods, each with its dates and due-total (the dues, late charges included, of the claims that count whose
+-// date falls in it, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
++// The sheet's periods, each with its dates and due-total (the dues as shown now, late charges included, of the claims
++// whose date falls in it that counted by the status they had at the end of its last day, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
+ // already on the sheet, a from-date on or before the to-date, not overlapping another period). A
+ // closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward
+ // can reopen it, making its due-total live again.
+diff --git a/src/main/frontend/features/periods/usePeriodDueTotal.ts b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+index 726a7c6d..03851e3d 100644
+--- a/src/main/frontend/features/periods/usePeriodDueTotal.ts
++++ b/src/main/frontend/features/periods/usePeriodDueTotal.ts
+@@ -1,4 +1,4 @@
+-import { countsLive, useClaims } from '../claims/useClaims';
++import { countsAtEnd, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOn, usePeople } from '../people/usePeople';
+ import { claimDue, toCents } from '../rates/due';
+ import { rateOn, useRates } from '../rates/useRates';
+@@ -6,8 +6,8 @@ import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { periodOf, usePeriods, type Period } from './usePeriods';
+ 
+-/** A person's due-total for a period: the dues, late charges included, of their claims that count whose date
+- *  falls in it, leaving out their unbound OPEN claims dated within one of their holds (a claim whose due is n/a
++/** A person's due-total for a period: the dues as shown now, late charges included, of their claims whose date
++ *  falls in it that counted at the end of its last day (see countsAtEnd), leaving out their unbound OPEN claims dated within one of their holds (a claim whose due is n/a
+  *  adds nothing); a closed period gives the figure fixed when it was closed (0.00 for a person added later). */
+ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personId: string) => bigint {
+   const periods = usePeriods(sheet);
+@@ -23,7 +23,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
+     const person = personOf.get(personId);
+     if (!person) return 0n;
+     return claims
+-      .filter((c) => c.personId === personId && countsLive(c, (date) => heldOn(person, date), late.today) && periodOf(periods, c.date)?.name === period.name)
++      .filter((c) => c.personId === personId && countsAtEnd(c, period.to, (date) => heldOn(person, date), late.today) && periodOf(periods, c.date)?.name === period.name)
+       .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), 0n);
+   };
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 08c8b84f..4176cce8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -94,4 +94,18 @@ public class Claim {
+     /** The claim's status log, oldest first: one "<STATUS> by <user> on <date> due=<due>" line per status it has had. */
+     public java.util.List<String> getLog() { return log; }
+     public void setLog(java.util.List<String> log) { this.log = log; }
++    /** The status the claim had at the end of the day, as its status log records it (each line dated the sheet's
++     *  today when the change was made); null when it was added after that day. */
++    public ClaimStatus statusAt(LocalDate end) {
++        ClaimStatus at = null;
++        for (String line : log) {
++            int on = line.lastIndexOf(" on ");
++            int due = line.indexOf(" due=", on);
++            if (on < 0 || due < 0) continue;
++            if (!LocalDate.parse(line.substring(on + 4, due)).isAfter(end)) {
++                at = ClaimStatus.valueOf(line.substring(0, line.indexOf(' ')));
++            }
++        }
++        return at;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index e8ffdb7e..b6d59460 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -21,8 +21,8 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Closes a period, fixing its due-total as it is now: the dues of the claims that count dated in
+- *  it, each with its late charge, and each person's share of it (a person's unbound OPEN claims dated within one of their holds count in none; a claim whose due is n/a adds nothing). */
++/** Closes a period, fixing its due-total as it is now: the dues as shown now of the claims dated in it that counted
++ *  at the end of its last day (see {@link Person#countsAtEnd}), each with its late charge, and each person's share of it (a person's unbound OPEN claims dated within one of their holds count in none; a claim whose due is n/a adds nothing). */
+ public class ClosePeriod {
+     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
+             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,
+@@ -44,7 +44,7 @@ public class ClosePeriod {
+         for (Person person : people.list(sheetId)) {
+             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
+             for (Claim claim : all) {
+-                if (claim.getPersonId() != person.getId() || !person.countsLive(claim, today)
++                if (claim.getPersonId() != person.getId() || !person.countsAtEnd(claim, to, today)
+                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
+                     continue;
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 7f883e11..21853382 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -105,6 +105,14 @@ public class Person {
+     public boolean countsLive(Claim claim, LocalDate today) {
+         return countsLive(claim) && !claim.isDeferredOn(today);
+     }
++    /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
++     *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
++     *  dated within one of the person's holds. */
++    public boolean countsAtEnd(Claim claim, LocalDate end, LocalDate today) {
++        ClaimStatus then = claim.statusAt(end);
++        return then != null && then.counts() && !claim.isDeferredOn(today)
++                && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
++    }
+     /** The ids of the people the person has named as patrons, in the order they were named. */
+     public java.util.List<Long> getPatronIds() { return patronIds; }
+     /** The names of the person's patrons, sorted. */
