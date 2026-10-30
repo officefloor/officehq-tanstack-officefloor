@@ -1,6 +1,6 @@
 import { countsLive, isOpen, useClaims } from '../claims/useClaims';
 import { isOverdue } from '../claims/overdue';
-import { capped, claimDue, dueTotal, excess, formatCents } from '../rates/due';
+import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -52,10 +52,18 @@ export function useSheetFigures(sheet: string) {
   const isActive = (person: Person) =>
     activeFrom !== undefined &&
     live.some((c) => c.personId === person.id && isOpen(c) && c.date >= activeFrom && c.date <= today!);
+  // Settled: the sum of a person's SETTLED claims' frozen figures, dated within the 90 days up to and including today.
+  const settledFrom = today === undefined ? undefined : daysBefore(today, 89);
+  const recentSettledOf = (person: Person) =>
+    settledFrom === undefined
+      ? 0n
+      : claims
+          .filter((c) => c.personId === person.id && c.status === 'SETTLED' && c.date >= settledFrom && c.date <= today! && /^-?\d+\.\d{2}$/.test(c.due))
+          .reduce((sum, c) => sum + toCents(c.due), 0n);
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are

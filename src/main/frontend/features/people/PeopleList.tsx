@@ -27,7 +27,7 @@ import { useSheetFigures } from './useSheetFigures';
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
 // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
-// patrons (names, sorted) and backing (their patrons' due-totals added up, skipping n/a; 0.00 with no patrons),
+// patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total (the
 // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one). Retired
@@ -40,7 +40,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, isActive, recentSettledOf } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -48,8 +48,7 @@ export function PeopleList() {
   const backing = (p: (typeof people)[number]) =>
     formatCents(p.patronIds.reduce((sum, id) => {
       const patron = byId.get(id);
-      const due = patron ? totalOf(patron) : null;
-      return due === null ? sum : sum + due;
+      return patron ? sum + recentSettledOf(patron) : sum;
     }, 0n));
 
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
