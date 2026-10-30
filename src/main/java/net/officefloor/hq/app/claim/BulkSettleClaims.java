@@ -7,6 +7,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.Watches;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupFigures;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
             Claims claims, Sheets sheets, People people, Rates rates, Periods periods, Settings settings,
-            ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log,
+            ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log, Watches watches,
             ObjectResponse<BulkSettleResponse> response) {
         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
         ValidClaimStatus settle = new ValidClaimStatus(ClaimStatus.SETTLED, request.user(),
@@ -45,7 +46,7 @@ public class BulkSettleClaims {
                     continue;
                 }
                 claims.save(claim);
-                AuditClaimStatus.record(settle, claim, number, people, audit, before, rollup, log);
+                AuditClaimStatus.record(settle, claim, number, people, audit, before, rollup, log, watches);
                 settled++;
             }
         }

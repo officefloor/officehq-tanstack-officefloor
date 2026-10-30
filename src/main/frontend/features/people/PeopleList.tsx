@@ -12,6 +12,8 @@ import { PasteClaims } from './PasteClaims';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
+import { WatchControl } from './WatchControl';
+import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { gradeOn } from './usePeople';
@@ -34,7 +36,9 @@ import { useSheetFigures } from './useSheetFigures';
 // with their select checkbox are opened together with the bulk open button.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
+  const watched = useWatches(sheet, user);
   const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
@@ -83,6 +87,7 @@ export function PeopleList() {
             <th>Overdue</th>
             <th>Overdue due</th>
             <th />
+            <th>Watched</th>
             <th>Retired</th>
             <th>Retired from</th>
             <th>Hold</th>
@@ -118,8 +123,10 @@ export function PeopleList() {
                   <StatementButton personId={p.id} />{' '}
                   <RetireControl personId={p.id} />{' '}
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
-                  <PatronControl personId={p.id} people={people} />
+                  <PatronControl personId={p.id} people={people} />{' '}
+                  <WatchControl personId={p.id} watched={watched.includes(p.id)} />
                 </td>
+                <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>
                 <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>
                 <td data-testid="person-retired-from">{p.retiredFrom}</td>
                 <td data-testid="person-hold">{p.held ? 'yes' : 'no'}</td>

@@ -4,15 +4,16 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupFigures;
 import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Watches;
 import net.officefloor.plugin.variable.Val;
 
 public class AuditClaimStatus {
-    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log) {
-        record(request, claim, number, people, audit, before, rollup, log);
+    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log, Watches watches) {
+        record(request, claim, number, people, audit, before, rollup, log, watches);
     }
 
     /** Logs and audits a status change that went through, as a single change does. Bulk settle uses it too. */
-    static void record(ValidClaimStatus request, Claim claim, ClaimNumber number, People people, Audit audit, RollupFigures before, Rollup rollup, ClaimLog log) {
+    static void record(ValidClaimStatus request, Claim claim, ClaimNumber number, People people, Audit audit, RollupFigures before, Rollup rollup, ClaimLog log, Watches watches) {
         String event = switch (request.decision()) {
             case APPROVE -> "CLAIM_APPROVED";
             case REJECT -> "CLAIM_REJECTED";
@@ -34,6 +35,10 @@ public class AuditClaimStatus {
             line += " reason=" + request.reason();
         }
         audit.recordOnCommit(line);
+        if (claim.getStatus() == ClaimStatus.SETTLED) {
+            // Settled or approved: each user watching the person is notified, after the claim's own line.
+            watches.notifyWatchers(person, request.user(), number.value(), audit);
+        }
         rollup.recordChanges(claim.getSheetId(), request.user(), before);
     }
 }
