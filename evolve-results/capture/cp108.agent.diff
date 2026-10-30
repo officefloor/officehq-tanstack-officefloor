@@ -1,0 +1,145 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index dfa2637d..e7b48909 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -20,7 +20,7 @@ import { WatchControl } from './WatchControl';
+ import { useWatches } from './useWatches';
+ import { downloadCsv } from './csv';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+-import { gradeOn } from './usePeople';
++import { gradeOn, patronShares, sharedCents } from './usePeople';
+ import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
+ import { usePeriods } from '../periods/usePeriods';
+ import { useSheetFigures } from './useSheetFigures';
+@@ -34,7 +34,7 @@ import { useSheetFigures } from './useSheetFigures';
+ // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
+ // whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
+ // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
+-// aliases (sorted as names are compared, comma and space separated), patrons (names, sorted) and backing (their patrons' settled figures added up: each patron's SETTLED claims dated within the 90 days up to and including today, at their frozen figures; 0.00 with none),
++// aliases (sorted as names are compared, comma and space separated), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
+ // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+ // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
+ // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
+@@ -44,6 +44,10 @@ import { useSheetFigures } from './useSheetFigures';
+ // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
+ // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
+ // are given a grade together with the bulk grade.
++// Names sorted without regard to case, then by case (as the server sorts them).
++const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
++const BY_NAME = (a: string, b: string) => cmp(a.toLowerCase(), b.toLowerCase()) || cmp(a, b);
++
+ export function PeopleList() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+@@ -55,10 +59,19 @@ export function PeopleList() {
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+   const listed = showRetired ? people : people.filter((p) => !p.retired);
+   const backing = (p: (typeof people)[number]) =>
+-    formatCents(p.patronIds.reduce((sum, id) => {
++    formatCents(sharedCents(patronShares(p).reduce((sum, { id, share }) => {
+       const patron = byId.get(id);
+-      return patron ? sum + recentSettledOf(patron) : sum;
+-    }, 0n));
++      return patron ? sum + recentSettledOf(patron) * share : sum;
++    }, 0n)));
++  const patronsOf = (p: (typeof people)[number]) =>
++    patronShares(p)
++      .flatMap(({ id, share }) => {
++        const patron = byId.get(id);
++        return patron ? [{ name: patron.name, share }] : [];
++      })
++      .sort((a, b) => BY_NAME(a.name, b.name))
++      .map(({ name, share }) => `${name} ${formatCents(share)}`)
++      .join(', ');
+ 
+   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
+   return (
+@@ -147,7 +160,7 @@ export function PeopleList() {
+                     {formatCents(periodDueOf(period, p.id))}
+                   </td>
+                 ))}
+-                <td data-testid="person-patrons">{p.patrons.join(', ')}</td>
++                <td data-testid="person-patrons">{patronsOf(p)}</td>
+                 <td data-testid="person-backing">{backing(p)}</td>
+                 <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
+                 <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index e218061b..bab8ba63 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -74,3 +74,27 @@ export function usePeople(sheet: string): Person[] {
+   });
+   return data ?? [];
+ }
++
++/** A quotient of integers rounded half to even. */
++function divHalfEven(n: bigint, d: bigint): bigint {
++  const negative = n < 0n !== d < 0n;
++  const a = n < 0n ? -n : n;
++  const b = d < 0n ? -d : d;
++  const whole = a / b;
++  const twice = (a % b) * 2n;
++  const rounded = twice > b || (twice === b && whole % 2n === 1n) ? whole + 1n : whole;
++  return negative ? -rounded : rounded;
++}
++
++/** The person's patrons with their shares in hundredths ("33.33" -> 3333n), in the order named:
++ *  100.00 split equally, each share rounded half to even to two decimals, the remainder to the
++ *  first-named. */
++export function patronShares(person: Person): { id: string; share: bigint }[] {
++  const n = BigInt(person.patronIds.length);
++  if (n === 0n) return [];
++  const each = divHalfEven(10000n, n);
++  return person.patronIds.map((id, i) => ({ id, share: i === 0 ? 10000n - each * (n - 1n) : each }));
++}
++
++/** A sum of cents times shares in hundredths of a percent (cents * 10000ths), back to cents, half to even. */
++export const sharedCents = (cents: bigint) => divHalfEven(cents, 10000n);
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 503d0d0f..7c1a9b82 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -86,6 +86,11 @@ public class AsOfView {
+         for (Person now : people.list(sheetId)) {
+             if (now.getAddedOn() == null || !now.getAddedOn().isAfter(date)) found.add(now);
+         }
++        // Those merged away since still stood on the sheet.
++        for (Person merged : people.mergedAfter(sheetId, date)) {
++            if (merged.getAddedOn() == null || !merged.getAddedOn().isAfter(date)) found.add(merged);
++        }
++        found.sort(Comparator.comparingLong(Person::getId));
+         Map<Long, Person> byId = new LinkedHashMap<>();
+         for (Person now : found) {
+             Person then = new Person(now.getId(), sheetId, now.getName(), now.getGrades().get(now.getGrades().firstKey()),
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 7882112e..0eb09f30 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -220,9 +220,17 @@ public class People {
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
++        jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
++                sheetId, sheetId, fromId);
+         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, fromId);
+     }
+ 
++    /** The people merged away after the date, as they stood when merged, in the order they were added. */
++    public List<Person> mergedAfter(String sheetId, java.time.LocalDate date) {
++        return jdbc.query("SELECT * FROM person_merged WHERE sheet_id = ? AND merged_on > ? ORDER BY id", ROW, sheetId,
++                java.sql.Date.valueOf(date));
++    }
++
+     public Person find(String sheetId, long id) {
+         List<Person> found = withGrades(sheetId, withAliases(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))));
+         return found.isEmpty() ? null : found.get(0);
+diff --git a/src/main/resources/db/migration/V63__person_merged.sql b/src/main/resources/db/migration/V63__person_merged.sql
+new file mode 100644
+index 00000000..2ace183c
+--- /dev/null
++++ b/src/main/resources/db/migration/V63__person_merged.sql
+@@ -0,0 +1,4 @@
++-- People merged into another, as they stood when merged (merged_on: the sheet's today then), so the as-of view of an
++-- earlier date still shows them.
++CREATE TABLE person_merged AS SELECT * FROM person WITH NO DATA;
++ALTER TABLE person_merged ADD COLUMN merged_on DATE;
