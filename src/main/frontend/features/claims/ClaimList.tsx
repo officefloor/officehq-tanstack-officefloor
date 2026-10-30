@@ -28,6 +28,10 @@ import { peopleKey, type Person } from '../people/usePeople';
 // not after today or a claim dated inside a closed period is refused with the claim's error): until the sheet's today reaches
 // that date it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. Each claim shows
 // deferred (yes while it is deferred) and the date it was deferred until.
+// A steward re-dates an OPEN or PENDING claim with the new date and re-date button: its due-by stays as it was fixed, a figure a
+// statement bound it to stays bound, and its period follows the new date (with per-period numbering on, a claim moved to another
+// period takes the next number of that period's sequence). A date after the person's retirement, a claim dated inside a closed
+// period or a new date inside one, or a re-dating by anyone but a steward, is refused with the claim's error.
 // Each claim shows its proofs count, raised by one with the proof button (a SETTLED or VOID claim, or one dated inside a closed
 // period, is refused with the claim's error). A claim whose due is above the proof threshold in force on its date cannot be
 // settled or approved while its proofs count is 0: that is refused with the claim's error, before the clerk limit is considered.
@@ -126,6 +130,23 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const [newDate, setNewDate] = useState('');
+
+  const redate = useMutation({
+    mutationFn: (date: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/redate`,
+        { date, user },
+      ),
+    onSuccess: () => {
+      setNewDate('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   const proof = useMutation({
     mutationFn: () =>
       postJson<Claim>(
@@ -160,6 +181,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     reassign.reset();
     resettle.reset();
     defer.reset();
+    redate.reset();
     proof.reset();
     split.reset();
     setEditRefused(false);
@@ -235,6 +257,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         Defer
       </button>{' '}
       <input
+        type="date"
+        data-testid="claim-date-new"
+        value={newDate}
+        onChange={(e) => act(() => setNewDate(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-redate" onClick={() => act(() => redate.mutate(newDate))}>
+        Re-date
+      </button>{' '}
+      <input
         data-testid="claim-split-amount"
         value={splitAmount}
         placeholder="Amount to split off"
@@ -297,6 +328,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one dated inside a closed period.
+        </span>
+      )}
+      {redate.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a steward can re-date a claim, only an OPEN or PENDING one, not to a date after the person's retirement, and not one dated inside a closed period or to a date inside one.
         </span>
       )}
       {split.isError && (

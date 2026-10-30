@@ -34,10 +34,15 @@ public class ClaimNumbering {
         this.periods = periods;
     }
 
+    /** Whether claims are numbered within their period now: the period numbering from is set and the sheet's today is on or after it. */
+    public boolean perPeriod(String sheetId) {
+        LocalDate from = settings.periodNumberingFrom(sheetId);
+        return from != null && !sheets.today(sheetId).isBefore(from);
+    }
+
     /** The next number for a claim dated on the date, opened now. */
     public String next(String sheetId, LocalDate claimDate) {
-        LocalDate from = settings.periodNumberingFrom(sheetId);
-        if (from == null || sheets.today(sheetId).isBefore(from)) {
+        if (!perPeriod(sheetId)) {
             return String.valueOf(sheets.nextClaimNumber(sheetId));
         }
         String period = periods.nameOn(sheetId, claimDate);

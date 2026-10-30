@@ -140,6 +140,12 @@ public class Claims {
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
     }
 
+    /** Records the claim's (new) date and number. */
+    public void redate(Claim claim) {
+        jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
+    }
+
     /** Records the number of the claim this claim was split from. */
     public void splitFrom(Claim claim) {
         jdbc.update("UPDATE claim SET split_from = ? WHERE sheet_id = ? AND id = ?",
