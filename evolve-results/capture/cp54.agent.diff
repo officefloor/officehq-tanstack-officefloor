@@ -1,0 +1,690 @@
+diff --git a/src/main/frontend/features/people/HoldControl.tsx b/src/main/frontend/features/people/HoldControl.tsx
+index 2e4c7af3..35eb5ac8 100644
+--- a/src/main/frontend/features/people/HoldControl.tsx
++++ b/src/main/frontend/features/people/HoldControl.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { usePersonAction } from './usePersonAction';
+ import { peopleKey, type HoldFrom, type Person } from './usePeople';
+ 
+ // The person's holds, one line each (from – to, open-ended when no to-date), and the form that adds
+@@ -29,6 +30,7 @@ export function HoldControl({ personId, holds }: { personId: string; holds: Hold
+       return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+     },
+   });
++  const taken = usePersonAction(personId, () => hold.reset());
+ 
+   const changed = (set: (v: string) => void) => (v: string) => {
+     set(v);
+@@ -60,7 +62,7 @@ export function HoldControl({ personId, holds }: { personId: string; holds: Hold
+         type="button"
+         data-testid="person-hold-toggle"
+         onClick={() => {
+-          hold.reset();
++          taken();
+           once(() => hold.mutateAsync({ from: from.trim(), to: to.trim() }));
+         }}
+       >
+diff --git a/src/main/frontend/features/people/RetireControl.tsx b/src/main/frontend/features/people/RetireControl.tsx
+index e481921d..3db7d9ff 100644
+--- a/src/main/frontend/features/people/RetireControl.tsx
++++ b/src/main/frontend/features/people/RetireControl.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { usePersonAction } from './usePersonAction';
+ import { peopleKey, type Person } from './usePeople';
+ 
+ // Retires the person from a date (blank takes the sheet's today): from then on no claim of theirs
+@@ -26,6 +27,7 @@ export function RetireControl({ personId }: { personId: string }) {
+       return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+     },
+   });
++  const taken = usePersonAction(personId, () => retire.reset());
+ 
+   return (
+     <>
+@@ -42,7 +44,7 @@ export function RetireControl({ personId }: { personId: string }) {
+         type="button"
+         data-testid="person-retire"
+         onClick={() => {
+-          retire.reset();
++          taken();
+           once(() => retire.mutateAsync(date.trim()));
+         }}
+       >
+diff --git a/src/main/frontend/features/people/usePersonAction.ts b/src/main/frontend/features/people/usePersonAction.ts
+new file mode 100644
+index 00000000..86c2ca3d
+--- /dev/null
++++ b/src/main/frontend/features/people/usePersonAction.ts
+@@ -0,0 +1,21 @@
++import { useEffect, useRef } from 'react';
++
++// The person row's actions (statement, retire, hold) share the row's one error: taking any of them
++// clears the error another left showing, so only the latest action's refusal is shown.
++const clearers = new Map<string, Set<() => void>>();
++
++/** Registers this action's error clearing for the person; returns what to call as the action is taken. */
++export function usePersonAction(personId: string, clear: () => void): () => void {
++  const own = useRef(clear);
++  own.current = clear;
++  useEffect(() => {
++    const fn = () => own.current();
++    const set = clearers.get(personId) ?? new Set<() => void>();
++    clearers.set(personId, set);
++    set.add(fn);
++    return () => {
++      set.delete(fn);
++    };
++  }, [personId]);
++  return () => clearers.get(personId)?.forEach((fn) => fn());
++}
+diff --git a/src/main/frontend/features/settings/SettingsPanel.tsx b/src/main/frontend/features/settings/SettingsPanel.tsx
+index bb68d311..4a07efc5 100644
+--- a/src/main/frontend/features/settings/SettingsPanel.tsx
++++ b/src/main/frontend/features/settings/SettingsPanel.tsx
+@@ -15,7 +15,7 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
+ // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
+ // filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
+ // a claim opened is numbered within its period; blank: off; saved like the policy date), the cap (two decimals; a person's
+-// due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward).
++// due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward or viewer — a viewer sees everything and changes nothing).
+ // The clerk limit, the floor, the terms, each grade's terms, the late percent and the cap are dated: each has a from-date
+ // field (blank: the sheet's today) and is saved as its value from that date, keeping the values from other dates; each
+ // shows the value in force on the sheet's today. The proof threshold (two decimals; blank: none; saved like the cap) is dated
+@@ -376,14 +376,14 @@ export function SettingsPanel() {
+         <input
+           data-testid="role-form-role"
+           value={role}
+-          placeholder="Role (clerk or steward)"
++          placeholder="Role (clerk, steward or viewer)"
+           onChange={(e) => {
+             setRole(e.target.value);
+             saveRole.reset();
+           }}
+         />{' '}
+         <button type="submit" data-testid="role-form-submit">Set role</button>
+-        {saveRole.isError && <span data-testid="role-form-error" role="alert"> Could not set the role: it needs a user name and the role clerk or steward.</span>}
++        {saveRole.isError && <span data-testid="role-form-error" role="alert"> Could not set the role: it needs a user name and the role clerk, steward or viewer, and a viewer can change nothing.</span>}
+       </form>
+     </>
+   );
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 05acd2d7..3d32dc77 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ 
+-/** A role a user name holds on the sheet: clerk (any name not listed) or steward. */
++/** A role a user name holds on the sheet: clerk (any name not listed), steward or viewer (sees everything, changes nothing). */
+ export type Role = { user: string; role: string };
+ 
+ /** The sheet's settings, each dated one as in force on the sheet's today: the clerk limit with two decimals ("" for no limit), the floor with two
+diff --git a/src/main/frontend/features/statements/StatementButton.tsx b/src/main/frontend/features/statements/StatementButton.tsx
+index 88a8364c..dd232570 100644
+--- a/src/main/frontend/features/statements/StatementButton.tsx
++++ b/src/main/frontend/features/statements/StatementButton.tsx
+@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { usePersonAction } from '../people/usePersonAction';
+ import { claimsKey } from '../claims/useClaims';
+ import { peopleKey, type Person } from '../people/usePeople';
+ 
+@@ -22,6 +23,7 @@ export function StatementButton({ personId }: { personId: string }) {
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+       ]),
+   });
++  const taken = usePersonAction(personId, () => take.reset());
+ 
+   return (
+     <>
+@@ -29,7 +31,7 @@ export function StatementButton({ personId }: { personId: string }) {
+         type="button"
+         data-testid="person-statement"
+         onClick={() => {
+-          take.reset();
++          taken();
+           once(() => take.mutateAsync());
+         }}
+       >
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index c1394105..e34092eb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -6,6 +6,9 @@ import java.time.format.DateTimeParseException;
+ import java.util.regex.Pattern;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateClaim {
+ 
+@@ -13,7 +16,9 @@ public class ValidateClaim {
+     private static final Pattern SIGNED_AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
+     private static final Pattern NUMBER = Pattern.compile("\\d+|\\S+-\\d+");
+ 
+-    public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request, Out<ValidClaim> body, Settings settings)
++            throws InvalidClaimException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         body.set(check(request));
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index 1b6a1d7b..d14892e2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -2,10 +2,14 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateClaimStatus {
+-    public void validate(@RequestBody ClaimStatusRequest request, Out<ValidClaimStatus> body)
+-            throws InvalidClaimException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimStatusRequest request, Out<ValidClaimStatus> body, Settings settings)
++            throws InvalidClaimException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String action = request.action() == null ? "" : request.action().trim();
+         String reason = request.reason() == null ? "" : request.reason().trim();
+         ValidClaimStatus valid = switch (action) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java b/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
+index 411756d4..78096b21 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
+@@ -4,9 +4,14 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateDefer {
+-    public void validate(@RequestBody DeferRequest request, Out<ValidDefer> body) throws InvalidClaimException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DeferRequest request, Out<ValidDefer> body, Settings settings)
++            throws InvalidClaimException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String until = request.until() == null ? "" : request.until().trim();
+         try {
+             body.set(new ValidDefer(request.user(), LocalDate.parse(until)));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidatePasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/ValidatePasteClaims.java
+index f6499c91..cae2a9b4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidatePasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidatePasteClaims.java
+@@ -4,6 +4,9 @@ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ /**
+  * Splits the paste into lines of name,amount,date,note (the note may hold commas, the date may be
+@@ -11,7 +14,9 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * with no claim in it is refused.
+  */
+ public class ValidatePasteClaims {
+-    public void validate(@RequestBody PasteClaimsRequest request, Out<ValidPasteClaims> body) throws InvalidClaimException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteClaimsRequest request, Out<ValidPasteClaims> body, Settings settings)
++            throws InvalidClaimException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String text = request.text() == null ? "" : request.text();
+         List<ValidPasteClaims.Line> lines = new ArrayList<>();
+         int number = 0;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java b/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
+index cdf3fa19..cff5f95b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
+@@ -2,9 +2,14 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateProof {
+-    public void validate(@RequestBody ProofRequest request, Out<ProofRequest> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ProofRequest request, Out<ProofRequest> body, Settings settings)
++            throws ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         body.set(request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
+index 9e44dd2c..cff6022a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
+@@ -3,11 +3,15 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.person.InvalidPersonException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ /** The person form's and the claim form's rules, applied to the quick-add bar. */
+ public class ValidateQuickClaim {
+-    public void validate(@RequestBody QuickClaimRequest request, Out<ValidQuickClaim> body)
+-            throws InvalidPersonException, InvalidClaimException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody QuickClaimRequest request, Out<ValidQuickClaim> body, Settings settings)
++            throws InvalidPersonException, InvalidClaimException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String name = request.name() == null ? "" : request.name().trim();
+         if (name.isEmpty()) {
+             throw new InvalidPersonException("A name is required");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+index 0dfac365..6000f8a0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+@@ -2,9 +2,14 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateReassign {
+-    public void validate(@RequestBody ReassignRequest request, Out<ReassignRequest> body) throws InvalidClaimException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ReassignRequest request, Out<ReassignRequest> body, Settings settings)
++            throws InvalidClaimException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         if (request.toPersonId() == null || request.toPersonId().isBlank()) {
+             throw new InvalidClaimException("No person chosen to move the claim to");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+index fe98e4cc..9c7239d3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+@@ -2,9 +2,14 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateResettle {
+-    public void validate(@RequestBody ResettleRequest request, Out<ResettleRequest> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ResettleRequest request, Out<ResettleRequest> body, Settings settings)
++            throws ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         body.set(request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 4adb5de9..dee00d16 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -16,6 +16,7 @@ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -26,7 +27,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ClosePeriod {
+     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
+             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,
+-            Settings settings, Sheets sheets, Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
++            Settings settings, Sheets sheets, Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         if (!settings.allows(sheetId, request.user(), "close")) {
+             throw new InvalidPeriodException("Your role may not close a period");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index 71164d3d..3f48fe95 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -12,7 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ReopenPeriod {
+     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
+             @RequestBody ClosePeriodRequest request, Periods periods, Settings settings, Audit audit,
+-            ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
++            ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         if (!settings.allows(sheetId, request.user(), "reopen")) {
+             throw new InvalidPeriodException("Your role may not reopen a period");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+index 54d47901..ce7b49d3 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+@@ -6,13 +6,18 @@ import java.time.format.DateTimeParseException;
+ import java.time.format.ResolverStyle;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidatePeriod {
+ 
+     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
+             .withResolverStyle(ResolverStyle.STRICT);
+ 
+-    public void validate(@RequestBody PeriodRequest request, Out<ValidPeriod> body) throws InvalidPeriodException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PeriodRequest request, Out<ValidPeriod> body, Settings settings)
++            throws InvalidPeriodException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String name = request.name() == null ? "" : request.name().trim();
+         if (name.isEmpty()) {
+             throw new InvalidPeriodException("A period needs a name");
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+index b8db4ab1..b4f735fc 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+@@ -4,9 +4,14 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateHold {
+-    public void validate(@RequestBody HoldRequest request, Out<ValidHold> body) throws InvalidPersonException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody HoldRequest request, Out<ValidHold> body, Settings settings)
++            throws InvalidPersonException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         body.set(new ValidHold(date(request.from(), "from"), date(request.to(), "to"), request.user()));
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+index d30345b1..fda020f6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+@@ -2,9 +2,14 @@ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidatePatron {
+-    public void validate(@RequestBody PatronRequest request, Out<PatronRequest> body) throws InvalidPersonException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PatronRequest request, Out<PatronRequest> body, Settings settings)
++            throws InvalidPersonException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         if (request.patronId() == null || request.patronId().isBlank()) {
+             throw new InvalidPersonException("No patron chosen");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 2a047a25..edf35272 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -3,12 +3,17 @@ package net.officefloor.hq.app.person;
+ import java.util.Set;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidatePerson {
+ 
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+-    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidPersonException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request, Out<PersonRequest> body, Settings settings)
++            throws InvalidPersonException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String name = request.name() == null ? "" : request.name().trim();
+         if (name.isEmpty()) {
+             throw new InvalidPersonException("A name is required");
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+index ca7196ad..a1fc86df 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+@@ -4,9 +4,14 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateRetire {
+-    public void validate(@RequestBody RetireRequest request, Out<ValidRetire> body) throws InvalidPersonException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RetireRequest request, Out<ValidRetire> body, Settings settings)
++            throws InvalidPersonException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String raw = request.date() == null ? "" : request.date().trim();
+         LocalDate date = null;
+         if (!raw.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 553c7cd2..6e4dca60 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -9,6 +9,9 @@ import java.util.Set;
+ import java.util.regex.Pattern;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateRate {
+ 
+@@ -20,7 +23,9 @@ public class ValidateRate {
+     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
+             .withResolverStyle(ResolverStyle.STRICT);
+ 
+-    public void validate(@RequestBody RateRequest request, Out<ValidRate> body) throws InvalidRateException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<ValidRate> body, Settings settings)
++            throws InvalidRateException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String grade = request.grade() == null ? "" : request.grade().trim();
+         if (!GRADES.contains(grade)) {
+             throw new InvalidRateException("Grade must be A, B or C");
+diff --git a/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java b/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java
+new file mode 100644
+index 00000000..1267a6ab
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.setting;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleViewerRefused {
++    public void handle(@Parameter ViewerRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.FORBIDDEN));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index efbdad4f..dbae4248 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -16,6 +16,9 @@ public class Settings {
+ 
+     public static final String STEWARD = "steward";
+ 
++    /** Sees every screen and figure and changes nothing. */
++    public static final String VIEWER = "viewer";
++
+     private final JdbcTemplate jdbc;
+ 
+     private final Sheets sheets;
+@@ -160,6 +163,13 @@ public class Settings {
+         return found.isEmpty() ? CLERK : found.get(0);
+     }
+ 
++    /** Refuses a change asked for by a user who is a viewer on the sheet. */
++    public void refuseViewer(String sheetId, String user) throws ViewerRefusedException {
++        if (VIEWER.equals(role(sheetId, user))) {
++            throw new ViewerRefusedException();
++        }
++    }
++
+     public void setRole(String sheetId, String user, String role) {
+         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
+                 sheetId, user, role);
+@@ -183,9 +193,12 @@ public class Settings {
+     }
+ 
+     /** Whether the user's role may take the action on the sheet: by its permission when set, else by the standing
+-     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
++     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). A viewer takes none. */
+     public boolean allows(String sheetId, String user, String action) {
+         String role = role(sheetId, user);
++        if (VIEWER.equals(role)) {
++            return false;
++        }
+         String set = permission(sheetId, action);
+         if (set.isEmpty()) {
+             return STEWARD.equals(role) || !("reassign".equals(action) || "reopen".equals(action));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidRole.java b/src/main/java/net/officefloor/hq/app/setting/ValidRole.java
+index 63089850..85fb8618 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidRole.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidRole.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** A role assignment that passed validation: a user name and clerk or steward. */
++/** A role assignment that passed validation: a user name and clerk, steward or viewer. */
+ public record ValidRole(String name, String role, String user) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java b/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
+index bc8dc2dc..6eabee17 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateRole.java
+@@ -2,16 +2,19 @@ package net.officefloor.hq.app.setting;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class ValidateRole {
+-    public void validate(@RequestBody RoleRequest request, Out<ValidRole> body) throws InvalidSettingException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RoleRequest request, Out<ValidRole> body, Settings settings)
++            throws InvalidSettingException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String name = request.name() == null ? "" : request.name().trim();
+         if (name.isEmpty()) {
+             throw new InvalidSettingException("A role needs a user name");
+         }
+         String role = request.role() == null ? "" : request.role().trim();
+-        if (!Settings.CLERK.equals(role) && !Settings.STEWARD.equals(role)) {
+-            throw new InvalidSettingException("The role must be clerk or steward");
++        if (!Settings.CLERK.equals(role) && !Settings.STEWARD.equals(role) && !Settings.VIEWER.equals(role)) {
++            throw new InvalidSettingException("The role must be clerk, steward or viewer");
+         }
+         body.set(new ValidRole(name, role, request.user()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index e74ac5ac..d902030e 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -7,6 +7,7 @@ import java.util.List;
+ import java.util.regex.Pattern;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class ValidateSetting {
+ 
+@@ -46,7 +47,9 @@ public class ValidateSetting {
+     /** An amount: 0 or more, with at most two decimals. */
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+ 
+-    public void validate(@RequestBody SettingRequest request, Out<ValidSetting> body) throws InvalidSettingException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<ValidSetting> body, Settings settings)
++            throws InvalidSettingException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         String key = request.key() == null ? "" : request.key().trim();
+         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java b/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java
+new file mode 100644
+index 00000000..6356cd5c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.setting;
++
++/** A change asked for by a viewer: a viewer sees the sheet and changes nothing, so it is refused and nothing is written. */
++public class ViewerRefusedException extends Exception {
++    public ViewerRefusedException() {
++        super("A viewer can change nothing on the sheet");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index dbed71de..af658448 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -4,10 +4,14 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateToday {
+-    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body)
+-            throws InvalidTodayException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, Settings settings)
++            throws InvalidTodayException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         body.set(request); // who changes it, for the audit
+         String raw = request.today() == null ? "" : request.today().trim();
+         if (raw.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+index 500f2256..b8d574ec 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+@@ -2,9 +2,14 @@ package net.officefloor.hq.app.statement;
+ 
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
+ 
+ public class ValidateStatement {
+-    public void validate(@RequestBody StatementRequest request, Out<StatementRequest> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody StatementRequest request, Out<StatementRequest> body, Settings settings)
++            throws ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
+         body.set(request);
+     }
+ }
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml
+new file mode 100644
+index 00000000..daf8760b
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.setting.HandleViewerRefused
