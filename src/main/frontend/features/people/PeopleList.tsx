@@ -10,7 +10,7 @@ import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
 import { AliasControl } from './AliasControl';
 import { openedEditor } from './editorOpens';
-import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
+import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
 import { MergeControl } from './MergeControl';
 import { MoveControl } from './MoveControl';
@@ -111,6 +111,7 @@ export function PeopleList() {
       <BulkSettleButton />
       <BulkReassignButton />
       <BulkGrade />
+      <BulkRetire />
       <table data-testid="people">
         <thead>
           <tr>

@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimsKey } from '../claims/useClaims';
 import { GRADES, peopleKey } from './usePeople';
+import { poolsKey } from '../pools/usePools';
 
 type Selection = { selected: Set<string>; toggle: (id: string, on: boolean) => void; clear: () => void };
 
@@ -118,6 +119,73 @@ export function BulkGrade() {
         <span data-testid="person-error" role="alert">
           {' '}
           The selected people could not be given the grade.
+        </span>
+      )}
+    </p>
+  );
+}
+
+// Retires the selected people together from a date (blank takes the sheet's today): the server retires each,
+// in list order, exactly as the row's retire would, with the same audit lines. Then shows how many were
+// retired and clears the selection; pressing again removes the old count until the new one is in. A refusal
+// (a bad date) shows the error and changes nothing; a viewer's retires no one.
+export function BulkRetire() {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+  const { selected, clear } = usePersonSelection();
+  const [date, setDate] = useState('');
+
+  const apply = useMutation({
+    mutationFn: (personIds: string[]) =>
+      postJson<{ retired: number }>(`/api/sheets/${encodeURIComponent(sheet)}/people/bulk-retire`, {
+        personIds,
+        date: date.trim(),
+        user,
+      }),
+    onSuccess: () => {
+      clear();
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]);
+    },
+  });
+
+  return (
+    <p>
+      <input
+        type="date"
+        data-testid="bulk-retire-date"
+        title="Retire from (blank: the sheet's today)"
+        value={date}
+        onChange={(e) => {
+          setDate(e.target.value);
+          apply.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="bulk-retire"
+        onClick={() => {
+          apply.reset();
+          const ids = [...selected];
+          once(() => apply.mutateAsync(ids));
+        }}
+      >
+        Retire selected
+      </button>
+      {apply.isSuccess && (
+        <>
+          {' '}
+          Retired <span data-testid="bulk-retired">{apply.data.retired}</span>
+        </>
+      )}
+      {apply.isError && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          The selected people could not be retired.
         </span>
       )}
     </p>
