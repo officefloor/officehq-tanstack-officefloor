@@ -76,7 +76,7 @@ public class Claim {
     public void setCorrectedDate(LocalDate correctedDate) { this.correctedDate = correctedDate; }
     /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects, any other claim's its own. */
     public LocalDate getRoundingDate() { return correctedDate != null ? correctedDate : date; }
-    /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on that date. */
+    /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     /** The date the claim was last deferred until; null if it was never deferred. */

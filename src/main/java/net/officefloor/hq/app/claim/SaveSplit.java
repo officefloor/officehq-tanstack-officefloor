@@ -16,7 +16,7 @@ public class SaveSplit {
         String sheetId = claim.getSheetId();
         Person person = people.find(sheetId, claim.getPersonId());
         Claim into = claims.add(sheetId, person.getId(), request.amount(), claim.getDate(), claim.getNote(),
-                claim.getDate().plusDays(settings.termsFor(sheetId, person.gradeOn(claim.getDate()), claim.getDate())));
+                claim.getDate().plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(claim.getDate()), claim.getDate())));
         into.setStatus(ClaimStatus.OPEN);
         into.setNumber(numbering.next(sheetId, claim.getDate()));
         into.setOpenedBy(request.user());

@@ -15,9 +15,11 @@ public class SavePersonCreated {
         if (people.nameTaken(sheetId, request.name(), null)) {
             throw new InvalidPersonException("The name is already in use");
         }
-        Person person = people.add(sheetId, request.name(), request.grade());
+        Person person = people.add(sheetId, request.name(), request.grade(),
+                request.terms().isEmpty() ? null : Integer.valueOf(request.terms()));
         audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
-                + " name=" + person.getName() + " grade=" + person.getGrade());
+                + " name=" + person.getName() + " grade=" + person.getGrade()
+                + (person.getTerms() == null ? "" : " terms=" + person.getTerms()));
         rollup.recordChanges(sheetId, request.user(), before);
         response.send(new ResponseEntity<>(PersonResponse.from(person), HttpStatus.CREATED));
     }

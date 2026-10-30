@@ -13,6 +13,7 @@ public class ApplyPerson {
             throw new InvalidPersonException("The name is already in use");
         }
         person.setName(request.name());
+        person.editTerms(request.terms().isEmpty() ? null : Integer.valueOf(request.terms()));
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the
         // grades already recorded; a save leaving the grade as the row showed it with no from-date
         // records nothing.

@@ -49,7 +49,7 @@ public class SavePasteClaims {
             Person person = persons.get(i);
             LocalDate date = dates.get(i);
             Claim claim = claims.add(sheetId, person.getId(), valid.amount(), date, valid.note(),
-                    date.plusDays(settings.termsFor(sheetId, person.gradeOn(date), date)));
+                    date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
             log.record(claim, person, request.user());
             audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         }

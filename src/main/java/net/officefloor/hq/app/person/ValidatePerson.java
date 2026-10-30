@@ -30,6 +30,13 @@ public class ValidatePerson {
                 throw new InvalidPersonException("The grade's from-date must be a date");
             }
         }
-        body.set(new PersonRequest(name, grade, request.user(), request.version(), gradeFrom));
+        String terms = request.terms() == null ? "" : request.terms().trim();
+        if (!terms.isEmpty() && !terms.matches("\\d{1,6}")) {
+            throw new InvalidPersonException("The terms must be a whole number of days, 0 or more");
+        }
+        if (!terms.isEmpty()) {
+            terms = String.valueOf(Integer.parseInt(terms));
+        }
+        body.set(new PersonRequest(name, grade, request.user(), request.version(), gradeFrom, terms));
     }
 }

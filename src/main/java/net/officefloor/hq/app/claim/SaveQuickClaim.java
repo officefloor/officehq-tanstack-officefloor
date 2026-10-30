@@ -45,7 +45,7 @@ public class SaveQuickClaim {
             beforeClaim = rollup.figures(sheetId);
         }
         Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, "",
-                date.plusDays(settings.termsFor(sheetId, person.gradeOn(date), date)));
+                date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
         log.record(claim, person, request.user());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), beforeClaim);

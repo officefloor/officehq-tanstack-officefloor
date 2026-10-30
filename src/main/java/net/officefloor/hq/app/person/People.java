@@ -16,6 +16,8 @@ public class People {
         Person person = new Person(rs.getLong("id"),
                 rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getInt("version"));
         person.setStatementCount(rs.getInt("statement_count"));
+        int terms = rs.getInt("terms");
+        person.setTerms(rs.wasNull() ? null : terms);
         person.setStatedTotal(rs.getBigDecimal("stated_total"));
         java.sql.Date stated = rs.getDate("statement_date");
         person.setStatementDate(stated == null ? null : stated.toLocalDate());
@@ -150,16 +152,23 @@ public class People {
     }
 
     public Person add(String sheetId, String name, String grade) {
+        return add(sheetId, name, grade, null);
+    }
+
+    /** Adds a person with their own terms in days (null for none). */
+    public Person add(String sheetId, String name, String grade, Integer terms) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
+            ps.setObject(4, terms, java.sql.Types.INTEGER);
             return ps;
         }, keys);
         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
+        person.setTerms(terms);
         // The first grade a person is given applies from the beginning of time.
         person.recordGrade(Person.BEGINNING, grade);
         writeRecordedGrade(person);
@@ -197,8 +206,8 @@ public class People {
      *  edit recorded; false (nothing written) when someone else has saved the person since. */
     public boolean save(Person person) {
         int updated = jdbc.update(
-                "UPDATE person SET name = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getSheetId(), person.getId(), person.getVersion());
         if (updated == 0) {
             return false;
         }

@@ -3,11 +3,11 @@ package net.officefloor.hq.app.person;
 import java.util.List;
 
 /** statementCount is how many statements were taken; statedTotal is the last one's due-total ("n/a" when it
- *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date. */
+ *  was n/a, "" when none was taken); statementDate is the sheet's today when it was taken ("" when none); retired says whether a retirement date is set and retiredFrom is it ("" when none); held says whether they have any hold and holds lists each (from, to; to "" when open-ended), in the order added; patrons are the names of the people they named as patrons, sorted, and patronIds their ids; grade is the grade in force on the sheet's today and grades every grade recorded, by from-date; terms is the person's own terms in days ("" for none). */
 public record PersonResponse(String id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom, boolean held,
         List<HoldFrom> holds,
-        List<String> patrons, List<String> patronIds, List<GradeFrom> grades) {
+        List<String> patrons, List<String> patronIds, List<GradeFrom> grades, String terms) {
 
     /** A grade in force from a date (YYYY-MM-DD; "" for the beginning of time). */
     public record GradeFrom(String from, String grade) {
@@ -29,7 +29,8 @@ public record PersonResponse(String id, String name, String grade, int version, 
                 List.copyOf(person.getPatronNames()),
                 person.getPatronIds().stream().map(String::valueOf).toList(),
                 person.getGrades().entrySet().stream().map(e -> new GradeFrom(
-                        e.getKey().equals(Person.BEGINNING) ? "" : e.getKey().toString(), e.getValue())).toList());
+                        e.getKey().equals(Person.BEGINNING) ? "" : e.getKey().toString(), e.getValue())).toList(),
+                person.getTerms() == null ? "" : String.valueOf(person.getTerms()));
     }
 
     public static List<PersonResponse> from(List<Person> people) {

@@ -26,7 +26,7 @@ public class SaveClaimCreated {
         }
         ValidateClaim.checkCorrects(request, sheetId, person.getId(), claims);
         Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note(), request.corrects(),
-                date.plusDays(settings.termsFor(sheetId, person.gradeOn(date), date)));
+                date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
         log.record(claim, person, request.user());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), before);

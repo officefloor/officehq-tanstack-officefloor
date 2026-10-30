@@ -118,6 +118,11 @@ public class Settings {
         return own != null ? own : terms(sheetId, on);
     }
 
+    /** The terms a claim of a person dated on the date takes: the person's own terms, else as {@link #termsFor(String, String, LocalDate)}. */
+    public int termsFor(String sheetId, Integer personTerms, String grade, LocalDate on) {
+        return personTerms != null ? personTerms : termsFor(sheetId, grade, on);
+    }
+
     /** The sheet's late percent in force on a date (a late charge's: each 30-day boundary of an overdue
      *  claim, its due-by plus 30, 60, 90 ... days, adds it of the claim's figure). */
     public BigDecimal latePct(String sheetId, LocalDate on) {

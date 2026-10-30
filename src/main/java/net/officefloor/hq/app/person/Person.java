@@ -21,6 +21,10 @@ public class Person {
     /** A grade recorded by this edit and not yet written: its from-date and grade. */
     private java.util.Map.Entry<LocalDate, String> recorded;
     private int version;
+    /** The person's own terms in days; null when they have none (their grade's or the sheet's apply). */
+    private Integer terms;
+    /** Whether this edit changed the person's terms from those loaded. */
+    private boolean termsChanged;
     private int statementCount;
     private BigDecimal statedTotal;
     private LocalDate statementDate;
@@ -71,6 +75,15 @@ public class Person {
     public LocalDate getToday() { return today; }
     public void setToday(LocalDate today) { this.today = today; }
     public int getVersion() { return version; }
+    /** The person's own terms in days; null when none. */
+    public Integer getTerms() { return terms; }
+    public void setTerms(Integer terms) { this.terms = terms; }
+    /** Sets the terms the form gave, noting whether they differ from those the person had. */
+    public void editTerms(Integer terms) {
+        termsChanged = !java.util.Objects.equals(this.terms, terms);
+        this.terms = terms;
+    }
+    public boolean isTermsChanged() { return termsChanged; }
     /** How many statements have been taken for the person. */
     public int getStatementCount() { return statementCount; }
     /** The last statement's due-total; null when none was taken or it was n/a. */

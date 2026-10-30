@@ -24,7 +24,7 @@ export type Claim = {
   corrects: string;
   /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects. */
   roundingDate: string;
-  /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on that date. */
+  /** The claim's due-by, fixed when it was created: its date plus the first of its person's own terms, their grade's terms and the sheet's terms in force on that date. */
   dueBy: string;
   /** The claim's status log, oldest first: "<STATUS> by <user> on <date> due=<due>" per status it has had. */
   log: string[];

@@ -25,6 +25,8 @@ export type Person = {
   patrons: string[];
   patronIds: string[];
   grades: GradeFrom[];
+  /** The person's own terms in days; "" for none. */
+  terms: string;
 };
 
 /** A hold from a date to a date, both included (YYYY-MM-DD; to "" when open-ended). */
