@@ -26,6 +26,7 @@ import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
+import { SortBy, useSortBy } from './SortBy';
 import { gradeOn, patronShares, sharedCents } from './usePeople';
 import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { periodOf, usePeriods } from '../periods/usePeriods';
@@ -78,7 +79,26 @@ export function PeopleList() {
       0n,
     );
   const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
-  const listed = showRetired ? people : people.filter((p) => !p.retired);
+  const [sortKey] = useSortBy();
+  // The rows as shown: list order, or sorted by the user's chosen key (by grade in force today, by
+  // name as names are compared, by due-total with n/a last); equal keys keep list order.
+  const bySort = (a: (typeof people)[number], b: (typeof people)[number]): number => {
+    switch (sortKey) {
+      case 'name':
+        return BY_NAME(a.name, b.name);
+      case 'grade':
+        return cmp(gradeOn(a, today), gradeOn(b, today));
+      case 'due-total': {
+        const da = totalOf(a);
+        const db = totalOf(b);
+        if (da === null || db === null) return da === db ? 0 : da === null ? 1 : -1;
+        return da < db ? -1 : da > db ? 1 : 0;
+      }
+      default:
+        return 0;
+    }
+  };
+  const listed = (showRetired ? people : people.filter((p) => !p.retired)).slice().sort(bySort);
   const backing = (p: (typeof people)[number]) =>
     formatCents(sharedCents(patronShares(p).reduce((sum, { id, share }) => {
       const patron = byId.get(id);
@@ -123,6 +143,7 @@ export function PeopleList() {
       <GeneratePlans />
       <ImportPeople />
       <ShowRetired />
+      <SortBy />
       <button
         type="button"
         data-testid="export-people"
