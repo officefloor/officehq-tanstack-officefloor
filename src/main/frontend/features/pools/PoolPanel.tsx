@@ -10,7 +10,10 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // pool lists its members with their shares, its total share (a retired member counting 0.00) and whether
 // it is balanced (the total is exactly 100.00), and adds a member from its row: a person already in the
 // pool, or a share not more than 0.00 and at most 100.00 with two decimals, is refused. Each member of a balanced
-// pool shows their cut of the sheet's pot (empty while the pool is unbalanced or the sheet has no pot).
+// pool shows their cut of its pot (empty while the pool is unbalanced or has no pot). A member may be another pool,
+// chosen as pool:<name>: a pool is a member of at most one pool, never contains itself through any chain, and a chain
+// of pools is at most three deep. A pool that is a member of none has the sheet's pot; a pool that is a member of
+// another has its cut there as its pot.
 export function PoolPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -31,7 +34,7 @@ export function PoolPanel() {
     <>
       <ul data-testid="pool-list">
         {pools.map((p) => (
-          <PoolRow key={p.name} pool={p} people={people} sheet={sheet} user={user} />
+          <PoolRow key={p.name} pool={p} pools={pools} people={people} sheet={sheet} user={user} />
         ))}
       </ul>
       <form
@@ -60,13 +63,13 @@ export function PoolPanel() {
   );
 }
 
-function PoolRow({ pool, people, sheet, user }: { pool: Pool; people: Person[]; sheet: string; user: string }) {
+function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool[]; people: Person[]; sheet: string; user: string }) {
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: { personId: string; share: string }) =>
+    mutationFn: (body: { personId?: string; memberPool?: string; share: string }) =>
       postJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pool-members`, { ...body, pool: pool.name, user }),
     onSuccess: (saved) => {
       setPersonId('');
@@ -81,7 +84,10 @@ function PoolRow({ pool, people, sheet, user }: { pool: Pool; people: Person[]; 
       balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
-          <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+          <li
+            key={m.memberPool ? `pool:${m.memberPool}` : m.personId}
+            data-testid={m.memberPool ? `pool-member-${pool.name}-pool-${m.memberPool}` : `pool-member-${pool.name}-${m.personId}`}
+          >
             <span data-testid="pool-member-name">{m.name}</span>{' '}
             <span data-testid="pool-share">{m.share}</span>{' '}
             cut <span data-testid="pool-cut">{m.cut}</span>
@@ -94,7 +100,8 @@ function PoolRow({ pool, people, sheet, user }: { pool: Pool; people: Person[]; 
           e.preventDefault();
           submitOnce(() => {
             add.reset();
-            return add.mutateAsync({ personId, share: share.trim() });
+            const memberPool = personId.startsWith('pool:') ? personId.slice('pool:'.length) : '';
+            return add.mutateAsync(memberPool ? { memberPool, share: share.trim() } : { personId, share: share.trim() });
           });
         }}
       >
@@ -110,6 +117,9 @@ function PoolRow({ pool, people, sheet, user }: { pool: Pool; people: Person[]; 
           {people.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
+          {pools.map((p) => (
+            <option key={`pool:${p.name}`} value={`pool:${p.name}`}>{`pool:${p.name}`}</option>
+          ))}
         </select>{' '}
         <input
           data-testid="pool-member-share"
@@ -121,7 +131,7 @@ function PoolRow({ pool, people, sheet, user }: { pool: Pool; people: Person[]; 
           }}
         />{' '}
         <button type="submit" data-testid="pool-member-add">Add member</button>
-        {add.isError && <span data-testid="pool-error" role="alert"> Could not add the member: already in the pool, or the share is not more than 0.00 and at most 100.00 with two decimals.</span>}
+        {add.isError && <span data-testid="pool-error" role="alert"> Could not add the member: already in the pool, a pool already in a pool, containing this pool, or nesting more than three deep, or the share is not more than 0.00 and at most 100.00 with two decimals.</span>}
       </form>
     </li>
   );
