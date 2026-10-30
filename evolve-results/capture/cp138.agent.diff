@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/people/InlineGrade.tsx b/src/main/frontend/features/people/InlineGrade.tsx
+new file mode 100644
+index 00000000..e0726a95
+--- /dev/null
++++ b/src/main/frontend/features/people/InlineGrade.tsx
+@@ -0,0 +1,73 @@
++import { useEffect, useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { tagList } from '../claims/useClaims';
++import { usePersonAction } from './usePersonAction';
++import { GRADES, peopleKey, type Person } from './usePeople';
++
++// The row's grade select and its save: records the chosen grade from the sheet's today exactly as
++// the person form would (the person's other values as the row loaded them, with the version it
++// loaded, so a save over someone else's newer save is refused). Saving the grade the row shows
++// records nothing. A refusal shows the person's error.
++export function InlineGrade({ person, shown }: { person: Person; shown: string }) {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const [grade, setGrade] = useState(shown);
++  const queryClient = useQueryClient();
++  const once = useSubmitOnce();
++
++  useEffect(() => setGrade(shown), [shown, person.version]);
++
++  const save = useMutation({
++    mutationFn: (chosen: string) =>
++      putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(person.id)}`, {
++        name: person.name,
++        grade: chosen,
++        gradeFrom: '',
++        terms: person.terms,
++        contact: person.contact,
++        tags: tagList(person.tags),
++        user,
++        version: person.version,
++      }),
++    onSuccess: () => {
++      return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++    },
++  });
++  const taken = usePersonAction(person.id, () => save.reset());
++
++  return (
++    <>
++      <select
++        data-testid="person-inline-grade"
++        value={grade}
++        onChange={(e) => {
++          setGrade(e.target.value);
++          save.reset();
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>{g}</option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="person-inline-grade-save"
++        onClick={() => {
++          taken();
++          once(() => save.mutateAsync(grade));
++        }}
++      >
++        Save grade
++      </button>
++      {save.isError && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          The grade could not be saved.
++        </span>
++      )}
++    </>
++  );
++}
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 2ff89590..d6e320ec 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -12,6 +12,7 @@ import { AliasControl } from './AliasControl';
+ import { openedEditor } from './editorOpens';
+ import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
+ import { HoldControl } from './HoldControl';
++import { InlineGrade } from './InlineGrade';
+ import { MergeControl } from './MergeControl';
+ import { MoveControl } from './MoveControl';
+ import { PasteClaims } from './PasteClaims';
+@@ -252,6 +253,7 @@ export function PeopleList() {
+                   }}>
+                     Edit
+                   </button>{' '}
++                  <InlineGrade person={p} shown={gradeOn(p, today)} />{' '}
+                   <MoveControl personId={p.id} />{' '}
+                   <StatementButton personId={p.id} />{' '}
+                   <UnstateButton personId={p.id} />{' '}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 54890d8c..800beeb3 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -174,7 +174,8 @@ public class AsOfView {
+         Date end = Date.valueOf(date);
+         Map<Long, Claim> latest = new HashMap<>();
+         Map<Long, Claim> now = new LinkedHashMap<>();
+-        claims.list(sheetId).forEach(claim -> now.put(claim.getId(), claim));
++        // Those transferred away since still stood on the sheet.
++        claims.listWithTransferredAfter(sheetId, date).forEach(claim -> now.put(claim.getId(), claim));
+         jdbc.query("SELECT * FROM claim_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
+             Claim current = now.get(rs.getLong("claim_id"));
+             if (current == null) return;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 9734eb50..6b97b7c0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -6,11 +6,13 @@ import java.sql.PreparedStatement;
+ import java.sql.Statement;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.Comparator;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.holiday.Holidays;
+ import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+@@ -76,6 +78,20 @@ public class Claims {
+                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+     }
+ 
++    /** The sheet's claims with those transferred away after the date (as they stood when they left), newest first. */
++    public List<Claim> listWithTransferredAfter(String sheetId, LocalDate date) {
++        List<Claim> found = new ArrayList<>(list(sheetId));
++        found.addAll(jdbc.query("SELECT c.*, CAST(NULL AS DATE) AS corrected_date FROM claim_transferred c"
++                + " WHERE c.sheet_id = ? AND c.transferred_on > ?", ROW, sheetId, Date.valueOf(date)));
++        Map<Long, Long> listed = new HashMap<>();
++        jdbc.query("SELECT id, COALESCE(listed_seq, 0) FROM claim WHERE sheet_id = ?"
++                + " UNION ALL SELECT id, COALESCE(listed_seq, 0) FROM claim_transferred WHERE sheet_id = ?",
++                (RowCallbackHandler) rs -> listed.put(rs.getLong(1), rs.getLong(2)), sheetId, sheetId);
++        found.sort(Comparator.comparing((Claim c) -> listed.getOrDefault(c.getId(), 0L))
++                .thenComparingLong(Claim::getId).reversed());
++        return found;
++    }
++
+     /** The sheet's claims, newest first. */
+     public List<Claim> list(String sheetId) {
+         return withLogs(sheetId, jdbc.query(SELECT + " WHERE c.sheet_id = ? ORDER BY c.listed_seq DESC, c.id DESC", ROW, sheetId));
+@@ -318,6 +334,9 @@ public class Claims {
+ 
+     /** Removes the claim, its log, its comments and its lines from its sheet (its history is kept for the as-of view). */
+     public void remove(Claim claim) {
++        // Kept as it stood, so the as-of view of a date before it left still shows it.
++        jdbc.update("INSERT INTO claim_transferred SELECT c.*, (SELECT today FROM sheet WHERE id = ?) FROM claim c"
++                + " WHERE c.sheet_id = ? AND c.id = ?", claim.getSheetId(), claim.getSheetId(), claim.getId());
+         jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
+         jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
+         jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
+diff --git a/src/main/resources/db/migration/V74__claim_transferred.sql b/src/main/resources/db/migration/V74__claim_transferred.sql
+new file mode 100644
+index 00000000..48e0e152
+--- /dev/null
++++ b/src/main/resources/db/migration/V74__claim_transferred.sql
+@@ -0,0 +1,5 @@
++-- Claims that left the sheet with their person on a transfer, as they stood when they left (transferred_on: the
++-- sheet's today then), so the as-of view of an earlier date still shows them. A column later added to claim must be
++-- added here too, before transferred_on (claims are copied in with SELECT c.*).
++CREATE TABLE claim_transferred AS SELECT * FROM claim WITH NO DATA;
++ALTER TABLE claim_transferred ADD COLUMN transferred_on DATE;
