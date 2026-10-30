@@ -13,7 +13,7 @@ export type Role = { user: string; role: string };
  *  (a grade not listed uses the sheet's terms), the cap with two decimals ("" for none: a person's due-total is at most it) and the
  *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved)
  *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string> };
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string };
 
 /** A value recorded for a dated setting (clerk-limit, floor, terms, terms-<grade>, late-pct, cap): the date
  *  it is in force from and the value ("" for none). The figures shown in Settings are those in force on the

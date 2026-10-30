@@ -156,6 +156,17 @@ public class Settings {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
     }
 
+    /** The sheet's grace days; null when off. */
+    public Integer graceDays(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the grace days
+        return jdbc.queryForObject("SELECT grace_days FROM sheet WHERE id = ?", Integer.class, sheetId);
+    }
+
+    public void setGraceDays(String sheetId, Integer days) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
+    }
+
     /** The role the user name holds on the sheet; a clerk unless set otherwise. */
     public String role(String sheetId, String user) {
         List<String> found = jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
@@ -209,7 +220,7 @@ public class Settings {
     /** The sheet's settings as shown: each dated one as in force on the sheet's today — the clerk limit ("" for none),
      *  the floor, the terms, the late percent, each grade's own terms (a grade with none then is left out) and the cap
      *  ("" for none) — the proof threshold ("" for none), the policy date ("" for blank), the period numbering from ("" for off), every role set, by user
-     *  name, every value recorded for the dated settings and each action's permission ("" for the standing rule). */
+     *  name, every value recorded for the dated settings and each action's permission ("" for the standing rule), and the grace days ("" for off). */
     public SettingsResponse load(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal limit = clerkLimit(sheetId);
@@ -217,6 +228,7 @@ public class Settings {
         BigDecimal threshold = proofThreshold(sheetId, today);
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
+        Integer grace = graceDays(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
@@ -236,6 +248,7 @@ public class Settings {
                 latePct(sheetId, today).setScale(2).toPlainString(), policy == null ? "" : policy.toString(),
                 numbering == null ? "" : numbering.toString(), roles, gradeTerms,
                 cap == null ? "" : cap.setScale(2).toPlainString(), dated(sheetId),
-                threshold == null ? "" : threshold.setScale(2).toPlainString(), perms);
+                threshold == null ? "" : threshold.setScale(2).toPlainString(), perms,
+                grace == null ? "" : String.valueOf(grace));
     }
 }
