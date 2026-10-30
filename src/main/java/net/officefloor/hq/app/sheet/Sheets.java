@@ -2,7 +2,10 @@ package net.officefloor.hq.app.sheet;
 
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -69,6 +72,21 @@ public class Sheets {
     public String parent(String sheetId) {
         List<String> found = jdbc.query("SELECT parent FROM sheet WHERE id = ?", (rs, i) -> rs.getString(1), sheetId);
         return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The sheet's descendants: the sheets naming it as their parent, their children and so on, nearest first. */
+    public List<String> descendants(String sheetId) {
+        List<String> found = new ArrayList<>();
+        Set<String> seen = new HashSet<>(List.of(sheetId));
+        for (int at = -1; at < found.size(); at++) {
+            String of = at < 0 ? sheetId : found.get(at);
+            for (String child : jdbc.query("SELECT id FROM sheet WHERE parent = ? ORDER BY id", (rs, i) -> rs.getString(1), of)) {
+                if (seen.add(child)) {
+                    found.add(child);
+                }
+            }
+        }
+        return found;
     }
 
     public void setParent(String sheetId, String parent) {
