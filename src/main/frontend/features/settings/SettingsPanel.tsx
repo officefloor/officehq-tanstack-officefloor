@@ -11,7 +11,8 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // due-by is its date plus them; saved when its field is filled, together with any other field filled), the late percent
 // (two decimals; an overdue claim gains it of its figure for every full 30 days overdue; saved like the terms), the policy date (a claim dated
 // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
-// filled or was the last one entered, together with any other field filled) and the role each user name holds (clerk unless set to steward).
+// filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
+// a claim opened is numbered within its period; blank: off; saved like the policy date) and the role each user name holds (clerk unless set to steward).
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -26,9 +27,13 @@ export function SettingsPanel() {
   const [policyDate, setPolicyDate] = useState('');
   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
   const policyChosen = useRef(false);
-  // Entering another field leaves a blank policy date as it is.
+  const [numberingFrom, setNumberingFrom] = useState('');
+  // Likewise the period numbering from may be saved blank (off).
+  const numberingChosen = useRef(false);
+  // Entering another field leaves a blank policy date (and a blank period numbering from) as it is.
   const unchoosePolicy = () => {
     if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
   };
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -42,6 +47,10 @@ export function SettingsPanel() {
       else if (body.key === 'policy-date') {
         setPolicyDate('');
         policyChosen.current = false;
+      }
+      else if (body.key === 'period-numbering-from') {
+        setNumberingFrom('');
+        numberingChosen.current = false;
       }
       else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -65,13 +74,15 @@ export function SettingsPanel() {
           submitSetting(() => {
             saveSetting.reset();
             const policy = policyDate.trim() !== '' || policyChosen.current;
-            if (terms.trim() !== '' || latePct.trim() !== '' || policy) {
+            const numbering = numberingFrom.trim() !== '' || numberingChosen.current;
+            if (terms.trim() !== '' || latePct.trim() !== '' || policy || numbering) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
                 ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
                 ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
+                ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => saveSetting.mutateAsync(body)), Promise.resolve());
             }
@@ -133,6 +144,7 @@ export function SettingsPanel() {
           value={policyDate}
           placeholder="Policy date YYYY-MM-DD (blank: the sheet's today)"
           onFocus={() => {
+            if (numberingFrom.trim() === '') numberingChosen.current = false;
             policyChosen.current = true;
           }}
           onChange={(e) => {
@@ -141,8 +153,23 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Period numbering from: <span data-testid="setting-period-numbering-from-current">{settings?.periodNumberingFrom ?? ''}</span>{' '}
+        <input
+          data-testid="setting-period-numbering-from"
+          value={numberingFrom}
+          placeholder="Period numbering from YYYY-MM-DD (blank: off)"
+          onFocus={() => {
+            if (policyDate.trim() === '') policyChosen.current = false;
+            numberingChosen.current = true;
+          }}
+          onChange={(e) => {
+            setNumberingFrom(e.target.value);
+            numberingChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

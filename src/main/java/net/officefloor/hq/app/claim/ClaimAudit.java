@@ -11,7 +11,7 @@ final class ClaimAudit {
     private ClaimAudit() {
     }
 
-    static String line(String event, String user, Person person, Claim claim, Long number) {
+    static String line(String event, String user, Person person, Claim claim, String number) {
         ClaimResponse shown = ClaimResponse.from(claim);
         return event + " sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
                 + " amount=" + shown.amount() + " date=" + shown.date() + (number == null ? "" : " number=" + number);

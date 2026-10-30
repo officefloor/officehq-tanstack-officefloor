@@ -14,10 +14,10 @@ public record ClaimResponse(String id, String personId, String amount, String da
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
                 claim.getAmount().setScale(2).toPlainString(), claim.getDate().toString(), claim.getNote(),
-                claim.getStatus().name(), claim.getNumber() == null ? "" : String.valueOf(claim.getNumber()),
+                claim.getStatus().name(), claim.getNumber() == null ? "" : claim.getNumber(),
                 fixedDue(claim) == null ? "" : fixedDue(claim).setScale(2).toPlainString(),
                 claim.getOpenedBy() == null ? "" : claim.getOpenedBy(), claim.isStated(),
-                claim.getCorrects() == null ? "" : String.valueOf(claim.getCorrects()),
+                claim.getCorrects() == null ? "" : claim.getCorrects(),
                 claim.getRoundingDate().toString());
     }
 

@@ -19,10 +19,10 @@ public class Claims {
         Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
                 rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-                rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
+                rs.getString("claim_number"), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
         claim.setStated(rs.getBoolean("stated"));
         claim.setStatedDue(rs.getBigDecimal("stated_due"));
-        claim.setCorrects(rs.getObject("corrects", Long.class));
+        claim.setCorrects(rs.getString("corrects"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
@@ -57,7 +57,7 @@ public class Claims {
         return add(sheetId, personId, amount, date, note, null);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -68,7 +68,7 @@ public class Claims {
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
-            ps.setObject(6, corrects);
+            ps.setString(6, corrects);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
@@ -78,7 +78,7 @@ public class Claims {
     }
 
     /** The date of the person's claim with this number; null when there is none (or no number). */
-    public LocalDate correctedDate(String sheetId, long personId, Long number) {
+    public LocalDate correctedDate(String sheetId, long personId, String number) {
         if (number == null) return null;
         List<LocalDate> found = jdbc.query("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
                 (rs, i) -> rs.getDate(1).toLocalDate(), sheetId, personId, number);
@@ -92,7 +92,7 @@ public class Claims {
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet: one a correction may correct. */
-    public boolean isSettled(String sheetId, long personId, long number) {
+    public boolean isSettled(String sheetId, long personId, String number) {
         Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
                 + " AND claim_number = ? AND status = ?", Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
         return found != null && found > 0;

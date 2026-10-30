@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 
 public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
-            Rates rates, Periods periods, Settings settings, Out<ClaimNumber> number)
+            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(claim.getSheetId()));
         if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
@@ -43,7 +43,7 @@ public class ApplyClaimStatus {
             }
         }
         if (request.target() == ClaimStatus.OPEN) {
-            claim.setNumber(sheets.nextClaimNumber(claim.getSheetId()));
+            claim.setNumber(numbering.next(claim.getSheetId(), claim.getDate()));
             claim.setOpenedBy(request.user());
         }
         // A voided claim keeps its number; numbers are never reused.

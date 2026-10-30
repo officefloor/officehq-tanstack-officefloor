@@ -11,11 +11,11 @@ public class ValidateClaim {
 
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
     private static final Pattern SIGNED_AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
-    private static final Pattern NUMBER = Pattern.compile("\\d+");
+    private static final Pattern NUMBER = Pattern.compile("\\d+|\\S+-\\d+");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
         BigDecimal amount = signedAmount(request.amount());
-        Long corrects = corrects(request.corrects());
+        String corrects = corrects(request.corrects());
         if (amount.signum() < 0 && corrects == null) {
             throw new InvalidClaimException("A negative amount is a correction: it must name the claim it corrects");
         }
@@ -45,17 +45,13 @@ public class ValidateClaim {
     }
 
     /** The number of the claim a correction corrects; null when blank. */
-    static Long corrects(String raw) throws InvalidClaimException {
+    static String corrects(String raw) throws InvalidClaimException {
         String corrects = raw == null ? "" : raw.trim();
         if (corrects.isEmpty()) return null;
         if (!NUMBER.matcher(corrects).matches()) {
             throw new InvalidClaimException("The claim corrected must be named by its number");
         }
-        try {
-            return Long.valueOf(corrects);
-        } catch (NumberFormatException e) {
-            throw new InvalidClaimException("The claim corrected must be named by its number");
-        }
+        return corrects;
     }
 
     /** Refuse a correction that does not name a SETTLED claim of the same person. */

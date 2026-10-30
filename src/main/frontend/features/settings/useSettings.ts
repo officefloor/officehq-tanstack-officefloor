@@ -8,8 +8,9 @@ export type Role = { user: string; role: string };
 /** The sheet's settings: the clerk limit with two decimals ("" for no limit), the floor with two
  *  decimals (a claim's live due is at least it), the terms in days (a claim's due-by is its date
  *  plus them), the late percent with two decimals (an overdue claim gains it of its figure for every
- *  full 30 days overdue), the policy date ("" for blank: the sheet's today) and the roles set. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; roles: Role[] };
+ *  full 30 days overdue), the policy date ("" for blank: the sheet's today), the period numbering from ("" for off: from it,
+ *  a claim opened is numbered within its period) and the roles set. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[] };
 
 /** The floor a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_FLOOR = '1.00';

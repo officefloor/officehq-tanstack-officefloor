@@ -9,7 +9,6 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupFigures;
-import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
-            Claims claims, People people, Periods periods, Sheets sheets, Rollup rollup, Audit audit,
+            Claims claims, People people, Periods periods, ClaimNumbering numbering, Rollup rollup, Audit audit,
             ObjectResponse<BulkOpenResponse> response) {
         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
         List<Claim> all = claims.list(sheetId);
@@ -37,7 +36,7 @@ public class BulkOpenClaims {
                     continue;
                 }
                 RollupFigures before = rollup.figures(sheetId);
-                claim.setNumber(sheets.nextClaimNumber(sheetId));
+                claim.setNumber(numbering.next(sheetId, claim.getDate()));
                 claim.setOpenedBy(request.user());
                 claim.setStatus(ClaimStatus.OPEN);
                 claims.save(claim);

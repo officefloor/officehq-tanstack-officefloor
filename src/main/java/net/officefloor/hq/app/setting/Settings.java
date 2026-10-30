@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The settings store: the sheet's clerk limit, its floor, its terms, its late percent, its policy date and the role each user name holds on it. */
+/** The settings store: the sheet's clerk limit, its floor, its terms, its late percent, its policy date, its period numbering from and the role each user name holds on it. */
 @Repository
 public class Settings {
 
@@ -88,6 +88,18 @@ public class Settings {
         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
     }
 
+    /** The date from which claims opened are numbered within their period; null when off. */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the date
+        Date date = jdbc.queryForObject("SELECT period_numbering_from FROM sheet WHERE id = ?", Date.class, sheetId);
+        return date == null ? null : date.toLocalDate();
+    }
+
+    public void setPeriodNumberingFrom(String sheetId, LocalDate date) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
+    }
+
     /** The role the user name holds on the sheet; a clerk unless set otherwise. */
     public String role(String sheetId, String user) {
         List<String> found = jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
@@ -100,15 +112,17 @@ public class Settings {
                 sheetId, user, role);
     }
 
-    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent, the policy date ("" for blank) and every role set, by user name. */
+    /** The sheet's settings as shown: the clerk limit ("" for none), the floor, the terms, the late percent, the policy date ("" for blank), the period numbering from ("" for off) and every role set, by user name. */
     public SettingsResponse load(String sheetId) {
         BigDecimal limit = clerkLimit(sheetId);
         LocalDate policy = policyDateSet(sheetId);
+        LocalDate numbering = periodNumberingFrom(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
         return new SettingsResponse(limit == null ? "" : limit.setScale(2).toPlainString(),
                 floor(sheetId).setScale(2).toPlainString(), String.valueOf(terms(sheetId)),
-                latePct(sheetId).setScale(2).toPlainString(), policy == null ? "" : policy.toString(), roles);
+                latePct(sheetId).setScale(2).toPlainString(), policy == null ? "" : policy.toString(),
+                numbering == null ? "" : numbering.toString(), roles);
     }
 }

@@ -13,16 +13,16 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
-    private Long number;
+    private String number;
     private BigDecimal settledDue;
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
-    private Long corrects;
+    private String corrects;
     private LocalDate correctedDate;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Long number, BigDecimal settledDue, String openedBy) {
+            ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -42,8 +42,8 @@ public class Claim {
     public LocalDate getDate() { return date; }
     public String getNote() { return note; }
     public ClaimStatus getStatus() { return status; }
-    /** The number given when the claim was opened; null for a draft (a voided claim keeps the number it had). */
-    public Long getNumber() { return number; }
+    /** The number given when the claim was opened (sheet-wide, or <period>-<n> / X-<n> within its period); null for a draft (a voided claim keeps the number it had). */
+    public String getNumber() { return number; }
     /** The due fixed when the claim was settled; null while its due is live. */
     public BigDecimal getSettledDue() { return settledDue; }
     /** The user who opened the claim; null if it was never opened. */
@@ -52,7 +52,7 @@ public class Claim {
     public void setDate(LocalDate date) { this.date = date; }
     public void setNote(String note) { this.note = note; }
     public void setStatus(ClaimStatus status) { this.status = status; }
-    public void setNumber(Long number) { this.number = number; }
+    public void setNumber(String number) { this.number = number; }
     /** Whether the person's last statement bound this claim to a figure. */
     public boolean isStated() { return stated; }
     /** The figure the last statement bound this claim to; null when unbound or when it was n/a. */
@@ -62,8 +62,8 @@ public class Claim {
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
     /** The number of the SETTLED claim this correction corrects; null for any claim that is not a correction. */
-    public Long getCorrects() { return corrects; }
-    public void setCorrects(Long corrects) { this.corrects = corrects; }
+    public String getCorrects() { return corrects; }
+    public void setCorrects(String corrects) { this.corrects = corrects; }
     /** The date of the claim this correction corrects; null when it is not a correction or that claim is not found. */
     public void setCorrectedDate(LocalDate correctedDate) { this.correctedDate = correctedDate; }
     /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects, any other claim's its own. */

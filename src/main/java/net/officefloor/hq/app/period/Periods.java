@@ -58,6 +58,13 @@ public class Periods {
         return closed != null && closed > 0;
     }
 
+    /** The name of the sheet's period whose dates contain the date; null when none does. */
+    public String nameOn(String sheetId, LocalDate date) {
+        List<String> found = jdbc.query("SELECT name FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?",
+                (rs, i) -> rs.getString(1), sheetId, Date.valueOf(date), Date.valueOf(date));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Add a period, refusing a name already on the sheet or dates overlapping another period. */
     public void add(String sheetId, ValidPeriod period) throws InvalidPeriodException {
         // Lock the sheet's row so two periods added at once cannot both pass the overlap check.

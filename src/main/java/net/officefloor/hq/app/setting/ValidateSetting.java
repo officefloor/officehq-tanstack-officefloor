@@ -19,6 +19,8 @@ public class ValidateSetting {
 
     public static final String POLICY_DATE = "policy-date";
 
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     /** A number of days: 0 or more, whole. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
@@ -31,7 +33,7 @@ public class ValidateSetting {
     public void validate(@RequestBody SettingRequest request, Out<ValidSetting> body) throws InvalidSettingException {
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key)) {
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
@@ -44,6 +46,18 @@ public class ValidateSetting {
                 body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw)));
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The policy date must be a date (YYYY-MM-DD), or blank for the sheet's today");
+            }
+            return;
+        }
+        if (PERIOD_NUMBERING_FROM.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null)); // blank: off
+                return;
+            }
+            try {
+                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw)));
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The period numbering from must be a date (YYYY-MM-DD), or blank for off");
             }
             return;
         }
