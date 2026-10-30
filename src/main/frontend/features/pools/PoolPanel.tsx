@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { getJson, postJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { downloadCsv } from '../people/csv';
 import { usePeople, type Person } from '../people/usePeople';
 import { poolsKey, usePools, type Pool } from './usePools';
 
@@ -16,10 +18,12 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // of pools is at most three deep. A pool that is a member of none has the sheet's pot; a pool that is a member of
 // another has its cut there as its pot. A membership may carry an optional from-date and to-date (a to-date before
 // the from-date is refused); a member whose dates do not include the sheet's today is left out entirely: not in the
-// total share, not in the balance, no cut.
+// total share, not in the balance, no cut. The export button downloads the pools as CSV: one line per member, pools
+// and members in the order added, a pool member as pool:<name>, the cut as shown (empty when none).
 export function PoolPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
+  const asOf = useAsOf();
   const pools = usePools(sheet);
   const people = usePeople(sheet);
   const [name, setName] = useState('');
@@ -33,8 +37,23 @@ export function PoolPanel() {
       queryClient.setQueryData(poolsKey(sheet), saved);
     },
   });
+  const exportPools = async () => {
+    // Re-read so the cuts reflect any change made elsewhere on the screen since the pools were last fetched.
+    const fresh = await queryClient.fetchQuery({
+      queryKey: poolsKey(sheet, asOf),
+      queryFn: () => getJson<Pool[]>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, asOf)),
+      staleTime: 0,
+    });
+    downloadCsv('pools.csv', [
+      ['pool', 'member', 'share', 'cut'],
+      ...fresh.flatMap((p) => p.members.map((m) => [p.name, m.memberPool ? `pool:${m.memberPool}` : m.name, m.share, m.cut])),
+    ]);
+  };
   return (
     <>
+      <button type="button" data-testid="export-pools" onClick={() => void exportPools()}>
+        Export pools
+      </button>
       <ul data-testid="pool-list">
         {pools.map((p) => (
           <PoolRow key={p.name} pool={p} pools={pools} people={people} sheet={sheet} user={user} />
