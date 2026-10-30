@@ -32,6 +32,7 @@ public class Claims {
         claim.setDueBy(dueBy == null ? null : dueBy.toLocalDate());
         java.sql.Date deferredUntil = rs.getDate("deferred_until");
         claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
+        claim.setProofs(rs.getInt("proofs"));
         return claim;
     };
 
@@ -136,6 +137,12 @@ public class Claims {
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
+    }
+
+    /** Records the claim's proofs count. */
+    public void proofs(Claim claim) {
+        jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
+                claim.getProofs(), claim.getSheetId(), claim.getId());
     }
 
     public void save(Claim claim) {

@@ -80,6 +80,12 @@ public class Settings {
         return found == null ? null : found.value();
     }
 
+    /** The sheet's proof threshold in force on a date (a claim's: its date); null for none. */
+    public BigDecimal proofThreshold(String sheetId, LocalDate on) {
+        InForce found = on(sheetId, ValidateSetting.PROOF_THRESHOLD, on);
+        return found == null ? null : found.value();
+    }
+
     /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
@@ -161,12 +167,13 @@ public class Settings {
 
     /** The sheet's settings as shown: each dated one as in force on the sheet's today — the clerk limit ("" for none),
      *  the floor, the terms, the late percent, each grade's own terms (a grade with none then is left out) and the cap
-     *  ("" for none) — the policy date ("" for blank), the period numbering from ("" for off), every role set, by user
+     *  ("" for none) — the proof threshold ("" for none), the policy date ("" for blank), the period numbering from ("" for off), every role set, by user
      *  name, and every value recorded for the dated settings. */
     public SettingsResponse load(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         BigDecimal limit = clerkLimit(sheetId);
         BigDecimal cap = cap(sheetId);
+        BigDecimal threshold = proofThreshold(sheetId, today);
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         List<RoleResponse> roles = jdbc.query(
@@ -183,6 +190,7 @@ public class Settings {
                 floor(sheetId, today).setScale(2).toPlainString(), String.valueOf(terms(sheetId, today)),
                 latePct(sheetId, today).setScale(2).toPlainString(), policy == null ? "" : policy.toString(),
                 numbering == null ? "" : numbering.toString(), roles, gradeTerms,
-                cap == null ? "" : cap.setScale(2).toPlainString(), dated(sheetId));
+                cap == null ? "" : cap.setScale(2).toPlainString(), dated(sheetId),
+                threshold == null ? "" : threshold.setScale(2).toPlainString());
     }
 }

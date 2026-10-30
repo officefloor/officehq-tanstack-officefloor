@@ -26,6 +26,9 @@ import { peopleKey, type Person } from '../people/usePeople';
 // not after today or a claim dated inside a closed period is refused with the claim's error): until the sheet's today reaches
 // that date it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. Each claim shows
 // deferred (yes while it is deferred) and the date it was deferred until.
+// Each claim shows its proofs count, raised by one with the proof button (a SETTLED or VOID claim, or one dated inside a closed
+// period, is refused with the claim's error). A claim whose due is above the proof threshold in force on its date cannot be
+// settled or approved while its proofs count is 0: that is refused with the claim's error, before the clerk limit is considered.
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 export function ClaimList({
   claims,
@@ -116,6 +119,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const proof = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/proof`,
+        { user },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   const [editRefused, setEditRefused] = useState(false);
 
   // The next action on the row removes an old error.
@@ -124,6 +136,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     setEditRefused(false);
     run();
   };
@@ -151,6 +164,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
       <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+      <span data-testid="claim-proofs">{c.proofs ?? '0'}</span>{' '}
       <ol data-testid="claim-log">
         {(c.log ?? []).map((line, i) => (
           <li key={i} data-testid="claim-log-line">
@@ -158,6 +172,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
           </li>
         ))}
       </ol>{' '}
+      <button type="button" data-testid="claim-proof" onClick={() => act(() => proof.mutate())}>
+        Add proof
+      </button>{' '}
       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate({ action: 'open' }))}>
         Open
       </button>{' '}
@@ -226,13 +243,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
+          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, and no claim dated inside a closed period can change status).
         </span>
       )}
       {resettle.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only a steward can re-settle a claim, only a SETTLED one, and not one dated inside a closed period.
+        </span>
+      )}
+      {proof.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: a SETTLED or VOID claim, or one dated inside a closed period, cannot take a proof.
         </span>
       )}
       {defer.isError && (

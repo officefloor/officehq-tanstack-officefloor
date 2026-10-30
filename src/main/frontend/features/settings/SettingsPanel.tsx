@@ -18,7 +18,8 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
 // due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward).
 // The clerk limit, the floor, the terms, each grade's terms, the late percent and the cap are dated: each has a from-date
 // field (blank: the sheet's today) and is saved as its value from that date, keeping the values from other dates; each
-// shows the value in force on the sheet's today. A claim takes the floor, late percent and terms in force on its date.
+// shows the value in force on the sheet's today. The proof threshold (two decimals; blank: none; saved like the cap) is dated
+// too: a claim whose due is above the one in force on its date needs a proof to be settled or approved. A claim takes the floor, late percent and terms in force on its date.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -41,11 +42,15 @@ export function SettingsPanel() {
   const [cap, setCap] = useState('');
   // Likewise the cap may be saved blank (none).
   const capChosen = useRef(false);
+  const [proofThreshold, setProofThreshold] = useState('');
+  // Likewise the proof threshold may be saved blank (none).
+  const proofChosen = useRef(false);
   // Entering another field leaves a blank policy date (and a blank period numbering from, and a blank cap) as it is.
   const unchoosePolicy = () => {
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (cap.trim() === '') capChosen.current = false;
+    if (proofThreshold.trim() === '') proofChosen.current = false;
   };
   // Each dated setting's from-date, by key, as typed.
   const [froms, setFroms] = useState<Record<string, string>>({});
@@ -66,7 +71,15 @@ export function SettingsPanel() {
   const focusCap = () => {
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (proofThreshold.trim() === '') proofChosen.current = false;
     capChosen.current = true;
+  };
+  // Entering the proof threshold (or its from-date) marks it as the one to save, as it is.
+  const focusProof = () => {
+    if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (cap.trim() === '') capChosen.current = false;
+    proofChosen.current = true;
   };
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -90,6 +103,10 @@ export function SettingsPanel() {
       else if (body.key === 'cap') {
         setCap('');
         capChosen.current = false;
+      }
+      else if (body.key === 'proof-threshold') {
+        setProofThreshold('');
+        proofChosen.current = false;
       }
       else setLimit('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -118,8 +135,9 @@ export function SettingsPanel() {
             const policy = policyDate.trim() !== '' || policyChosen.current;
             const numbering = numberingFrom.trim() !== '' || numberingChosen.current;
             const capped = cap.trim() !== '' || capChosen.current;
+            const proofed = proofThreshold.trim() !== '' || proofChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
-            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped) {
+            if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -129,6 +147,7 @@ export function SettingsPanel() {
                 ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
                 ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
+                ...(proofed ? [{ key: 'proof-threshold', value: proofThreshold.trim() }] : []),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
             }
@@ -213,6 +232,7 @@ export function SettingsPanel() {
           onFocus={() => {
             if (numberingFrom.trim() === '') numberingChosen.current = false;
             if (cap.trim() === '') capChosen.current = false;
+            if (proofThreshold.trim() === '') proofChosen.current = false;
             policyChosen.current = true;
           }}
           onChange={(e) => {
@@ -229,6 +249,7 @@ export function SettingsPanel() {
           onFocus={() => {
             if (policyDate.trim() === '') policyChosen.current = false;
             if (cap.trim() === '') capChosen.current = false;
+            if (proofThreshold.trim() === '') proofChosen.current = false;
             numberingChosen.current = true;
           }}
           onChange={(e) => {
@@ -250,8 +271,21 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('cap', focusCap)}{' '}
+        Proof threshold: <span data-testid="setting-proof-threshold-current">{settings?.proofThreshold ?? ''}</span>{' '}
+        <input
+          data-testid="setting-proof-threshold"
+          value={proofThreshold}
+          placeholder="Proof threshold (blank: none)"
+          onFocus={focusProof}
+          onChange={(e) => {
+            setProofThreshold(e.target.value);
+            proofChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        {fromField('proof-threshold', focusProof)}{' '}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

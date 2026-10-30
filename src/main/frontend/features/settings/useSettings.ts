@@ -10,8 +10,9 @@ export type Role = { user: string; role: string };
  *  plus them, unless its person's grade has its own terms), the late percent with two decimals (an overdue claim gains it of its figure for every
  *  full 30 days overdue), the policy date ("" for blank: the sheet's today), the period numbering from ("" for off: from it,
  *  a claim opened is numbered within its period), the roles set and each grade's own terms in days, by grade
- *  (a grade not listed uses the sheet's terms), and the cap with two decimals ("" for none: a person's due-total is at most it). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]> };
+ *  (a grade not listed uses the sheet's terms), the cap with two decimals ("" for none: a person's due-total is at most it) and the
+ *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string };
 
 /** A value recorded for a dated setting (clerk-limit, floor, terms, terms-<grade>, late-pct, cap): the date
  *  it is in force from and the value ("" for none). The figures shown in Settings are those in force on the

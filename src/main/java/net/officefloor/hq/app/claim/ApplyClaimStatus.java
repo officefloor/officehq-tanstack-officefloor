@@ -47,17 +47,20 @@ public class ApplyClaimStatus {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until its deferred-until date");
         }
         ClaimStatus target = request.target();
+        if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {
+            // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
+            // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
+            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
+            BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
+            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                throw new ClaimStatusRefusedException("A claim whose due is above the proof threshold needs a proof to be settled");
+            }
+        }
         if (target == ClaimStatus.SETTLED && request.decision() == ValidClaimStatus.Decision.NONE && !steward) {
             // A clerk settles only within the sheet's clerk limit, judged on the claim's due as shown;
             // a due of n/a is within any limit.
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
-            String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
-            BigDecimal fixed = ClaimResponse.fixedDue(claim);
-            BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId(), claim.getDate()), rounding);
-            BigDecimal due = LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId(), claim.getDate()),
-                    sheets.today(claim.getSheetId()), rounding);
+            BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 // Above the clerk limit the claim awaits a steward's approval.
                 target = ClaimStatus.PENDING;
@@ -83,5 +86,17 @@ public class ApplyClaimStatus {
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
         claim.setStatus(target);
         return number;
+    }
+
+    /** The claim's due as shown: fixed (settled or bound), else its live figure with its late charge as of today; null for n/a. */
+    private static BigDecimal shownDue(Claim claim, Sheets sheets, People people, Rates rates, Settings settings,
+            RoundingMode rounding) {
+        String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+        BigDecimal fixed = ClaimResponse.fixedDue(claim);
+        BigDecimal figure = fixed != null || claim.isBound() ? fixed
+                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
+                settings.floor(claim.getSheetId(), claim.getDate()), rounding);
+        return LateCharge.withCharge(claim, figure, settings.latePct(claim.getSheetId(), claim.getDate()),
+                sheets.today(claim.getSheetId()), rounding);
     }
 }

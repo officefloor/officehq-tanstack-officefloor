@@ -30,6 +30,8 @@ export type Claim = {
   log: string[];
   /** The date the claim was last deferred until, "" if it was never deferred. */
   deferredUntil: string;
+  /** The claim's proofs count. */
+  proofs: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold
