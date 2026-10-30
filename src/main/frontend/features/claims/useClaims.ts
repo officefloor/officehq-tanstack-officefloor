@@ -54,6 +54,24 @@ export const isDeferred = (c: { status?: string; deferredUntil?: string }, today
 export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
   counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
 
+/** The status a claim had at the end of the day, as its status log records it (each line dated the sheet's today
+ *  when the change was made); undefined when it was added after that day. */
+export function statusAt(c: Claim, end: string): ClaimStatus | undefined {
+  let at: ClaimStatus | undefined;
+  for (const line of c.log ?? []) {
+    const m = / on (\d{4}-\d{2}-\d{2}) due=[^ ]*$/.exec(line);
+    if (m && m[1] <= end) at = line.slice(0, line.indexOf(' ')) as ClaimStatus;
+  }
+  return at;
+}
+
+/** Whether a claim counts in a period ending on `end`: by the status it had at the end of that day, and, as in the
+ *  live totals, not deferred on the sheet's today and not open, unbound and dated within one of its person's holds. */
+export const countsAtEnd = (c: Claim, end: string, heldOn: (date: string) => boolean, today: string | undefined) => {
+  const then = statusAt(c, end);
+  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
+};
+
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
 
 /** The sheet's claims, newest first. */

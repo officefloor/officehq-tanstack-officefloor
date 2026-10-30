@@ -7,8 +7,8 @@ import { formatCents } from '../rates/due';
 import { usePeriodDueTotal } from './usePeriodDueTotal';
 import { periodsKey, usePeriods, type Period } from './usePeriods';
 
-// The sheet's periods, each with its dates and due-total (the dues, late charges included, of the claims that count whose
-// date falls in it, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
+// The sheet's periods, each with its dates and due-total (the dues as shown now, late charges included, of the claims
+// whose date falls in it that counted by the status they had at the end of its last day, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
 // already on the sheet, a from-date on or before the to-date, not overlapping another period). A
 // closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward
 // can reopen it, making its due-total live again.

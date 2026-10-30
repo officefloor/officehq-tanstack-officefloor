@@ -21,8 +21,8 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Closes a period, fixing its due-total as it is now: the dues of the claims that count dated in
- *  it, each with its late charge, and each person's share of it (a person's unbound OPEN claims dated within one of their holds count in none; a claim whose due is n/a adds nothing). */
+/** Closes a period, fixing its due-total as it is now: the dues as shown now of the claims dated in it that counted
+ *  at the end of its last day (see {@link Person#countsAtEnd}), each with its late charge, and each person's share of it (a person's unbound OPEN claims dated within one of their holds count in none; a claim whose due is n/a adds nothing). */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,
@@ -44,7 +44,7 @@ public class ClosePeriod {
         for (Person person : people.list(sheetId)) {
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
-                if (claim.getPersonId() != person.getId() || !person.countsLive(claim, today)
+                if (claim.getPersonId() != person.getId() || !person.countsAtEnd(claim, to, today)
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
