@@ -9,8 +9,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 
 // Takes a statement for the person: the server records their due-total now and binds each of their
 // counting claims to its figure now (the rest are left unbound). With a date beside the button (on or
-// before the sheet's today; blank: now) the statement is taken as of the end of that date. A refusal
-// shows the person's error.
+// before the sheet's today; blank: now) the statement is taken as of the end of that date; the date is cleared
+// once the statement is taken or refused. A refusal shows the person's error.
 export function StatementButton({ personId }: { personId: string }) {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -24,8 +24,9 @@ export function StatementButton({ personId }: { personId: string }) {
         user,
         asOf: date,
       }),
+    // The date is used for this statement alone, taken or refused: the next one is now unless a date is given again.
+    onSettled: () => setAsOf(''),
     onSuccess: () => {
-      setAsOf('');
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),

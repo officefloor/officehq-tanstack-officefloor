@@ -98,6 +98,12 @@ public class People {
         person.clearRecordedGrade();
     }
 
+    /** Records the person's name and own terms as they now stand in their history, dated the sheet's today. */
+    private void writeHistory(Person person) {
+        jdbc.update("INSERT INTO person_history (sheet_id, person_id, set_on, name, terms) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)",
+                person.getSheetId(), person.getId(), person.getSheetId(), person.getName(), person.getTerms());
+    }
+
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
         return withGrades(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId)));
@@ -127,8 +133,8 @@ public class People {
 
     /** Records the patron as one of the person's patrons. The person's version is left as it is. */
     public void addPatron(Person person, Person patron) {
-        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
-                person.getSheetId(), person.getId(), patron.getId());
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, set_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), patron.getId(), person.getSheetId());
         person.getPatronIds().add(patron.getId());
         person.getPatronNames().add(patron.getName());
         person.getPatronNames().sort(BY_NAME);
@@ -175,6 +181,7 @@ public class People {
         }, keys);
         Person person = new Person(keys.getKey().longValue(), sheetId, name, grade);
         person.setTerms(terms);
+        writeHistory(person);
         // The first grade a person is given applies from the beginning of time.
         person.recordGrade(Person.BEGINNING, grade);
         writeRecordedGrade(person);
@@ -193,23 +200,24 @@ public class People {
 
     /** Records a statement taken for the person in their statement history. */
     public void addStatement(Person person) {
-        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date) VALUES (?, ?, ?, ?)",
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, set_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
                 person.getSheetId(), person.getId(), person.getStatedTotal(),
-                person.getStatementDate() == null ? null : java.sql.Date.valueOf(person.getStatementDate()));
+                person.getStatementDate() == null ? null : java.sql.Date.valueOf(person.getStatementDate()), person.getSheetId());
     }
 
-    /** Drops the person's last statement from their history and sets the person's statement to the one
+    /** Marks the person's last statement cancelled in their history (kept, dated, for the as-of view) and sets the person's statement to the one
      *  before it (no due-total or date when there is none, or it is not known). The count goes down by one. */
     public void cancelStatement(Person person) {
-        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY seq DESC LIMIT 1",
+        List<Long> last = jdbc.query("SELECT seq FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY seq DESC LIMIT 1",
                 (rs, i) -> rs.getLong(1), person.getSheetId(), person.getId());
         if (!last.isEmpty()) {
-            jdbc.update("DELETE FROM person_statement WHERE seq = ?", last.get(0));
+            jdbc.update("UPDATE person_statement SET cancelled = TRUE, cancelled_on = (SELECT today FROM sheet WHERE id = ?) WHERE seq = ?",
+                    person.getSheetId(), last.get(0));
         }
         person.setStatementCount(person.getStatementCount() - 1);
         person.setStatedTotal(null);
         person.setStatementDate(null);
-        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY seq DESC LIMIT 1",
+        jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? AND NOT cancelled ORDER BY seq DESC LIMIT 1",
                 rs -> {
                     person.setStatedTotal(rs.getBigDecimal("stated_total"));
                     java.sql.Date date = rs.getDate("statement_date");
@@ -248,6 +256,7 @@ public class People {
             return false;
         }
         writeRecordedGrade(person);
+        writeHistory(person);
         person.setVersion(person.getVersion() + 1);
         return true;
     }

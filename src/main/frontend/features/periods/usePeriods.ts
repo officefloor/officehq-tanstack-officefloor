@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 
 /** A period: a name unique on the sheet, from and to dates (YYYY-MM-DD, both inclusive), whether it
  *  is closed, the due-total fixed when it was closed ("" while open), and each person's due-total for
@@ -15,13 +16,14 @@ export type Period = {
   softClosed: boolean;
 };
 
-export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as const;
+export const periodsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'periods', asOf] as const;
 
 /** The sheet's periods, by from-date. */
 export function usePeriods(sheet: string): Period[] {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: periodsKey(sheet),
-    queryFn: () => getJson<Period[]>(`/api/sheets/${encodeURIComponent(sheet)}/periods`),
+    queryKey: periodsKey(sheet, asOf),
+    queryFn: () => getJson<Period[]>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, asOf)),
     enabled: sheet !== '',
   });
   return data ?? [];

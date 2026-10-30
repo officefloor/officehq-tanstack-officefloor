@@ -3,6 +3,7 @@ import { asString, useSearchParam } from '../url/useSearchParam';
 import { CurrentUser, SignIn } from '../features/session/SignIn';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
+import { AsOfControl } from '../features/asof/AsOfControl';
 import { RatePanel } from '../features/rates/RatePanel';
 import { SettingsPanel } from '../features/settings/SettingsPanel';
 import { PeriodPanel } from '../features/periods/PeriodPanel';
@@ -28,6 +29,7 @@ function Home() {
         <div key={sheet}>
           <SheetHeader />
           <SheetToday />
+          <AsOfControl />
           <RatePanel />
           <SettingsPanel />
           <PeriodPanel />

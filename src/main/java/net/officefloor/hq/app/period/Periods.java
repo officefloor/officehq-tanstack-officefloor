@@ -62,6 +62,18 @@ public class Periods {
         personTotals.forEach((personId, personTotal) -> jdbc.update(
                 "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
                 sheetId, name, personId, personTotal));
+        history(sheetId, name, !soft, soft, total, personTotals);
+    }
+
+    /** Records a close, soft-close or reopen of the period in its history, dated the sheet's today. */
+    private void history(String sheetId, String name, boolean closed, boolean soft, BigDecimal total,
+            Map<Long, BigDecimal> personTotals) {
+        StringBuilder totals = new StringBuilder();
+        personTotals.forEach((personId, personTotal) -> totals.append(totals.isEmpty() ? "" : ";").append(personId)
+                .append('=').append(personTotal.setScale(2).toPlainString()));
+        jdbc.update("INSERT INTO period_history (sheet_id, name, set_on, closed, soft_closed, closed_total, person_totals)"
+                + " VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?)", sheetId, name, sheetId, closed, soft,
+                total, totals.toString());
     }
 
     /** Reopen the named period, dropping its fixed due-total. */
@@ -69,6 +81,7 @@ public class Periods {
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
                 sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        history(sheetId, name, false, false, null, Map.of());
     }
 
     /** Whether a date falls inside a closed period of the sheet. */
@@ -110,8 +123,8 @@ public class Periods {
             throw new InvalidPeriodException("The period's dates overlap another period");
         }
         try {
-            jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
-                    sheetId, period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
+            jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    sheetId, period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()), sheetId);
         } catch (DuplicateKeyException raced) {
             throw new InvalidPeriodException("A period named " + period.name() + " is already on the sheet");
         }

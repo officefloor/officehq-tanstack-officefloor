@@ -163,6 +163,7 @@ public class Settings {
     public void setPeriodNumberingFrom(String sheetId, LocalDate date) {
         sheets.today(sheetId);
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
+        plainHistory(sheetId, NUMBERING, date == null ? "" : date.toString());
     }
 
     /** The sheet's grace days; null when off. */
@@ -174,6 +175,7 @@ public class Settings {
     public void setGraceDays(String sheetId, Integer days) {
         sheets.today(sheetId);
         jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
+        plainHistory(sheetId, GRACE, days == null ? "" : String.valueOf(days));
     }
 
     /** The role the user name acts in on the sheet: a steward while a delegation to them covers the sheet's today,
@@ -202,6 +204,7 @@ public class Settings {
     public void setRole(String sheetId, String user, String role) {
         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
                 sheetId, user, role);
+        plainHistory(sheetId, ROLE + user, role);
     }
 
     /** The steward whose delegation to the user covers the sheet's today (the latest given, when several do); null for none. */
@@ -215,8 +218,8 @@ public class Settings {
 
     public void delegate(String sheetId, String user, LocalDate from, LocalDate to, String by) {
         sheets.today(sheetId);
-        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, from_date, to_date, delegated_by) VALUES (?, ?, ?, ?, ?)",
-                sheetId, user, Date.valueOf(from), Date.valueOf(to), by);
+        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, from_date, to_date, delegated_by, set_on) VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, user, Date.valueOf(from), Date.valueOf(to), by, sheetId);
     }
 
     /** The roles set for an action ("" for the standing rule). */
@@ -234,6 +237,16 @@ public class Settings {
             jdbc.update("MERGE INTO sheet_permission (sheet_id, action, roles) KEY (sheet_id, action) VALUES (?, ?, ?)",
                     sheetId, action, roles);
         }
+        plainHistory(sheetId, PERM + action, roles);
+    }
+
+    /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
+    public static final String NUMBERING = "numbering", GRACE = "grace", PERM = "perm-", ROLE = "role-";
+
+    /** Records an undated setting's value as set in its history, dated the sheet's today. */
+    private void plainHistory(String sheetId, String key, String value) {
+        jdbc.update("INSERT INTO plain_setting_history (sheet_id, set_on, setting_key, setting_value) VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?)",
+                sheetId, sheetId, key, value);
     }
 
     /** Whether the user's role may take the action on the sheet: by its permission when set, else by the standing

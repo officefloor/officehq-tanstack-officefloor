@@ -24,10 +24,18 @@ public class Watches {
 
     public void watch(String sheetId, long personId, String user) {
         jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, personId, user);
+        history(sheetId, personId, user, true);
     }
 
     public void unwatch(String sheetId, long personId, String user) {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?", sheetId, personId, user);
+        history(sheetId, personId, user, false);
+    }
+
+    /** Records the start or stop of a watch in the watch history, dated the sheet's today. */
+    private void history(String sheetId, long personId, String user, boolean watching) {
+        jdbc.update("INSERT INTO watch_history (sheet_id, person_id, user_name, set_on, watching) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                sheetId, personId, user, sheetId, watching);
     }
 
     /** The ids of the people the user watches on the sheet. */

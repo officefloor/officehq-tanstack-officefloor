@@ -55,8 +55,10 @@ public class Claims {
     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
     private void history(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
-                + " stated, stated_due, due_by, deferred_until, corrects) SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount,"
-                + " c.claim_date, c.status, c.settled_due, c.stated, c.stated_due, c.due_by, c.deferred_until, c.corrects"
+                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry)"
+                + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
+                + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
+                + " c.split_from, c.late_entry"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
@@ -165,12 +167,14 @@ public class Claims {
     public void markLateEntry(Claim claim) {
         claim.setLateEntry(true);
         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     /** Records the number of the claim this claim was split from. */
     public void splitFrom(Claim claim) {
         jdbc.update("UPDATE claim SET split_from = ? WHERE sheet_id = ? AND id = ?",
                 claim.getSplitFrom(), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     /** Records the claim's proofs count. */
@@ -199,6 +203,7 @@ public class Claims {
     public void proofs(Claim claim) {
         jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
                 claim.getProofs(), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
     }
 
     public void save(Claim claim) {

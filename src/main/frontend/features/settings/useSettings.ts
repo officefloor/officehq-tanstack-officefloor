@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 import { useSheetToday } from '../sheet/useSheetToday';
 
 /** A role a user name holds on the sheet: clerk (any name not listed), steward or viewer (sees everything, changes nothing). */
@@ -40,12 +41,13 @@ export const DEFAULT_FLOOR = '1.00';
  *  by clerk and steward, reassign and reopen by steward. */
 export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 
-export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as const;
+export const settingsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'settings', asOf] as const;
 
 export function useSettings(sheet: string): Settings | undefined {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: settingsKey(sheet),
-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`),
+    queryKey: settingsKey(sheet, asOf),
+    queryFn: () => getJson<Settings>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, asOf)),
     enabled: sheet !== '',
   });
   return data;

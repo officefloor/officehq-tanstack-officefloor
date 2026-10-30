@@ -1,17 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 
 /** A grade's rate: a percent shown with two decimals ("12.50"), in force from a date (YYYY-MM-DD;
  *  "" for from the beginning of time) through a date ("" for no end). */
 export type Rate = { grade: string; rate: string; from: string; to: string };
 
-export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
+export const ratesKey = (sheet: string, asOf = '') => ['sheet', sheet, 'rates', asOf] as const;
 
 /** The sheet's rates, by grade then from-date (from the beginning of time first). */
 export function useRates(sheet: string): Rate[] {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: ratesKey(sheet),
-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`),
+    queryKey: ratesKey(sheet, asOf),
+    queryFn: () => getJson<Rate[]>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
     enabled: sheet !== '',
   });
   return data ?? [];

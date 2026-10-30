@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
@@ -78,13 +79,14 @@ export const countsAtEnd = (c: Claim, end: string, heldOn: (date: string) => boo
   return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
 };
 
-export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
+export const claimsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'claims', asOf] as const;
 
 /** The sheet's claims, newest first. */
 export function useClaims(sheet: string): Claim[] {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: claimsKey(sheet),
-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
+    queryKey: claimsKey(sheet, asOf),
+    queryFn: () => getJson<Claim[]>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, asOf)),
     enabled: sheet !== '',
   });
   return data ?? [];

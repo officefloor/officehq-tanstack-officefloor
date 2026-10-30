@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { readPath, useAsOf } from '../asof/useAsOf';
 
 /** `version` goes up on every save; an editor sends back the version it loaded, so a save over
  *  someone else's newer one is refused. `statementCount` is how many statements were taken;
@@ -57,13 +58,14 @@ export function gradeOn(person: Person, date: string | undefined): string {
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
+export const peopleKey = (sheet: string, asOf = '') => ['sheet', sheet, 'people', asOf] as const;
 
 /** The sheet's people, in the order they were added. */
 export function usePeople(sheet: string): Person[] {
+  const asOf = useAsOf();
   const { data } = useQuery({
-    queryKey: peopleKey(sheet),
-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
+    queryKey: peopleKey(sheet, asOf),
+    queryFn: () => getJson<Person[]>(readPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, asOf)),
     enabled: sheet !== '',
   });
   return data ?? [];
