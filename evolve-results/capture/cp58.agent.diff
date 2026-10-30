@@ -1,0 +1,389 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 84b955b6..d45dba7e 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -12,6 +12,8 @@ import { PasteClaims } from './PasteClaims';
+ import { PatronControl } from './PatronControl';
+ import { QuickAdd } from './QuickAdd';
+ import { RetireControl } from './RetireControl';
++import { WatchControl } from './WatchControl';
++import { useWatches } from './useWatches';
+ import { downloadCsv } from './csv';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+ import { gradeOn } from './usePeople';
+@@ -34,7 +36,9 @@ import { useSheetFigures } from './useSheetFigures';
+ // with their select checkbox are opened together with the bulk open button.
+ export function PeopleList() {
+   const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
++  const watched = useWatches(sheet, user);
+   const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+@@ -83,6 +87,7 @@ export function PeopleList() {
+             <th>Overdue</th>
+             <th>Overdue due</th>
+             <th />
++            <th>Watched</th>
+             <th>Retired</th>
+             <th>Retired from</th>
+             <th>Hold</th>
+@@ -118,8 +123,10 @@ export function PeopleList() {
+                   <StatementButton personId={p.id} />{' '}
+                   <RetireControl personId={p.id} />{' '}
+                   <HoldControl personId={p.id} holds={p.holds} />{' '}
+-                  <PatronControl personId={p.id} people={people} />
++                  <PatronControl personId={p.id} people={people} />{' '}
++                  <WatchControl personId={p.id} watched={watched.includes(p.id)} />
+                 </td>
++                <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>
+                 <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>
+                 <td data-testid="person-retired-from">{p.retiredFrom}</td>
+                 <td data-testid="person-hold">{p.held ? 'yes' : 'no'}</td>
+diff --git a/src/main/frontend/features/people/WatchControl.tsx b/src/main/frontend/features/people/WatchControl.tsx
+new file mode 100644
+index 00000000..cd7422ff
+--- /dev/null
++++ b/src/main/frontend/features/people/WatchControl.tsx
+@@ -0,0 +1,48 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { usePersonAction } from './usePersonAction';
++import { type Person } from './usePeople';
++import { watchesKey } from './useWatches';
++
++// Starts or stops the signed-in user watching the person (watching is per user). When a watched
++// person's claim is settled, approved or re-settled, each watcher is notified. A refusal shows the
++// person's error.
++export function WatchControl({ personId, watched }: { personId: string; watched: boolean }) {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [user] = useSearchParam('user', asString);
++  const queryClient = useQueryClient();
++  const once = useSubmitOnce();
++
++  const watch = useMutation({
++    mutationFn: (on: boolean) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/watch`, {
++        on,
++        user,
++      }),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: watchesKey(sheet, user) }),
++  });
++  const taken = usePersonAction(personId, () => watch.reset());
++
++  return (
++    <>
++      <button
++        type="button"
++        data-testid="person-watch"
++        onClick={() => {
++          taken();
++          once(() => watch.mutateAsync(!watched));
++        }}
++      >
++        {watched ? 'Unwatch' : 'Watch'}
++      </button>
++      {watch.isError && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          The watch could not be changed.
++        </span>
++      )}
++    </>
++  );
++}
+diff --git a/src/main/frontend/features/people/useWatches.ts b/src/main/frontend/features/people/useWatches.ts
+new file mode 100644
+index 00000000..56befa57
+--- /dev/null
++++ b/src/main/frontend/features/people/useWatches.ts
+@@ -0,0 +1,15 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++export const watchesKey = (sheet: string, user: string) => ['sheet', sheet, 'watches', user] as const;
++
++/** The ids of the people the signed-in user watches on the sheet. */
++export function useWatches(sheet: string, user: string): string[] {
++  const { data } = useQuery({
++    queryKey: watchesKey(sheet, user),
++    queryFn: () =>
++      getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/watches/${encodeURIComponent(user)}`),
++    enabled: sheet !== '' && user !== '',
++  });
++  return data ?? [];
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+index e78279d8..0dbb0484 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+@@ -4,17 +4,19 @@ import java.math.BigDecimal;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupFigures;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class AuditClaimResettled {
+     public void audit(@Val ResettleRequest request, @Val Claim claim, @Val ClaimResettle resettle, People people,
+-            Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log) {
++            Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log, Watches watches) {
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         log.record(claim, person, request.user());
+         audit.recordOnCommit(ClaimAudit.line("CLAIM_RESETTLED", request.user(), person, claim, claim.getNumber())
+                 + " old=" + show(resettle.oldDue()) + " new=" + show(resettle.newDue()));
++        watches.notifyWatchers(person, request.user(), claim.getNumber(), audit);
+         rollup.recordChanges(claim.getSheetId(), request.user(), before);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index d6d6a44c..10247507 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -4,15 +4,16 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupFigures;
+ import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class AuditClaimStatus {
+-    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log) {
+-        record(request, claim, number, people, audit, before, rollup, log);
++    public void audit(@Val ValidClaimStatus request, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit, @Val RollupFigures before, Rollup rollup, ClaimLog log, Watches watches) {
++        record(request, claim, number, people, audit, before, rollup, log, watches);
+     }
+ 
+     /** Logs and audits a status change that went through, as a single change does. Bulk settle uses it too. */
+-    static void record(ValidClaimStatus request, Claim claim, ClaimNumber number, People people, Audit audit, RollupFigures before, Rollup rollup, ClaimLog log) {
++    static void record(ValidClaimStatus request, Claim claim, ClaimNumber number, People people, Audit audit, RollupFigures before, Rollup rollup, ClaimLog log, Watches watches) {
+         String event = switch (request.decision()) {
+             case APPROVE -> "CLAIM_APPROVED";
+             case REJECT -> "CLAIM_REJECTED";
+@@ -34,6 +35,10 @@ public class AuditClaimStatus {
+             line += " reason=" + request.reason();
+         }
+         audit.recordOnCommit(line);
++        if (claim.getStatus() == ClaimStatus.SETTLED) {
++            // Settled or approved: each user watching the person is notified, after the claim's own line.
++            watches.notifyWatchers(person, request.user(), number.value(), audit);
++        }
+         rollup.recordChanges(claim.getSheetId(), request.user(), before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index 5fc8d8ad..38505ef5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -7,6 +7,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupFigures;
+@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class BulkSettleClaims {
+     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
+             Claims claims, Sheets sheets, People people, Rates rates, Periods periods, Settings settings,
+-            ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log,
++            ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log, Watches watches,
+             ObjectResponse<BulkSettleResponse> response) {
+         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
+         ValidClaimStatus settle = new ValidClaimStatus(ClaimStatus.SETTLED, request.user(),
+@@ -45,7 +46,7 @@ public class BulkSettleClaims {
+                     continue;
+                 }
+                 claims.save(claim);
+-                AuditClaimStatus.record(settle, claim, number, people, audit, before, rollup, log);
++                AuditClaimStatus.record(settle, claim, number, people, audit, before, rollup, log, watches);
+                 settled++;
+             }
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/LoadWatches.java b/src/main/java/net/officefloor/hq/app/person/LoadWatches.java
+new file mode 100644
+index 00000000..5680c54a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/LoadWatches.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The ids of the people the user watches on the sheet. */
++public class LoadWatches {
++    public void service(@PathVariable("sheetId") String sheetId, @PathVariable("user") String user, Watches watches,
++            ObjectResponse<List<String>> response) {
++        response.send(watches.watchedBy(sheetId, user));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateWatch.java b/src/main/java/net/officefloor/hq/app/person/ValidateWatch.java
+new file mode 100644
+index 00000000..b66f007a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateWatch.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateWatch {
++    public void validate(@RequestBody WatchRequest request, Out<WatchRequest> body) throws InvalidPersonException {
++        if (request.user() == null || request.user().isBlank()) {
++            throw new InvalidPersonException("Only a signed-in user can watch a person");
++        }
++        body.set(request);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchPerson.java b/src/main/java/net/officefloor/hq/app/person/WatchPerson.java
+new file mode 100644
+index 00000000..aa01be1c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchPerson.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Starts or stops the signed-in user watching the person; asking for the state already held changes nothing. */
++public class WatchPerson {
++    public void watch(@Val WatchRequest request, @Val Person person, Watches watches, Audit audit) {
++        String sheetId = person.getSheetId();
++        boolean watching = watches.isWatching(sheetId, person.getId(), request.user());
++        if (watching == request.on()) {
++            return;
++        }
++        if (request.on()) {
++            watches.watch(sheetId, person.getId(), request.user());
++        } else {
++            watches.unwatch(sheetId, person.getId(), request.user());
++        }
++        audit.recordOnCommit((request.on() ? "PERSON_WATCHED" : "PERSON_UNWATCHED") + " sheet=" + sheetId
++                + " by=" + request.user() + " name=" + person.getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchRequest.java b/src/main/java/net/officefloor/hq/app/person/WatchRequest.java
+new file mode 100644
+index 00000000..5f8c538d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchRequest.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.person;
++
++/** Body of POST /api/sheets/{sheetId}/people/{personId}/watch: whether the user starts (true) or stops
++ *  (false) watching the person. */
++public record WatchRequest(boolean on, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Watches.java b/src/main/java/net/officefloor/hq/app/person/Watches.java
+new file mode 100644
+index 00000000..07e44582
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Watches.java
+@@ -0,0 +1,52 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Who watches whom, per sheet and per user, in the order they started watching. */
++@Repository
++public class Watches {
++
++    private final JdbcTemplate jdbc;
++
++    public Watches(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public boolean isWatching(String sheetId, long personId, String user) {
++        Integer count = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?",
++                Integer.class, sheetId, personId, user);
++        return count != null && count > 0;
++    }
++
++    public void watch(String sheetId, long personId, String user) {
++        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, personId, user);
++    }
++
++    public void unwatch(String sheetId, long personId, String user) {
++        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?", sheetId, personId, user);
++    }
++
++    /** The ids of the people the user watches on the sheet. */
++    public List<String> watchedBy(String sheetId, String user) {
++        return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ? ORDER BY seq",
++                Long.class, sheetId, user).stream().map(String::valueOf).toList();
++    }
++
++    /** The users watching the person, in the order they started watching. */
++    public List<String> watchers(String sheetId, long personId) {
++        return jdbc.queryForList("SELECT user_name FROM person_watch WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
++                String.class, sheetId, personId);
++    }
++
++    /** Audits one NOTIFY line per user watching the person, for their claim numbered as given. */
++    public void notifyWatchers(Person person, String by, String number, Audit audit) {
++        for (String watcher : watchers(person.getSheetId(), person.getId())) {
++            audit.recordOnCommit("NOTIFY sheet=" + person.getSheetId() + " by=" + by + " user=" + watcher
++                    + " person=" + person.getName() + " number=" + number);
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V38__person_watch.sql b/src/main/resources/db/migration/V38__person_watch.sql
+new file mode 100644
+index 00000000..d410cd81
+--- /dev/null
++++ b/src/main/resources/db/migration/V38__person_watch.sql
+@@ -0,0 +1,9 @@
++-- The people each user watches on a sheet, in the order they started watching (seq). Stopping removes
++-- the row, so watching again starts afresh at the end.
++CREATE TABLE person_watch (
++    seq       BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL,
++    person_id BIGINT       NOT NULL,
++    user_name VARCHAR(200) NOT NULL,
++    UNIQUE (sheet_id, person_id, user_name)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+new file mode 100644
+index 00000000..688fdb73
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+@@ -0,0 +1,15 @@
++# Start or stop the signed-in user watching the person.
++validate:
++  class: net.officefloor.hq.app.person.ValidateWatch
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: watch
++watch:
++  class: net.officefloor.hq.app.person.WatchPerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml
+new file mode 100644
+index 00000000..b63caab6
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml
+@@ -0,0 +1,3 @@
++service:
++  class: net.officefloor.hq.app.person.LoadWatches
++  govern: [ readonly-transaction ]
