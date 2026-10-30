@@ -33,6 +33,7 @@ public class Claims {
         java.sql.Date deferredUntil = rs.getDate("deferred_until");
         claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
+        claim.setSplitFrom(rs.getString("split_from"));
         return claim;
     };
 
@@ -137,6 +138,12 @@ public class Claims {
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
+    }
+
+    /** Records the number of the claim this claim was split from. */
+    public void splitFrom(Claim claim) {
+        jdbc.update("UPDATE claim SET split_from = ? WHERE sheet_id = ? AND id = ?",
+                claim.getSplitFrom(), claim.getSheetId(), claim.getId());
     }
 
     /** Records the claim's proofs count. */

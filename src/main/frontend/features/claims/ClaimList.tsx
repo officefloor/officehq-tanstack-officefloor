@@ -30,6 +30,11 @@ import { peopleKey, type Person } from '../people/usePeople';
 // Each claim shows its proofs count, raised by one with the proof button (a SETTLED or VOID claim, or one dated inside a closed
 // period, is refused with the claim's error). A claim whose due is above the proof threshold in force on its date cannot be
 // settled or approved while its proofs count is 0: that is refused with the claim's error, before the clerk limit is considered.
+// An OPEN claim is split with the split amount (more than 0.00 and less than its amount) and button: it keeps the rest
+// of its amount and loses any figure a statement bound it to, and a new OPEN claim with the split-off amount, the same
+// date and note, the next number, opened by the user and its due-by fixed now is listed under the person, showing the
+// original's number as split-from. A PENDING, deferred or settled claim, one dated inside a closed period, or a split by a
+// role that may not open a claim, is refused with the claim's error.
 // Each claim shows its status log, oldest first: one line per status it has had, with who set it, the sheet's today then and its due then.
 export function ClaimList({
   claims,
@@ -129,6 +134,23 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  const [splitAmount, setSplitAmount] = useState('');
+
+  const split = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/split`,
+        { amount, user },
+      ),
+    onSuccess: () => {
+      setSplitAmount('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   const [editRefused, setEditRefused] = useState(false);
 
   // The next action on the row removes an old error.
@@ -138,6 +160,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     setEditRefused(false);
     run();
   };
@@ -165,6 +188,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-corrects">{c.corrects}</span>{' '}
       <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+      <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs ?? '0'}</span>{' '}
       <ol data-testid="claim-log">
         {(c.log ?? []).map((line, i) => (
@@ -208,6 +232,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       />{' '}
       <button type="button" data-testid="claim-defer" onClick={() => act(() => defer.mutate(deferUntil))}>
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-split-amount"
+        value={splitAmount}
+        placeholder="Amount to split off"
+        onChange={(e) => act(() => setSplitAmount(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-split" onClick={() => act(() => split.mutate(splitAmount))}>
+        Split
       </button>{' '}
       <select
         data-testid="claim-reassign-to"
@@ -263,6 +296,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one dated inside a closed period.
+        </span>
+      )}
+      {split.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only an OPEN claim that is not deferred and not dated inside a closed period can be split, by a role that may open a claim, and the amount split off must be more than 0.00 and less than the claim's amount.
         </span>
       )}
       {reassign.isError && (

@@ -32,6 +32,8 @@ export type Claim = {
   deferredUntil: string;
   /** The claim's proofs count. */
   proofs: string;
+  /** The number of the claim a split made this claim from, "" for any other claim. */
+  splitFrom: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

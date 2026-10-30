@@ -8,10 +8,12 @@ import java.util.List;
  *  the last statement bound it; corrects is the number a correction corrects, "" for any other claim;
  *  roundingDate is the date its rounding goes by (a correction's: the date of the claim it corrects);
  *  dueBy is the due-by fixed when the claim was created; log is its status log, oldest first (empty unless listed);
- *  deferredUntil is the date the claim was last deferred until, "" if never; proofs is its proofs count. */
+ *  deferredUntil is the date the claim was last deferred until, "" if never; proofs is its proofs count;
+ *  splitFrom is the number of the claim a split made it from, "" for any other claim. */
 public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String corrects,
-        String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs) {
+        String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
+        String splitFrom) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
@@ -22,7 +24,8 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getCorrects() == null ? "" : claim.getCorrects(),
                 claim.getRoundingDate().toString(), claim.getDueBy().toString(), claim.getLog(),
                 claim.getDeferredUntil() == null ? "" : claim.getDeferredUntil().toString(),
-                String.valueOf(claim.getProofs()));
+                String.valueOf(claim.getProofs()),
+                claim.getSplitFrom() == null ? "" : claim.getSplitFrom());
     }
 
     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */
