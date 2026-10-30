@@ -10,7 +10,8 @@ import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods'
 
 // The sheet's periods, each with its dates and due-total (the dues as shown now, late charges included, of the claims
 // whose date falls in it that counted by the status they had at the end of its last day, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
-// already on the sheet, a from-date on or before the to-date, not overlapping another period). A
+// already on the sheet, a from-date on or before the to-date, not overlapping another period, and an optional cap: a whole number of at
+// least 1, the most OPEN or PENDING claims a person may have in it, blank for none). A
 // closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward
 // can reopen it, making its due-total live again. A soft-closed period (shown closed: soft) has its figures fixed the
 // same way, but claims dated in it can still be added and changed (one added then is a late entry); it can be closed
@@ -25,15 +26,17 @@ export function PeriodPanel() {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: { name: string; from: string; to: string }) =>
+    mutationFn: (body: { name: string; from: string; to: string; cap: string }) =>
       postJson<Period[]>(`/api/sheets/${encodeURIComponent(sheet)}/periods`, { ...body, user }),
     onSuccess: (saved) => {
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
       queryClient.setQueryData(periodsKey(sheet), saved);
     },
   });
@@ -83,6 +86,7 @@ export function PeriodPanel() {
             <th>Due</th>
             <th>Closed</th>
             <th>FY</th>
+            <th>Cap</th>
             <th></th>
           </tr>
         </thead>
@@ -95,6 +99,7 @@ export function PeriodPanel() {
               <td data-testid="period-due-total">{formatCents(dueTotalOf(p))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</td>
+              <td data-testid="period-cap">{p.cap}</td>
               <td>
                 {!p.closed && (
                   <button
@@ -148,7 +153,7 @@ export function PeriodPanel() {
           e.preventDefault();
           submitOnce(() => {
             add.reset();
-            return add.mutateAsync({ name: name.trim(), from: from.trim(), to: to.trim() });
+            return add.mutateAsync({ name: name.trim(), from: from.trim(), to: to.trim(), cap: cap.trim() });
           });
         }}
       >
@@ -179,8 +184,17 @@ export function PeriodPanel() {
             add.reset();
           }}
         />{' '}
+        <input
+          data-testid="period-form-cap"
+          value={cap}
+          placeholder="Cap per person (blank for none)"
+          onChange={(e) => {
+            setCap(e.target.value);
+            add.reset();
+          }}
+        />{' '}
         <button type="submit" data-testid="period-form-submit">Add period</button>
-        {add.isError && <span data-testid="period-form-error" role="alert"> Could not add the period: it needs a name not already on the sheet and a from-date on or before its to-date (YYYY-MM-DD), not overlapping another period.</span>}
+        {add.isError && <span data-testid="period-form-error" role="alert"> Could not add the period: it needs a name not already on the sheet and a from-date on or before its to-date (YYYY-MM-DD), not overlapping another period, and a cap that is blank or a whole number of at least 1.</span>}
       </form>
       <form
         data-testid="period-generate-form"

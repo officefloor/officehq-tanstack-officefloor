@@ -3,6 +3,8 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
+import net.officefloor.hq.app.period.PeriodResponse;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.rate.Rates;
@@ -13,8 +15,12 @@ import net.officefloor.plugin.variable.Val;
 
 public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
-            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, Out<ClaimNumber> number)
-            throws ClaimStatusRefusedException {
+            Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, Claims claims,
+            Out<ClaimNumber> number) throws ClaimStatusRefusedException {
+        if (request.target() == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE
+                && claim.getStatus().canBecome(ClaimStatus.OPEN)) {
+            refuseOverCap(claim, periods, claims.list(claim.getSheetId()));
+        }
         number.set(change(request, claim, sheets, people, rates, periods, settings, numbering, log));
     }
 
@@ -130,6 +136,26 @@ public class ApplyClaimStatus {
         }
         claim.setStatus(target);
         return number;
+    }
+
+    /** Refuses opening a claim that belongs to a capped period (by its period date) when its person already has
+     *  that many OPEN or PENDING claims in the period, counted among the sheet's claims. Bulk open uses it too. */
+    static void refuseOverCap(Claim claim, Periods periods, List<Claim> all) throws ClaimStatusRefusedException {
+        PeriodResponse period = periods.cappedOn(claim.getSheetId(), claim.getPeriodDate());
+        if (period == null) {
+            return;
+        }
+        LocalDate from = LocalDate.parse(period.from());
+        LocalDate to = LocalDate.parse(period.to());
+        long held = all.stream()
+                .filter(c -> c.getId() != claim.getId() && c.getPersonId() == claim.getPersonId())
+                .filter(c -> c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING)
+                .filter(c -> !c.getPeriodDate().isBefore(from) && !c.getPeriodDate().isAfter(to))
+                .count();
+        if (held >= Integer.parseInt(period.cap())) {
+            throw new ClaimStatusRefusedException("The person already has " + period.cap()
+                    + " OPEN or PENDING claims in period " + period.name() + ", its cap");
+        }
     }
 
     /** Refuses opening a claim with an empty note whose due as shown is above the note threshold in force on its date;

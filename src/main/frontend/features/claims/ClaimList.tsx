@@ -530,7 +530,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, only a DRAFT claim can be deleted and a DELETED one restored only on the sheet-today it was deleted, and no claim whose due-by is inside a closed period can change status).
+          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, only a DRAFT claim can be deleted and a DELETED one restored only on the sheet-today it was deleted, no claim whose due-by is inside a closed period can change status, and a claim cannot be opened while its person already has as many OPEN or PENDING claims in its period as the period's cap).
         </span>
       )}
       {resettle.isError && (

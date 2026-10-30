@@ -5,7 +5,8 @@ import { readPath, useAsOf } from '../asof/useAsOf';
 /** A period: a name unique on the sheet, from and to dates (YYYY-MM-DD, both inclusive), whether it
  *  is closed, the due-total fixed when it was closed ("" while open), and each person's due-total for
  *  it fixed then, by person id (empty while open; a person added later has none). A soft-closed period
- *  has its figures fixed the same way, but its claims stay open to change. */
+ *  has its figures fixed the same way, but its claims stay open to change. Its cap is the most OPEN or PENDING
+ *  claims a person may have in it ("" for none): opening one more is refused. */
 export type Period = {
   name: string;
   from: string;
@@ -14,6 +15,7 @@ export type Period = {
   closedTotal: string;
   closedPersonTotals: Record<string, string>;
   softClosed: boolean;
+  cap: string;
 };
 
 export const periodsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'periods', asOf] as const;

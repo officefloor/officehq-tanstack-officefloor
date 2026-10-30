@@ -27,7 +27,19 @@ public class ValidatePeriod {
         if (from.isAfter(to)) {
             throw new InvalidPeriodException("The from-date must be on or before the to-date");
         }
-        body.set(new ValidPeriod(name, from, to, request.user()));
+        body.set(new ValidPeriod(name, from, to, request.user(), cap(request.cap())));
+    }
+
+    /** The cap: blank for none, else a whole number of at least 1. */
+    private static Integer cap(String raw) throws InvalidPeriodException {
+        String cap = raw == null ? "" : raw.trim();
+        if (cap.isEmpty()) {
+            return null;
+        }
+        if (!cap.matches("[0-9]{1,9}") || Integer.parseInt(cap) < 1) {
+            throw new InvalidPeriodException("The cap must be a whole number of at least 1, or blank for none");
+        }
+        return Integer.parseInt(cap);
     }
 
     private static LocalDate date(String raw, String which) throws InvalidPeriodException {

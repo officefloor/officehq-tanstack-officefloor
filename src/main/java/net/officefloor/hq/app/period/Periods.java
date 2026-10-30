@@ -22,7 +22,7 @@ public class Periods {
         return new PeriodResponse(rs.getString("name"), rs.getDate("from_date").toLocalDate().toString(),
                 rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
                 total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>(),
-                rs.getBoolean("soft_closed"));
+                rs.getBoolean("soft_closed"), rs.getObject("claim_cap") == null ? "" : String.valueOf(rs.getInt("claim_cap")));
     };
 
     private final JdbcTemplate jdbc;
@@ -107,6 +107,14 @@ public class Periods {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The capped period whose dates contain the date, its row locked until the transaction ends (so two
+     *  claims opened at once cannot both pass its cap); null when no period contains it or that one has no cap. */
+    public PeriodResponse cappedOn(String sheetId, LocalDate date) {
+        List<PeriodResponse> found = jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?"
+                + " AND claim_cap IS NOT NULL FOR UPDATE", ROW, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Add a period, refusing a name already on the sheet or dates overlapping another period. */
     public void add(String sheetId, ValidPeriod period) throws InvalidPeriodException {
         // Lock the sheet's row so two periods added at once cannot both pass the overlap check.
@@ -123,8 +131,8 @@ public class Periods {
             throw new InvalidPeriodException("The period's dates overlap another period");
         }
         try {
-            jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
-                    sheetId, period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()), sheetId);
+            jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on, claim_cap) VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                    sheetId, period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()), sheetId, period.cap());
         } catch (DuplicateKeyException raced) {
             throw new InvalidPeriodException("A period named " + period.name() + " is already on the sheet");
         }

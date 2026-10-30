@@ -11,7 +11,8 @@ public class SavePeriod {
             ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
         periods.add(sheetId, period);
         audit.recordOnCommit("PERIOD_ADDED sheet=" + sheetId + " by=" + period.user()
-                + " period=" + period.name() + " from=" + period.from() + " to=" + period.to());
+                + " period=" + period.name() + " from=" + period.from() + " to=" + period.to()
+                + (period.cap() == null ? "" : " cap=" + period.cap()));
         response.send(periods.list(sheetId));
     }
 }
