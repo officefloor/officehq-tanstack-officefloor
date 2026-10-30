@@ -29,7 +29,8 @@ import { useSheetFigures } from './useSheetFigures';
 // statement, count in neither their figures nor the sheet's totals; their other claims still do), their overdue count and
 // patrons (names, sorted) and backing (their patrons' due-totals added up, skipping n/a; 0.00 with no patrons),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
-// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
+// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total (the
+// due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one). Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
@@ -39,7 +40,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -152,7 +153,7 @@ export function PeopleList() {
         Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>
       </p>
       <p>
-        Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
+        Overdue total: <span data-testid="rollup-overdue-total">{sheetOverdueTotal}</span>
       </p>
       <SummaryPanel people={people} today={today} totalOf={totalOf} statusCount={statusCount} />
     </ClaimSelection>

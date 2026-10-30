@@ -40,15 +40,25 @@ export function useSheetFigures(sheet: string) {
   const totalOf = (person: Person) => capped(uncappedOf(person), cap);
   const excessOf = (person: Person) => excess(uncappedOf(person), cap);
   const overdue = live.filter((c) => isOverdue(c, today));
-  const overdueTotal = (cs: typeof overdue) =>
-    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n));
-  // The sheet's due-total: the people's due-totals added up, skipping n/a.
-  const sheetDueTotal = formatCents(people.reduce((sum, p) => {
-    const due = totalOf(p);
-    return due === null ? sum : sum + due;
-  }, 0n));
+  const overdueSum = (cs: typeof overdue) =>
+    cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId)!, c.date), c.date), floor, late, policy) ?? 0n), 0n);
+  const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
+  // The sheet's due-total: the people's due-totals added up, skipping n/a, trimmed.
+  const sheetDueTotal = formatCents(trimmedSum(people.map(totalOf).filter((due): due is bigint => due !== null)));
+  // The sheet's overdue-total: each person's overdue-total (always a figure) added up, trimmed.
+  const sheetOverdueTotal = formatCents(trimmedSum(people.map((p) => overdueSum(overdue.filter((c) => c.personId === p.id)))));
   const onSheet = new Set(people.map((p) => p.id));
   const sheetClaims = claims.filter((c) => onSheet.has(c.personId));
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
-  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, statusCount };
+  return { people, claims, rates, today, byId, live, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount };
+}
+
+// People's figures added up, leaving out the single highest and the single lowest when there are
+// three or more.
+function trimmedSum(figures: bigint[]): bigint {
+  const sum = figures.reduce((a, b) => a + b, 0n);
+  if (figures.length < 3) return sum;
+  const max = figures.reduce((a, b) => (b > a ? b : a));
+  const min = figures.reduce((a, b) => (b < a ? b : a));
+  return sum - max - min;
 }

@@ -5,7 +5,7 @@ import { STATUSES, useSheetFigures } from '../people/useSheetFigures';
 // the summary counts them) and its due-total and overdue-total (as the sheet's totals show them).
 export function SheetHeader() {
   const [sheet] = useSearchParam('sheet', asString);
-  const { people, overdue, overdueTotal, sheetDueTotal, statusCount } = useSheetFigures(sheet);
+  const { people, sheetDueTotal, sheetOverdueTotal, statusCount } = useSheetFigures(sheet);
   return (
     <header data-testid="header">
       People: <span data-testid="header-people-count">{people.length}</span>
@@ -16,7 +16,7 @@ export function SheetHeader() {
         </span>
       ))}
       {' · '}Due: <span data-testid="header-due-total">{sheetDueTotal}</span>
-      {' · '}Overdue: <span data-testid="header-overdue-total">{overdueTotal(overdue)}</span>
+      {' · '}Overdue: <span data-testid="header-overdue-total">{sheetOverdueTotal}</span>
     </header>
   );
 }
