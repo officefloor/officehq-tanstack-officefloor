@@ -13,8 +13,8 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Re-settles a SETTLED claim; only a steward re-settles, and not a claim dated inside a closed period.
  * The settled due is frozen again at the figure the claim would have today as an open claim bound by no
- * statement: its amount (raised to the floor) at the rate of its person's grade in force on its date,
- * with its late charge as of today on top.
+ * statement: its amount at the rate of its person's grade in force on its date, with its late charge as of
+ * today on top, raised to the floor in force on its date.
  */
 public class ApplyResettle {
     public void apply(@Val ResettleRequest request, @Val Claim claim, Sheets sheets, People people, Rates rates,
@@ -31,10 +31,10 @@ public class ApplyResettle {
         }
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId));
         String grade = people.find(sheetId, claim.getPersonId()).gradeOn(claim.getDate());
-        BigDecimal figure = Rates.due(claim.getAmount(), rates.find(sheetId, grade, claim.getDate()),
-                settings.floor(sheetId, claim.getDate()), rounding);
+        BigDecimal figure = Rates.due(claim.getAmount(), rates.find(sheetId, grade, claim.getDate()), rounding);
         BigDecimal due = figure == null ? null
-                : figure.add(LateCharge.asOpen(claim, figure, on -> settings.latePct(sheetId, on), sheets.today(sheetId), rounding));
+                : LateCharge.floored(claim, figure.add(LateCharge.asOpen(claim, figure, on -> settings.latePct(sheetId, on),
+                        sheets.today(sheetId), rounding)), settings.floor(sheetId, claim.getDate()));
         BigDecimal old = claim.getSettledDue();
         claim.setSettledDue(due);
         resettle.set(new ClaimResettle(old, due));

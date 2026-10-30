@@ -48,13 +48,6 @@ public class Rates {
         return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, rounding);
     }
 
-    /** The live due on an amount at a rate, raised to the sheet's floor; null when there is no rate. A
-     *  negative amount (a correction) has no floor. */
-    public static BigDecimal due(BigDecimal amount, BigDecimal rate, BigDecimal floor, RoundingMode rounding) {
-        BigDecimal due = due(amount, rate, rounding);
-        return due == null || floor == null || amount.signum() < 0 || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
-    }
-
     /** Set the grade's rate from a date (null: from the beginning of time) through a date (null: no
      *  end), replacing one already there from the same date. */
     public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal rate) {

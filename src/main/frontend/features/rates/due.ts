@@ -79,10 +79,11 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
   return charge;
 }
 
-/** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
- *  stays n/a; a PENDING claim is never bound), else its amount at the current rate, raised to the floor in force on its date; an overdue claim's
- *  late charge (each 30-day boundary at the late percent in force on it) is added on top. A correction is never floored and gains no late charge. Live figures
- *  round by the sheet's policy date (see roundsHalfUp). */
+/** A claim's due: the one fixed when it was settled, frozen as it is; else the figure a statement bound it to (a claim bound
+ *  to n/a stays n/a; a PENDING claim is never bound) or its amount at the current rate, with an overdue claim's late charge
+ *  (each 30-day boundary at the late percent in force on it) worked on that figure alone and added on top, and the floor in
+ *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
+ *  figures round by the sheet's policy date (see roundsHalfUp). */
 export function claimDue(
   claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string },
   rate: string | undefined,
@@ -90,9 +91,11 @@ export function claimDue(
   late?: Late,
   policy?: string,
 ): bigint | null {
-  const live = dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
-  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : isCorrection(claim) ? live : floored(live, floor(claim.date));
-  return figure === null ? null : figure + lateCents(claim, figure, late, policy);
+  if (claim.due !== '' && !isOpen(claim)) return toCents(claim.due);
+  const figure = claim.due !== '' ? toCents(claim.due) : claim.stated && claim.status !== 'PENDING' ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
+  if (figure === null) return null;
+  const charged = figure + lateCents(claim, figure, late, policy);
+  return isCorrection(claim) ? charged : floored(charged, floor(claim.date));
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. With no rate for their

@@ -84,15 +84,14 @@ public class ApplyClaimStatus {
         // A voided claim keeps its number; numbers are never reused.
         ClaimNumber number = new ClaimNumber(claim.getNumber());
         if (target == ClaimStatus.SETTLED) {
-            // Settling (or approving) fixes the due: the figure a statement bound it to (never while PENDING), else its amount (raised to the floor)
-            // at the rate in force on the claim's date, with its late charge as of today frozen in; with no
-            // figure it stays live (n/a until a rate is set).
+            // Settling (or approving) fixes the due: the figure a statement bound it to (never while PENDING), else its amount
+            // at the rate in force on the claim's date, with its late charge as of today on top and raised to the floor, frozen in;
+            // with no figure it stays live (n/a until a rate is set).
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             BigDecimal figure = claim.isBound() && claim.getStatedDue() != null ? claim.getStatedDue()
-                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                    settings.floor(claim.getSheetId(), claim.getDate()), rounding);
-            claim.setSettledDue(LateCharge.withCharge(claim, figure, on -> settings.latePct(claim.getSheetId(), on),
-                    sheets.today(claim.getSheetId()), rounding));
+                    : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
+            claim.setSettledDue(LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
+                    on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding));
         }
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
         claim.setStatus(target);
@@ -105,9 +104,8 @@ public class ApplyClaimStatus {
         String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
         BigDecimal fixed = ClaimResponse.fixedDue(claim);
         BigDecimal figure = fixed != null || claim.isBound() ? fixed
-                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()),
-                settings.floor(claim.getSheetId(), claim.getDate()), rounding);
-        return LateCharge.withCharge(claim, figure, on -> settings.latePct(claim.getSheetId(), on),
-                sheets.today(claim.getSheetId()), rounding);
+                : Rates.due(claim.getAmount(), rates.find(claim.getSheetId(), grade, claim.getDate()), rounding);
+        return LateCharge.due(claim, figure, settings.floor(claim.getSheetId(), claim.getDate()),
+                on -> settings.latePct(claim.getSheetId(), on), sheets.today(claim.getSheetId()), rounding);
     }
 }

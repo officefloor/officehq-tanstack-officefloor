@@ -12,6 +12,7 @@ import net.officefloor.hq.app.rate.Rates;
  * the sheet's today gains, for each full 30 days it is overdue, the sheet's late percent in force on that
  * boundary date (its due-by plus 30, 60, 90 ... days) of its figure, rounded like due, the charges added up
  * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction has no late charge. The charge is never bound by a statement; settling freezes it in.
+ * The charge is worked on the rate figure alone (or the figure a statement bound); the floor is applied last.
  */
 public final class LateCharge {
 
@@ -47,9 +48,19 @@ public final class LateCharge {
         return charge;
     }
 
-    /** The figure with its late charge added on top; null stays null. */
-    public static BigDecimal withCharge(Claim claim, BigDecimal figure, Function<LocalDate, BigDecimal> pct, LocalDate today,
-            RoundingMode rounding) {
-        return figure == null ? null : figure.add(of(claim, figure, pct, today, rounding));
+    /** A claim's due from its figure (the rate figure, or the one a statement bound): the greater of the floor in force on its
+     *  date and the figure with its late charge on top. A settled due is frozen as it is; a correction has no floor and no
+     *  charge; null stays null. */
+    public static BigDecimal due(Claim claim, BigDecimal figure, BigDecimal floor, Function<LocalDate, BigDecimal> pct,
+            LocalDate today, RoundingMode rounding) {
+        if (figure == null || claim.getSettledDue() != null) {
+            return figure;
+        }
+        return floored(claim, figure.add(of(claim, figure, pct, today, rounding)), floor);
+    }
+
+    /** A due raised to the floor; a correction has no floor. */
+    public static BigDecimal floored(Claim claim, BigDecimal due, BigDecimal floor) {
+        return due == null || floor == null || claim.isCorrection() || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
     }
 }
