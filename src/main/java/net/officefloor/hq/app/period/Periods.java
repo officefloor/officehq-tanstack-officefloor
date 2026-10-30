@@ -46,6 +46,14 @@ public class Periods {
                 .toList();
     }
 
+    /** The order each of the sheet's periods was added in, by period name: a number rising with each period added. */
+    public Map<String, Long> added(String sheetId) {
+        Map<String, Long> added = new HashMap<>();
+        jdbc.query("SELECT name, added FROM " + AsOf.table("period") + " WHERE sheet_id = ?",
+                rs -> { added.put(rs.getString("name"), rs.getLong("added")); }, sheetId);
+        return added;
+    }
+
     /** Each person's opening balance for each of the sheet's periods, by period name, then by person id. */
     public Map<String, Map<Long, BigDecimal>> openings(String sheetId) {
         Map<String, Map<Long, BigDecimal>> openings = new HashMap<>();

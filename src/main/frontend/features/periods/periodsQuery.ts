@@ -29,6 +29,8 @@ export type Period = {
   personOpenings: Record<string, string>;
   /** A locked period cannot be reopened; only a steward locks and unlocks it. */
   locked: boolean;
+  /** The order the period was added in: a number rising with each period added. */
+  added: number;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */

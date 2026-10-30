@@ -70,7 +70,7 @@ public class SheetClones {
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note, listed) SELECT ?, name, amount, note, listed "
                 + "FROM claim_template WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, closed, closed_total, soft) "
-                + "SELECT ?, name, from_date, to_date, FALSE, NULL, FALSE FROM period WHERE sheet_id = ?", to, from);
+                + "SELECT ?, name, from_date, to_date, FALSE, NULL, FALSE FROM period WHERE sheet_id = ? ORDER BY added", to, from);
 
         // People in list order, each with their dated grades, aliases, holds and past retirements.
         Map<Long, Long> people = new LinkedHashMap<>();
