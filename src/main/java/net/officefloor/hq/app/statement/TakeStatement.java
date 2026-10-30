@@ -24,7 +24,8 @@ import net.officefloor.plugin.variable.Val;
  * Takes a statement: the person's due-total as the screen shows it now (the sum of their counting
  * claims' dues — each fixed or at the rate in force on its date, its late charge on top, raised to the floor in force on its date;
  * n/a when their grade has no rate today and no claim keeps a figure; held to the sheet's cap), and binds each counting claim to
- * its rate figure now — never the floor or its late charge, which keep being applied live.
+ * its due as shown now, its late charge and the floor included (a claim already bound keeps its bound figure); while bound
+ * the claim shows and totals that figure, its late charge no longer following the sheet's today.
  * A claim that does not count (an unbound OPEN claim dated within one of its person's holds, or a deferred claim, included) is left unbound.
  * <p>
  * Taken as of a date (on or before the sheet's today, and not before the person was added), the same is worked from the
@@ -34,7 +35,7 @@ import net.officefloor.plugin.variable.Val;
  */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, AsOf asOf, Sheets sheets,
-            People people, Out<Statement> statement) throws InvalidPersonException {
+            People people, Settings settings, Out<Statement> statement) throws InvalidPersonException {
         String sheetId = person.getSheetId();
         LocalDate date = asOfDate(request, person, sheets.today(sheetId));
         AsOf.View view = date == null ? asOf.now(person) : asOf.at(person, date);
@@ -56,8 +57,9 @@ public class TakeStatement {
                     : Rates.due(claim.getAmount(), view.rate().rate(then.gradeOn(claim.getDate()), claim.getDate(), claim.getRateMark()), rounding);
             if (figure != null) {
                 anyFigure = true;
-                total = total.add(LateCharge.due(claim, figure, view.floor().apply(claim.getDate()), view.latePct(),
-                        today, rounding));
+                figure = LateCharge.due(claim, figure, view.floor().apply(claim.getDate()), view.latePct(), today, rounding,
+                        settings.grace(sheetId, then.gradeOn(claim.getDate()), claim.getDate()));
+                total = total.add(figure);
             }
             bound.put(claim.getId(), figure);
             counted++;

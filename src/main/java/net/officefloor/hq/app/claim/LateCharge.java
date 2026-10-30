@@ -13,8 +13,9 @@ import net.officefloor.hq.app.rate.Rates;
  * boundary date (its due-by plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries before it
  * (compounding), each rounded like due, the charges added up
  * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction, or a claim whose late
- * charge a steward waived, has no late charge (a waived claim may still be overdue). The charge is never bound by a statement; settling freezes it in.
- * The charge is worked on the rate figure alone (or the figure a statement bound); the floor is applied last.
+ * charge a steward waived, has no late charge (a waived claim may still be overdue). A statement binds the claim's due as shown, the charge (and floor)
+ * included: while bound, the claim's due is that figure as it is. Settling freezes the charge in.
+ * The charge is worked on the rate figure alone; the floor is applied last.
  * With grace days (those of its person's grade in force on its date) the claim is overdue only once its due-by plus them is
  * before today, and the 30-day boundaries are counted from its due-by plus them.
  */
@@ -65,9 +66,9 @@ public final class LateCharge {
         return charge;
     }
 
-    /** A claim's due from its figure (the rate figure, or the one a statement bound): the greater of the floor in force on its
-     *  date and the figure with its late charge on top. A settled due is frozen as it is; a correction has no floor and no
-     *  charge; null stays null. */
+    /** A claim's due from its figure (the rate figure): the greater of the floor in force on its date and the figure with its
+     *  late charge on top. A settled due, and the due a statement bound (its figure), are kept as they are; a correction has
+     *  no floor and no charge; null stays null. */
     public static BigDecimal due(Claim claim, BigDecimal figure, BigDecimal floor, Function<LocalDate, BigDecimal> pct,
             LocalDate today, RoundingMode rounding) {
         return due(claim, figure, floor, pct, today, rounding, 0);
@@ -76,7 +77,7 @@ public final class LateCharge {
     /** As {@link #due(Claim, BigDecimal, BigDecimal, Function, LocalDate, RoundingMode)}, with the claim's grace days. */
     public static BigDecimal due(Claim claim, BigDecimal figure, BigDecimal floor, Function<LocalDate, BigDecimal> pct,
             LocalDate today, RoundingMode rounding, int grace) {
-        if (figure == null || claim.getSettledDue() != null) {
+        if (figure == null || claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)) {
             return figure;
         }
         return floored(claim, figure.add(of(claim, figure, pct, today, rounding, grace)), floor);

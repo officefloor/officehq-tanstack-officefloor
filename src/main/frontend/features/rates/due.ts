@@ -77,7 +77,7 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
 /** The late charge on a figure in cents: an OPEN (or PENDING) claim whose due-by (fixed when it was created) is
  *  before today (and that is not deferred) gains, for each full 30 days it is overdue, the late percent in force on that
  *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
- *  before it (compounding), each rounded like due, the charges added up. Never bound by a statement; settling freezes it into the settled due.
+ *  before it (compounding), each rounded like due, the charges added up. A statement binds it into the due it binds; settling freezes it into the settled due.
  *  A claim whose late charge a steward waived gains none, whatever its overdue state. */
 export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string; waived?: boolean }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
   if (late === undefined || late.today === undefined || !claim.dueBy || claim.waived || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
@@ -93,8 +93,8 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
   return charge;
 }
 
-/** A claim's due: the one fixed when it was settled, frozen as it is; else the figure a statement bound it to (a claim bound
- *  to n/a stays n/a) or its amount at the current rate, with an overdue claim's late charge
+/** A claim's due: the one fixed when it was settled, frozen as it is; else the due a statement bound it to, as it was shown
+ *  then (late charge and floor included; a claim bound to n/a stays n/a); else its amount at the current rate, with an overdue claim's late charge
  *  (each 30-day boundary at the late percent in force on it) worked on that figure alone and added on top, and the floor in
  *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
  *  figures round by the sheet's rounding mode or policy date (see roundsHalfUp). */
@@ -105,7 +105,7 @@ export function claimDue(
   late?: Late,
   policy?: Policy,
 ): bigint | null {
-  if (claim.due !== '' && claim.status === 'SETTLED') return toCents(claim.due);
+  if (claim.due !== '' && (claim.status === 'SETTLED' || claim.stated)) return toCents(claim.due);
   const figure = claim.due !== '' ? toCents(claim.due) : claim.stated ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
   if (figure === null) return null;
   const charged = figure + lateCents(claim, figure, late, policy);
