@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 public class People {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getInt("version"));
 
     private final JdbcTemplate jdbc;
 
@@ -53,8 +53,16 @@ public class People {
         return new Person(keys.getKey().longValue(), sheetId, name, grade);
     }
 
-    public void save(Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
-                person.getName(), person.getGrade(), person.getSheetId(), person.getId());
+    /** Saves the person over the version it was loaded at, moving it on by one; false (nothing
+     *  written) when someone else has saved the person since. */
+    public boolean save(Person person) {
+        int updated = jdbc.update(
+                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getGrade(), person.getSheetId(), person.getId(), person.getVersion());
+        if (updated == 0) {
+            return false;
+        }
+        person.setVersion(person.getVersion() + 1);
+        return true;
     }
 }

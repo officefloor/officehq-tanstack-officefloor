@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { sheetTodayKey, useSheetToday, type SheetToday as SheetTodayDto } from './useSheetToday';
 
 // Shows the active sheet's today and changes it. A blank date resets it to the real date.
@@ -11,6 +12,7 @@ export function SheetToday() {
   const today = useSheetToday(sheet);
   const [date, setDate] = useState('');
   const queryClient = useQueryClient();
+  const submitOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (value: string) =>
       postJson<SheetTodayDto>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today: value, user }),
@@ -25,7 +27,7 @@ export function SheetToday() {
       data-testid="sheet-today-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate(date.trim());
+        submitOnce(() => save.mutateAsync(date.trim()));
       }}
     >
       Today: <span data-testid="sheet-today">{today ?? ''}</span>{' '}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { NA } from './due';
@@ -18,6 +19,7 @@ export function RatePanel() {
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
   const queryClient = useQueryClient();
+  const submitOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (body: { grade: string; rate: string; from: string }) =>
       postJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...body, user }),
@@ -67,8 +69,10 @@ export function RatePanel() {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate({ grade, rate: pct.trim(), from: from.trim() });
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync({ grade, rate: pct.trim(), from: from.trim() });
+          });
         }}
       >
         <select

@@ -7,18 +7,26 @@ public class Person {
     private final String sheetId;
     private String name;
     private String grade;
+    private int version;
 
     public Person(long id, String sheetId, String name, String grade) {
+        this(id, sheetId, name, grade, 0);
+    }
+
+    public Person(long id, String sheetId, String name, String grade, int version) {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
         this.grade = grade;
+        this.version = version;
     }
 
     public long getId() { return id; }
     public String getSheetId() { return sheetId; }
     public String getName() { return name; }
     public String getGrade() { return grade; }
+    public int getVersion() { return version; }
     public void setName(String name) { this.name = name; }
     public void setGrade(String grade) { this.grade = grade; }
+    public void setVersion(int version) { this.version = version; }
 }

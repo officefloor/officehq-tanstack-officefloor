@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey, type Claim } from './useClaims';
 
 // The claim form on a person's row: adds a claim to that person, or — while one of their claims'
@@ -18,6 +19,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const queryClient = useQueryClient();
+  const submitOnce = useSubmitOnce();
 
   const clear = () => {
     setAmount('');
@@ -64,8 +66,10 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        save.mutate({ amount: amount.trim(), date: date.trim(), note });
+        submitOnce(() => {
+          save.reset();
+          return save.mutateAsync({ amount: amount.trim(), date: date.trim(), note });
+        });
       }}
     >
       <input

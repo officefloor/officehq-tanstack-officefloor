@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type Person = { id: string; name: string; grade: string };
+/** `version` goes up on every save; an editor sends back the version it loaded, so a save over
+ *  someone else's newer one is refused. */
+export type Person = { id: string; name: string; grade: string; version: number };
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
