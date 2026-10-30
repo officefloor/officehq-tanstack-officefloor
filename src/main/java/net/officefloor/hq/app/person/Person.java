@@ -114,9 +114,15 @@ public class Person {
         return claim.getStatus().counts()
                 && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
     }
-    /** Whether the claim counts in the live totals on the sheet's today: as {@link #countsLive(Claim)}, and not deferred. */
+    /** Whether the person's retirement date has been reached on the date (the sheet's today on or after it). */
+    public boolean retiredOn(LocalDate today) {
+        return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
+    }
+    /** Whether the claim counts in the live totals on the sheet's today: as {@link #countsLive(Claim)}, not deferred,
+     *  and, once the person's retirement date is reached, not OPEN or PENDING unless a statement binds it. */
     public boolean countsLive(Claim claim, LocalDate today) {
-        return countsLive(claim) && !claim.isDeferredOn(today);
+        return countsLive(claim) && !claim.isDeferredOn(today)
+                && !(claim.getStatus().isOpen() && !claim.isBound() && retiredOn(today));
     }
     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and

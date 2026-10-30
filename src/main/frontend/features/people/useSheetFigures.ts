@@ -4,7 +4,7 @@ import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rat
 import { rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { gradeOn, heldOn, usePeople, type Person } from './usePeople';
+import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
 
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
@@ -22,7 +22,7 @@ export function useSheetFigures(sheet: string) {
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
-    return person !== undefined && countsLive(c, (date) => heldOn(person, date), today);
+    return person !== undefined && countsLive(c, (date) => heldOn(person, date) || retiredOn(person, today), today);
   });
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
   // The sum of a person's figures, before the cap.

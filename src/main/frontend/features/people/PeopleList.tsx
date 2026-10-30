@@ -32,7 +32,7 @@ import { useSheetFigures } from './useSheetFigures';
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total (the
 // due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one). Retired
-// people have no row unless "show retired" is on, but their claims keep counting in every total.
+// people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
 // with their select checkbox are opened together with the bulk open button.

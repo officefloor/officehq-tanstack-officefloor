@@ -33,6 +33,11 @@ export type Person = {
 export type HoldFrom = { from: string; to: string };
 
 /** Whether one of the person's holds covers the date. */
+/** Whether the person's retirement date is reached on the sheet's today: from then their OPEN and
+ *  PENDING claims, unless bound by a statement, count in no live total. */
+export const retiredOn = (person: Person, today: string | undefined) =>
+  person.retiredFrom !== '' && today !== undefined && today >= person.retiredFrom;
+
 export const heldOn = (person: Person, date: string) =>
   person.holds.some((h) => h.from <= date && (h.to === '' || date <= h.to));
 
