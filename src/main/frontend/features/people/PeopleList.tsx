@@ -2,9 +2,10 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClaimForm } from '../claims/ClaimForm';
 import { ClaimList } from '../claims/ClaimList';
 import { countsLive, sumAmounts, useClaims } from '../claims/useClaims';
-import { dueTotal, formatCents, showDue } from '../rates/due';
+import { isOverdue } from '../claims/overdue';
+import { claimDue, dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
-import { useFloor } from '../settings/useSettings';
+import { useFloor, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { StatementButton } from '../statements/StatementButton';
 import { HoldControl } from './HoldControl';
@@ -17,8 +18,9 @@ import { usePeople } from './usePeople';
 // sum of their OPEN and SETTLED claims), due-total (the
 // sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // whether they are retired and from when, whether they are on hold (a held person's OPEN claims count
-// in neither their figures nor the sheet's totals; their SETTLED claims still do), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
-// sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a). Retired
+// in neither their figures nor the sheet's totals; their SETTLED claims still do), their overdue count and
+// overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), overdue count and overdue-total. Retired
 // people have no row unless "show retired" is on, but their claims keep counting in every total.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
@@ -30,6 +32,7 @@ export function PeopleList() {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
+  const terms = useTerms(sheet);
   const heldOf = new Map(people.map((p) => [p.id, p.held]));
   const live = claims.filter((c) => heldOf.has(c.personId) && countsLive(c, heldOf.get(c.personId)!));
   const totalOf = (personId: string, grade: string) =>
@@ -39,6 +42,11 @@ export function PeopleList() {
       rateOn(rates, grade, today),
       floor,
     );
+  const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+  const overdue = live.filter((c) => isOverdue(c, terms, today));
+  const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
+  const overdueTotal = (cs: typeof overdue) =>
+    formatCents(cs.reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor) ?? 0n), 0n));
   return (
     <>
       <QuickAdd />
@@ -50,6 +58,8 @@ export function PeopleList() {
             <th>Grade</th>
             <th>Claimed</th>
             <th>Due</th>
+            <th>Overdue</th>
+            <th>Overdue due</th>
             <th />
             <th>Retired</th>
             <th>Retired from</th>
@@ -69,6 +79,8 @@ export function PeopleList() {
                 <td data-testid="person-grade">{p.grade}</td>
                 <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
                 <td data-testid="person-due-total">{showDue(totalOf(p.id, p.grade))}</td>
+                <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
+                <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                     Edit
@@ -100,6 +112,12 @@ export function PeopleList() {
           const due = totalOf(p.id, p.grade);
           return due === null ? sum : sum + due;
         }, 0n))}</span>
+      </p>
+      <p>
+        Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>
+      </p>
+      <p>
+        Overdue total: <span data-testid="rollup-overdue-total">{overdueTotal(overdue)}</span>
       </p>
     </>
   );

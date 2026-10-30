@@ -5,8 +5,9 @@ import { getJson } from '../../api/http';
 export type Role = { user: string; role: string };
 
 /** The sheet's settings: the clerk limit with two decimals ("" for no limit), the floor with two
- *  decimals (a claim's live due is at least it) and the roles set. */
-export type Settings = { clerkLimit: string; floor: string; roles: Role[] };
+ *  decimals (a claim's live due is at least it), the terms in days (a claim's due-by is its date
+ *  plus them) and the roles set. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; roles: Role[] };
 
 /** The floor a sheet starts with, used until its settings have loaded. */
 export const DEFAULT_FLOOR = '1.00';
@@ -22,7 +23,15 @@ export function useSettings(sheet: string): Settings | undefined {
   return data;
 }
 
+/** The terms a sheet starts with, used until its settings have loaded. */
+export const DEFAULT_TERMS = '14';
+
 /** The sheet's floor. */
 export function useFloor(sheet: string): string {
   return useSettings(sheet)?.floor ?? DEFAULT_FLOOR;
+}
+
+/** The sheet's terms in days. */
+export function useTerms(sheet: string): number {
+  return Number(useSettings(sheet)?.terms ?? DEFAULT_TERMS);
 }

@@ -12,6 +12,8 @@ public class SaveSetting {
             Settings settings, Rollup rollup, Audit audit, ObjectResponse<SettingsResponse> response) {
         if (ValidateSetting.FLOOR.equals(setting.key())) {
             settings.setFloor(sheetId, setting.value());
+        } else if (ValidateSetting.TERMS.equals(setting.key())) {
+            settings.setTerms(sheetId, setting.value().intValueExact());
         } else {
             settings.setClerkLimit(sheetId, setting.value());
         }

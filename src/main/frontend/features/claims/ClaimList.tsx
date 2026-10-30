@@ -5,10 +5,12 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimDue, showDue } from '../rates/due';
 import { claimsKey, type Claim } from './useClaims';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { useFloor } from '../settings/useSettings';
+import { useFloor, useTerms } from '../settings/useSettings';
+import { useSheetToday } from '../sheet/useSheetToday';
+import { dueBy, isOverdue } from './overdue';
 
 // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its date, blank for none), stated (yes when the
-// person's last statement bound it) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies), the status buttons (open, settle, void —
+// person's last statement bound it) and due (fixed when it was settled, else bound by the last statement; otherwise its amount at the person's grade's rate in force on the claim's date raised to the sheet's floor, n/a when none applies), due-by (its date plus the sheet's terms), overdue (yes when it is OPEN and its due-by is before the sheet's today), the status buttons (open, settle, void —
 // one the claim's status does not allow is refused with the claim's error) and an edit button that
 // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim is
 // refused with the claim's error — to change an open claim, void it and add a new one.
@@ -29,6 +31,8 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
   const queryClient = useQueryClient();
   const period = periodOf(usePeriods(sheet), c.date);
   const floor = useFloor(sheet);
+  const terms = useTerms(sheet);
+  const today = useSheetToday(sheet);
 
   const status = useMutation({
     mutationFn: (action: 'open' | 'settle' | 'void') =>
@@ -62,6 +66,8 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       <span data-testid="claim-status">{c.status}</span>{' '}
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate, floor))}</span>{' '}
+      <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+      <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
