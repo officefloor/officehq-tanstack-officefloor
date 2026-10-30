@@ -1,0 +1,408 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index c6141c61..b9c0fa19 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -37,6 +37,9 @@ import { peopleKey, type Person } from '../people/usePeople';
+ // A steward waives an OPEN or PENDING claim's late charge with the waive button: it bears no late charge from then on,
+ // whatever its overdue state. Waiving by anyone else, a claim in any other status, or one already waived is refused with
+ // the claim's error. Each claim shows waived (yes or no).
++// An OPEN or PENDING claim is held, and released, with the hold toggle: while held and unbound it counts in no live total, as a
++// held person's claims (a figure a statement bound it to stays in). A claim in any other status is refused with the claim's
++// error. Each claim shows held (yes or no).
+ // An OPEN or PENDING claim is reminded with the remind button, once per sheet-today: it shows the sheet's today as its reminded
+ // date (the last day a reminder was written, blank if never). A second reminder the same day, or a claim in any other status,
+ // is refused with the claim's error.
+@@ -170,6 +173,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+       ]),
+   });
+ 
++  const hold = useMutation({
++    mutationFn: () =>
++      postJson<Claim>(
++        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/hold`,
++        { user },
++      ),
++    onSuccess: () =>
++      Promise.all([
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++      ]),
++  });
++
+   const remind = useMutation({
+     mutationFn: () =>
+       postJson<Claim>(
+@@ -312,6 +328,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+     resettle.reset();
+     defer.reset();
+     waive.reset();
++    hold.reset();
+     remind.reset();
+     redate.reset();
+     proof.reset();
+@@ -366,6 +383,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+       <span data-testid="claim-deferred">{deferredShown(c, today) ? 'yes' : 'no'}</span>{' '}
+       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+       <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
++      <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+       <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
+       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+@@ -506,6 +524,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+       <button type="button" data-testid="claim-waive" onClick={() => act(() => waive.mutate())}>
+         Waive late charge
+       </button>{' '}
++      <button type="button" data-testid="claim-hold" onClick={() => act(() => hold.mutate())}>
++        {c.held ? 'Release' : 'Hold'}
++      </button>{' '}
+       <button type="button" data-testid="claim-remind" onClick={() => act(() => remind.mutate())}>
+         Remind
+       </button>{' '}
+@@ -605,6 +626,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+           Not allowed: only a steward can waive a claim's late charge, only an OPEN or PENDING claim's, and only once.
+         </span>
+       )}
++      {hold.isError && (
++        <span data-testid="claim-error" role="alert">
++          {' '}
++          Not allowed: only an OPEN or PENDING claim can be held or released.
++        </span>
++      )}
+       {remind.isError && (
+         <span data-testid="claim-error" role="alert">
+           {' '}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 926a3ecd..a145f38b 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -35,6 +35,8 @@ export type Claim = {
+   log: string[];
+   /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
+   waived?: boolean;
++  /** Whether the claim is held: while OPEN or PENDING and unbound it counts in no live total, as a held person's claims. */
++  held?: boolean;
+   /** The date the claim was last deferred until, "" if it was never deferred. */
+   deferredUntil: string;
+   /** The claim's proofs count. */
+@@ -84,9 +86,9 @@ export const isDeferred = (c: { status?: string; deferredUntil?: string }, today
+   c.status === 'OPEN' && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
+ 
+ /** Whether a claim counts in the live totals: it counts, is not deferred on the sheet's today, and is not
+- *  open, unbound and dated within one of its person's holds (`heldOn`). */
++ *  open, unbound and held or dated within one of its person's holds (`heldOn`). */
+ export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
+-  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
++  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
+ 
+ /** The status a claim had at the end of the day, as its status log records it (each line dated the sheet's today
+  *  when the change was made); undefined when it was added after that day. */
+@@ -100,10 +102,10 @@ export function statusAt(c: Claim, end: string): ClaimStatus | undefined {
+ }
+ 
+ /** Whether a claim counts in a period ending on `end`: by the status it had at the end of that day, and, as in the
+- *  live totals, not deferred on the sheet's today and not open, unbound and dated within one of its person's holds. */
++ *  live totals, not deferred on the sheet's today and not open, unbound and held or dated within one of its person's holds. */
+ export const countsAtEnd = (c: Claim, end: string, heldOn: (date: string) => boolean, today: string | undefined) => {
+   const then = statusAt(c, end);
+-  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c.date));
++  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
+ };
+ 
+ export const claimsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'claims', asOf] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index fb8f889b..6c70d32b 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -218,6 +218,7 @@ public class AsOfView {
+             then.setSplitFrom(rs.getString("split_from"));
+             then.setLateEntry(rs.getBoolean("late_entry"));
+             then.setWaived(rs.getBoolean("waived"));
++            then.setHeld(rs.getBoolean("held"));
+             int batch = rs.getInt("settle_batch");
+             then.setSettleBatch(rs.wasNull() ? null : batch);
+             // A claim's ref and tags are not kept in its history: they show as they are now.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyHoldClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyHoldClaim.java
+new file mode 100644
+index 00000000..8105527d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyHoldClaim.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Holds an OPEN or PENDING claim, or releases it when held; a claim in any other status is refused. */
++public class ApplyHoldClaim {
++    public void apply(@Val HoldClaimRequest request, @Val Claim claim) throws ClaimStatusRefusedException {
++        if (!claim.getStatus().isOpen()) {
++            throw new ClaimStatusRefusedException("Only an OPEN or PENDING claim can be held or released");
++        }
++        claim.setHeld(!claim.isHeld());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimHeld.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimHeld.java
+new file mode 100644
+index 00000000..3b1f763d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimHeld.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupFigures;
++import net.officefloor.plugin.variable.Val;
++
++public class AuditClaimHeld {
++    public void audit(@Val HoldClaimRequest request, @Val Claim claim, People people, Audit audit,
++            @Val RollupFigures before, Rollup rollup) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        audit.recordOnCommit(ClaimAudit.line(claim.isHeld() ? "CLAIM_HELD" : "CLAIM_RELEASED", request.user(), person, claim,
++                claim.getNumber()));
++        rollup.recordChanges(claim.getSheetId(), request.user(), before);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 4e390ad4..691da190 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -106,6 +106,10 @@ public class Claim {
+     private boolean waived;
+     public boolean isWaived() { return waived; }
+     public void setWaived(boolean waived) { this.waived = waived; }
++    /** Whether the claim is held: while OPEN or PENDING and unbound it counts in no live total, as a held person's claims. */
++    private boolean held;
++    public boolean isHeld() { return held; }
++    public void setHeld(boolean held) { this.held = held; }
+     /** Whether the claim has been escalated (once ever); set on a reminder that escalates it. */
+     private boolean escalated;
+     public boolean isEscalated() { return escalated; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 02ac496e..ab221a09 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -18,13 +18,13 @@ import java.util.List;
+  *  lines are its lines, oldest first, each "<label> <qty> x <unit>" (empty unless listed);
+  *  batch is the number of the bulk settle batch that settled it, "" when settled one at a time or never;
+  *  rateMark is the mark drawn when it arrived on the sheet: a forward-only rate applies to it only when its mark is lower;
+- *  waived is whether a steward has waived its late charge. */
++ *  waived is whether a steward has waived its late charge; held is whether the claim is held. */
+ public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy, boolean stated, String corrects,
+         String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
+         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, String tags,
+         String voidReason, List<String> comments, String batch, List<String> lines, long rateMark, boolean waived,
+-        String proofReceipts, String proofPhotos) {
++        String proofReceipts, String proofPhotos, boolean held) {
+ 
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
+@@ -46,7 +46,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
+                 claim.getSettleBatch() == null ? "" : String.valueOf(claim.getSettleBatch()),
+                 claim.getLines().stream().map(ClaimLine::line).toList(), claim.getRateMark(),
+                 claim.isWaived(), String.valueOf(claim.proofsOf(ProofKind.RECEIPT)),
+-                String.valueOf(claim.proofsOf(ProofKind.PHOTO)));
++                String.valueOf(claim.proofsOf(ProofKind.PHOTO)), claim.isHeld());
+     }
+ 
+     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 834cfcc1..53c70e9f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -41,6 +41,7 @@ public class Claims {
+         claim.setRemindedOn(remindedOn == null ? null : remindedOn.toLocalDate());
+         claim.setEscalated(rs.getBoolean("escalated"));
+         claim.setWaived(rs.getBoolean("waived"));
++        claim.setHeld(rs.getBoolean("held"));
+         claim.setProofs(rs.getInt("proofs"));
+         claim.setProofPhotos(rs.getInt("proof_photos"));
+         claim.setSplitFrom(rs.getString("split_from"));
+@@ -78,10 +79,10 @@ public class Claims {
+     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
+     private void history(String sheetId, long id) {
+         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
+-                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark, waived, proof_photos)"
++                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark, waived, proof_photos, held)"
+                 + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
+                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
+-                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark, c.waived, c.proof_photos"
++                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark, c.waived, c.proof_photos, c.held"
+                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+     }
+ 
+@@ -267,10 +268,10 @@ public class Claims {
+             PreparedStatement ps = con.prepareStatement(
+                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
+                             + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq,"
+-                            + " rate_mark, waived, proof_photos)"
++                            + " rate_mark, waived, proof_photos, held)"
+                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
+                             + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ?, " + NEXT_RATE_MARK
+-                            + ", waived, proof_photos FROM claim WHERE sheet_id = ? AND id = ?",
++                            + ", waived, proof_photos, held FROM claim WHERE sheet_id = ? AND id = ?",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, toSheet);
+             ps.setLong(2, personId);
+@@ -303,9 +304,9 @@ public class Claims {
+             PreparedStatement ps = con.prepareStatement(
+                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
+                             + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
+-                            + " listed_seq, rate_mark, waived, proof_photos)"
++                            + " listed_seq, rate_mark, waived, proof_photos, held)"
+                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
+-                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived, proof_photos"
++                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived, proof_photos, held"
+                             + " FROM claim WHERE sheet_id = ? AND id = ?",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, toSheet);
+@@ -402,6 +403,12 @@ public class Claims {
+         history(claim.getSheetId(), claim.getId());
+     }
+ 
++    /** Records whether the claim is held. */
++    public void hold(Claim claim) {
++        jdbc.update("UPDATE claim SET held = ? WHERE sheet_id = ? AND id = ?", claim.isHeld(), claim.getSheetId(), claim.getId());
++        history(claim.getSheetId(), claim.getId());
++    }
++
+     /** Records the claim's (re-fixed) due-by. */
+     public void refix(Claim claim) {
+         jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HoldClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/HoldClaimRequest.java
+new file mode 100644
+index 00000000..82eb542a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HoldClaimRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Body of POST /api/sheets/{sheetId}/claims/{claimId}/hold: who holds or releases the claim. */
++public record HoldClaimRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveHoldClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveHoldClaim.java
+new file mode 100644
+index 00000000..2d7754f6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveHoldClaim.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SaveHoldClaim {
++    public void save(@Val Claim claim, Claims claims) {
++        claims.hold(claim);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateHoldClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateHoldClaim.java
+new file mode 100644
+index 00000000..c9c46280
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateHoldClaim.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
++
++public class ValidateHoldClaim {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody HoldClaimRequest request, Out<HoldClaimRequest> body, Settings settings)
++            throws ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
++        body.set(request);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 72415eee..c763a47e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -188,10 +188,10 @@ public class Person {
+     /** Whether a hold of the person's covers the date. */
+     public boolean heldOn(LocalDate date) { return holds.stream().anyMatch(h -> h.covers(date)); }
+     /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED, but not OPEN or PENDING
+-     *  when dated within one of the person's holds, unless a statement binds it. */
++     *  when held or dated within one of the person's holds, unless a statement binds it. */
+     public boolean countsLive(Claim claim) {
+         return claim.getStatus().counts()
+-                && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
++                && !(claim.getStatus().isOpen() && !claim.isBound() && (claim.isHeld() || heldOn(claim.getDate())));
+     }
+     /** Whether the person's retirement date has been reached on the date (the sheet's today on or after it). */
+     public boolean retiredOn(LocalDate today) {
+@@ -205,11 +205,11 @@ public class Person {
+     }
+     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
+      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
+-     *  dated within one of the person's holds or once their retirement date is reached. */
++     *  held, dated within one of the person's holds or once their retirement date is reached. */
+     public boolean countsAtEnd(Claim claim, LocalDate end, LocalDate today) {
+         ClaimStatus then = claim.statusAt(end);
+         return then != null && then.counts() && !claim.isDeferredOn(today)
+-                && !(claim.getStatus().isOpen() && !claim.isBound() && (heldOn(claim.getDate()) || retiredOn(today)));
++                && !(claim.getStatus().isOpen() && !claim.isBound() && (claim.isHeld() || heldOn(claim.getDate()) || retiredOn(today)));
+     }
+     /** The ids of the people the person has named as patrons, in the order they were named. */
+     public java.util.List<Long> getPatronIds() { return patronIds; }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/AsOf.java b/src/main/java/net/officefloor/hq/app/statement/AsOf.java
+index e4c4163c..b74a873f 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/statement/AsOf.java
+@@ -179,6 +179,7 @@ public class AsOf {
+                     claim.setCorrects(rs.getString("corrects"));
+                     claim.setRateMark(rs.getLong("rate_mark"));
+                     claim.setWaived(rs.getBoolean("waived"));
++                    claim.setHeld(rs.getBoolean("held"));
+                     latest.put(claim.getId(), claim);
+                 }, sheetId, end);
+         List<Claim> own = new ArrayList<>();
+diff --git a/src/main/resources/db/migration/V99__claim_held.sql b/src/main/resources/db/migration/V99__claim_held.sql
+new file mode 100644
+index 00000000..00eb5e6d
+--- /dev/null
++++ b/src/main/resources/db/migration/V99__claim_held.sql
+@@ -0,0 +1,5 @@
++-- Whether the claim is held: an OPEN or PENDING claim held, unless a statement binds it, counts in no live total
++-- (as a held person's claims). Held and released with a toggle.
++ALTER TABLE claim ADD COLUMN held BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE claim_transferred ADD COLUMN held BOOLEAN DEFAULT FALSE NOT NULL BEFORE transferred_on;
++ALTER TABLE claim_history ADD COLUMN held BOOLEAN;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.POST.yml
+new file mode 100644
+index 00000000..6a9baca5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.POST.yml
+@@ -0,0 +1,28 @@
++# Validate before Load so an invalid body is a 400, not masked by a 404.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateHoldClaim
++  next: snapshot
++# The sheet's figures before the change, so the change can audit what it moved.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyHoldClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveHoldClaim
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimHeld
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
