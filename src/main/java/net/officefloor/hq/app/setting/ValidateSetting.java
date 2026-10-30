@@ -55,6 +55,9 @@ public class ValidateSetting {
     /** Not dated: the parent sheet, whose rates (then its parent's, up to three levels up) a grade with none in force here takes; blank: none. */
     public static final String PARENT = "parent";
 
+    /** Not dated: the month (1 to 12) a fiscal year starts in; 1 unless set. */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
     /** An action's permission: perm-<action>, the roles that may take it. */
     public static final String PERM = "perm-";
 
@@ -74,7 +77,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !POT.equals(key) && !PARENT.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
@@ -95,6 +98,14 @@ public class ValidateSetting {
                 }
             }
             body.set(new ValidSetting(key, null, request.user(), null, null, String.join(",", roles)));
+            return;
+        }
+        if (FISCAL_START_MONTH.equals(key)) {
+            int month = raw.matches("\\d{1,2}") ? Integer.parseInt(raw) : 0;
+            if (month < 1 || month > 12) {
+                throw new InvalidSettingException("The fiscal year start month must be a month from 1 to 12");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(month), request.user(), null, null));
             return;
         }
         if (GRACE_DAYS.equals(key)) {

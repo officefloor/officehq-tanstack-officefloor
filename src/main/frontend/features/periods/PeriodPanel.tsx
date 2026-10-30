@@ -5,7 +5,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { formatCents } from '../rates/due';
 import { usePeriodDueTotal } from './usePeriodDueTotal';
-import { periodsKey, usePeriods, type Period } from './usePeriods';
+import { useSettings } from '../settings/useSettings';
+import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 // The sheet's periods, each with its dates and due-total (the dues as shown now, late charges included, of the claims
 // whose date falls in it that counted by the status they had at the end of its last day, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
@@ -19,6 +20,8 @@ export function PeriodPanel() {
   const [user] = useSearchParam('user', asString);
   const periods = usePeriods(sheet);
   const dueTotalOf = usePeriodDueTotal(sheet);
+  // Each period shows the fiscal year its from-date falls in.
+  const fiscalStart = Number(useSettings(sheet)?.fiscalStartMonth ?? '1') || 1;
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -47,6 +50,18 @@ export function PeriodPanel() {
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
   });
+  // Generate a fiscal year's twelve monthly periods (from the sheet's fiscal start month of the year), as the
+  // generator above does; its count shows in the same place.
+  const [fyYear, setFyYear] = useState('');
+  const generateFy = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ generated: number; periods: Period[] }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/generate-fy`,
+        { ...body, user },
+      ),
+    onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
+  });
+  const generated = generateFy.submittedAt > generate.submittedAt ? generateFy : generate;
   // Close a period (open or soft-closed), soft-close an open one, or reopen a closed or soft-closed one (each by the roles the sheet's permission allows; by default
   // close by clerk and steward, reopen by a steward only).
   const act = useMutation({
@@ -67,6 +82,7 @@ export function PeriodPanel() {
             <th>To</th>
             <th>Due</th>
             <th>Closed</th>
+            <th>FY</th>
             <th></th>
           </tr>
         </thead>
@@ -78,6 +94,7 @@ export function PeriodPanel() {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{formatCents(dueTotalOf(p))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
+              <td data-testid="period-fy">{fiscalYearOf(p.from, fiscalStart)}</td>
               <td>
                 {!p.closed && (
                   <button
@@ -171,6 +188,7 @@ export function PeriodPanel() {
           e.preventDefault();
           submitOnce(() => {
             generate.reset();
+            generateFy.reset();
             return generate.mutateAsync({ from: genFrom.trim(), to: genTo.trim() });
           });
         }}
@@ -194,18 +212,42 @@ export function PeriodPanel() {
           }}
         />{' '}
         <button type="submit" data-testid="period-generate">Generate monthly periods</button>
-        {generate.isSuccess && (
+        {generated.isSuccess && (
           <>
             {' '}
-            Made <span data-testid="period-generated">{generate.data.generated}</span>
+            Made <span data-testid="period-generated">{generated.data.generated}</span>
           </>
         )}
-        {generate.isError && (
+        {generated.isError && (
           <span data-testid="period-generate-error" role="alert">
             {' '}
-            Could not generate periods: the to-date must be on or after the from-date (YYYY-MM-DD).
+            {generated === generateFy
+              ? 'Could not generate the fiscal year: it must be a year (YYYY).'
+              : 'Could not generate periods: the to-date must be on or after the from-date (YYYY-MM-DD).'}
           </span>
         )}
+      </form>
+      <form
+        data-testid="period-generate-fy-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitOnce(() => {
+            generate.reset();
+            generateFy.reset();
+            return generateFy.mutateAsync({ year: fyYear.trim() });
+          });
+        }}
+      >
+        <input
+          data-testid="period-generate-fy-year"
+          value={fyYear}
+          placeholder="Fiscal year (YYYY)"
+          onChange={(e) => {
+            setFyYear(e.target.value);
+            generateFy.reset();
+          }}
+        />{' '}
+        <button type="submit" data-testid="period-generate-fy">Generate fiscal year</button>
       </form>
     </>
   );

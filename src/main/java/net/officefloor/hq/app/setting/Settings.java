@@ -232,6 +232,19 @@ public class Settings {
         plainHistory(sheetId, POT, pot == null ? "" : pot.setScale(2).toPlainString());
     }
 
+    /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set. */
+    public int fiscalStartMonth(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the fiscal start month
+        Integer month = jdbc.queryForObject("SELECT fiscal_start_month FROM sheet WHERE id = ?", Integer.class, sheetId);
+        return month == null ? 1 : month;
+    }
+
+    public void setFiscalStartMonth(String sheetId, int month) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET fiscal_start_month = ? WHERE id = ?", month, sheetId);
+        plainHistory(sheetId, FISCAL, String.valueOf(month));
+    }
+
     /** The sheet's parent sheet id; null when none. */
     public String parent(String sheetId) {
         return sheets.parent(sheetId);
@@ -305,7 +318,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -372,6 +385,6 @@ public class Settings {
                         (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
                 noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString(), pot == null ? "" : pot.toPlainString(),
-                parent == null ? "" : parent);
+                parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)));
     }
 }

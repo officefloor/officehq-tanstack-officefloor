@@ -56,6 +56,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.FISCAL_START_MONTH.equals(setting.key())) {
+            settings.setFiscalStartMonth(sheetId, setting.value().intValue());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + setting.value().intValue());
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.PARENT.equals(setting.key())) {
             settings.setParent(sheetId, setting.text());
             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

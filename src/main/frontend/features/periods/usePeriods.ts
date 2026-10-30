@@ -29,6 +29,14 @@ export function usePeriods(sheet: string): Period[] {
   return data ?? [];
 }
 
+/** The fiscal year a date falls in, named FY<yyyy> by the calendar year its first day falls in, for a
+ *  fiscal year starting in the month (1 to 12). */
+export function fiscalYearOf(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
+}
+
 /** The period whose dates contain a date; periods never overlap, so there is at most one. */
 export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);

@@ -40,6 +40,8 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // late charge's 30-day boundaries count from its due-by plus them. Its due-by is shown as it is.
 // Each grade's proof threshold (dated; two decimals; blank: none; saved like the cap): a claim whose person's grade in force
 // on its date has one in force on that date takes it in place of the sheet's proof threshold.
+// The fiscal year start month (not dated; 1 to 12; 1 unless set; saved when its field is filled, together with any other
+// field filled): a fiscal year is named FY<yyyy> by the calendar year its first day falls in.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -54,6 +56,7 @@ export function SettingsPanel() {
   // Each grade's own terms, by grade, as typed.
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [latePct, setLatePct] = useState('');
+  const [fiscalStart, setFiscalStart] = useState('');
   // Each grade's grace days, by grade, as typed; each may be saved blank (none), so entering its field marks it as one to save.
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const graceGradeChosen = useRef(new Set<string>());
@@ -234,6 +237,7 @@ export function SettingsPanel() {
       else if (body.key === 'terms') setTerms('');
       else if (body.key.startsWith('terms-')) setGradeTerms((t) => ({ ...t, [body.key.slice('terms-'.length)]: '' }));
       else if (body.key === 'late-pct') setLatePct('');
+      else if (body.key === 'fiscal-start-month') setFiscalStart('');
       else if (body.key === 'policy-date') {
         setPolicyDate('');
         policyChosen.current = false;
@@ -334,7 +338,7 @@ export function SettingsPanel() {
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
-            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
+            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
                 || noted || graced || entered || potted || parented || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
@@ -342,6 +346,7 @@ export function SettingsPanel() {
                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
                 ...ownTerms.map((g) => ({ key: `terms-${g}`, value: gradeTerms[g].trim() })),
                 ...(latePct.trim() !== '' ? [{ key: 'late-pct', value: latePct.trim() }] : []),
+                ...(fiscalStart.trim() !== '' ? [{ key: 'fiscal-start-month', value: fiscalStart.trim() }] : []),
                 ...ownGrace.map((g) => ({ key: `grace-${g}`, value: (gradeGrace[g] ?? '').trim() })),
                 ...(policy ? [{ key: 'policy-date', value: policyDate.trim() }] : []),
                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
@@ -448,6 +453,17 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('late-pct')}{' '}
+        Fiscal year starts in month: <span data-testid="setting-fiscal-start-month-current">{settings?.fiscalStartMonth ?? ''}</span>{' '}
+        <input
+          data-testid="setting-fiscal-start-month"
+          onFocus={unchoosePolicy}
+          value={fiscalStart}
+          placeholder="Fiscal start month 1-12 (blank: unchanged)"
+          onChange={(e) => {
+            setFiscalStart(e.target.value);
+            saveSetting.reset();
+          }}
+        />{' '}
         Policy date: <span data-testid="setting-policy-date-current">{settings?.policyDate ?? ''}</span>{' '}
         <input
           data-testid="setting-policy-date"
@@ -613,7 +629,7 @@ export function SettingsPanel() {
           </span>
         ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; the fiscal year start month must be a month from 1 to 12; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>
