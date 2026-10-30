@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.sheet.Sheets;
@@ -8,8 +9,11 @@ import net.officefloor.plugin.variable.Val;
 
 public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
-            Rates rates, Out<ClaimNumber> number)
+            Rates rates, Periods periods, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
+        if (periods.isClosed(claim.getSheetId(), claim.getDate())) {
+            throw new ClaimStatusRefusedException("No claim dated inside a closed period can change status");
+        }
         if (!claim.getStatus().canBecome(request.target())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), request.target());
         }

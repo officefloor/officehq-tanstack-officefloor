@@ -73,7 +73,7 @@ function ClaimRow({ claim: c, rate }: { claim: Claim; rate: string | undefined }
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle it).
+          Not allowed: a {c.status} claim cannot make that status change (the user who opened a claim cannot settle it, and no claim dated inside a closed period can change status).
         </span>
       )}
     </li>

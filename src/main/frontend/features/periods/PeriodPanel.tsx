@@ -5,13 +5,14 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { counts, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
-import { claimDue, formatCents } from '../rates/due';
+import { claimDue, formatCents, toCents } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 // The sheet's periods, each with its dates and due-total (the dues of the claims that count whose
 // date falls in it; a claim whose due is n/a adds nothing), and the form that adds one (a name not
-// already on the sheet, a from-date on or before the to-date, not overlapping another period).
+// already on the sheet, a from-date on or before the to-date, not overlapping another period). A
+// closed period shows the due-total fixed when it was closed, whatever the rates do later.
 export function PeriodPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -34,9 +35,17 @@ export function PeriodPanel() {
       queryClient.setQueryData(periodsKey(sheet), saved);
     },
   });
+  const close = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period[]>(
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`,
+        { user },
+      ),
+    onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved),
+  });
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
   const dueTotalOf = (period: Period) =>
-    claims
+    period.closed ? toCents(period.closedTotal) : claims
       .filter((c) => counts(c) && gradeOf.has(c.personId) && periodOf(periods, c.date) === period)
       .reduce((sum, c) => sum + (claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date)) ?? 0n), 0n);
   return (
@@ -48,6 +57,8 @@ export function PeriodPanel() {
             <th>From</th>
             <th>To</th>
             <th>Due</th>
+            <th>Closed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -57,6 +68,24 @@ export function PeriodPanel() {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{formatCents(dueTotalOf(p))}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                {!p.closed && (
+                  <button
+                    type="button"
+                    data-testid="period-close"
+                    onClick={() => {
+                      close.reset();
+                      close.mutate(p.name);
+                    }}
+                  >
+                    Close
+                  </button>
+                )}
+                {close.isError && close.variables === p.name && (
+                  <span data-testid="period-error" role="alert"> Could not close the period.</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

@@ -83,7 +83,7 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
       <input data-testid="claim-form-note" value={note} placeholder="Note" onChange={(e) => changed(setNote)(e.target.value)} />{' '}
       <button type="submit" data-testid="claim-form-submit">{editing !== '' ? 'Save claim' : 'Add claim'}</button>
       {save.isError && (
-        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must be 0.00 or more, with at most two decimals.</span>
+        <span data-testid="claim-form-error" role="alert"> Could not save: the amount must be 0.00 or more, with at most two decimals, and no claim can be dated inside a closed period.</span>
       )}
     </form>
   );

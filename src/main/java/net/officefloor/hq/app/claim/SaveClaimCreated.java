@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupFigures;
 import net.officefloor.hq.app.person.Person;
@@ -11,11 +13,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 public class SaveClaimCreated {
-    public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets, Audit audit, @Val RollupFigures before, Rollup rollup,
-            ObjectResponse<ResponseEntity<ClaimResponse>> response) {
+    public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets, Audit audit, @Val RollupFigures before, Rollup rollup, Periods periods,
+            ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         String sheetId = person.getSheetId();
-        Claim claim = claims.add(sheetId, person.getId(), request.amount(),
-                request.date() != null ? request.date() : sheets.today(sheetId), request.note());
+        LocalDate date = request.date() != null ? request.date() : sheets.today(sheetId);
+        if (periods.isClosed(sheetId, date)) {
+            throw new InvalidClaimException("No claim can be added inside a closed period");
+        }
+        Claim claim = claims.add(sheetId, person.getId(), request.amount(), date, request.note());
         audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
         rollup.recordChanges(sheetId, request.user(), before);
         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));

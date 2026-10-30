@@ -1,14 +1,24 @@
 package net.officefloor.hq.app.period;
 
+import java.math.BigDecimal;
 import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 /** The period store: named, non-overlapping date ranges (both ends inclusive), kept per sheet. */
 @Repository
 public class Periods {
+
+    private static final RowMapper<PeriodResponse> ROW = (rs, i) -> {
+        BigDecimal total = rs.getBigDecimal("closed_total");
+        return new PeriodResponse(rs.getString("name"), rs.getDate("from_date").toLocalDate().toString(),
+                rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
+                total == null ? "" : total.setScale(2).toPlainString());
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -18,10 +28,28 @@ public class Periods {
 
     /** The sheet's periods, by from-date. */
     public List<PeriodResponse> list(String sheetId) {
-        return jdbc.query("SELECT name, from_date, to_date FROM period WHERE sheet_id = ? ORDER BY from_date",
-                (rs, i) -> new PeriodResponse(rs.getString("name"), rs.getDate("from_date").toLocalDate().toString(),
-                        rs.getDate("to_date").toLocalDate().toString()),
-                sheetId);
+        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId);
+    }
+
+    /** The named period, its row locked until the transaction ends; null when none. */
+    public PeriodResponse lock(String sheetId, String name) {
+        List<PeriodResponse> found = jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND name = ? FOR UPDATE",
+                ROW, sheetId, name);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Close the named period, fixing its due-total. */
+    public void close(String sheetId, String name, BigDecimal total) {
+        jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ?",
+                total, sheetId, name);
+    }
+
+    /** Whether a date falls inside a closed period of the sheet. */
+    public boolean isClosed(String sheetId, LocalDate date) {
+        Integer closed = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM period WHERE sheet_id = ? AND closed AND from_date <= ? AND to_date >= ?",
+                Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return closed != null && closed > 0;
     }
 
     /** Add a period, refusing a name already on the sheet or dates overlapping another period. */
