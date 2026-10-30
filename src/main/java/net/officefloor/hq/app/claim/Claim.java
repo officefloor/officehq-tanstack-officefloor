@@ -14,9 +14,10 @@ public class Claim {
     private String note;
     private ClaimStatus status;
     private Long number;
+    private BigDecimal settledDue;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Long number) {
+            ClaimStatus status, Long number, BigDecimal settledDue) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -25,6 +26,7 @@ public class Claim {
         this.note = note;
         this.status = status;
         this.number = number;
+        this.settledDue = settledDue;
     }
 
     public long getId() { return id; }
@@ -36,9 +38,12 @@ public class Claim {
     public ClaimStatus getStatus() { return status; }
     /** The number given when the claim was opened; null for a draft or a voided claim. */
     public Long getNumber() { return number; }
+    /** The due fixed when the claim was settled; null while its due is live. */
+    public BigDecimal getSettledDue() { return settledDue; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public void setDate(LocalDate date) { this.date = date; }
     public void setNote(String note) { this.note = note; }
     public void setStatus(ClaimStatus status) { this.status = status; }
     public void setNumber(Long number) { this.number = number; }
+    public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
 }

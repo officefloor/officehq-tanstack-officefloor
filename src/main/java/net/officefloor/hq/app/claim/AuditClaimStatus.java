@@ -12,7 +12,11 @@ public class AuditClaimStatus {
             case VOID -> "CLAIM_VOIDED";
             case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
         };
-        audit.recordOnCommit(ClaimAudit.line(event, request.user(),
-                people.find(claim.getSheetId(), claim.getPersonId()), claim, number.value()));
+        String line = ClaimAudit.line(event, request.user(),
+                people.find(claim.getSheetId(), claim.getPersonId()), claim, number.value());
+        if (request.target() == ClaimStatus.SETTLED) {
+            line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+        }
+        audit.recordOnCommit(line);
     }
 }

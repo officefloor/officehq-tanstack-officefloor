@@ -4,7 +4,8 @@ import { getJson } from '../../api/http';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim; `amount` is shown with two decimals ("10.25"); `number` is the one given when it was
- *  opened, "" for a draft or a voided claim. */
+ *  opened, "" for a draft or a voided claim; `due` is the due fixed when it was settled, "" while
+ *  its due is live (worked from the current rate). */
 export type Claim = {
   id: string;
   personId: string;
@@ -13,6 +14,7 @@ export type Claim = {
   note: string;
   status: ClaimStatus;
   number: string;
+  due: string;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */

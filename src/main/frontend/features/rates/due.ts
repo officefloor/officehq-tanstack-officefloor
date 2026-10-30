@@ -33,3 +33,8 @@ export function dueCents(cents: bigint, rate: string | undefined): bigint | null
 export function showDue(due: bigint | null): string {
   return due === null ? NA : formatCents(due);
 }
+
+/** A claim's due: the one fixed when it was settled, else its amount at the current rate. */
+export function claimDue(claim: { amount: string; due: string }, rate: string | undefined): bigint | null {
+  return claim.due !== '' ? toCents(claim.due) : dueCents(toCents(claim.amount), rate);
+}
