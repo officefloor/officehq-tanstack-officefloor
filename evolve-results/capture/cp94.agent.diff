@@ -1,0 +1,165 @@
+diff --git a/src/main/frontend/features/settings/SettingsPanel.tsx b/src/main/frontend/features/settings/SettingsPanel.tsx
+index 110948a1..8f5b6040 100644
+--- a/src/main/frontend/features/settings/SettingsPanel.tsx
++++ b/src/main/frontend/features/settings/SettingsPanel.tsx
+@@ -34,6 +34,8 @@ import { useSheetToday } from '../sheet/useSheetToday';
+ // Each grade's grace days (dated; whole days; blank: none; saved like the cap): a claim whose person's grade in force on its
+ // date has grace days in force on that date is overdue only once its due-by plus them is before the sheet's today, and its
+ // late charge's 30-day boundaries count from its due-by plus them. Its due-by is shown as it is.
++// Each grade's proof threshold (dated; two decimals; blank: none; saved like the cap): a claim whose person's grade in force
++// on its date has one in force on that date takes it in place of the sheet's proof threshold.
+ export function SettingsPanel() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+@@ -51,6 +53,9 @@ export function SettingsPanel() {
+   // Each grade's grace days, by grade, as typed; each may be saved blank (none), so entering its field marks it as one to save.
+   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
+   const graceGradeChosen = useRef(new Set<string>());
++  // Each grade's proof threshold, by grade, as typed; likewise each may be saved blank (none).
++  const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
++  const proofGradeChosen = useRef(new Set<string>());
+   const today = useSheetToday(sheet);
+   const [policyDate, setPolicyDate] = useState('');
+   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
+@@ -109,6 +114,7 @@ export function SettingsPanel() {
+   const unchooseGradeGrace = () => {
+     for (const g of GRADES) {
+       if ((gradeGrace[g] ?? '').trim() === '') graceGradeChosen.current.delete(g);
++      if ((gradeProof[g] ?? '').trim() === '') proofGradeChosen.current.delete(g);
+     }
+   };
+   // Entering a grade's grace days (or their from-date) marks them as one to save, as they are.
+@@ -116,6 +122,11 @@ export function SettingsPanel() {
+     unchoosePolicy();
+     graceGradeChosen.current.add(grade);
+   };
++  // Entering a grade's proof threshold (or its from-date) marks it as one to save, as it is.
++  const focusGradeProof = (grade: string) => {
++    unchoosePolicy();
++    proofGradeChosen.current.add(grade);
++  };
+   // Entering a permission marks it as one to save, as it is.
+   const focusPerm = (action: string) => {
+     if (policyDate.trim() === '') policyChosen.current = false;
+@@ -231,6 +242,11 @@ export function SettingsPanel() {
+         setEntryDate('');
+         entryChosen.current = false;
+       }
++      else if (body.key.startsWith('proof-threshold-')) {
++        const grade = body.key.slice('proof-threshold-'.length);
++        setGradeProof((t) => ({ ...t, [grade]: '' }));
++        proofGradeChosen.current.delete(grade);
++      }
+       else if (body.key === 'proof-threshold') {
+         setProofThreshold('');
+         proofChosen.current = false;
+@@ -282,8 +298,9 @@ export function SettingsPanel() {
+             const entered = entryDate.trim() !== '' || entryChosen.current;
+             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
++            const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
+             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
+-            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed
++            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
+                 || noted || graced || entered || permitted.length > 0) {
+               const saves = [
+                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
+@@ -296,6 +313,7 @@ export function SettingsPanel() {
+                 ...(numbering ? [{ key: 'period-numbering-from', value: numberingFrom.trim() }] : []),
+                 ...(capped ? [{ key: 'cap', value: cap.trim() }] : []),
+                 ...(proofed ? [{ key: 'proof-threshold', value: proofThreshold.trim() }] : []),
++                ...ownProof.map((g) => ({ key: `proof-threshold-${g}`, value: (gradeProof[g] ?? '').trim() })),
+                 ...(noted ? [{ key: 'note-threshold', value: noteThreshold.trim() }] : []),
+                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
+                 ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
+@@ -462,6 +480,24 @@ export function SettingsPanel() {
+           }}
+         />{' '}
+         {fromField('proof-threshold', focusProof)}{' '}
++        {GRADES.map((g) => (
++          <span key={g}>
++            Proof threshold for grade {g}: <span data-testid={`setting-proof-threshold-${g}-current`}>{today === undefined ? '' : inForce(settings, `proof-threshold-${g}`, today, '')}</span>{' '}
++            <input
++              data-testid={`setting-proof-threshold-${g}`}
++              onFocus={() => focusGradeProof(g)}
++              value={gradeProof[g] ?? ''}
++              placeholder={`Grade ${g} proof threshold (blank: none)`}
++              onChange={(e) => {
++                const value = e.target.value;
++                setGradeProof((t) => ({ ...t, [g]: value }));
++                proofGradeChosen.current.add(g);
++                saveSetting.reset();
++              }}
++            />{' '}
++            {fromField(`proof-threshold-${g}`, () => focusGradeProof(g))}{' '}
++          </span>
++        ))}
+         Note threshold: <span data-testid="setting-note-threshold-current">{settings?.noteThreshold ?? ''}</span>{' '}
+         <input
+           data-testid="setting-note-threshold"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index c5941c64..21e539ea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -80,7 +80,9 @@ public class ApplyClaimStatus {
+         if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {
+             // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
+             // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
+-            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
++            // The person's grade's own threshold in force then, when one is set, takes the place of the sheet's.
++            BigDecimal threshold = settings.proofThresholdFor(claim.getSheetId(),
++                    people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate()), claim.getDate());
+             BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
+             if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                 throw new ClaimStatusRefusedException("A claim whose due is above the proof threshold needs a proof to be settled");
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index e3225437..69e339c9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -91,6 +91,13 @@ public class Settings {
+         return found == null ? null : found.value();
+     }
+ 
++    /** The proof threshold a claim of a person of this grade dated on the date takes: the grade's own in force then
++     *  when one is set, else the sheet's then; null for none. */
++    public BigDecimal proofThresholdFor(String sheetId, String grade, LocalDate on) {
++        InForce own = grade == null ? null : on(sheetId, ValidateSetting.GRADE_PROOF_THRESHOLD + grade, on);
++        return own != null && own.value() != null ? own.value() : proofThreshold(sheetId, on);
++    }
++
+     /** The sheet's note threshold in force on a date (a claim's: its date); null for none. */
+     public BigDecimal noteThreshold(String sheetId, LocalDate on) {
+         InForce found = on(sheetId, ValidateSetting.NOTE_THRESHOLD, on);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index b22a0b98..6118665a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -20,6 +20,9 @@ public class ValidateSetting {
+     /** Above it (in force on a claim's date) a claim needs a proof to be settled or approved; blank: none. */
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+ 
++    /** A grade's proof threshold: proof-threshold-<grade>; dated; blank: none (the sheet's applies). */
++    public static final String GRADE_PROOF_THRESHOLD = "proof-threshold-";
++
+     /** Above it (in force on a claim's date) a claim cannot be opened with an empty note; blank: none. */
+     public static final String NOTE_THRESHOLD = "note-threshold";
+ 
+@@ -67,7 +70,8 @@ public class ValidateSetting {
+                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key)
+                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
+                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
+-                && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))) {
++                && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
++                && !(key.startsWith(GRADE_PROOF_THRESHOLD) && GRADES.contains(key.substring(GRADE_PROOF_THRESHOLD.length())))) {
+             throw new InvalidSettingException("No such setting: " + key);
+         }
+         String raw = request.value() == null ? "" : request.value().trim();
+@@ -179,7 +183,7 @@ public class ValidateSetting {
+             body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
+             return;
+         }
+-        if (PROOF_THRESHOLD.equals(key)) {
++        if (PROOF_THRESHOLD.equals(key) || key.startsWith(GRADE_PROOF_THRESHOLD)) {
+             if (raw.isEmpty()) {
+                 body.set(new ValidSetting(key, null, request.user(), null, from)); // blank: none
+                 return;
