@@ -8,6 +8,7 @@ import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
+import { BulkGrade, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
 import { PasteClaims } from './PasteClaims';
 import { PatronControl } from './PatronControl';
@@ -35,7 +36,8 @@ import { useSheetFigures } from './useSheetFigures';
 // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. Claims ticked
-// with their select checkbox are opened together with the bulk open button.
+// with their select checkbox are opened together with the bulk open button; people ticked with theirs
+// are given a grade together with the bulk grade.
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -55,6 +57,7 @@ export function PeopleList() {
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   return (
     <ClaimSelection>
+      <PersonSelection>
       <QuickAdd />
       <PasteClaims />
       <ShowRetired />
@@ -72,9 +75,11 @@ export function PeopleList() {
       </button>
       <BulkOpenButton />
       <BulkSettleButton />
+      <BulkGrade />
       <table data-testid="people">
         <thead>
           <tr>
+            <th />
             <th>Name</th>
             <th>Grade</th>
             <th>Terms</th>
@@ -105,6 +110,9 @@ export function PeopleList() {
             const own = claims.filter((c) => c.personId === p.id);
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
+                <td>
+                  <PersonSelect personId={p.id} />
+                </td>
                 <td data-testid="person-name">{p.name}</td>
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
                 <td data-testid="person-terms">{p.terms}</td>
@@ -161,6 +169,7 @@ export function PeopleList() {
         Overdue total: <span data-testid="rollup-overdue-total">{sheetOverdueTotal}</span>
       </p>
       <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} />
+      </PersonSelection>
     </ClaimSelection>
   );
 }

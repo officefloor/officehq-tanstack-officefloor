@@ -1,0 +1,46 @@
+package net.officefloor.hq.app.person;
+
+import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.rollup.RollupFigures;
+import net.officefloor.plugin.variable.Val;
+import net.officefloor.web.ObjectResponse;
+import org.springframework.web.bind.annotation.PathVariable;
+
+/**
+ * Gives the selected people the grade in list order (the order they were added), each exactly as a
+ * person form save would: recorded from the from-date (the sheet's today when blank), audited as
+ * PERSON_EDITED with the rollup lines it moved. As on the form, a blank from-date leaving a person's
+ * grade as it is records nothing, and that person is not counted. A selected id that is not a person
+ * on the sheet is skipped.
+ */
+public class BulkGradePeople {
+    public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeRequest request,
+            People people, Rollup rollup, Audit audit, ObjectResponse<BulkGradeResponse> response)
+            throws PersonConflictException {
+        Set<String> selected = new HashSet<>(request.personIds());
+        int graded = 0;
+        for (Person person : people.list(sheetId)) {
+            if (!selected.contains(String.valueOf(person.getId()))) {
+                continue;
+            }
+            if (request.gradeFrom().isEmpty() && request.grade().equals(person.getGrade())) {
+                continue;
+            }
+            RollupFigures before = rollup.figures(sheetId);
+            LocalDate from = request.gradeFrom().isEmpty() ? person.getToday() : LocalDate.parse(request.gradeFrom());
+            person.recordGrade(from, request.grade());
+            if (!people.save(person)) {
+                throw new PersonConflictException(person.getId());
+            }
+            audit.recordOnCommit("PERSON_EDITED sheet=" + sheetId + " by=" + request.user()
+                    + " name=" + person.getName() + " grade=" + person.getGrade());
+            rollup.recordChanges(sheetId, request.user(), before);
+            graded++;
+        }
+        response.send(new BulkGradeResponse(graded));
+    }
+}
