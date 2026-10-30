@@ -12,8 +12,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getInt("version"));
+    private static final RowMapper<Person> ROW = (rs, i) -> {
+        Person person = new Person(rs.getLong("id"),
+                rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getInt("version"));
+        person.setStatementCount(rs.getInt("statement_count"));
+        person.setStatedTotal(rs.getBigDecimal("stated_total"));
+        java.sql.Date stated = rs.getDate("statement_date");
+        person.setStatementDate(stated == null ? null : stated.toLocalDate());
+        return person;
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -51,6 +58,15 @@ public class People {
             return ps;
         }, keys);
         return new Person(keys.getKey().longValue(), sheetId, name, grade);
+    }
+
+    /** Records a statement taken for the person: one more, with its due-total and date. The person's
+     *  version is left as it is — a statement is not an edit. */
+    public void saveStatement(Person person) {
+        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE sheet_id = ? AND id = ?",
+                person.getStatementCount(), person.getStatedTotal(),
+                person.getStatementDate() == null ? null : java.sql.Date.valueOf(person.getStatementDate()),
+                person.getSheetId(), person.getId());
     }
 
     /** Saves the person over the version it was loaded at, moving it on by one; false (nothing

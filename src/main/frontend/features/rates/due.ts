@@ -36,16 +36,18 @@ export function showDue(due: bigint | null): string {
   return due === null ? NA : formatCents(due);
 }
 
-/** A claim's due: the one fixed when it was settled, else its amount at the current rate. */
-export function claimDue(claim: { amount: string; due: string }, rate: string | undefined): bigint | null {
-  return claim.due !== '' ? toCents(claim.due) : dueCents(toCents(claim.amount), rate);
+/** A claim's due: the one fixed when it was settled or bound by a statement (a claim bound to n/a
+ *  stays n/a), else its amount at the current rate. */
+export function claimDue(claim: { amount: string; due: string; stated?: boolean }, rate: string | undefined): bigint | null {
+  if (claim.due !== '') return toCents(claim.due);
+  return claim.stated ? null : dueCents(toCents(claim.amount), rate);
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. With no rate for their
  *  grade today it is n/a, unless a settled claim keeps a figure; then it is the sum of the figures
  *  there are. A claim whose figure is n/a adds nothing. */
 export function dueTotal(
-  claims: { amount: string; due: string; date: string }[],
+  claims: { amount: string; due: string; date: string; stated?: boolean }[],
   rateOn: (date: string) => string | undefined,
   rateToday: string | undefined,
 ): bigint | null {

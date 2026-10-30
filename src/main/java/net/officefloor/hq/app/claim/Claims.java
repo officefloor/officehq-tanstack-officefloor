@@ -15,10 +15,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
-            rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
+    private static final RowMapper<Claim> ROW = (rs, i) -> {
+        Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+                rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
+                rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+                rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
+        claim.setStated(rs.getBoolean("stated"));
+        claim.setStatedDue(rs.getBigDecimal("stated_due"));
+        return claim;
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -29,6 +34,11 @@ public class Claims {
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
         return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+    }
+
+    /** A person's claims on the sheet, newest first. */
+    public List<Claim> ofPerson(String sheetId, long personId) {
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW, sheetId, personId);
     }
 
     public Claim find(String sheetId, long id) {
@@ -50,6 +60,12 @@ public class Claims {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+    }
+
+    /** Bind the claim to the figure a statement gives it (stated), or leave it unbound. */
+    public void bind(Claim claim) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
+                claim.isStated(), claim.getStatedDue(), claim.getSheetId(), claim.getId());
     }
 
     public void save(Claim claim) {

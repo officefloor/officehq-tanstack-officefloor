@@ -5,11 +5,13 @@ import { counts, sumAmounts, useClaims } from '../claims/useClaims';
 import { dueTotal, formatCents, showDue } from '../rates/due';
 import { rateOn, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheetToday';
+import { StatementButton } from '../statements/StatementButton';
 import { usePeople } from './usePeople';
 
 // Every person on the sheet in the order they were added, with their name, grade, claimed (the
 // sum of their OPEN and SETTLED claims), due-total (the
-// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled claim keeps a figure) and their claims; then the
+// sum of their counting claims' already-rounded dues; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+// their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total and due-total (the people's due-totals added up, skipping n/a).
 export function PeopleList() {
   const [sheet] = useSearchParam('sheet', asString);
@@ -35,6 +37,9 @@ export function PeopleList() {
             <th>Claimed</th>
             <th>Due</th>
             <th />
+            <th>Statements</th>
+            <th>Last stated</th>
+            <th>Stated on</th>
             <th>Claims</th>
           </tr>
         </thead>
@@ -50,8 +55,12 @@ export function PeopleList() {
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                     Edit
-                  </button>
+                  </button>{' '}
+                  <StatementButton personId={p.id} />
                 </td>
+                <td data-testid="person-statement-count">{p.statementCount}</td>
+                <td data-testid="person-stated-total">{p.statedTotal}</td>
+                <td data-testid="person-statement-date">{p.statementDate}</td>
                 <td>
                   <ClaimList claims={own} rateOn={(date) => rateOn(rates, p.grade, date)} />
                   <ClaimForm personId={p.id} claims={own} />
