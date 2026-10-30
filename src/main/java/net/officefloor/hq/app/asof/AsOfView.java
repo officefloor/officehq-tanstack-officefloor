@@ -174,7 +174,8 @@ public class AsOfView {
         Date end = Date.valueOf(date);
         Map<Long, Claim> latest = new HashMap<>();
         Map<Long, Claim> now = new LinkedHashMap<>();
-        claims.list(sheetId).forEach(claim -> now.put(claim.getId(), claim));
+        // Those transferred away since still stood on the sheet.
+        claims.listWithTransferredAfter(sheetId, date).forEach(claim -> now.put(claim.getId(), claim));
         jdbc.query("SELECT * FROM claim_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
             Claim current = now.get(rs.getLong("claim_id"));
             if (current == null) return;

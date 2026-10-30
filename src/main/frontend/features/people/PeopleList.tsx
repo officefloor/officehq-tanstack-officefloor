@@ -12,6 +12,7 @@ import { AliasControl } from './AliasControl';
 import { openedEditor } from './editorOpens';
 import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
 import { HoldControl } from './HoldControl';
+import { InlineGrade } from './InlineGrade';
 import { MergeControl } from './MergeControl';
 import { MoveControl } from './MoveControl';
 import { PasteClaims } from './PasteClaims';
@@ -252,6 +253,7 @@ export function PeopleList() {
                   }}>
                     Edit
                   </button>{' '}
+                  <InlineGrade person={p} shown={gradeOn(p, today)} />{' '}
                   <MoveControl personId={p.id} />{' '}
                   <StatementButton personId={p.id} />{' '}
                   <UnstateButton personId={p.id} />{' '}

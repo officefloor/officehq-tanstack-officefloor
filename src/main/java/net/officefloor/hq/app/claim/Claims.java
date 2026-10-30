@@ -6,11 +6,13 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.holiday.Holidays;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -74,6 +76,20 @@ public class Claims {
                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
                 + " c.split_from, c.late_entry, c.settle_batch"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+    }
+
+    /** The sheet's claims with those transferred away after the date (as they stood when they left), newest first. */
+    public List<Claim> listWithTransferredAfter(String sheetId, LocalDate date) {
+        List<Claim> found = new ArrayList<>(list(sheetId));
+        found.addAll(jdbc.query("SELECT c.*, CAST(NULL AS DATE) AS corrected_date FROM claim_transferred c"
+                + " WHERE c.sheet_id = ? AND c.transferred_on > ?", ROW, sheetId, Date.valueOf(date)));
+        Map<Long, Long> listed = new HashMap<>();
+        jdbc.query("SELECT id, COALESCE(listed_seq, 0) FROM claim WHERE sheet_id = ?"
+                + " UNION ALL SELECT id, COALESCE(listed_seq, 0) FROM claim_transferred WHERE sheet_id = ?",
+                (RowCallbackHandler) rs -> listed.put(rs.getLong(1), rs.getLong(2)), sheetId, sheetId);
+        found.sort(Comparator.comparing((Claim c) -> listed.getOrDefault(c.getId(), 0L))
+                .thenComparingLong(Claim::getId).reversed());
+        return found;
     }
 
     /** The sheet's claims, newest first. */
@@ -318,6 +334,9 @@ public class Claims {
 
     /** Removes the claim, its log, its comments and its lines from its sheet (its history is kept for the as-of view). */
     public void remove(Claim claim) {
+        // Kept as it stood, so the as-of view of a date before it left still shows it.
+        jdbc.update("INSERT INTO claim_transferred SELECT c.*, (SELECT today FROM sheet WHERE id = ?) FROM claim c"
+                + " WHERE c.sheet_id = ? AND c.id = ?", claim.getSheetId(), claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
