@@ -361,6 +361,17 @@ public class People {
         return person;
     }
 
+    /** Merges the person, arriving from another sheet, into the person on that sheet: their name and aliases become
+     *  the other's aliases; their grades, terms and contact are dropped. Returns the person merged into. */
+    public Person transferInto(Person from, Person into) {
+        addAlias(into, from.getName());
+        for (String alias : jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                String.class, from.getSheetId(), from.getId())) {
+            addAlias(into, alias);
+        }
+        return into;
+    }
+
     /** Takes the person off their sheet entirely: their patron links both ways, pool memberships, fixed period
      *  figures, holds, watches, statements, grades and aliases are dropped. Kept as they stood for the as-of view. */
     public void transferOut(Person person) {

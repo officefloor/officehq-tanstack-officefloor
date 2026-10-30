@@ -18,8 +18,11 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Transfers the person to another sheet (a steward only; never a retired person, never to this sheet, never onto an
- * archived sheet, nor when their name, an alias or their contact is already on the other sheet, or their name or an alias on
- * another sheet of its tree). They arrive with
+ * archived sheet, nor when their contact is already on the other sheet, or their name or an alias on another sheet of its
+ * tree). When their name or an alias is already on the other sheet (as names are compared) they are merged into that
+ * person there, exactly as a merge does: their claims listed after the other's, their name and aliases becoming the
+ * other's aliases, figures a statement bound lost; their grades, terms and contact are dropped (never into a retired
+ * person, nor when their names are held by more than one person there). Otherwise they arrive with
  * every grade they were given, their terms, contact and aliases, and their claims (status, dates, notes, tags,
  * settled figures and logs kept, listed in the same order); each claim that had a number takes the other sheet's
  * next, in the order the claims were opened (by the sheet's today when opened, then the order added). Figures a
@@ -44,17 +47,29 @@ public class TransferPerson {
         List<String> names = new ArrayList<>();
         names.add(person.getName());
         names.addAll(person.getAliases());
+        Person into = null;
         for (String name : names) {
-            if (people.nameTaken(to, name, null, person)) {
-                throw new InvalidPersonException("The name " + name + " is already on the other sheet");
+            if (people.nameUsedInTree(to, name, person)) {
+                throw new InvalidPersonException("The name " + name + " is already on another sheet of the other sheet's tree");
+            }
+            Person holder = people.findByName(to, name);
+            if (holder != null) {
+                if (into != null && into.getId() != holder.getId()) {
+                    throw new InvalidPersonException("The names are held by more than one person on the other sheet");
+                }
+                into = holder;
             }
         }
-        if (person.getContact() != null && !person.getContact().isBlank() && people.contactTaken(to, person.getContact(), null)) {
+        if (into != null && into.getRetiredFrom() != null) {
+            throw new InvalidPersonException("A retired person cannot be merged");
+        }
+        if (into == null && person.getContact() != null && !person.getContact().isBlank()
+                && people.contactTaken(to, person.getContact(), null)) {
             throw new InvalidPersonException("The contact is already on the other sheet");
         }
         RollupFigures toBefore = rollup.figures(to);
 
-        Person arrived = people.transferIn(person, to);
+        Person arrived = into == null ? people.transferIn(person, to) : people.transferInto(person, into);
         // Claims in the order they are listed (oldest listed first), so they keep their order.
         List<Claim> moved = new ArrayList<>(claims.ofPerson(sheetId, person.getId()));
         java.util.Collections.reverse(moved);
@@ -88,6 +103,10 @@ public class TransferPerson {
 
         audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + to + " by=" + request.user()
                 + " name=" + person.getName() + " from=" + sheetId);
+        if (into != null) {
+            audit.recordOnCommit("PERSON_MERGED sheet=" + to + " by=" + request.user()
+                    + " from=" + person.getName() + " into=" + into.getName());
+        }
         rollup.recordChanges(to, request.user(), toBefore);
         audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + sheetId + " by=" + request.user()
                 + " name=" + person.getName() + " to=" + to);
