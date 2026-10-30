@@ -33,6 +33,8 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // saved like the cap): a person whose due-total crosses above it is audited as an ALERT. The parent (not dated; a sheet id; blank: none; saved like
 // the cap): a grade with no rate in force on a date on this sheet takes the parent's, then the parent's parent's, up to three
 // levels up. The sheet itself, a sheet that has this sheet as an ancestor, or a sheet never loaded is refused.
+// The proof kinds (not dated; a comma separated list of receipt and photo; blank: none; saved like the cap): while set, a
+// claim above the proof threshold needs at least one proof of each listed kind to be settled or approved.
 // A steward delegates the steward role to a user for a from-date and a to-date, inclusive (blank: the sheet's today): while the
 // sheet's today is inside them the user acts as a steward in every rule. Anyone but a steward (by the role set), or a to-date
 // before the from-date, is refused.
@@ -109,6 +111,14 @@ export function SettingsPanel() {
   // The parent sheet (not dated); likewise may be saved blank (none).
   const [parent, setParent] = useState('');
   const parentChosen = useRef(false);
+  // The proof kinds (not dated; comma separated); likewise may be saved blank (none).
+  const [proofKinds, setProofKinds] = useState('');
+  const proofKindsChosen = useRef(false);
+  // Entering the proof kinds marks them as the one to save, as they are.
+  const focusProofKinds = () => {
+    unchoosePolicy();
+    proofKindsChosen.current = true;
+  };
   // Entering the parent marks it as the one to save, as it is.
   const focusParent = () => {
     unchoosePolicy();
@@ -197,6 +207,7 @@ export function SettingsPanel() {
     if (pot.trim() === '') potChosen.current = false;
     if (alertThreshold.trim() === '') alertChosen.current = false;
     if (parent.trim() === '') parentChosen.current = false;
+    if (proofKinds.trim() === '') proofKindsChosen.current = false;
     if (rounding.trim() === '') roundingChosen.current = false;
     if (reviewThreshold.trim() === '') reviewChosen.current = false;
     unchooseGradeGrace();
@@ -357,6 +368,10 @@ export function SettingsPanel() {
         setAlertThreshold('');
         alertChosen.current = false;
       }
+      else if (body.key === 'proof-kinds') {
+        setProofKinds('');
+        proofKindsChosen.current = false;
+      }
       else if (body.key === 'parent') {
         setParent('');
         parentChosen.current = false;
@@ -435,12 +450,13 @@ export function SettingsPanel() {
             const potted = pot.trim() !== '' || potChosen.current;
             const alerted = alertThreshold.trim() !== '' || alertChosen.current;
             const parented = parent.trim() !== '' || parentChosen.current;
+            const kinded = proofKinds.trim() !== '' || proofKindsChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -464,6 +480,7 @@ export function SettingsPanel() {
                 ...(potted ? [{ key: 'pot', value: pot.trim() }] : []),
                 ...(alerted ? [{ key: 'alert-threshold', value: alertThreshold.trim() }] : []),
                 ...(parented ? [{ key: 'parent', value: parent.trim() }] : []),
+                ...(kinded ? [{ key: 'proof-kinds', value: proofKinds.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -771,6 +788,18 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Proof kinds: <span data-testid="setting-proof-kinds-current">{settings?.proofKinds ?? ''}</span>{' '}
+        <input
+          data-testid="setting-proof-kinds"
+          value={proofKinds}
+          placeholder="Proof kinds, comma separated: receipt, photo (blank: none)"
+          onFocus={focusProofKinds}
+          onChange={(e) => {
+            setProofKinds(e.target.value);
+            proofKindsChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         Parent sheet: <span data-testid="setting-parent-current">{settings?.parent ?? ''}</span>{' '}
         <input
           data-testid="setting-parent"
@@ -801,7 +830,7 @@ export function SettingsPanel() {
           </span>
         ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the escalation gap must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the alert threshold must be an amount of 0.00 or more with at most two decimals, or blank for off; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; the fiscal year start month must be a month from 1 to 12; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; a grade's grace days must be a whole number of days, 0 or more, or blank for none; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the escalation gap must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; the pot must be an amount of 0.00 or more with at most two decimals, or blank for none; the alert threshold must be an amount of 0.00 or more with at most two decimals, or blank for off; the parent must be another sheet that has been loaded and does not have this sheet as an ancestor, or blank for none; the proof kinds must be a comma separated list of the kinds receipt and photo, or blank for none; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; the fiscal year start month must be a month from 1 to 12; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

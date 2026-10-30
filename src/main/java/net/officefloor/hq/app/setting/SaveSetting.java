@@ -80,6 +80,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.PROOF_KINDS.equals(setting.key())) {
+            settings.setProofKinds(sheetId, setting.text());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + setting.text());
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.PARENT.equals(setting.key())) {
             settings.setParent(sheetId, setting.text());
             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

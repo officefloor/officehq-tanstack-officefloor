@@ -43,9 +43,11 @@ import { peopleKey, type Person } from '../people/usePeople';
 // A steward re-dates an OPEN or PENDING claim with the new date and re-date button: its due-by stays as it was fixed, a figure a
 // statement bound it to stays bound, and, as its period goes by its due-by, it keeps its period and number. A date after the
 // person's retirement, a claim whose due-by is inside a closed period, or a re-dating by anyone but a steward, is refused with the claim's error.
-// Each claim shows its proofs count, raised by one with the proof button (a SETTLED or VOID claim, or one dated inside a closed
+// Each claim shows its proofs count, and how many are receipts and photos, raised by one with the proof button (of the
+// kind chosen beside it; a receipt when none is chosen) (a SETTLED or VOID claim, or one dated inside a closed
 // period, is refused with the claim's error). A claim whose due is above the proof threshold in force on its date cannot be
-// settled or approved while its proofs count is 0: that is refused with the claim's error, before the clerk limit is considered.
+// settled or approved while its proofs count is 0, nor, while the sheet's proof kinds are set, without at least one proof of
+// each listed kind: that is refused with the claim's error, before the clerk limit is considered.
 // An OPEN claim is split with the split amount (more than 0.00 and less than its amount) and button: it keeps the rest
 // of its amount and loses any figure a statement bound it to, and a new OPEN claim with the split-off amount, the same
 // date and note, the next number, opened by the user and its due-by fixed now is listed under the person, showing the
@@ -194,13 +196,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  // The kind of the next proof: "" when none is chosen (a receipt).
+  const [proofKind, setProofKind] = useState('');
+
   const proof = useMutation({
-    mutationFn: () =>
+    mutationFn: (kind: string) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/proof`,
-        { user },
+        { user, kind },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+    onSuccess: () => {
+      setProofKind('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
   });
 
   const [splitAmount, setSplitAmount] = useState('');
@@ -363,6 +371,8 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs ?? '0'}</span>{' '}
+      (receipts <span data-testid="claim-proofs-receipt">{c.proofReceipts ?? '0'}</span>, photos{' '}
+      <span data-testid="claim-proofs-photo">{c.proofPhotos ?? '0'}</span>){' '}
       <ol data-testid="claim-log">
         {(c.log ?? []).map((line, i) => (
           <li key={i} data-testid="claim-log-line">
@@ -421,7 +431,16 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       >
         Add line
       </button>{' '}
-      <button type="button" data-testid="claim-proof" onClick={() => act(() => proof.mutate())}>
+      <select
+        data-testid="claim-proof-kind"
+        value={proofKind}
+        onChange={(e) => act(() => setProofKind(e.target.value))}
+      >
+        <option value="">Proof kind (receipt)</option>
+        <option value="receipt">receipt</option>
+        <option value="photo">photo</option>
+      </select>{' '}
+      <button type="button" data-testid="claim-proof" onClick={() => act(() => proof.mutate(proofKind))}>
         Add proof
       </button>{' '}
       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate({ action: 'open' }))}>
@@ -559,7 +578,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}
-          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, only a DRAFT claim can be deleted and a DELETED one restored only on the sheet-today it was deleted, no claim whose due-by is inside a closed period can change status, and a claim cannot be opened while its person already has as many OPEN or PENDING claims in its period as the period's cap).
+          Not allowed: a {c.status} claim cannot make that status change (a deferred claim cannot be settled until its deferred-until date, the user who opened a claim cannot settle or approve it, a claim whose due is above the proof threshold needs a proof, and one of each of the sheet's proof kinds, to be settled or approved, only a steward can approve or reject a PENDING claim and a rejection needs a reason, only a DRAFT claim can be deleted and a DELETED one restored only on the sheet-today it was deleted, no claim whose due-by is inside a closed period can change status, and a claim cannot be opened while its person already has as many OPEN or PENDING claims in its period as the period's cap).
         </span>
       )}
       {resettle.isError && (

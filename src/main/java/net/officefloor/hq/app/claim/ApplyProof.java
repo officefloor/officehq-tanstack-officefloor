@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.plugin.variable.Val;
 
-/** Raises the claim's proofs count by one; not a SETTLED, VOID or DELETED claim, nor one whose due-by is inside a closed period. */
+/** Raises the claim's proofs count by one, of its kind (a receipt when none was chosen); not a SETTLED, VOID or DELETED claim, nor one whose due-by is inside a closed period. */
 public class ApplyProof {
     public void apply(@Val ProofRequest request, @Val Claim claim, Periods periods) throws ClaimStatusRefusedException {
         if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID
@@ -14,5 +14,8 @@ public class ApplyProof {
             throw new ClaimStatusRefusedException("No claim whose due-by is inside a closed period can take a proof");
         }
         claim.setProofs(claim.getProofs() + 1);
+        if (ProofKind.PHOTO.equals(request.kind())) {
+            claim.setProofPhotos(claim.getProofPhotos() + 1);
+        }
     }
 }

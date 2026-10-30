@@ -117,6 +117,16 @@ public class Claim {
     /** The claim's proofs count: raised by one at a time. */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
+
+    /** How many of the claim's proofs are photos; the rest are receipts. */
+    private int proofPhotos;
+    public int getProofPhotos() { return proofPhotos; }
+    public void setProofPhotos(int proofPhotos) { this.proofPhotos = proofPhotos; }
+
+    /** How many of the claim's proofs are of the kind (receipt or photo). */
+    public int proofsOf(String kind) {
+        return ProofKind.PHOTO.equals(kind) ? proofPhotos : ProofKind.RECEIPT.equals(kind) ? proofs - proofPhotos : 0;
+    }
     /** The number of the claim this claim was split from; null for any claim a split did not make. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }

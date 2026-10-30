@@ -42,6 +42,7 @@ public class Claims {
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setWaived(rs.getBoolean("waived"));
         claim.setProofs(rs.getInt("proofs"));
+        claim.setProofPhotos(rs.getInt("proof_photos"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
         claim.setEditedBy(rs.getString("edited_by"));
@@ -77,10 +78,10 @@ public class Claims {
     /** Records the claim's figure-moving columns as they now stand in its history, dated the sheet's today. */
     private void history(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, set_on, person_id, amount, claim_date, status, settled_due,"
-                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark, waived)"
+                + " stated, stated_due, due_by, deferred_until, corrects, claim_number, opened_by, note, proofs, split_from, late_entry, settle_batch, rate_mark, waived, proof_photos)"
                 + " SELECT c.sheet_id, c.id, s.today, c.person_id, c.amount, c.claim_date, c.status, c.settled_due, c.stated,"
                 + " c.stated_due, c.due_by, c.deferred_until, c.corrects, c.claim_number, c.opened_by, c.note, c.proofs,"
-                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark, c.waived"
+                + " c.split_from, c.late_entry, c.settle_batch, c.rate_mark, c.waived, c.proof_photos"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
@@ -266,10 +267,10 @@ public class Claims {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
                             + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq,"
-                            + " rate_mark, waived)"
+                            + " rate_mark, waived, proof_photos)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
                             + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ?, " + NEXT_RATE_MARK
-                            + ", waived FROM claim WHERE sheet_id = ? AND id = ?",
+                            + ", waived, proof_photos FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, personId);
@@ -302,9 +303,9 @@ public class Claims {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
                             + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
-                            + " listed_seq, rate_mark, waived)"
+                            + " listed_seq, rate_mark, waived, proof_photos)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
-                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived"
+                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived, proof_photos"
                             + " FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
@@ -458,10 +459,10 @@ public class Claims {
         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
     }
 
-    /** Records the claim's proofs count. */
+    /** Records the claim's proofs count and how many of them are photos. */
     public void proofs(Claim claim) {
-        jdbc.update("UPDATE claim SET proofs = ? WHERE sheet_id = ? AND id = ?",
-                claim.getProofs(), claim.getSheetId(), claim.getId());
+        jdbc.update("UPDATE claim SET proofs = ?, proof_photos = ? WHERE sheet_id = ? AND id = ?",
+                claim.getProofs(), claim.getProofPhotos(), claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
     }
 

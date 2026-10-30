@@ -73,6 +73,10 @@ public class ValidateSetting {
     /** Not dated: the month (1 to 12) a fiscal year starts in; 1 unless set. */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
 
+    /** Not dated: a comma separated list of proof kinds (receipt, photo); while set, a claim above the proof threshold needs
+     *  at least one proof of each listed kind to be settled or approved; blank: none. */
+    public static final String PROOF_KINDS = "proof-kinds";
+
     /** An action's permission: perm-<action>, the roles that may take it. */
     public static final String PERM = "perm-";
 
@@ -92,7 +96,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
@@ -113,6 +117,21 @@ public class ValidateSetting {
                 }
             }
             body.set(new ValidSetting(key, null, request.user(), null, null, String.join(",", roles)));
+            return;
+        }
+        if (PROOF_KINDS.equals(key)) {
+            // Not dated: a comma separated list of proof kinds; blank for none.
+            List<String> kinds = new java.util.ArrayList<>();
+            for (String part : raw.isEmpty() ? new String[0] : raw.split(",")) {
+                String kind = part.trim();
+                if (!net.officefloor.hq.app.claim.ProofKind.KINDS.contains(kind)) {
+                    throw new InvalidSettingException("The proof kinds must be a comma separated list of the kinds receipt and photo, or blank for none");
+                }
+                if (!kinds.contains(kind)) {
+                    kinds.add(kind);
+                }
+            }
+            body.set(new ValidSetting(key, null, request.user(), null, null, null, String.join(",", kinds)));
             return;
         }
         if (FISCAL_START_MONTH.equals(key)) {

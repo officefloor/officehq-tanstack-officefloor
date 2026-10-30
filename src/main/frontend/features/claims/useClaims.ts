@@ -39,6 +39,10 @@ export type Claim = {
   deferredUntil: string;
   /** The claim's proofs count. */
   proofs: string;
+  /** How many of the claim's proofs are receipts. */
+  proofReceipts?: string;
+  /** How many of the claim's proofs are photos. */
+  proofPhotos?: string;
   /** The number of the claim a split made this claim from, "" for any other claim. */
   splitFrom: string;
   /** The user whose open editor locks the claim for everyone else, "" when unlocked. */

@@ -107,10 +107,12 @@ public class ApplyClaimStatus {
                 return new ClaimNumber(claim.getNumber());
             }
         }
-        if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {
+        java.util.List<String> kinds = target == ClaimStatus.SETTLED ? settings.proofKinds(claim.getSheetId()) : java.util.List.of();
+        if (target == ClaimStatus.SETTLED && (claim.getProofs() == 0 || kinds.stream().anyMatch(k -> claim.proofsOf(k) == 0))) {
             // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
             // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
             // The person's grade's own threshold in force then, when one is set, takes the place of the sheet's.
+            // While the sheet's proof kinds are set, it needs at least one proof of each listed kind.
             BigDecimal threshold = settings.proofThresholdFor(claim.getSheetId(),
                     people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate()), claim.getDate());
             BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);

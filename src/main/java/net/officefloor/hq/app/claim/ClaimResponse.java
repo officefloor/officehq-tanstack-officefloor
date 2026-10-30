@@ -8,7 +8,8 @@ import java.util.List;
  *  the last statement bound it; corrects is the number a correction corrects, "" for any other claim;
  *  roundingDate is the date its rounding goes by (a correction's: the date of the claim it corrects);
  *  dueBy is the due-by fixed when the claim was created; log is its status log, oldest first (empty unless listed);
- *  deferredUntil is the date the claim was last deferred until, "" if never; proofs is its proofs count;
+ *  deferredUntil is the date the claim was last deferred until, "" if never; proofs is its proofs count,
+ *  proofReceipts and proofPhotos how many of them are receipts and photos;
  *  splitFrom is the number of the claim a split made it from, "" for any other claim; lockedBy is the user whose
  *  open editor locks it, "" when unlocked; lateEntry is whether it was added while its period was soft-closed;
  *  remindedOn is the last day a reminder was written for it, "" if never; ref is its external reference, "" for none;
@@ -22,7 +23,8 @@ public record ClaimResponse(String id, String personId, String amount, String da
         String number, String due, String openedBy, boolean stated, String corrects,
         String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, String tags,
-        String voidReason, List<String> comments, String batch, List<String> lines, long rateMark, boolean waived) {
+        String voidReason, List<String> comments, String batch, List<String> lines, long rateMark, boolean waived,
+        String proofReceipts, String proofPhotos) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
@@ -43,7 +45,8 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getComments().stream().map(ClaimComment::line).toList(),
                 claim.getSettleBatch() == null ? "" : String.valueOf(claim.getSettleBatch()),
                 claim.getLines().stream().map(ClaimLine::line).toList(), claim.getRateMark(),
-                claim.isWaived());
+                claim.isWaived(), String.valueOf(claim.proofsOf(ProofKind.RECEIPT)),
+                String.valueOf(claim.proofsOf(ProofKind.PHOTO)));
     }
 
     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */

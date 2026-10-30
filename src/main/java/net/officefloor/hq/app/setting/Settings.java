@@ -256,6 +256,19 @@ public class Settings {
         plainHistory(sheetId, REVIEW_SLA, days == null ? "" : String.valueOf(days));
     }
 
+    /** The sheet's proof kinds, in the order set; empty when none. */
+    public List<String> proofKinds(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the proof kinds
+        String kinds = jdbc.queryForObject("SELECT proof_kinds FROM sheet WHERE id = ?", String.class, sheetId);
+        return kinds == null || kinds.isEmpty() ? List.of() : List.of(kinds.split(","));
+    }
+
+    public void setProofKinds(String sheetId, String kinds) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET proof_kinds = ? WHERE id = ?", kinds.isEmpty() ? null : kinds, sheetId);
+        plainHistory(sheetId, PROOF_KINDS, kinds);
+    }
+
     /** The sheet's pot at two decimals; null when none. */
     public BigDecimal pot(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the pot
@@ -368,7 +381,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", PROOF_KINDS = "proof-kinds", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -443,6 +456,7 @@ public class Settings {
                 parent == null ? "" : parent, String.valueOf(fiscalStartMonth(sheetId)),
                 alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()),
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
-                escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla));
+                escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
+                String.join(",", proofKinds(sheetId)));
     }
 }
