@@ -1,0 +1,176 @@
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index b6167ede..231deffb 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -8,6 +8,8 @@ import java.nio.file.Path;
+ import java.nio.file.StandardOpenOption;
+ import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.stereotype.Service;
++import org.springframework.transaction.support.TransactionSynchronization;
++import org.springframework.transaction.support.TransactionSynchronizationManager;
+ 
+ /**
+  * Audit sink: appends one record per line to a KNOWN FILE (app.audit.file, default .run/audit.log)
+@@ -41,6 +43,23 @@ public class Audit {
+         }
+     }
+ 
++    /**
++     * Append one audit record once the current transaction commits, so a change that is rolled back
++     * (refused by a later step) writes no line. Outside a transaction it is appended at once.
++     */
++    public void recordOnCommit(String entry) {
++        if (TransactionSynchronizationManager.isSynchronizationActive()) {
++            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
++                @Override
++                public void afterCommit() {
++                    record(entry);
++                }
++            });
++        } else {
++            record(entry);
++        }
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+new file mode 100644
+index 00000000..f0ff4c9e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.plugin.variable.Val;
++
++public class AuditClaimEdited {
++    public void audit(@Val ValidClaim request, @Val Claim claim, People people, Audit audit) {
++        audit.recordOnCommit(ClaimAudit.line("CLAIM_EDITED", request.user(),
++                people.find(claim.getSheetId(), claim.getPersonId()), claim));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+new file mode 100644
+index 00000000..0ddb6dde
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.Person;
++
++/** The audit line of a claim change: amount as shown (two decimals), date as yyyy-mm-dd. */
++final class ClaimAudit {
++
++    private ClaimAudit() {
++    }
++
++    static String line(String event, String user, Person person, Claim claim) {
++        ClaimResponse shown = ClaimResponse.from(claim);
++        return event + " sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
++                + " amount=" + shown.amount() + " date=" + shown.date();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
+index 188ed167..04d14830 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimCreated.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+@@ -8,11 +9,12 @@ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ 
+ public class SaveClaimCreated {
+-    public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets,
++    public void save(@Val ValidClaim request, @Val Person person, Claims claims, Sheets sheets, Audit audit,
+             ObjectResponse<ResponseEntity<ClaimResponse>> response) {
+         String sheetId = person.getSheetId();
+         Claim claim = claims.add(sheetId, person.getId(), request.amount(),
+                 request.date() != null ? request.date() : sheets.today(sheetId), request.note());
++        audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim));
+         response.send(new ResponseEntity<>(ClaimResponse.from(claim), HttpStatus.CREATED));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+new file mode 100644
+index 00000000..a08c20e8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++public class AuditPersonEdited {
++    public void audit(@Val PersonRequest request, @Val Person person, Audit audit) {
++        audit.recordOnCommit("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + request.user()
++                + " name=" + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java b/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java
+index 755245bc..0613ad66 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePersonCreated.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.http.HttpStatus;
+@@ -7,12 +8,14 @@ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class SavePersonCreated {
+-    public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people,
++    public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people, Audit audit,
+             ObjectResponse<ResponseEntity<PersonResponse>> response) throws InvalidPersonException {
+         if (people.nameTaken(sheetId, request.name(), null)) {
+             throw new InvalidPersonException("The name is already in use");
+         }
+         Person person = people.add(sheetId, request.name(), request.grade());
++        audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
++                + " name=" + person.getName() + " grade=" + person.getGrade());
+         response.send(new ResponseEntity<>(PersonResponse.from(person), HttpStatus.CREATED));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 4c622a98..484c7bb8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -13,6 +13,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 62b4ac12..87832794 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -13,6 +13,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
