@@ -1,0 +1,50 @@
+diff --git a/src/main/frontend/features/header/SheetHeader.tsx b/src/main/frontend/features/header/SheetHeader.tsx
+index 30240f9d..3d855f2b 100644
+--- a/src/main/frontend/features/header/SheetHeader.tsx
++++ b/src/main/frontend/features/header/SheetHeader.tsx
+@@ -1,11 +1,17 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { showDue } from '../rates/due';
+ import { STATUSES, useSheetFigures } from '../people/useSheetFigures';
+ 
+ // The sheet's counters, always on show: its people (retired included), its claims per status (as
+ // the summary counts them) and its due-total and overdue-total (as the sheet's totals show them).
++// Then the signed-in user's own figures: the due-total and overdue-total of the person on the sheet
++// with the user's name or alias (case and outer spaces ignored); nothing when there is no such person.
+ export function SheetHeader() {
+   const [sheet] = useSearchParam('sheet', asString);
+-  const { people, sheetDueTotal, sheetOverdueTotal, statusCount } = useSheetFigures(sheet);
++  const [user] = useSearchParam('user', asString);
++  const { people, sheetDueTotal, sheetOverdueTotal, statusCount, totalOf, overdue, overdueTotal } = useSheetFigures(sheet);
++  const key = (name: string) => name.trim().toLowerCase();
++  const me = user === '' ? undefined : people.find((p) => [p.name, ...p.aliases].some((n) => key(n) === key(user)));
+   return (
+     <header data-testid="header">
+       People: <span data-testid="header-people-count">{people.length}</span>
+@@ -17,6 +23,8 @@ export function SheetHeader() {
+       ))}
+       {' · '}Due: <span data-testid="header-due-total">{sheetDueTotal}</span>
+       {' · '}Overdue: <span data-testid="header-overdue-total">{sheetOverdueTotal}</span>
++      {' · '}Mine: due <span data-testid="my-due-total">{me ? showDue(totalOf(me)) : ''}</span>
++      {', '}overdue <span data-testid="my-overdue-total">{me ? overdueTotal(overdue.filter((c) => c.personId === me.id)) : ''}</span>
+     </header>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 76623037..3e812684 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -157,11 +157,11 @@ public class Person {
+     }
+     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
+      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
+-     *  dated within one of the person's holds. */
++     *  dated within one of the person's holds or once their retirement date is reached. */
+     public boolean countsAtEnd(Claim claim, LocalDate end, LocalDate today) {
+         ClaimStatus then = claim.statusAt(end);
+         return then != null && then.counts() && !claim.isDeferredOn(today)
+-                && !(claim.getStatus().isOpen() && !claim.isBound() && heldOn(claim.getDate()));
++                && !(claim.getStatus().isOpen() && !claim.isBound() && (heldOn(claim.getDate()) || retiredOn(today)));
+     }
+     /** The ids of the people the person has named as patrons, in the order they were named. */
+     public java.util.List<Long> getPatronIds() { return patronIds; }
