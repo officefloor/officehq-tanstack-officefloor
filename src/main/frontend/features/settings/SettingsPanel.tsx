@@ -15,7 +15,7 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
 // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
 // filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
 // a claim opened is numbered within its period; blank: off; saved like the policy date), the cap (two decimals; a person's
-// due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward).
+// due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward or viewer — a viewer sees everything and changes nothing).
 // The clerk limit, the floor, the terms, each grade's terms, the late percent and the cap are dated: each has a from-date
 // field (blank: the sheet's today) and is saved as its value from that date, keeping the values from other dates; each
 // shows the value in force on the sheet's today. The proof threshold (two decimals; blank: none; saved like the cap) is dated
@@ -376,14 +376,14 @@ export function SettingsPanel() {
         <input
           data-testid="role-form-role"
           value={role}
-          placeholder="Role (clerk or steward)"
+          placeholder="Role (clerk, steward or viewer)"
           onChange={(e) => {
             setRole(e.target.value);
             saveRole.reset();
           }}
         />{' '}
         <button type="submit" data-testid="role-form-submit">Set role</button>
-        {saveRole.isError && <span data-testid="role-form-error" role="alert"> Could not set the role: it needs a user name and the role clerk or steward.</span>}
+        {saveRole.isError && <span data-testid="role-form-error" role="alert"> Could not set the role: it needs a user name and the role clerk, steward or viewer, and a viewer can change nothing.</span>}
       </form>
     </>
   );

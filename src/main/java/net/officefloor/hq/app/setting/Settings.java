@@ -16,6 +16,9 @@ public class Settings {
 
     public static final String STEWARD = "steward";
 
+    /** Sees every screen and figure and changes nothing. */
+    public static final String VIEWER = "viewer";
+
     private final JdbcTemplate jdbc;
 
     private final Sheets sheets;
@@ -160,6 +163,13 @@ public class Settings {
         return found.isEmpty() ? CLERK : found.get(0);
     }
 
+    /** Refuses a change asked for by a user who is a viewer on the sheet. */
+    public void refuseViewer(String sheetId, String user) throws ViewerRefusedException {
+        if (VIEWER.equals(role(sheetId, user))) {
+            throw new ViewerRefusedException();
+        }
+    }
+
     public void setRole(String sheetId, String user, String role) {
         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
                 sheetId, user, role);
@@ -183,9 +193,12 @@ public class Settings {
     }
 
     /** Whether the user's role may take the action on the sheet: by its permission when set, else by the standing
-     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
+     *  rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). A viewer takes none. */
     public boolean allows(String sheetId, String user, String action) {
         String role = role(sheetId, user);
+        if (VIEWER.equals(role)) {
+            return false;
+        }
         String set = permission(sheetId, action);
         if (set.isEmpty()) {
             return STEWARD.equals(role) || !("reassign".equals(action) || "reopen".equals(action));

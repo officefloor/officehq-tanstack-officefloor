@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useSheetToday } from '../sheet/useSheetToday';
 
-/** A role a user name holds on the sheet: clerk (any name not listed) or steward. */
+/** A role a user name holds on the sheet: clerk (any name not listed), steward or viewer (sees everything, changes nothing). */
 export type Role = { user: string; role: string };
 
 /** The sheet's settings, each dated one as in force on the sheet's today: the clerk limit with two decimals ("" for no limit), the floor with two

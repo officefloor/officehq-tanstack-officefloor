@@ -16,6 +16,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,7 +27,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, People people, Claims claims, Rates rates,
-            Settings settings, Sheets sheets, Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
+            Settings settings, Sheets sheets, Audit audit, ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         if (!settings.allows(sheetId, request.user(), "close")) {
             throw new InvalidPeriodException("Your role may not close a period");
         }

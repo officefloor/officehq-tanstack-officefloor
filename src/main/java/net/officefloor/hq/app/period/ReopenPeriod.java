@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,7 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods, Settings settings, Audit audit,
-            ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException {
+            ObjectResponse<List<PeriodResponse>> response) throws InvalidPeriodException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         if (!settings.allows(sheetId, request.user(), "reopen")) {
             throw new InvalidPeriodException("Your role may not reopen a period");
         }

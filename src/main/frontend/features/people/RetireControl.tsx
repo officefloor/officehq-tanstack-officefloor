@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { usePersonAction } from './usePersonAction';
 import { peopleKey, type Person } from './usePeople';
 
 // Retires the person from a date (blank takes the sheet's today): from then on no claim of theirs
@@ -26,6 +27,7 @@ export function RetireControl({ personId }: { personId: string }) {
       return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
   });
+  const taken = usePersonAction(personId, () => retire.reset());
 
   return (
     <>
@@ -42,7 +44,7 @@ export function RetireControl({ personId }: { personId: string }) {
         type="button"
         data-testid="person-retire"
         onClick={() => {
-          retire.reset();
+          taken();
           once(() => retire.mutateAsync(date.trim()));
         }}
       >

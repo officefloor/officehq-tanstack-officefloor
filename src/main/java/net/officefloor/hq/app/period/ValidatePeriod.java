@@ -6,13 +6,18 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 public class ValidatePeriod {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withResolverStyle(ResolverStyle.STRICT);
 
-    public void validate(@RequestBody PeriodRequest request, Out<ValidPeriod> body) throws InvalidPeriodException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PeriodRequest request, Out<ValidPeriod> body, Settings settings)
+            throws InvalidPeriodException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         String name = request.name() == null ? "" : request.name().trim();
         if (name.isEmpty()) {
             throw new InvalidPeriodException("A period needs a name");

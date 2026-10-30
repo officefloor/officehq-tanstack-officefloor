@@ -4,10 +4,14 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 public class ValidateToday {
-    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body)
-            throws InvalidTodayException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, Settings settings)
+            throws InvalidTodayException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         body.set(request); // who changes it, for the audit
         String raw = request.today() == null ? "" : request.today().trim();
         if (raw.isEmpty()) {

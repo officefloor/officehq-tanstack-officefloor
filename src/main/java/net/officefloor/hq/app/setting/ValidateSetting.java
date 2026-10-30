@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
 
 public class ValidateSetting {
 
@@ -46,7 +47,9 @@ public class ValidateSetting {
     /** An amount: 0 or more, with at most two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
 
-    public void validate(@RequestBody SettingRequest request, Out<ValidSetting> body) throws InvalidSettingException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<ValidSetting> body, Settings settings)
+            throws InvalidSettingException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)

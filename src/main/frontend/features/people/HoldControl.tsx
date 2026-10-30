@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { usePersonAction } from './usePersonAction';
 import { peopleKey, type HoldFrom, type Person } from './usePeople';
 
 // The person's holds, one line each (from – to, open-ended when no to-date), and the form that adds
@@ -29,6 +30,7 @@ export function HoldControl({ personId, holds }: { personId: string; holds: Hold
       return queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
   });
+  const taken = usePersonAction(personId, () => hold.reset());
 
   const changed = (set: (v: string) => void) => (v: string) => {
     set(v);
@@ -60,7 +62,7 @@ export function HoldControl({ personId, holds }: { personId: string; holds: Hold
         type="button"
         data-testid="person-hold-toggle"
         onClick={() => {
-          hold.reset();
+          taken();
           once(() => hold.mutateAsync({ from: from.trim(), to: to.trim() }));
         }}
       >

@@ -2,10 +2,14 @@ package net.officefloor.hq.app.claim;
 
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 public class ValidateClaimStatus {
-    public void validate(@RequestBody ClaimStatusRequest request, Out<ValidClaimStatus> body)
-            throws InvalidClaimException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimStatusRequest request, Out<ValidClaimStatus> body, Settings settings)
+            throws InvalidClaimException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         String action = request.action() == null ? "" : request.action().trim();
         String reason = request.reason() == null ? "" : request.reason().trim();
         ValidClaimStatus valid = switch (action) {

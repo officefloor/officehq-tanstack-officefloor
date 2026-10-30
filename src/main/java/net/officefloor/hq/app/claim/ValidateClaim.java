@@ -6,6 +6,9 @@ import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 public class ValidateClaim {
 
@@ -13,7 +16,9 @@ public class ValidateClaim {
     private static final Pattern SIGNED_AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
     private static final Pattern NUMBER = Pattern.compile("\\d+|\\S+-\\d+");
 
-    public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request, Out<ValidClaim> body, Settings settings)
+            throws InvalidClaimException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         body.set(check(request));
     }
 

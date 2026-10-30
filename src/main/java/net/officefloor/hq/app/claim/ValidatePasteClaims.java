@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 /**
  * Splits the paste into lines of name,amount,date,note (the note may hold commas, the date may be
@@ -11,7 +14,9 @@ import org.springframework.web.bind.annotation.RequestBody;
  * with no claim in it is refused.
  */
 public class ValidatePasteClaims {
-    public void validate(@RequestBody PasteClaimsRequest request, Out<ValidPasteClaims> body) throws InvalidClaimException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteClaimsRequest request, Out<ValidPasteClaims> body, Settings settings)
+            throws InvalidClaimException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         String text = request.text() == null ? "" : request.text();
         List<ValidPasteClaims.Line> lines = new ArrayList<>();
         int number = 0;

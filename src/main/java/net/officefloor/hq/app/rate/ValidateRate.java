@@ -9,6 +9,9 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 public class ValidateRate {
 
@@ -20,7 +23,9 @@ public class ValidateRate {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withResolverStyle(ResolverStyle.STRICT);
 
-    public void validate(@RequestBody RateRequest request, Out<ValidRate> body) throws InvalidRateException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<ValidRate> body, Settings settings)
+            throws InvalidRateException, ViewerRefusedException {
+        settings.refuseViewer(sheetId, request.user());
         String grade = request.grade() == null ? "" : request.grade().trim();
         if (!GRADES.contains(grade)) {
             throw new InvalidRateException("Grade must be A, B or C");

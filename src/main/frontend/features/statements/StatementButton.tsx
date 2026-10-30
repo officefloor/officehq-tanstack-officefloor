@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { usePersonAction } from '../people/usePersonAction';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey, type Person } from '../people/usePeople';
 
@@ -22,6 +23,7 @@ export function StatementButton({ personId }: { personId: string }) {
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
       ]),
   });
+  const taken = usePersonAction(personId, () => take.reset());
 
   return (
     <>
@@ -29,7 +31,7 @@ export function StatementButton({ personId }: { personId: string }) {
         type="button"
         data-testid="person-statement"
         onClick={() => {
-          take.reset();
+          taken();
           once(() => take.mutateAsync());
         }}
       >
