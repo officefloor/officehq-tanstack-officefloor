@@ -1,0 +1,81 @@
+diff --git a/src/main/frontend/features/treeSearch/exportTree.slot.tsx b/src/main/frontend/features/treeSearch/exportTree.slot.tsx
+new file mode 100644
+index 00000000..4f3ef19f
+--- /dev/null
++++ b/src/main/frontend/features/treeSearch/exportTree.slot.tsx
+@@ -0,0 +1,22 @@
++import { downloadCsv } from '../../api/csv';
++import { getJson } from '../../api/http';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++
++/** Downloads the people of the whole tree as CSV: this sheet's people first in list order, then the other sheets' of
++ *  its tree by sheet id, each with its grade and due-total. Read from the store when pressed. */
++function ExportTree({ sheetId }: { sheetId: string }) {
++  const exportCsv = async () => {
++    const rows = await getJson<string[][]>(`/api/sheets/${encodeURIComponent(sheetId)}/tree-people`);
++    downloadCsv('tree.csv', [['sheet', 'name', 'grade', 'due-total'], ...rows]);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-tree" onClick={() => void exportCsv()}>
++        Export tree people (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetPanel.fill({ order: 39.1, Component: ExportTree });
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RespondWithTreePeople.java b/src/main/java/net/officefloor/hq/app/rollup/RespondWithTreePeople.java
+new file mode 100644
+index 00000000..3eff6032
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RespondWithTreePeople.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.rollup;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Set;
++import java.util.TreeSet;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithTreePeople {
++    // One row per person: sheet id, name, grade in force on its sheet's today, due-total as the screen shows it.
++    // This sheet's people first in list order, then each other sheet of its tree by id.
++    public void respond(@PathVariable("sheetId") String sheetId, People people, Rollup rollup, Sheets sheetStore,
++            ObjectResponse<List<List<String>>> response) {
++        String sheet = sheetId.trim();
++        Set<String> others = new TreeSet<>(people.tree(sheet));
++        others.remove(sheet);
++        List<String> sheets = new ArrayList<>(List.of(sheet));
++        sheets.addAll(others);
++        List<List<String>> rows = new ArrayList<>();
++        for (String at : sheets) {
++            Figures figures = rollup.figures(at);
++            LocalDate today = sheetStore.today(at);
++            for (Person person : people.list(at)) {
++                Figures.PersonFigures f = figures.people().get(person.id());
++                rows.add(List.of(at, person.name(), String.valueOf(person.gradeOn(today)),
++                        f == null ? "n/a" : f.dueTotal()));
++            }
++        }
++        response.send(rows);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree-people.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree-people.GET.yml
+new file mode 100644
+index 00000000..1d747fb1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree-people.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/tree-people — every person on the sheet's tree as [sheet id, name, grade, due-total]:
++# this sheet's people first in list order, then the other sheets' by sheet id.
++respond:
++  class: net.officefloor.hq.app.rollup.RespondWithTreePeople
++  govern: [ readonly-transaction ]
