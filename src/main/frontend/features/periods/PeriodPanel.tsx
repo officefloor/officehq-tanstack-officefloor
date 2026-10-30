@@ -32,6 +32,19 @@ export function PeriodPanel() {
       queryClient.setQueryData(periodsKey(sheet), saved);
     },
   });
+  // Generate one period per calendar month from the from-date's month to the to-date's month (blank is
+  // the sheet's today), each named yyyy-mm; a month already named or overlapping a period is left out.
+  // Shows how many were made; pressing again removes the old count until the new one is in.
+  const [genFrom, setGenFrom] = useState('');
+  const [genTo, setGenTo] = useState('');
+  const generate = useMutation({
+    mutationFn: (body: { from: string; to: string }) =>
+      postJson<{ generated: number; periods: Period[] }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/generate`,
+        { ...body, user },
+      ),
+    onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
+  });
   // Close a period, or reopen a closed one (each by the roles the sheet's permission allows; by default
   // close by clerk and steward, reopen by a steward only).
   const act = useMutation({
@@ -137,6 +150,48 @@ export function PeriodPanel() {
         />{' '}
         <button type="submit" data-testid="period-form-submit">Add period</button>
         {add.isError && <span data-testid="period-form-error" role="alert"> Could not add the period: it needs a name not already on the sheet and a from-date on or before its to-date (YYYY-MM-DD), not overlapping another period.</span>}
+      </form>
+      <form
+        data-testid="period-generate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitOnce(() => {
+            generate.reset();
+            return generate.mutateAsync({ from: genFrom.trim(), to: genTo.trim() });
+          });
+        }}
+      >
+        <input
+          data-testid="period-generate-from"
+          value={genFrom}
+          placeholder="From (YYYY-MM-DD)"
+          onChange={(e) => {
+            setGenFrom(e.target.value);
+            generate.reset();
+          }}
+        />{' '}
+        <input
+          data-testid="period-generate-to"
+          value={genTo}
+          placeholder="To (YYYY-MM-DD)"
+          onChange={(e) => {
+            setGenTo(e.target.value);
+            generate.reset();
+          }}
+        />{' '}
+        <button type="submit" data-testid="period-generate">Generate monthly periods</button>
+        {generate.isSuccess && (
+          <>
+            {' '}
+            Made <span data-testid="period-generated">{generate.data.generated}</span>
+          </>
+        )}
+        {generate.isError && (
+          <span data-testid="period-generate-error" role="alert">
+            {' '}
+            Could not generate periods: the to-date must be on or after the from-date (YYYY-MM-DD).
+          </span>
+        )}
       </form>
     </>
   );

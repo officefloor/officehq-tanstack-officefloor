@@ -107,4 +107,15 @@ public class Periods {
             throw new InvalidPeriodException("A period named " + period.name() + " is already on the sheet");
         }
     }
+
+    /** Add a period unless its name is already on the sheet or its dates overlap another period:
+     *  whether it was added. */
+    public boolean addIfFree(String sheetId, ValidPeriod period) {
+        try {
+            add(sheetId, period);
+            return true;
+        } catch (InvalidPeriodException taken) {
+            return false;
+        }
+    }
 }
