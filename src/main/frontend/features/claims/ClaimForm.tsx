@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson, RefusedError } from '../../api/http';
@@ -21,7 +21,8 @@ type Body = { amount: string; date: string; note: string; corrects: string; ref:
  * Tags are typed comma separated; the server keeps each trimmed and lower-cased, without repeats.
  * A template chosen in the form's template select adds a DRAFT claim with the template's amount and note as they are now,
  * with no date, by every rule of the form; its refusal shows as the form's.
- * While an editor is being opened or closed (`held`) the form takes no input.
+ * While an editor is being opened or closed (`held`) the form takes no input. A save of the editor the server refuses
+ * closes it, showing the refusal on the form.
  */
 export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
   sheetId: string;
@@ -40,6 +41,8 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
   const [template, setTemplate] = useState('');
   const [error, setError] = useState('');
   const templates = useQuery(templatesQuery(sheetId));
+  // The refusal of an editor's save, kept through the closing of the editor that empties the form.
+  const refused = useRef('');
 
   // Opening an editor (or closing it) refills the form. A blank date is the sheet's today.
   useEffect(() => {
@@ -49,7 +52,8 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
     setCorrects(editing?.corrects == null ? '' : String(editing.corrects));
     setRef(editing?.ref ?? '');
     setTags(editing?.tags.join(', ') ?? '');
-    setError('');
+    setError(refused.current);
+    refused.current = '';
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [user] = useUser();
@@ -72,7 +76,17 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
         setTags('');
       }
     },
-    onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be saved.'),
+    onError: async (e) => {
+      const message = e instanceof RefusedError ? e.message : 'The claim could not be saved.';
+      if (editing && e instanceof RefusedError) {
+        // A save the server refused wrote nothing; it also closes the editor, so the form is back to adding, still
+        // showing the refusal.
+        refused.current = message;
+        await putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${editing.id}/unlock`, {}, user).catch(() => undefined);
+        await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      }
+      setError(message);
+    },
   });
 
   const fromTemplate = useMutation({
@@ -94,6 +108,7 @@ export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    refused.current = '';
     const a = amount.trim();
     const d = date.trim();
     const c = corrects.trim();
