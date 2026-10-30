@@ -25,7 +25,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 public class TakeStatement {
-    // Records the person's due-total now (a deferred claim counts in none and is left unbound) (held to the sheet's cap less their cut total) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
+    // Records the person's due-total now (a deferred claim counts in none and is left unbound; one it already binds stays bound, its deferral waiting until the binding ends) (held to the sheet's cap less their cut total) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
     // the rest of their claims are left unbound. Each claim is bound to its due as shown, late charge and floor included, so
     // while bound it no longer follows the sheet's today; a claim already bound keeps the figure it was bound to.
     // Taken as of a date (on or before the sheet's today), it is worked out from the person and their claims as they stood at
@@ -79,7 +79,7 @@ public class TakeStatement {
             }
             List<ClaimShare> claimShares = shared.getOrDefault(claim.id(), List.of());
             if (claim.personId() == person.id()) {
-                if (claim.status() == ClaimStatus.SETTLED || Rollup.counts(claim, person, today)) {
+                if ((claim.status() == ClaimStatus.SETTLED && !claim.deferredOn(today)) || Rollup.counts(claim, person, today)) {
                     BigDecimal due = due(claim, person, today, rates, settings);
                     figures.put(claim.id(), due);
                     if (due != null) {
@@ -90,7 +90,7 @@ public class TakeStatement {
             }
             ClaimShare holding = claimShares.stream().filter(sh -> sh.personId() == person.id()).findFirst().orElse(null);
             Person owner = holding == null ? null : people.find(person.sheetId(), claim.personId());
-            if (owner != null && (claim.status() == ClaimStatus.SETTLED || Rollup.counts(claim, owner, today))) {
+            if (owner != null && ((claim.status() == ClaimStatus.SETTLED && !claim.deferredOn(today)) || Rollup.counts(claim, owner, today))) {
                 BigDecimal due = due(claim, owner, today, rates, settings);
                 if (due != null) {
                     total = total.add(holding.part(due));

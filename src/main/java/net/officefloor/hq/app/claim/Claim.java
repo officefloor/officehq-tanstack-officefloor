@@ -81,10 +81,13 @@ public record Claim(long id, String sheetId, long personId, BigDecimal amount, L
 
     /**
      * Whether the claim is deferred on {@code today}: an OPEN claim deferred to a date the sheet's today has not reached
-     * counts in no total, is not overdue, cannot be settled and is left unbound by a statement.
+     * counts in no total, is not overdue, cannot be settled and is left unbound by a statement. While a statement binds
+     * it the deferral waits: it counts and can be settled, and the deferral takes effect once the binding ends (on a
+     * claim settled meanwhile too).
      */
     public boolean deferredOn(LocalDate today) {
-        return status == ClaimStatus.OPEN && deferredUntil != null && (today == null || today.isBefore(deferredUntil));
+        return (status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED) && !stated && deferredUntil != null
+                && (today == null || today.isBefore(deferredUntil));
     }
 
     /** How many of its proofs are of the kind (receipt or photo). */

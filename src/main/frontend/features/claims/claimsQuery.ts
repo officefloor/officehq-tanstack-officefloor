@@ -95,10 +95,13 @@ export const isCorrection = (c: Claim) => Number(c.amount) < 0;
 
 /**
  * An OPEN claim deferred to a date the sheet's `today` has not reached: it counts in no total, is not overdue and
- * cannot be settled. From that day on it is an OPEN claim like any other.
+ * cannot be settled. From that day on it is an OPEN claim like any other. While a statement binds it the deferral
+ * waits: it counts, can be settled and shows as not deferred, and the deferral takes effect once the binding ends
+ * (on a claim settled meanwhile too).
  */
 export const isDeferred = (c: Claim, today: string) =>
-  c.status === 'OPEN' && c.deferredUntil !== null && (today === '' || today < c.deferredUntil);
+  (c.status === 'OPEN' || c.status === 'SETTLED') && !c.stated && c.deferredUntil !== null &&
+  (today === '' || today < c.deferredUntil);
 
 /**
  * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts, voided and
