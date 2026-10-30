@@ -20,6 +20,9 @@ public class ValidateSetting {
     /** Above it (in force on a claim's date) a claim needs a proof to be settled or approved; blank: none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** Above it (in force on a claim's date) a claim cannot be opened with an empty note; blank: none. */
+    public static final String NOTE_THRESHOLD = "note-threshold";
+
     public static final String TERMS = "terms";
 
     /** A grade's own terms: terms-<grade>. */
@@ -54,7 +57,7 @@ public class ValidateSetting {
             throws InvalidSettingException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
-        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+        if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))) {
@@ -153,6 +156,17 @@ public class ValidateSetting {
             }
             if (!AMOUNT.matcher(raw).matches()) {
                 throw new InvalidSettingException("The proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
+            return;
+        }
+        if (NOTE_THRESHOLD.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, from)); // blank: none
+                return;
+            }
+            if (!AMOUNT.matcher(raw).matches()) {
+                throw new InvalidSettingException("The note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none");
             }
             body.set(new ValidSetting(key, new BigDecimal(raw).setScale(2), request.user(), null, from));
             return;

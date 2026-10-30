@@ -69,6 +69,9 @@ public class ApplyClaimStatus {
             }
         }
         ClaimStatus target = request.target();
+        if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
+            refuseNoteless(claim, sheets, people, rates, settings, rounding);
+        }
         if (target == ClaimStatus.SETTLED && claim.getProofs() == 0) {
             // Above the proof threshold in force on the claim's date a claim needs a proof to be settled or approved,
             // judged on its due as shown (before the clerk limit is considered); a due of n/a is within any threshold.
@@ -107,6 +110,23 @@ public class ApplyClaimStatus {
         // A rejected claim is OPEN again, so bound again by the last statement if it included it.
         claim.setStatus(target);
         return number;
+    }
+
+    /** Refuses opening a claim with an empty note whose due as shown is above the note threshold in force on its date;
+     *  a due of n/a is within any threshold. Bulk open uses it too. */
+    static void refuseNoteless(Claim claim, Sheets sheets, People people, Rates rates, Settings settings,
+            RoundingMode rounding) throws ClaimStatusRefusedException {
+        if (claim.getNote() != null && !claim.getNote().trim().isEmpty()) {
+            return;
+        }
+        BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());
+        if (threshold == null) {
+            return;
+        }
+        BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
+        if (due != null && due.compareTo(threshold) > 0) {
+            throw new ClaimStatusRefusedException("A claim whose due is above the note threshold needs a note to be opened");
+        }
     }
 
     /** The claim's due as shown: fixed (settled or bound), else its live figure with its late charge as of today; null for n/a. */

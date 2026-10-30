@@ -14,8 +14,9 @@ export type Role = { user: string; role: string };
  *  (a grade not listed uses the sheet's terms), the cap with two decimals ("" for none: a person's due-total is at most it) and the
  *  proof threshold with two decimals ("" for none: above the one in force on its date a claim needs a proof to be settled or approved)
  *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule),
- *  and every delegation of the steward role, in the order given. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[] };
+ *  and every delegation of the steward role, in the order given, and the note threshold with two decimals ("" for none: above the one
+ *  in force on its date a claim cannot be opened with an empty note). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string };
 
 /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
  *  steward, and the audit lines of their changes end with for=<by>. */

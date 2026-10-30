@@ -91,6 +91,12 @@ public class Settings {
         return found == null ? null : found.value();
     }
 
+    /** The sheet's note threshold in force on a date (a claim's: its date); null for none. */
+    public BigDecimal noteThreshold(String sheetId, LocalDate on) {
+        InForce found = on(sheetId, ValidateSetting.NOTE_THRESHOLD, on);
+        return found == null ? null : found.value();
+    }
+
     /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
@@ -276,6 +282,7 @@ public class Settings {
         BigDecimal limit = clerkLimit(sheetId);
         BigDecimal cap = cap(sheetId);
         BigDecimal threshold = proofThreshold(sheetId, today);
+        BigDecimal noteThreshold = noteThreshold(sheetId, today);
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         Integer grace = graceDays(sheetId);
@@ -302,6 +309,7 @@ public class Settings {
                 grace == null ? "" : String.valueOf(grace), jdbc.query(
                         "SELECT user_name, from_date, to_date, delegated_by FROM sheet_delegation WHERE sheet_id = ? ORDER BY seq",
                         (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
-                                rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId));
+                                rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
+                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString());
     }
 }

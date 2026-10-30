@@ -272,6 +272,7 @@ public class AsOfView {
         BigDecimal limit = on.apply(ValidateSetting.CLERK_LIMIT);
         BigDecimal cap = on.apply(ValidateSetting.CAP);
         BigDecimal threshold = on.apply(ValidateSetting.PROOF_THRESHOLD);
+        BigDecimal noteThreshold = on.apply(ValidateSetting.NOTE_THRESHOLD);
         BigDecimal floor = on.apply(ValidateSetting.FLOOR);
         BigDecimal terms = on.apply(ValidateSetting.TERMS);
         BigDecimal latePct = on.apply(ValidateSetting.LATE_PCT);
@@ -308,7 +309,7 @@ public class AsOfView {
                 policy == null ? "" : policy.toString(), plain.getOrDefault(Settings.NUMBERING, ""), roles, gradeTerms,
                 cap == null ? "" : cap.setScale(2).toPlainString(), datedShown,
                 threshold == null ? "" : threshold.setScale(2).toPlainString(), perms, plain.getOrDefault(Settings.GRACE, ""),
-                delegations);
+                delegations, noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString());
     }
 
     private static LocalDate local(Date date) {
