@@ -79,14 +79,14 @@ function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: n
   );
 }
 
-/** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
+/** The sheet's settled-total and open-total: everyone's added up, each trimmed of the highest and lowest. */
 function SettledOpenTotal({ sheetId }: { sheetId: string }) {
   const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
   const split = people.map((p) => settledAndOpen(p, people, claims, rates, today, floor, late));
   return (
     <p data-testid="rollup-settled-open">
-      Settled <strong data-testid="rollup-settled-total">{sumDue(split.map(([s]) => s))}</strong>
-      {' '}· Open <strong data-testid="rollup-open-total">{sumDue(split.map(([, o]) => o))}</strong>
+      Settled <strong data-testid="rollup-settled-total">{trimmedSum(split.map(([s]) => s))}</strong>
+      {' '}· Open <strong data-testid="rollup-open-total">{trimmedSum(split.map(([, o]) => o))}</strong>
     </p>
   );
 }
@@ -127,6 +127,12 @@ export function usePersonDueTotal(sheetId: string, personId: number | undefined)
   const { people, claims, rates, today, floor, late, capFor } = useSheetData(sheetId);
   const person = people.find((p) => p.id === personId);
   return person ? personDue(person, people, claims, rates, today, floor, late, capFor(person.id)) : null;
+}
+
+/** Every person's settled-total and open-total, as in their row, in sheet order. */
+export function usePeopleSettledOpen(sheetId: string): [string, string][] {
+  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
+  return people.map((p) => settledAndOpen(p, people, claims, rates, today, floor, late));
 }
 
 /** Every person's due-total, as in their row, by person id. */
