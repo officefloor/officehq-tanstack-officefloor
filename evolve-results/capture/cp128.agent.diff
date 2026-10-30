@@ -1,0 +1,95 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 0262e4f6..3f8fdd50 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -361,6 +361,17 @@ public class People {
+         return person;
+     }
+ 
++    /** Merges the person, arriving from another sheet, into the person on that sheet: their name and aliases become
++     *  the other's aliases; their grades, terms and contact are dropped. Returns the person merged into. */
++    public Person transferInto(Person from, Person into) {
++        addAlias(into, from.getName());
++        for (String alias : jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
++                String.class, from.getSheetId(), from.getId())) {
++            addAlias(into, alias);
++        }
++        return into;
++    }
++
+     /** Takes the person off their sheet entirely: their patron links both ways, pool memberships, fixed period
+      *  figures, holds, watches, statements, grades and aliases are dropped. Kept as they stood for the as-of view. */
+     public void transferOut(Person person) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index e7ec9a26..9327a05d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -18,8 +18,11 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Transfers the person to another sheet (a steward only; never a retired person, never to this sheet, never onto an
+- * archived sheet, nor when their name, an alias or their contact is already on the other sheet, or their name or an alias on
+- * another sheet of its tree). They arrive with
++ * archived sheet, nor when their contact is already on the other sheet, or their name or an alias on another sheet of its
++ * tree). When their name or an alias is already on the other sheet (as names are compared) they are merged into that
++ * person there, exactly as a merge does: their claims listed after the other's, their name and aliases becoming the
++ * other's aliases, figures a statement bound lost; their grades, terms and contact are dropped (never into a retired
++ * person, nor when their names are held by more than one person there). Otherwise they arrive with
+  * every grade they were given, their terms, contact and aliases, and their claims (status, dates, notes, tags,
+  * settled figures and logs kept, listed in the same order); each claim that had a number takes the other sheet's
+  * next, in the order the claims were opened (by the sheet's today when opened, then the order added). Figures a
+@@ -44,17 +47,29 @@ public class TransferPerson {
+         List<String> names = new ArrayList<>();
+         names.add(person.getName());
+         names.addAll(person.getAliases());
++        Person into = null;
+         for (String name : names) {
+-            if (people.nameTaken(to, name, null, person)) {
+-                throw new InvalidPersonException("The name " + name + " is already on the other sheet");
++            if (people.nameUsedInTree(to, name, person)) {
++                throw new InvalidPersonException("The name " + name + " is already on another sheet of the other sheet's tree");
+             }
++            Person holder = people.findByName(to, name);
++            if (holder != null) {
++                if (into != null && into.getId() != holder.getId()) {
++                    throw new InvalidPersonException("The names are held by more than one person on the other sheet");
++                }
++                into = holder;
++            }
++        }
++        if (into != null && into.getRetiredFrom() != null) {
++            throw new InvalidPersonException("A retired person cannot be merged");
+         }
+-        if (person.getContact() != null && !person.getContact().isBlank() && people.contactTaken(to, person.getContact(), null)) {
++        if (into == null && person.getContact() != null && !person.getContact().isBlank()
++                && people.contactTaken(to, person.getContact(), null)) {
+             throw new InvalidPersonException("The contact is already on the other sheet");
+         }
+         RollupFigures toBefore = rollup.figures(to);
+ 
+-        Person arrived = people.transferIn(person, to);
++        Person arrived = into == null ? people.transferIn(person, to) : people.transferInto(person, into);
+         // Claims in the order they are listed (oldest listed first), so they keep their order.
+         List<Claim> moved = new ArrayList<>(claims.ofPerson(sheetId, person.getId()));
+         java.util.Collections.reverse(moved);
+@@ -88,6 +103,10 @@ public class TransferPerson {
+ 
+         audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + to + " by=" + request.user()
+                 + " name=" + person.getName() + " from=" + sheetId);
++        if (into != null) {
++            audit.recordOnCommit("PERSON_MERGED sheet=" + to + " by=" + request.user()
++                    + " from=" + person.getName() + " into=" + into.getName());
++        }
+         rollup.recordChanges(to, request.user(), toBefore);
+         audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + sheetId + " by=" + request.user()
+                 + " name=" + person.getName() + " to=" + to);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+index 99f932e6..c8024d51 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+@@ -1,4 +1,4 @@
+-# Transfer the person to another sheet by id (a steward only): they arrive there with their grades, names, contact and claims, and leave this sheet.
++# Transfer the person to another sheet by id (a steward only): they arrive there with their grades, names, contact and claims, and leave this sheet; one whose name or alias is already there is merged into that person.
+ validate:
+   class: net.officefloor.hq.app.person.ValidateTransfer
+   next: snapshot
