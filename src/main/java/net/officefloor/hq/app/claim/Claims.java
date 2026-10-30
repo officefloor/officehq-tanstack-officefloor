@@ -32,6 +32,8 @@ public class Claims {
         claim.setDueBy(dueBy == null ? null : dueBy.toLocalDate());
         java.sql.Date deferredUntil = rs.getDate("deferred_until");
         claim.setDeferredUntil(deferredUntil == null ? null : deferredUntil.toLocalDate());
+        java.sql.Date remindedOn = rs.getDate("reminded_on");
+        claim.setRemindedOn(remindedOn == null ? null : remindedOn.toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
@@ -147,6 +149,12 @@ public class Claims {
                 + " WHERE sheet_id = ? AND id = ?", claim.getPersonId(), claim.isStated(), claim.getStatedDue(),
                 claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
+    }
+
+    /** Records the claim's reminded date. */
+    public void remind(Claim claim) {
+        jdbc.update("UPDATE claim SET reminded_on = ? WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(claim.getRemindedOn()), claim.getSheetId(), claim.getId());
     }
 
     /** Defers the claim until its deferred-until date. */

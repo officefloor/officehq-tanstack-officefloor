@@ -39,6 +39,8 @@ export type Claim = {
   lockedBy?: string;
   /** Whether the claim was added while its period was soft-closed. */
   lateEntry?: boolean;
+  /** The last day (the sheet's today then) a reminder was written for the claim, "" if never. */
+  remindedOn?: string;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

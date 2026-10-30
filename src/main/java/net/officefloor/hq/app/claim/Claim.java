@@ -90,6 +90,10 @@ public class Claim {
     public boolean isDeferredOn(LocalDate today) {
         return status == ClaimStatus.OPEN && deferredUntil != null && today.isBefore(deferredUntil);
     }
+    /** The last day (the sheet's today then) a reminder was written for the claim; null if it was never reminded. */
+    private LocalDate remindedOn;
+    public LocalDate getRemindedOn() { return remindedOn; }
+    public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
     /** The claim's proofs count: raised by one at a time. */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }

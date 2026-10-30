@@ -29,6 +29,9 @@ import { peopleKey, type Person } from '../people/usePeople';
 // not after today or a claim dated inside a closed period is refused with the claim's error): until the sheet's today reaches
 // that date it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. Each claim shows
 // deferred (yes while it is deferred) and the date it was deferred until.
+// An OPEN or PENDING claim is reminded with the remind button, once per sheet-today: it shows the sheet's today as its reminded
+// date (the last day a reminder was written, blank if never). A second reminder the same day, or a claim in any other status,
+// is refused with the claim's error.
 // A steward re-dates an OPEN or PENDING claim with the new date and re-date button: its due-by stays as it was fixed, a figure a
 // statement bound it to stays bound, and, as its period goes by its due-by, it keeps its period and number. A date after the
 // person's retirement, a claim whose due-by is inside a closed period, or a re-dating by anyone but a steward, is refused with the claim's error.
@@ -131,6 +134,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     },
   });
 
+  const remind = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/remind`,
+        { user },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   const [newDate, setNewDate] = useState('');
 
   const redate = useMutation({
@@ -199,6 +211,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     redate.reset();
     proof.reset();
     split.reset();
@@ -245,6 +258,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
       <span data-testid="claim-proofs">{c.proofs ?? '0'}</span>{' '}
       <ol data-testid="claim-log">
         {(c.log ?? []).map((line, i) => (
@@ -288,6 +302,9 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       />{' '}
       <button type="button" data-testid="claim-defer" onClick={() => act(() => defer.mutate(deferUntil))}>
         Defer
+      </button>{' '}
+      <button type="button" data-testid="claim-remind" onClick={() => act(() => remind.mutate())}>
+        Remind
       </button>{' '}
       <input
         type="date"
@@ -361,6 +378,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only an OPEN claim can be deferred, only to a date after the sheet's today, and not one whose due-by is inside a closed period.
+        </span>
+      )}
+      {remind.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only an OPEN or PENDING claim can be reminded, and only once per sheet-today.
         </span>
       )}
       {redate.isError && (
