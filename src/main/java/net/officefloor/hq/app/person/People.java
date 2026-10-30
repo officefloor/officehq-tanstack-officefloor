@@ -285,8 +285,8 @@ public class People {
     /** Merges the person into another (their claims already moved): their name and aliases become the other's
      *  aliases; their patrons are added to the other's and whoever named them names the other instead (never
      *  themselves, never twice); their pool memberships move to the other, shares added where the other is already
-     *  a member; their fixed period figures add to the other's. Their statements, holds, watchers and contact go
-     *  with them as they leave the sheet. */
+     *  a member; their fixed period figures add to the other's; their statement count adds to the other's (see
+     *  {@link #takeStatements}). Their holds, watchers and contact go with them as they leave the sheet. */
     public void merge(Person from, Person into) {
         String sheetId = from.getSheetId();
         long fromId = from.getId();
@@ -331,6 +331,8 @@ public class People {
                 + " (SELECT period_name FROM period_person_total WHERE sheet_id = ? AND person_id = ?)", sheetId, fromId, sheetId, intoId);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
         // What is dropped with them.
+        // Statements.
+        takeStatements(from, into);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
@@ -342,7 +344,7 @@ public class People {
     }
 
     /** Adds the person to another sheet as they stand: their name, terms, contact, every grade they were given (with
-     *  its from-date) and their aliases; no statement taken. Returns them as added. */
+     *  its from-date) and their aliases, and their statements (see {@link #takeStatements}). Returns them as added. */
     public Person transferIn(Person from, String toSheet) {
         java.util.SortedMap<java.time.LocalDate, String> grades = from.getGrades();
         String first = grades.isEmpty() ? from.getGrade() : grades.get(grades.firstKey());
@@ -359,18 +361,41 @@ public class People {
                 String.class, from.getSheetId(), from.getId())) {
             addAlias(person, alias);
         }
+        takeStatements(from, person);
         return person;
     }
 
     /** Merges the person, arriving from another sheet, into the person on that sheet: their name and aliases become
-     *  the other's aliases; their grades, terms and contact are dropped. Returns the person merged into. */
+     *  the other's aliases; their statement count adds to the other's (see {@link #takeStatements}); their grades,
+     *  terms and contact are dropped. Returns the person merged into. */
     public Person transferInto(Person from, Person into) {
         addAlias(into, from.getName());
         for (String alias : jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
                 String.class, from.getSheetId(), from.getId())) {
             addAlias(into, alias);
         }
+        takeStatements(from, into);
         return into;
+    }
+
+    /** The person receiving another (merged or transferred into them, or arriving as them) takes their statements:
+     *  the count becomes their own plus the other's; their last statement stays theirs, or, having none, becomes the
+     *  other's, with the other's statement history (so it can be cancelled as the other's could). */
+    private void takeStatements(Person from, Person into) {
+        if (from.getStatementCount() == 0) {
+            return;
+        }
+        boolean hadNone = into.getStatementCount() == 0;
+        into.setStatementCount(into.getStatementCount() + from.getStatementCount());
+        if (hadNone) {
+            into.setStatedTotal(from.getStatedTotal());
+            into.setStatementDate(from.getStatementDate());
+            jdbc.update("INSERT INTO person_statement (sheet_id, person_id, stated_total, statement_date, set_on, cancelled, cancelled_on)"
+                    + " SELECT ?, ?, stated_total, statement_date, set_on, cancelled, cancelled_on FROM person_statement"
+                    + " WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                    into.getSheetId(), into.getId(), from.getSheetId(), from.getId());
+        }
+        saveStatement(into);
     }
 
     /** Takes the person off their sheet entirely: their patron links both ways, pool memberships, fixed period

@@ -209,15 +209,15 @@ public class Claims {
     }
 
     /** Moves the claim to the person its person was merged into, listed as their newest claim, its number and date
-     *  kept, and leaves it unbound from any statement. */
+     *  kept, still bound to the figure a statement gave it. */
     public void merge(Claim claim, long intoId) {
-        jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed_seq = " + NEXT_LISTED
+        jdbc.update("UPDATE claim SET person_id = ?, listed_seq = " + NEXT_LISTED
                 + " WHERE sheet_id = ? AND id = ?", intoId, claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
     }
 
     /** Copies the claim to the person on another sheet, listed as their newest claim: its status, dates, note, tags,
-     *  settled figure, log and comments kept; unnumbered, unbound from any statement, without its reference, lock or
+     *  settled figure, log, comments and the figure a statement bound it to kept; unnumbered, without its reference, lock or
      *  settle batch. Its tags are remembered as used on the other sheet. Returns the copy's id. */
     public long transferIn(Claim claim, String toSheet, long personId) {
         long listed = jdbc.queryForObject("SELECT COALESCE(MAX(listed_seq), 0) + 1 FROM claim", Long.class);
@@ -225,9 +225,9 @@ public class Claims {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
-                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, listed_seq)"
+                            + " deferred_until, proofs, late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, listed_seq)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
-                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, ? FROM claim WHERE sheet_id = ? AND id = ?",
+                            + " late_entry, reminded_on, tags, void_reason, edited_by, terms, stated, stated_due, ? FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, personId);

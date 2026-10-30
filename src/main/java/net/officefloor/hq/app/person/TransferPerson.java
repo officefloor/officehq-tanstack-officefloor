@@ -21,13 +21,14 @@ import net.officefloor.plugin.variable.Val;
  * archived sheet, nor when their contact is already on the other sheet, or their name or an alias on another sheet of its
  * tree). When their name or an alias is already on the other sheet (as names are compared) they are merged into that
  * person there, exactly as a merge does: their claims listed after the other's, their name and aliases becoming the
- * other's aliases, figures a statement bound lost; their grades, terms and contact are dropped (never into a retired
+ * other's aliases, figures a statement bound kept, their statement count added to the other's (whose last statement
+ * stays theirs, or, having none, becomes the arriving person's); their grades, terms and contact are dropped (never into a retired
  * person, nor when their names are held by more than one person there). Otherwise they arrive with
  * every grade they were given, their terms, contact and aliases, and their claims (status, dates, notes, tags,
  * settled figures and logs kept, listed in the same order); each claim that had a number takes the other sheet's
  * next, in the order the claims were opened (by the sheet's today when opened, then the order added). Figures a
- * statement bound and the claims' references are not carried; the statement count starts at 0. They leave this
- * sheet entirely: patron links, pool memberships, holds, statements and watches are dropped.
+ * statement bound are kept, as are their statements; the claims' references are not carried. They leave this
+ * sheet entirely: patron links, pool memberships, holds and watches are dropped.
  */
 public class TransferPerson {
     public void transfer(@Val TransferRequest request, @Val Person person, People people, Claims claims,
