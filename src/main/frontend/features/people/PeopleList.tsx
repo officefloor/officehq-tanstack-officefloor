@@ -8,6 +8,7 @@ import { rateOn } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
 import { HoldControl } from './HoldControl';
+import { PasteClaims } from './PasteClaims';
 import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl } from './RetireControl';
@@ -50,6 +51,7 @@ export function PeopleList() {
   return (
     <ClaimSelection>
       <QuickAdd />
+      <PasteClaims />
       <ShowRetired />
       <button
         type="button"

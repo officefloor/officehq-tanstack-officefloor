@@ -14,6 +14,11 @@ public class ValidateClaim {
     private static final Pattern NUMBER = Pattern.compile("\\d+|\\S+-\\d+");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
+        body.set(check(request));
+    }
+
+    /** The claim form's rules on its body alone; the sheet's rules are checked when the claim is saved. */
+    static ValidClaim check(ClaimRequest request) throws InvalidClaimException {
         BigDecimal amount = signedAmount(request.amount());
         String corrects = corrects(request.corrects());
         if (amount.signum() < 0 && corrects == null) {
@@ -32,7 +37,7 @@ public class ValidateClaim {
             }
         }
         String note = request.note() == null ? "" : request.note().trim();
-        body.set(new ValidClaim(amount, date, note, request.user(), corrects));
+        return new ValidClaim(amount, date, note, request.user(), corrects);
     }
 
     /** The claim form's amount: with at most two decimals; a negative one is a correction. */
