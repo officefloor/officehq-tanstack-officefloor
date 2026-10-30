@@ -100,6 +100,37 @@ public class Rates {
     }
 
     /**
+     * Withdraws the newest version of the grade and from-date's rate: the version before it, if any, applies again (with
+     * the version count it had); with none before it the rate is gone. Returns what was withdrawn, or null when the grade
+     * and from-date have no rate on the sheet.
+     */
+    public WithdrawnRate withdraw(String sheetId, String grade, LocalDate fromDate) {
+        Date from = fromDate == null ? null : Date.valueOf(fromDate);
+        List<Rate> current = jdbc.query("SELECT * FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                ROW, sheetId, grade, from);
+        if (current.isEmpty()) {
+            return null;
+        }
+        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?", sheetId, grade, from);
+        List<java.util.Map<String, Object>> older = jdbc.queryForList(
+                "SELECT * FROM rate_version WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ? ORDER BY version DESC, id DESC LIMIT 1",
+                sheetId, grade, from);
+        if (older.isEmpty()) {
+            return new WithdrawnRate(sheetId, grade, fromDate, null);
+        }
+        java.util.Map<String, Object> row = older.get(0);
+        jdbc.update("DELETE FROM rate_version WHERE id = ?", row.get("ID"));
+        Object to = row.get("TO_DATE");
+        Object claimsAfter = row.get("CLAIMS_AFTER");
+        Rate restored = new Rate(sheetId, grade, (BigDecimal) row.get("RATE"), fromDate,
+                to == null ? null : ((Date) to).toLocalDate(), ((Number) row.get("VERSION")).intValue(),
+                claimsAfter == null ? null : ((Number) claimsAfter).longValue());
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, claims_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                sheetId, grade, restored.rate(), from, to, restored.version(), restored.claimsAfter());
+        return new WithdrawnRate(sheetId, grade, fromDate, restored);
+    }
+
+    /**
      * The grade's rate on the date: the one with the latest from-date on or before it; null when none applies, or when
      * that one's to-date is before the date (an earlier rate does not take over again). When the sheet has none, its
      * parent's rate for the grade and date is used, then the parent's parent, up to {@link #PARENT_LEVELS} levels up,

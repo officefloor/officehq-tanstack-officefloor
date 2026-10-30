@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
@@ -48,6 +48,18 @@ function Rates({ sheetId }: { sheetId: string }) {
       setTo('');
     },
     onError: () => setError('The rate could not be set.'),
+  });
+
+  // Withdraw the newest version of a grade and from-date's rate (steward only); a refusal shows the form's error.
+  const withdraw = useMutation({
+    mutationFn: (r: Rate) =>
+      postJson<unknown>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/rates/${r.grade}/withdraw`,
+        { from: r.from ?? '' },
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) }),
+    onError: () => setError('The rate could not be withdrawn.'),
   });
 
   const submit = (e: FormEvent) => {
@@ -185,6 +197,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>From</th>
             <th>To</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -195,6 +208,19 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  disabled={withdraw.isPending}
+                  onClick={() => {
+                    setError('');
+                    once(() => withdraw.mutateAsync(r));
+                  }}
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
