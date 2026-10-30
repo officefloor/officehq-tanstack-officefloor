@@ -1,0 +1,55 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index a455dc51..e96f00ff 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -124,10 +124,10 @@ export function useLastSettleBatch(sheet: string): string {
+   return data?.last ?? '';
+ }
+ 
+-/** The amounts of the claims that count added up, shown with two decimals. Summed in whole cents
+- *  so no float drift shows. */
++/** The amounts of the claims that count added up, leaving out corrections (claims that correct another),
++ *  shown with two decimals. Summed in whole cents so no float drift shows. */
+ export function sumAmounts(claims: Claim[]): string {
+-  const cents = claims.filter(counts).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => counts(c) && !c.corrects).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+ 
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index c1d49bf6..0e38aecc 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -38,7 +38,7 @@ import { useFloor, useLatePct, usePolicyDate } from '../settings/useSettings';
+ import { usePools } from '../pools/usePools';
+ 
+ // Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
+-// sum of their OPEN and SETTLED claims), due-total (the
++// sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
+ // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+ // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
+ // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 107c32c6..e731411e 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -22,7 +22,7 @@ import net.officefloor.hq.app.sheet.Sheets;
+ import org.springframework.stereotype.Service;
+ 
+ /**
+- * The sheet's figures as the screen shows them — each person's claimed and due-total, and the
++ * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections) and due-total, and the
+  * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap — worked out on the server so a change can audit what it
+  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
+  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
+@@ -71,7 +71,9 @@ public class Rollup {
+                 if (claim.getPersonId() != person.getId() || !person.countsLive(claim, today)) {
+                     continue;
+                 }
+-                claimed = claimed.add(claim.getAmount());
++                if (claim.getCorrects() == null || claim.getCorrects().isEmpty()) {
++                    claimed = claimed.add(claim.getAmount());
++                }
+                 BigDecimal figure = due(claim, person, today, policyDate);
+                 if (figure != null) {
+                     anyFigure = true;
