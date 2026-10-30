@@ -36,6 +36,8 @@ export type Claim = {
   splitFrom: string;
   /** The user whose open editor locks the claim for everyone else, "" when unlocked. */
   lockedBy?: string;
+  /** Whether the claim was added while its period was soft-closed. */
+  lateEntry?: boolean;
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

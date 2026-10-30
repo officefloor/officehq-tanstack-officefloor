@@ -52,6 +52,7 @@ public class SavePasteClaims {
                     date.plusDays(settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date)));
             log.record(claim, person, request.user());
             audit.recordOnCommit(ClaimAudit.line("CLAIM_ADDED", request.user(), person, claim, claim.getNumber()));
+            LateEntry.mark(claim, person, request.user(), claims, periods, audit);
         }
         rollup.recordChanges(sheetId, request.user(), before);
         response.send(new PasteClaimsResponse(request.lines().size()));

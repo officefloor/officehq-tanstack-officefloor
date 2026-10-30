@@ -8,7 +8,7 @@ import { periodOf, usePeriods, type Period } from './usePeriods';
 
 /** A person's due-total for a period: the dues as shown now, late charges included, of their claims whose date
  *  falls in it that counted at the end of its last day (see countsAtEnd), leaving out their unbound OPEN claims dated within one of their holds (a claim whose due is n/a
- *  adds nothing); a closed period gives the figure fixed when it was closed (0.00 for a person added later). */
+ *  adds nothing); a closed or soft-closed period gives the figure fixed when it was closed (0.00 for a person added later). */
 export function usePersonPeriodDueTotal(sheet: string): (period: Period, personId: string) => bigint {
   const periods = usePeriods(sheet);
   const people = usePeople(sheet);
@@ -19,7 +19,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
   const policy = usePolicyDate(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
   return (period: Period, personId: string) => {
-    if (period.closed) return toCents(period.closedPersonTotals[personId] ?? '0.00');
+    if (period.closed || period.softClosed) return toCents(period.closedPersonTotals[personId] ?? '0.00');
     const person = personOf.get(personId);
     if (!person) return 0n;
     return claims

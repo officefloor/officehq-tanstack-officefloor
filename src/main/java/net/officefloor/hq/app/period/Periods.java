@@ -21,7 +21,8 @@ public class Periods {
         BigDecimal total = rs.getBigDecimal("closed_total");
         return new PeriodResponse(rs.getString("name"), rs.getDate("from_date").toLocalDate().toString(),
                 rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
-                total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>());
+                total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>(),
+                rs.getBoolean("soft_closed"));
     };
 
     private final JdbcTemplate jdbc;
@@ -53,10 +54,10 @@ public class Periods {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Close the named period, fixing its due-total and each person's due-total for it. */
-    public void close(String sheetId, String name, BigDecimal total, Map<Long, BigDecimal> personTotals) {
-        jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ?",
-                total, sheetId, name);
+    /** Close (or soft-close) the named period, fixing its due-total and each person's due-total for it. */
+    public void close(String sheetId, String name, BigDecimal total, Map<Long, BigDecimal> personTotals, boolean soft) {
+        jdbc.update("UPDATE period SET closed = ?, soft_closed = ?, closed_total = ? WHERE sheet_id = ? AND name = ?",
+                !soft, soft, total, sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
         personTotals.forEach((personId, personTotal) -> jdbc.update(
                 "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
@@ -65,7 +66,7 @@ public class Periods {
 
     /** Reopen the named period, dropping its fixed due-total. */
     public void reopen(String sheetId, String name) {
-        jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
+        jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
                 sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
     }
@@ -76,6 +77,14 @@ public class Periods {
                 "SELECT COUNT(*) FROM period WHERE sheet_id = ? AND closed AND from_date <= ? AND to_date >= ?",
                 Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
         return closed != null && closed > 0;
+    }
+
+    /** Whether a date falls inside a soft-closed period of the sheet. */
+    public boolean isSoftClosed(String sheetId, LocalDate date) {
+        Integer soft = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM period WHERE sheet_id = ? AND soft_closed AND from_date <= ? AND to_date >= ?",
+                Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return soft != null && soft > 0;
     }
 
     /** The name of the sheet's period whose dates contain the date; null when none does. */

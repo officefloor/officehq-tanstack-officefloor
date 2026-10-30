@@ -11,7 +11,9 @@ import { periodsKey, usePeriods, type Period } from './usePeriods';
 // whose date falls in it that counted by the status they had at the end of its last day, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
 // already on the sheet, a from-date on or before the to-date, not overlapping another period). A
 // closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward
-// can reopen it, making its due-total live again.
+// can reopen it, making its due-total live again. A soft-closed period (shown closed: soft) has its figures fixed the
+// same way, but claims dated in it can still be added and changed (one added then is a late entry); it can be closed
+// (fixing the figures afresh) or reopened.
 export function PeriodPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -45,10 +47,10 @@ export function PeriodPanel() {
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
   });
-  // Close a period, or reopen a closed one (each by the roles the sheet's permission allows; by default
+  // Close a period (open or soft-closed), soft-close an open one, or reopen a closed or soft-closed one (each by the roles the sheet's permission allows; by default
   // close by clerk and steward, reopen by a steward only).
   const act = useMutation({
-    mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'soft-close' | 'reopen' }) =>
       postJson<Period[]>(
         `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`,
         { user },
@@ -75,7 +77,7 @@ export function PeriodPanel() {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{formatCents(dueTotalOf(p))}</td>
-              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
               <td>
                 {!p.closed && (
                   <button
@@ -91,6 +93,16 @@ export function PeriodPanel() {
                 )}{' '}
                 <button
                   type="button"
+                  data-testid="period-soft-close"
+                  onClick={() => {
+                    act.reset();
+                    act.mutate({ name: p.name, action: 'soft-close' });
+                  }}
+                >
+                  Soft close
+                </button>{' '}
+                <button
+                  type="button"
                   data-testid="period-reopen"
                   onClick={() => {
                     act.reset();
@@ -102,8 +114,10 @@ export function PeriodPanel() {
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error" role="alert">
                     {act.variables.action === 'reopen'
-                      ? ' Could not reopen the period: only a role the sheet allows to reopen (by default a steward) can reopen it, and only while it is closed.'
-                      : ' Could not close the period: only a role the sheet allows to close can close it, and only while it is open.'}
+                      ? ' Could not reopen the period: only a role the sheet allows to reopen (by default a steward) can reopen it, and only while it is closed or soft-closed.'
+                      : act.variables.action === 'soft-close'
+                      ? ' Could not soft-close the period: only a role the sheet allows to close can soft-close it, and only while it is open.'
+                      : ' Could not close the period: only a role the sheet allows to close can close it, and only while it is open or soft-closed.'}
                   </span>
                 )}
               </td>

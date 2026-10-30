@@ -44,8 +44,18 @@ public class PeriodCloser {
         this.audit = audit;
     }
 
-    /** Close the open period, auditing PERIOD_CLOSED (with auto=yes when closed by the auto close). */
+    /** Close the open (or soft-closed) period, auditing PERIOD_CLOSED (with auto=yes when closed by the auto close). */
     public void close(String sheetId, PeriodResponse period, String user, boolean auto) {
+        close(sheetId, period, user, auto, false);
+    }
+
+    /** Soft-close the open period: its figures are fixed as by a close, but its claims stay open to change.
+     *  Audits PERIOD_SOFT_CLOSED. */
+    public void softClose(String sheetId, PeriodResponse period, String user) {
+        close(sheetId, period, user, false, true);
+    }
+
+    private void close(String sheetId, PeriodResponse period, String user, boolean auto, boolean soft) {
         LocalDate from = LocalDate.parse(period.from());
         LocalDate to = LocalDate.parse(period.to());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -72,8 +82,8 @@ public class PeriodCloser {
             personTotals.put(person.getId(), personTotal);
             total = total.add(personTotal);
         }
-        periods.close(sheetId, period.name(), total, personTotals);
-        audit.recordOnCommit("PERIOD_CLOSED sheet=" + sheetId + " by=" + user
+        periods.close(sheetId, period.name(), total, personTotals, soft);
+        audit.recordOnCommit((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + user
                 + " period=" + period.name() + " total=" + total.toPlainString() + (auto ? " auto=yes" : ""));
     }
 

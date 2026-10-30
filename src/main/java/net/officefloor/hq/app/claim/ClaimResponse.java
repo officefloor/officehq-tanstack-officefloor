@@ -10,11 +10,11 @@ import java.util.List;
  *  dueBy is the due-by fixed when the claim was created; log is its status log, oldest first (empty unless listed);
  *  deferredUntil is the date the claim was last deferred until, "" if never; proofs is its proofs count;
  *  splitFrom is the number of the claim a split made it from, "" for any other claim; lockedBy is the user whose
- *  open editor locks it, "" when unlocked. */
+ *  open editor locks it, "" when unlocked; lateEntry is whether it was added while its period was soft-closed. */
 public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String corrects,
         String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
-        String splitFrom, String lockedBy) {
+        String splitFrom, String lockedBy, boolean lateEntry) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
@@ -27,7 +27,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getDeferredUntil() == null ? "" : claim.getDeferredUntil().toString(),
                 String.valueOf(claim.getProofs()),
                 claim.getSplitFrom() == null ? "" : claim.getSplitFrom(),
-                claim.getLockedBy() == null ? "" : claim.getLockedBy());
+                claim.getLockedBy() == null ? "" : claim.getLockedBy(), claim.isLateEntry());
     }
 
     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */

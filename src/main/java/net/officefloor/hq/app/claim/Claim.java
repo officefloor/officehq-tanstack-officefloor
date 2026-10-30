@@ -94,6 +94,11 @@ public class Claim {
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
 
+    /** Whether the claim was added while its period was soft-closed. */
+    private boolean lateEntry;
+    public boolean isLateEntry() { return lateEntry; }
+    public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
+
     /** The user whose open editor locks the claim; null when unlocked. */
     private String lockedBy;
     public String getLockedBy() { return lockedBy; }

@@ -7,7 +7,7 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Closes a period, by hand (see {@link PeriodCloser}). */
+/** Closes an open or soft-closed period, by hand (see {@link PeriodCloser}). */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody ClosePeriodRequest request, Periods periods,

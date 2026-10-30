@@ -35,6 +35,7 @@ public class Claims {
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
+        claim.setLateEntry(rs.getBoolean("late_entry"));
         return claim;
     };
 
@@ -145,6 +146,12 @@ public class Claims {
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDate()), claim.getNumber(), claim.getSheetId(), claim.getId());
+    }
+
+    /** Marks the claim a late entry: added while its period was soft-closed. */
+    public void markLateEntry(Claim claim) {
+        claim.setLateEntry(true);
+        jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
     }
 
     /** Records the number of the claim this claim was split from. */
