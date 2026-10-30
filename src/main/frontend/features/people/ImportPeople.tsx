@@ -7,9 +7,10 @@ import { peopleKey } from './usePeople';
 
 // The import box: one person per line as name,grade,terms,contact (terms and contact may be absent or
 // blank). Every line is checked first by the person form's rules, and a name or contact given twice in
-// the import refuses it; one refused line adds nothing. Otherwise each person is added in order as the
-// form adds them, then shows how many were added; pressing again removes the old count until the new
-// one is in.
+// the import refuses it; one refused line imports nothing. Otherwise the lines are taken in order: a line
+// naming a person on the sheet (by name or alias) updates them as the form saves them, any other adds a
+// person as the form adds them; then shows how many were added and updated. Pressing again removes the
+// old counts until the new ones are in.
 export function ImportPeople() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -19,7 +20,7 @@ export function ImportPeople() {
 
   const importPeople = useMutation({
     mutationFn: (pasted: string) =>
-      postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-people`, { text: pasted, user }),
+      postJson<{ added: number; updated: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-people`, { text: pasted, user }),
     onSuccess: () => {
       setText('');
       // Not awaited: the count shows as soon as the import is in, never after the rows it added.
@@ -51,14 +52,16 @@ export function ImportPeople() {
       {importPeople.isSuccess && (
         <>
           {' '}
-          Added <span data-testid="import-added">{importPeople.data.added}</span>
+          Added <span data-testid="import-added">{importPeople.data.added}</span>, updated{' '}
+          <span data-testid="import-updated">{importPeople.data.updated}</span>
         </>
       )}
       {importPeople.isError && (
         <span data-testid="import-error" role="alert">
           {' '}
-          Nothing was imported: every line needs a name used by no one on the sheet (nor any alias) and a grade of A, B
-          or C, terms of whole days, and a contact used by no one; no name or contact may be given twice in the import.
+          Nothing was imported: every line needs a name and a grade of A, B or C, terms of whole days, and a contact
+          used by no one else; a name not on the sheet must be used by no one in the tree; no name, person or contact
+          may be given twice in the import.
         </span>
       )}
     </form>
