@@ -30,7 +30,7 @@ public class Pools {
     public static final int MAX_DEPTH = 3;
 
     /** The sheet's pools, in the order added, each with its members (people and pools) in the order added. A retired
-     *  member (a retirement date set, whatever the date) counts 0.00 toward the total; a member whose dates do not
+     *  member (a retirement date set, whatever the date) counts their share toward the total; a member whose dates do not
      *  include the sheet's today is left out of it entirely (and has no cut). A pool that is a member of none
      *  has the sheet's pot; a pool that is a member of another has its cut there as its pot. While a pool has a pot,
      *  each member of it, if balanced, has a cut of it (see {@link #cuts}); otherwise no cut (""). */
@@ -66,7 +66,7 @@ public class Pools {
         members.forEach((name, list) -> {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolResponse.Member m : list) {
-                if (!m.retired() && m.current()) {
+                if (m.current()) {
                     total = total.add(new BigDecimal(m.share()));
                 }
                 if (m.memberPool() != null) {
@@ -108,15 +108,20 @@ public class Pools {
 
     /** The members with their cuts of the pot: the pot times their share divided by the shares of the members with a
      *  cut added up, rounded half to even to two decimals (a retired member, or a person held on the sheet's today,
-     *  cuts 0.00); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
-     *  (the earliest added on a tie), so the cuts total exactly the pot. With no member left with a cut, each cuts 0.00.
+     *  cuts 0.00, their share spread over the others in proportion to theirs); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
+     *  (the earliest added on a tie), so the cuts total exactly the pot. With no member left with a cut, each cuts 0.00 —
+     *  unless every member is retired, when none has a cut ("").
      *  A member whose dates do not include the sheet's today has no cut at all (""). */
     static List<PoolResponse.Member> cuts(List<PoolResponse.Member> members, BigDecimal pot, Set<String> held) {
         BigDecimal[] cuts = new BigDecimal[members.size()];
         boolean[] cutting = new boolean[members.size()];
         BigDecimal shares = BigDecimal.ZERO;
+        boolean allRetired = true;
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
+            if (m.current() && !m.retired()) {
+                allRetired = false;
+            }
             cutting[i] = m.current() && !m.retired() && (m.personId() == null || !held.contains(m.personId()));
             if (cutting[i]) {
                 shares = shares.add(new BigDecimal(m.share()));
@@ -127,7 +132,7 @@ public class Pools {
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
             BigDecimal share = new BigDecimal(m.share());
-            cuts[i] = !m.current() ? null : !cutting[i] || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
+            cuts[i] = !m.current() || allRetired ? null : !cutting[i] || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
                     : pot.multiply(share).divide(shares, 2, RoundingMode.HALF_EVEN);
             if (cuts[i] != null) {
                 sum = sum.add(cuts[i]);

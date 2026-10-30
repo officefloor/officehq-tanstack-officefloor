@@ -2,7 +2,7 @@ package net.officefloor.hq.app.pool;
 
 import java.util.List;
 
-/** A pool as shown: its members, the total of their shares (a retired member counting 0.00) and whether
+/** A pool as shown: its members, the total of their shares (a retired member's share counted as given) and whether
  *  that total is exactly 100.00. */
 public record PoolResponse(String name, String totalShare, boolean balanced, List<Member> members) {
 
