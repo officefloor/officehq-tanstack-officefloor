@@ -6,7 +6,7 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The sheet's pools, in the order added; with an as-of date, memberships and holds judged on it. */
+/** The sheet's pools, in the order added; with an as-of date, memberships, holds and the pot judged on it. */
 public class LoadPools {
     public void service(@PathVariable("sheetId") String sheetId,
             @RequestParam(value = "asOf", required = false) String asOf, Pools pools,

@@ -38,7 +38,7 @@ public class Pools {
         return list(sheetId, null);
     }
 
-    /** The sheet's pools as {@link #list(String)}, with memberships' dates and holds judged on the date standing for
+    /** The sheet's pools as {@link #list(String)}, with memberships' dates, holds and the pot judged on the date standing for
      *  the sheet's today (null: the sheet's today itself), as the as-of view shows them. */
     public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
@@ -67,8 +67,7 @@ public class Pools {
                                 share, rs.getDate(5) != null, current, ""));
                     }
                 }, day, day, sheetId);
-        List<BigDecimal> pots = jdbc.queryForList("SELECT pot FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
-        BigDecimal pot = pots.isEmpty() || pots.get(0) == null ? null : pots.get(0).setScale(2);
+        BigDecimal pot = day == null ? livePot(sheetId) : potOn(sheetId, day);
         Map<String, String> totals = new HashMap<>();
         Set<String> nested = new HashSet<>();
         members.forEach((name, list) -> {
@@ -96,6 +95,21 @@ public class Pools {
         members.keySet().forEach(name -> pools.add(new PoolResponse(name, totals.get(name),
                 new BigDecimal(totals.get(name)).compareTo(FULL) == 0, shown.get(name))));
         return pools;
+    }
+
+    /** The sheet's pot now, at two decimals; null when none. */
+    private BigDecimal livePot(String sheetId) {
+        List<BigDecimal> pots = jdbc.queryForList("SELECT pot FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
+        return pots.isEmpty() || pots.get(0) == null ? null : pots.get(0).setScale(2);
+    }
+
+    /** The sheet's pot as it stood at the end of the date: the latest set by then (see the as-of view); null when none. */
+    private BigDecimal potOn(String sheetId, java.sql.Date day) {
+        List<String> set = jdbc.queryForList("SELECT setting_value FROM plain_setting_history WHERE sheet_id = ?"
+                + " AND setting_key = ? AND (set_on IS NULL OR set_on <= ?) ORDER BY seq", String.class, sheetId,
+                net.officefloor.hq.app.setting.Settings.POT, day);
+        String latest = set.isEmpty() ? null : set.get(set.size() - 1);
+        return latest == null || latest.isEmpty() ? null : new BigDecimal(latest).setScale(2);
     }
 
     /** Gives the pool's members their cuts of its pot, when it has one and is balanced, and passes each member pool's
