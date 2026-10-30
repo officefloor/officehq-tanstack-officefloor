@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.person;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.rollup.RollupFigures;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.http.HttpStatus;
@@ -8,7 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class SavePersonCreated {
-    public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people, Audit audit,
+    public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people, Audit audit, @Val RollupFigures before, Rollup rollup,
             ObjectResponse<ResponseEntity<PersonResponse>> response) throws InvalidPersonException {
         if (people.nameTaken(sheetId, request.name(), null)) {
             throw new InvalidPersonException("The name is already in use");
@@ -16,6 +18,7 @@ public class SavePersonCreated {
         Person person = people.add(sheetId, request.name(), request.grade());
         audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()
                 + " name=" + person.getName() + " grade=" + person.getGrade());
+        rollup.recordChanges(sheetId, request.user(), before);
         response.send(new ResponseEntity<>(PersonResponse.from(person), HttpStatus.CREATED));
     }
 }
