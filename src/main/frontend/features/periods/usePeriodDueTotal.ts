@@ -1,4 +1,4 @@
-import { countsAtEnd, useClaims } from '../claims/useClaims';
+import { countsAtEnd, countsLive, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { useGrace } from '../claims/useGrace';
@@ -34,4 +34,26 @@ export function usePeriodDueTotal(sheet: string): (period: Period) => bigint {
   const people = usePeople(sheet);
   const personDueTotal = usePersonPeriodDueTotal(sheet);
   return (period: Period) => people.reduce((sum, p) => sum + personDueTotal(period, p.id), 0n);
+}
+
+/** A period's classic due-total: the dues as shown now, late charges included, of every person's claims whose due-by
+ *  falls in it, each counted by its status now (as the live totals count it) rather than its status at the period's
+ *  end; a closed or soft-closed period gives the figure fixed when it was closed. */
+export function useClassicPeriodDueTotal(sheet: string): (period: Period) => bigint {
+  const periods = usePeriods(sheet);
+  const people = usePeople(sheet);
+  const claims = useClaims(sheet);
+  const rates = useRates(sheet);
+  const floor = useFloor(sheet);
+  const late = { pct: useLatePct(sheet), today: useSheetToday(sheet), grace: useGrace(sheet) };
+  const policy = usePolicy(sheet);
+  return (period: Period) => {
+    if (period.closed || period.softClosed) return toCents(period.closedTotal || '0.00');
+    return people.reduce((sum, person) => {
+      const held = (date: string) => heldOn(person, date) || retiredOn(person, late.today);
+      return claims
+        .filter((c) => c.personId === person.id && countsLive(c, held, late.today) && periodOf(periods, c.dueBy)?.name === period.name)
+        .reduce((s, c) => s + (claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late, policy) ?? 0n), sum);
+    }, 0n);
+  };
 }

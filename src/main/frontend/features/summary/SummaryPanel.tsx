@@ -1,7 +1,7 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { GRADES, gradeOn, type Person } from '../people/usePeople';
 import { STATUSES } from '../people/useSheetFigures';
-import { usePeriodDueTotal } from '../periods/usePeriodDueTotal';
+import { useClassicPeriodDueTotal, usePeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { usePeriods } from '../periods/usePeriods';
 import { formatCents } from '../rates/due';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
@@ -10,7 +10,9 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
 // are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
 // of them are active. Per period: its due-total, as the period list shows it, and its change from
 // the period before it by start date (blank for the earliest). Per status: how many claims have it.
-// Per reason on the sheet's void list: how many VOID claims were voided with it.
+// Per reason on the sheet's void list: how many VOID claims were voided with it. Beside it, the classic
+// summary: per period, its due-total counting each claim by its status now (a closed period shows the figure
+// fixed when it closed), and the sheet's due-total untrimmed: everyone's due-total added up.
 export function SummaryPanel({
   people,
   today,
@@ -29,6 +31,7 @@ export function SummaryPanel({
   const [sheet] = useSearchParam('sheet', asString);
   const periods = usePeriods(sheet);
   const periodDueTotal = usePeriodDueTotal(sheet);
+  const classicPeriodDueTotal = useClassicPeriodDueTotal(sheet);
   const voidReasons = useVoidReasons(sheet);
   const current = people.filter((p) => !p.retired);
   const byStart = [...periods].sort((a, b) => a.from.localeCompare(b.from));
@@ -112,6 +115,29 @@ export function SummaryPanel({
             </tr>
           ))}
         </tbody>
+      </table>
+      <h3>Classic summary</h3>
+      <table data-testid="classic-summary">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periods.map((p) => (
+            <tr key={p.name}>
+              <td>{p.name}</td>
+              <td data-testid={`classic-period-${p.name}-due-total`}>{formatCents(classicPeriodDueTotal(p))}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Sheet</td>
+            <td data-testid="classic-due-total">{formatCents(people.reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n))}</td>
+          </tr>
+        </tfoot>
       </table>
     </section>
   );
