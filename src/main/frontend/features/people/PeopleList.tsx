@@ -28,6 +28,7 @@ import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, useSortBy } from './SortBy';
+import { ColumnChooser, useColumns } from './ColumnChooser';
 import { gradeOn, patronShares, sharedCents } from './usePeople';
 import { usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { periodOf, usePeriods } from '../periods/usePeriods';
@@ -81,6 +82,7 @@ export function PeopleList() {
     );
   const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
   const [sortKey] = useSortBy();
+  const [shown] = useColumns();
   // The rows as shown: list order, or sorted by the user's chosen key (by grade in force today, by
   // name as names are compared, by due-total with n/a last); equal keys keep list order.
   const bySort = (a: (typeof people)[number], b: (typeof people)[number]): number => {
@@ -145,6 +147,7 @@ export function PeopleList() {
       <ImportPeople />
       <ShowRetired />
       <SortBy />
+      <ColumnChooser />
       <button
         type="button"
         data-testid="export-people"
@@ -175,16 +178,16 @@ export function PeopleList() {
           <tr>
             <th />
             <th>Name</th>
-            <th>Aliases</th>
+            {shown('aliases') && <th>Aliases</th>}
             <th>Clashing</th>
             <th>From sheet</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            {shown('terms') && <th>Terms</th>}
+            {shown('contact') && <th>Contact</th>}
             <th>Tags</th>
-            <th>Claimed</th>
-            <th>Due</th>
-            <th>Excess</th>
+            {shown('claimed') && <th>Claimed</th>}
+            {shown('due-total') && <th>Due</th>}
+            {shown('excess') && <th>Excess</th>}
             <th>Settled</th>
             <th>Open</th>
             <th>Active</th>
@@ -195,20 +198,20 @@ export function PeopleList() {
               <th key={period.name}>Due {period.name}</th>
             ))}
             <th>Cut</th>
-            <th>Patrons</th>
-            <th>Backing</th>
-            <th>Overdue</th>
-            <th>Overdue due</th>
+            {shown('patrons') && <th>Patrons</th>}
+            {shown('backing') && <th>Backing</th>}
+            {shown('overdue-count') && <th>Overdue</th>}
+            {shown('overdue-total') && <th>Overdue due</th>}
             <th />
             <th>Watched</th>
-            <th>Retired</th>
+            {shown('retired') && <th>Retired</th>}
             <th>Retired from</th>
             <th>Past retirements</th>
             <th>Snapshots</th>
-            <th>Hold</th>
-            <th>Statements</th>
-            <th>Last stated</th>
-            <th>Stated on</th>
+            {shown('hold') && <th>Hold</th>}
+            {shown('statement-count') && <th>Statements</th>}
+            {shown('stated-total') && <th>Last stated</th>}
+            {shown('statement-date') && <th>Stated on</th>}
             <th>Claims</th>
           </tr>
         </thead>
@@ -222,16 +225,16 @@ export function PeopleList() {
                   <PersonSelect personId={p.id} />
                 </td>
                 <td data-testid="person-name">{p.name}</td>
-                <td data-testid="person-aliases">{p.aliases.join(', ')}</td>
+                {shown('aliases') && <td data-testid="person-aliases">{p.aliases.join(', ')}</td>}
                 <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
                 <td data-testid="person-origin">{p.origin}</td>
                 <td data-testid="person-grade">{gradeOn(p, today)}</td>
-                <td data-testid="person-terms">{p.terms}</td>
-                <td data-testid="person-contact">{p.contact}</td>
+                {shown('terms') && <td data-testid="person-terms">{p.terms}</td>}
+                {shown('contact') && <td data-testid="person-contact">{p.contact}</td>}
                 <td data-testid="person-tags">{tagList(p.tags)}</td>
-                <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>
-                <td data-testid="person-due-total">{showDue(totalOf(p))}</td>
-                <td data-testid="person-excess">{formatCents(excessOf(p))}</td>
+                {shown('claimed') && <td data-testid="person-claimed">{sumAmounts(live.filter((c) => c.personId === p.id))}</td>}
+                {shown('due-total') && <td data-testid="person-due-total">{showDue(totalOf(p))}</td>}
+                {shown('excess') && <td data-testid="person-excess">{formatCents(excessOf(p))}</td>}
                 <td data-testid="person-settled-total">{formatCents(settledTotalOf(p))}</td>
                 <td data-testid="person-open-total">{formatCents(openTotalOf(p))}</td>
                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
@@ -244,10 +247,10 @@ export function PeopleList() {
                   </td>
                 ))}
                 <td data-testid="person-cut-total">{formatCents(cutOf(p.id))}</td>
-                <td data-testid="person-patrons">{patronsOf(p)}</td>
-                <td data-testid="person-backing">{backing(p)}</td>
-                <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>
-                <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>
+                {shown('patrons') && <td data-testid="person-patrons">{patronsOf(p)}</td>}
+                {shown('backing') && <td data-testid="person-backing">{backing(p)}</td>}
+                {shown('overdue-count') && <td data-testid="person-overdue-count">{overdueOf(p.id).length}</td>}
+                {shown('overdue-total') && <td data-testid="person-overdue-total">{overdueTotal(overdueOf(p.id))}</td>}
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => {
                     setEditing(p.id);
@@ -269,7 +272,7 @@ export function PeopleList() {
                   <WatchControl personId={p.id} watched={watched.includes(p.id)} />
                 </td>
                 <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>
-                <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>
+                {shown('retired') && <td data-testid="person-retired">{p.retired ? 'yes' : 'no'}</td>}
                 <td data-testid="person-retired-from">{p.retiredFrom}</td>
                 <td>
                   {(p.retirements ?? []).map((line, i) => (
@@ -285,10 +288,10 @@ export function PeopleList() {
                     </div>
                   ))}
                 </td>
-                <td data-testid="person-hold">{p.held ? 'yes' : 'no'}</td>
-                <td data-testid="person-statement-count">{p.statementCount}</td>
-                <td data-testid="person-stated-total">{p.statedTotal}</td>
-                <td data-testid="person-statement-date">{p.statementDate}</td>
+                {shown('hold') && <td data-testid="person-hold">{p.held ? 'yes' : 'no'}</td>}
+                {shown('statement-count') && <td data-testid="person-statement-count">{p.statementCount}</td>}
+                {shown('stated-total') && <td data-testid="person-stated-total">{p.statedTotal}</td>}
+                {shown('statement-date') && <td data-testid="person-statement-date">{p.statementDate}</td>}
                 <td>
                   <PlanControl personId={p.id} />
                   <ClaimList claims={own} people={people} rateOn={(c) => claimRate(rates, gradeOn(p, c.date), c)} />
