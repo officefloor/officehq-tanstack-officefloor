@@ -45,6 +45,6 @@ public class ValidateRollover {
         Period first = generated.periods().stream().filter(p -> p.contains(next)).findFirst()
                 .orElseGet(() -> periods.on(sheet, next));
         generatedOut.set(generated);
-        rolloverOut.set(new Rollover("FY" + year, first, rollup.personOpenAt(sheet, old, last.to())));
+        rolloverOut.set(new Rollover("FY" + year, first, rollup.personOpenAt(sheet, old, last.to()), old));
     }
 }
