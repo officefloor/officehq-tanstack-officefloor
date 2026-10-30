@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * For every plan on the sheet, in the order they were added, makes a DRAFT claim of the plan's amount for each plan date (the
- * start, then every N days) up to the end and the sheet's today that has none yet, dated that day with an empty note, each
+ * start, then every N days; or the day in every month from the start's month, on the month's last day when it is shorter,
+ * dates before the start left out) up to the end and the sheet's today that has none yet, dated that day with an empty note, each
  * audited as CLAIM_ADDED. A date the claim form refuses (its due-by inside a closed period, after the person's retirement) is
  * skipped, and tried again on the next generate.
  */
@@ -37,7 +38,7 @@ public class GeneratePlanClaims {
             Person person = people.find(sheetId, plan.personId());
             if (person == null) continue;
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.dates(last)) {
                 if (plans.made(plan.id(), date)) continue;
                 LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsFor(sheetId, person.getTerms(), person.gradeOn(date), date));
                 if (periods.isClosed(sheetId, dueBy) || !person.allowsClaimOn(date)) continue;

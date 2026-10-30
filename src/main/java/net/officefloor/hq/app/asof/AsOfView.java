@@ -98,6 +98,8 @@ public class AsOfView {
                     now.getVersion());
             then.setTerms(now.getTerms());
             then.setContact(now.getContact());
+            // A person's tags are not kept in their history: they show as they are now.
+            then.setTags(now.getTags());
             byId.put(now.getId(), then);
         }
         jdbc.query("SELECT person_id, name, terms, contact FROM person_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",

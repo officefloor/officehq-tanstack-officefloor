@@ -18,9 +18,9 @@ public class SavePlan {
         if (request.end().isBefore(start)) {
             throw new InvalidPlanException("A plan's end cannot be before its start");
         }
-        Plan plan = plans.add(sheetId, person.getId(), request.amount(), start, request.every(), request.end());
+        Plan plan = plans.add(sheetId, person.getId(), request.amount(), start, request.every(), request.day(), request.end());
         audit.recordOnCommit("PLAN_ADDED sheet=" + sheetId + " by=" + request.user() + " name=" + person.getName()
-                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + " every=" + plan.every() + " end=" + plan.end());
+                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every()) + " end=" + plan.end());
         response.send(new ResponseEntity<>(PlanResponse.from(plan), HttpStatus.CREATED));
     }
 }

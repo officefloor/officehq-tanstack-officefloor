@@ -3,6 +3,7 @@ package net.officefloor.hq.app.plan;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,12 +15,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Plans {
 
-    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date,"
+    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date,"
             + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
-            rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(), rs.getInt("every_days"),
-            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"));
+            rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
+            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"));
 
     private final JdbcTemplate jdbc;
 
@@ -36,18 +37,19 @@ public class Plans {
         return jdbc.query(SELECT + " WHERE p.id = ?", ROW, id).stream().findFirst().orElse(null);
     }
 
-    public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, int every, LocalDate end) {
+    public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(start));
-            ps.setInt(5, every);
-            ps.setDate(6, Date.valueOf(end));
+            ps.setObject(5, every, Types.INTEGER);
+            ps.setObject(6, day, Types.INTEGER);
+            ps.setDate(7, Date.valueOf(end));
             return ps;
         }, keys);
         return find(keys.getKey().longValue());
