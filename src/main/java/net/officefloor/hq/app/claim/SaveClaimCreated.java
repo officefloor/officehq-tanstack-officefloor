@@ -17,7 +17,7 @@ public class SaveClaimCreated {
             net.officefloor.hq.app.setting.Settings settings, ClaimLog log,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         String sheetId = person.getSheetId();
-        LocalDate date = request.date() != null ? request.date() : sheets.today(sheetId);
+        LocalDate date = request.date() != null ? request.date() : settings.claimDate(sheetId);
         if (periods.isClosed(sheetId, date)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");
         }

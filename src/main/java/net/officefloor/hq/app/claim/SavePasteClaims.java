@@ -24,7 +24,7 @@ public class SavePasteClaims {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidPasteClaims request, People people, Claims claims,
             Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup, Settings settings,
             ClaimLog log, ObjectResponse<PasteClaimsResponse> response) throws InvalidClaimException {
-        LocalDate today = sheets.today(sheetId);
+        LocalDate today = settings.claimDate(sheetId);
         List<Person> persons = new ArrayList<>();
         List<LocalDate> dates = new ArrayList<>();
         int number = 0;

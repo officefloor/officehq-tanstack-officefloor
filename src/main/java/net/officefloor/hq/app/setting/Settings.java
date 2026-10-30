@@ -172,6 +172,25 @@ public class Settings {
         plainHistory(sheetId, NUMBERING, date == null ? "" : date.toString());
     }
 
+    /** The sheet's entry date; null when off. */
+    public LocalDate entryDate(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the entry date
+        Date date = jdbc.queryForObject("SELECT entry_date FROM sheet WHERE id = ?", Date.class, sheetId);
+        return date == null ? null : date.toLocalDate();
+    }
+
+    public void setEntryDate(String sheetId, LocalDate date) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
+        plainHistory(sheetId, ENTRY, date == null ? "" : date.toString());
+    }
+
+    /** The default date of a new claim: the entry date while set, else the sheet's today. */
+    public LocalDate claimDate(String sheetId) {
+        LocalDate entry = entryDate(sheetId);
+        return entry != null ? entry : sheets.today(sheetId);
+    }
+
     /** The sheet's grace days; null when off. */
     public Integer graceDays(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the grace days
@@ -247,7 +266,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -286,6 +305,7 @@ public class Settings {
         LocalDate policy = policyDateSet(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         Integer grace = graceDays(sheetId);
+        LocalDate entry = entryDate(sheetId);
         List<RoleResponse> roles = jdbc.query(
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
@@ -310,6 +330,6 @@ public class Settings {
                         "SELECT user_name, from_date, to_date, delegated_by FROM sheet_delegation WHERE sheet_id = ? ORDER BY seq",
                         (rs, i) -> new DelegationResponse(rs.getString(1), rs.getDate(2).toLocalDate().toString(),
                                 rs.getDate(3).toLocalDate().toString(), rs.getString(4)), sheetId),
-                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString());
+                noteThreshold == null ? "" : noteThreshold.setScale(2).toPlainString(), entry == null ? "" : entry.toString());
     }
 }

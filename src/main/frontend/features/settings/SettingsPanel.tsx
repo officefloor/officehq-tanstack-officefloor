@@ -24,7 +24,9 @@ import { PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSett
 // The permission matrix (not dated): for each of open, settle, void, reassign, close and reopen, the roles that may take it,
 // comma separated (blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward);
 // saved like the cap. The grace days (not dated; whole days; blank: off; saved like the cap): when the sheet's today is changed,
-// every open period whose to-date plus them is before the new today is closed.
+// every open period whose to-date plus them is before the new today is closed. The entry date (not dated; a date; blank: off;
+// saved like the cap): while set, it is the default date of a new claim (the claim form, the quick-add bar, a pasted line
+// with a blank date, a correction) in place of the sheet's today.
 // A steward delegates the steward role to a user for a from-date and a to-date, inclusive (blank: the sheet's today): while the
 // sheet's today is inside them the user acts as a steward in every rule. Anyone but a steward (by the role set), or a to-date
 // before the from-date, is refused.
@@ -60,8 +62,12 @@ export function SettingsPanel() {
   // The grace days (not dated); likewise may be saved blank (off).
   const [graceDays, setGraceDays] = useState('');
   const graceChosen = useRef(false);
+  // The entry date (not dated); likewise may be saved blank (off).
+  const [entryDate, setEntryDate] = useState('');
+  const entryChosen = useRef(false);
   // Entering the grace days marks them as the one to save, as they are.
   const focusGrace = () => {
+    if (entryDate.trim() === '') entryChosen.current = false;
     unchoosePerms();
     if (policyDate.trim() === '') policyChosen.current = false;
     if (numberingFrom.trim() === '') numberingChosen.current = false;
@@ -69,6 +75,17 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     graceChosen.current = true;
+  };
+  // Entering the entry date marks it as the one to save, as it is.
+  const focusEntry = () => {
+    unchoosePerms();
+    if (policyDate.trim() === '') policyChosen.current = false;
+    if (numberingFrom.trim() === '') numberingChosen.current = false;
+    if (cap.trim() === '') capChosen.current = false;
+    if (proofThreshold.trim() === '') proofChosen.current = false;
+    if (noteThreshold.trim() === '') noteChosen.current = false;
+    if (graceDays.trim() === '') graceChosen.current = false;
+    entryChosen.current = true;
   };
   // Each action's permission, by action, as typed; each may be saved blank (the standing rule).
   const [perms, setPerms] = useState<Record<string, string>>({});
@@ -87,6 +104,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (entryDate.trim() === '') entryChosen.current = false;
     unchoosePerms(action);
     permsChosen.current.add(action);
   };
@@ -99,6 +117,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (entryDate.trim() === '') entryChosen.current = false;
   };
   // Each dated setting's from-date, by key, as typed.
   const [froms, setFroms] = useState<Record<string, string>>({});
@@ -123,6 +142,7 @@ export function SettingsPanel() {
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (entryDate.trim() === '') entryChosen.current = false;
     capChosen.current = true;
   };
   // Entering the proof threshold (or its from-date) marks it as the one to save, as it is.
@@ -132,6 +152,7 @@ export function SettingsPanel() {
     if (numberingFrom.trim() === '') numberingChosen.current = false;
     if (cap.trim() === '') capChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (entryDate.trim() === '') entryChosen.current = false;
     if (noteThreshold.trim() === '') noteChosen.current = false;
     proofChosen.current = true;
   };
@@ -143,6 +164,7 @@ export function SettingsPanel() {
     if (cap.trim() === '') capChosen.current = false;
     if (proofThreshold.trim() === '') proofChosen.current = false;
     if (graceDays.trim() === '') graceChosen.current = false;
+    if (entryDate.trim() === '') entryChosen.current = false;
     noteChosen.current = true;
   };
   const [name, setName] = useState('');
@@ -179,6 +201,10 @@ export function SettingsPanel() {
       else if (body.key === 'grace-days') {
         setGraceDays('');
         graceChosen.current = false;
+      }
+      else if (body.key === 'entry-date') {
+        setEntryDate('');
+        entryChosen.current = false;
       }
       else if (body.key === 'proof-threshold') {
         setProofThreshold('');
@@ -228,10 +254,11 @@ export function SettingsPanel() {
             const proofed = proofThreshold.trim() !== '' || proofChosen.current;
             const noted = noteThreshold.trim() !== '' || noteChosen.current;
             const graced = graceDays.trim() !== '' || graceChosen.current;
+            const entered = entryDate.trim() !== '' || entryChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || latePct.trim() !== '' || policy || numbering || capped || proofed
-                || noted || graced || permitted.length > 0) {
+                || noted || graced || entered || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -244,6 +271,7 @@ export function SettingsPanel() {
                 ...(proofed ? [{ key: 'proof-threshold', value: proofThreshold.trim() }] : []),
                 ...(noted ? [{ key: 'note-threshold', value: noteThreshold.trim() }] : []),
                 ...(graced ? [{ key: 'grace-days', value: graceDays.trim() }] : []),
+                ...(entered ? [{ key: 'entry-date', value: entryDate.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -333,6 +361,7 @@ export function SettingsPanel() {
             if (proofThreshold.trim() === '') proofChosen.current = false;
             if (noteThreshold.trim() === '') noteChosen.current = false;
             if (graceDays.trim() === '') graceChosen.current = false;
+            if (entryDate.trim() === '') entryChosen.current = false;
             policyChosen.current = true;
           }}
           onChange={(e) => {
@@ -353,6 +382,7 @@ export function SettingsPanel() {
             if (proofThreshold.trim() === '') proofChosen.current = false;
             if (noteThreshold.trim() === '') noteChosen.current = false;
             if (graceDays.trim() === '') graceChosen.current = false;
+            if (entryDate.trim() === '') entryChosen.current = false;
             numberingChosen.current = true;
           }}
           onChange={(e) => {
@@ -412,6 +442,18 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Entry date: <span data-testid="setting-entry-date-current">{settings?.entryDate ?? ''}</span>{' '}
+        <input
+          data-testid="setting-entry-date"
+          value={entryDate}
+          placeholder="Entry date YYYY-MM-DD (blank: off)"
+          onFocus={focusEntry}
+          onChange={(e) => {
+            setEntryDate(e.target.value);
+            entryChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
             May {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.perms?.[a] ?? ''}</span>{' '}
@@ -430,7 +472,7 @@ export function SettingsPanel() {
           </span>
         ))}
         <button type="submit" data-testid="settings-save">Save settings</button>
-        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
+        {saveSetting.isError && <span data-testid="settings-error" role="alert"> Could not save: the clerk limit must be an amount of 0.00 or more with at most two decimals, or blank for none; the floor must be an amount of 0.00 or more with at most two decimals; the terms (and a grade's terms) must be a whole number of days, 0 or more; the late percent must be a percent of 0.00 or more with at most two decimals; the policy date must be a date (YYYY-MM-DD), or blank for the sheet's today; the period numbering from must be a date (YYYY-MM-DD), or blank for off; the cap must be an amount of 0.00 or more with at most two decimals, or blank for none; the proof threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the note threshold must be an amount of 0.00 or more with at most two decimals, or blank for none; the grace days must be a whole number of days, 0 or more, or blank for off; the entry date must be a date (YYYY-MM-DD), or blank for off; a permission must be a comma separated list of the roles clerk and steward, or blank for the standing rule; a from-date must be a date (YYYY-MM-DD), or blank for the sheet's today.</span>}
       </form>
       <table data-testid="role-list">
         <thead>

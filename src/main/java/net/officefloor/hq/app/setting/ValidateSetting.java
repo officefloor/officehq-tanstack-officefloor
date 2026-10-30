@@ -36,6 +36,9 @@ public class ValidateSetting {
 
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** Not dated: while set, the default date of a new claim in place of the sheet's today; blank: off. */
+    public static final String ENTRY_DATE = "entry-date";
+
     /** Not dated: when the sheet's today is changed, an open period whose to-date plus them is before it is closed; blank: off. */
     public static final String GRACE_DAYS = "grace-days";
 
@@ -58,7 +61,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
@@ -93,7 +96,7 @@ public class ValidateSetting {
         // A dated setting's from-date: blank for the sheet's today.
         String rawFrom = request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
-        if (!rawFrom.isEmpty() && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key)) {
+        if (!rawFrom.isEmpty() && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key)) {
             try {
                 from = LocalDate.parse(rawFrom);
             } catch (DateTimeParseException e) {
@@ -121,6 +124,18 @@ public class ValidateSetting {
                 body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw), null));
             } catch (DateTimeParseException e) {
                 throw new InvalidSettingException("The period numbering from must be a date (YYYY-MM-DD), or blank for off");
+            }
+            return;
+        }
+        if (ENTRY_DATE.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: off
+                return;
+            }
+            try {
+                body.set(new ValidSetting(key, null, request.user(), LocalDate.parse(raw), null));
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The entry date must be a date (YYYY-MM-DD), or blank for off");
             }
             return;
         }

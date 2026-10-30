@@ -7,7 +7,7 @@ import { claimsKey, type Claim } from './useClaims';
 
 // The claim form on a person's row: adds a claim to that person, or — while one of their claims'
 // editor is open (`editClaim` in the URL) — saves that claim. Opening the editor fills the form
-// with the claim's values. A blank date takes the sheet's today. A negative amount is a correction,
+// with the claim's values. A blank date takes the sheet's entry date while set, else its today. A negative amount is a correction,
 // which names in "corrects" the number of the SETTLED claim of the same person it corrects.
 export function ClaimForm({ personId, claims }: { personId: string; claims: Claim[] }) {
   const [sheet] = useSearchParam('sheet', asString);

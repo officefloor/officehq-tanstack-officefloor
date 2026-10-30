@@ -27,7 +27,7 @@ public class SaveQuickClaim {
             Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup,
             net.officefloor.hq.app.setting.Settings settings, ClaimLog log,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
-        LocalDate date = sheets.today(sheetId);
+        LocalDate date = settings.claimDate(sheetId);
         // Refuse before anything is written.
         if (periods.isClosed(sheetId, date)) {
             throw new InvalidClaimException("No claim can be added inside a closed period");

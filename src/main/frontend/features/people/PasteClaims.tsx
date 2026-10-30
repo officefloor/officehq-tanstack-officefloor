@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from './usePeople';
 
 // The paste box: one claim per line as name,amount,date,note (the note may hold commas; a blank date
-// is the sheet's today; the note may be absent). Each line adds a DRAFT claim, in order, for the person
+// is the sheet's entry date while set, else its today; the note may be absent). Each line adds a DRAFT claim, in order, for the person
 // of that name already on the sheet (case and outer spaces ignored). Every line is checked first by the
 // claim form's rules; one refused line adds nothing. Then shows how many were added; pressing again
 // removes the old count until the new one is in.

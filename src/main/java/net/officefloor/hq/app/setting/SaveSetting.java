@@ -40,6 +40,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.ENTRY_DATE.equals(setting.key())) {
+            settings.setEntryDate(sheetId, setting.date());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + (setting.date() == null ? "" : setting.date().toString()));
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.GRACE_DAYS.equals(setting.key())) {
             settings.setGraceDays(sheetId, setting.value() == null ? null : setting.value().intValue());
             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

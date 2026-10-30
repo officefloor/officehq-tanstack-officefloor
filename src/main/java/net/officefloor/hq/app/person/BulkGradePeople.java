@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Gives the selected people the grade in list order (the order they were added), each exactly as a
  * person form save would: recorded from the from-date (the sheet's today when blank), audited as
- * PERSON_EDITED with the rollup lines it moved. As on the form, a blank from-date leaving a person's
- * grade as it is records nothing, and that person is not counted. A selected id that is not a person
- * on the sheet is skipped.
+ * PERSON_EDITED with the rollup lines it moved, and counted. As on the form, a blank from-date leaving a
+ * person's grade as it is records no grade, though the person is still saved, audited and counted. A
+ * selected id that is not a person on the sheet is skipped.
  */
 public class BulkGradePeople {
     public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeRequest request,
@@ -27,12 +27,11 @@ public class BulkGradePeople {
             if (!selected.contains(String.valueOf(person.getId()))) {
                 continue;
             }
-            if (request.gradeFrom().isEmpty() && request.grade().equals(person.getGrade())) {
-                continue;
-            }
             RollupFigures before = rollup.figures(sheetId);
-            LocalDate from = request.gradeFrom().isEmpty() ? person.getToday() : LocalDate.parse(request.gradeFrom());
-            person.recordGrade(from, request.grade());
+            if (!request.gradeFrom().isEmpty() || !request.grade().equals(person.getGrade())) {
+                LocalDate from = request.gradeFrom().isEmpty() ? person.getToday() : LocalDate.parse(request.gradeFrom());
+                person.recordGrade(from, request.grade());
+            }
             if (!people.save(person)) {
                 throw new PersonConflictException(person.getId());
             }

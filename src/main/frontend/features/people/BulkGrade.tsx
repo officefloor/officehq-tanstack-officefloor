@@ -46,7 +46,7 @@ export function PersonSelect({ personId }: { personId: string }) {
 // Gives the selected people a grade together: the server records it for each, in list order, from the
 // from-date (the sheet's today when blank) exactly as the person form would, with the same audit lines.
 // Then shows how many were changed and clears the selection; pressing again removes the old count
-// until the new one is in. A refusal (a viewer, a bad date) shows the error and changes nothing.
+// until the new one is in. A refusal (a bad date) shows the error and changes nothing; a viewer's grades no one.
 export function BulkGrade() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
