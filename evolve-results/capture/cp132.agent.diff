@@ -1,0 +1,46 @@
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+index 9e038598..6992c48f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+@@ -41,13 +41,37 @@ public class Sheets {
+     }
+ 
+     /**
+-     * The sheet's next claim number. The counter row stays locked until the transaction ends, so
+-     * claims opened at the same moment get distinct numbers, and a rolled-back open gives none away.
++     * The sheet's next claim number: the sheets of a tree share one sequence, so it is the next after
++     * the last number given on any sheet of the sheet's tree. The tree's rows stay locked until the
++     * transaction ends, so claims opened at the same moment get distinct numbers, and a rolled-back
++     * open gives none away.
+      */
+     public long nextClaimNumber(String sheetId) {
+         today(sheetId); // the sheet's row holds the counter
+-        jdbc.update("UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?", sheetId);
+-        return jdbc.queryForObject("SELECT last_claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
++        List<String> tree = new ArrayList<>(tree(sheetId));
++        tree.sort(null); // lock in one order so concurrent opens across the tree cannot deadlock
++        long last = 0;
++        for (String id : tree) {
++            List<Long> found = jdbc.query("SELECT last_claim_number FROM sheet WHERE id = ? FOR UPDATE",
++                    (rs, i) -> rs.getLong(1), id);
++            if (!found.isEmpty()) {
++                last = Math.max(last, found.get(0));
++            }
++        }
++        jdbc.update("UPDATE sheet SET last_claim_number = ? WHERE id = ?", last + 1, sheetId);
++        return last + 1;
++    }
++
++    /** The sheets of the sheet's tree: its root (the top of its parent chain), and every descendant of the root. */
++    public Set<String> tree(String sheetId) {
++        String root = sheetId;
++        Set<String> up = new HashSet<>(List.of(sheetId));
++        for (String parent = parent(root); parent != null && up.add(parent); parent = parent(root)) {
++            root = parent;
++        }
++        Set<String> tree = new HashSet<>(List.of(root, sheetId));
++        tree.addAll(descendants(root));
++        return tree;
+     }
+ 
+     /** The sheet's next bulk settle batch number, counted like {@link #nextClaimNumber(String)}. */
