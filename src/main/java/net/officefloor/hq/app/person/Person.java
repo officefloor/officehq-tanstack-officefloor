@@ -243,5 +243,10 @@ public class Person {
     private String origin;
     public String getOrigin() { return origin; }
     public void setOrigin(String origin) { this.origin = origin; }
+
+    /** The sheet's today when the person arrived by transfer; null when not transferred in. */
+    private LocalDate arrivedOn;
+    public LocalDate getArrivedOn() { return arrivedOn; }
+    public void setArrivedOn(LocalDate arrivedOn) { this.arrivedOn = arrivedOn; }
     public void setVersion(int version) { this.version = version; }
 }

@@ -23,6 +23,7 @@ import { PatronControl } from './PatronControl';
 import { QuickAdd } from './QuickAdd';
 import { RetireControl, UnretireButton } from './RetireControl';
 import { TransferControl } from './TransferControl';
+import { TransferUndoControl } from './TransferUndoControl';
 import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
@@ -279,6 +280,7 @@ export function PeopleList() {
                   <AliasControl personId={p.id} />{' '}
                   <MergeControl personId={p.id} people={people} />{' '}
                   <TransferControl personId={p.id} />{' '}
+                  <TransferUndoControl personId={p.id} />{' '}
                   <WatchControl personId={p.id} watched={watched.includes(p.id)} />
                 </td>
                 <td data-testid="person-watched">{watched.includes(p.id) ? 'yes' : 'no'}</td>

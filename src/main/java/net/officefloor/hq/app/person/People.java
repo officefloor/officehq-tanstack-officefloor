@@ -32,6 +32,8 @@ public class People {
         long place = rs.getLong("place");
         person.setPlace(rs.wasNull() ? person.getId() : place);
         person.setOrigin(rs.getString("origin"));
+        java.sql.Date arrived = rs.getDate("arrived_on");
+        person.setArrivedOn(arrived == null ? null : arrived.toLocalDate());
         return person;
     };
 
@@ -400,8 +402,11 @@ public class People {
         java.util.SortedMap<java.time.LocalDate, String> grades = from.getGrades();
         String first = grades.isEmpty() ? from.getGrade() : grades.get(grades.firstKey());
         Person person = add(toSheet, from.getName(), first, from.getTerms(), from.getContact());
-        jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), person.getId());
+        java.time.LocalDate arrivedOn = sheets.today(toSheet);
+        jdbc.update("UPDATE person SET origin = ?, arrived_on = ? WHERE id = ?", from.getSheetId(),
+                java.sql.Date.valueOf(arrivedOn), person.getId());
         person.setOrigin(from.getSheetId());
+        person.setArrivedOn(arrivedOn);
         grades.forEach((on, grade) -> {
             if (!on.equals(Person.BEGINNING)) {
                 person.recordGrade(on, grade);

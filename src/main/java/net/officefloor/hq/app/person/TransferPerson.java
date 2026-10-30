@@ -34,11 +34,16 @@ public class TransferPerson {
     public void transfer(@Val TransferRequest request, @Val Person person, People people, Claims claims,
             ClaimNumbering numbering, Sheets sheets, Settings settings, Audit audit, @Val RollupFigures before,
             Rollup rollup) throws InvalidPersonException {
-        String sheetId = person.getSheetId();
-        String to = request.toSheet();
-        if (!Settings.STEWARD.equals(settings.role(sheetId, request.user()))) {
+        if (!Settings.STEWARD.equals(settings.role(person.getSheetId(), request.user()))) {
             throw new InvalidPersonException("Only a steward can transfer people");
         }
+        move(person, request.toSheet(), request.user(), people, claims, numbering, sheets, audit, before, rollup);
+    }
+
+    /** Moves the person to the other sheet by the transfer rules (the steward check aside), auditing both sheets. */
+    static void move(Person person, String to, String user, People people, Claims claims, ClaimNumbering numbering,
+            Sheets sheets, Audit audit, RollupFigures before, Rollup rollup) throws InvalidPersonException {
+        String sheetId = person.getSheetId();
         if (person.getRetiredFrom() != null) {
             throw new InvalidPersonException("A retired person cannot be transferred");
         }
@@ -102,15 +107,15 @@ public class TransferPerson {
         }
         people.transferOut(person);
 
-        audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + to + " by=" + request.user()
+        audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + to + " by=" + user
                 + " name=" + person.getName() + " from=" + sheetId);
         if (into != null) {
-            audit.recordOnCommit("PERSON_MERGED sheet=" + to + " by=" + request.user()
+            audit.recordOnCommit("PERSON_MERGED sheet=" + to + " by=" + user
                     + " from=" + person.getName() + " into=" + into.getName());
         }
-        rollup.recordChanges(to, request.user(), toBefore);
-        audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + sheetId + " by=" + request.user()
+        rollup.recordChanges(to, user, toBefore);
+        audit.recordOnCommit("PERSON_TRANSFERRED sheet=" + sheetId + " by=" + user
                 + " name=" + person.getName() + " to=" + to);
-        rollup.recordChanges(sheetId, request.user(), before);
+        rollup.recordChanges(sheetId, user, before);
     }
 }
