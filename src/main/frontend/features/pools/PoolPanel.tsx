@@ -13,7 +13,8 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // it is balanced (the total is exactly 100.00), and adds a member from its row: a person already in the
 // pool, or a share not more than 0.00 and at most 100.00 with two decimals, is refused. Each member of a balanced
 // pool shows their cut of its pot (empty while the pool is unbalanced or has no pot). A retired or held member cuts 0.00, their share spread over
-// the others in proportion to theirs; a pool whose every member is retired shows no cuts. A member may be another pool,
+// the others in proportion to theirs; the rounding remainder goes to the member with the smallest non-zero cut (the latest
+// added on a tie; with none, the last member with a cut); a pool whose every member is retired shows no cuts. A member may be another pool,
 // chosen as pool:<name>: a pool is a member of at most one pool, never contains itself through any chain, and a chain
 // of pools is at most three deep. A pool that is a member of none has the sheet's pot; a pool that is a member of
 // another has its cut there as its pot. A membership may carry an optional from-date and to-date (a to-date before

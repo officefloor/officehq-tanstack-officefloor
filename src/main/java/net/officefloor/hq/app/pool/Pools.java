@@ -116,8 +116,8 @@ public class Pools {
 
     /** The members with their cuts of the pot: the pot times their share divided by the shares of the members with a
      *  cut added up, rounded half to even to two decimals (a retired member, or a person held on the sheet's today,
-     *  cuts 0.00, their share spread over the others in proportion to theirs); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
-     *  (the earliest added on a tie), so the cuts total exactly the pot. With no member left with a cut, each cuts 0.00 —
+     *  cuts 0.00, their share spread over the others in proportion to theirs); the remainder, the pot minus the cuts added up, goes to the member with a cut with the smallest
+     *  non-zero cut (the latest added on a tie; with no non-zero cut, the last member with a cut), so the cuts total exactly the pot. With no member left with a cut, each cuts 0.00 —
      *  unless every member is retired, when none has a cut ("").
      *  A member whose dates do not include the sheet's today has no cut at all (""). */
     static List<PoolResponse.Member> cuts(List<PoolResponse.Member> members, BigDecimal pot, Set<String> held) {
@@ -136,7 +136,8 @@ public class Pools {
             }
         }
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
-        int largest = -1;
+        int smallest = -1;
+        int last = -1;
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
             BigDecimal share = new BigDecimal(m.share());
@@ -145,12 +146,16 @@ public class Pools {
             if (cuts[i] != null) {
                 sum = sum.add(cuts[i]);
             }
-            if (cutting[i] && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
-                largest = i;
+            if (cutting[i]) {
+                last = i;
+                if (cuts[i].signum() != 0 && (smallest < 0 || cuts[i].compareTo(cuts[smallest]) <= 0)) {
+                    smallest = i;
+                }
             }
         }
-        if (largest >= 0 && shares.signum() != 0) {
-            cuts[largest] = cuts[largest].add(pot.subtract(sum));
+        int remainder = smallest >= 0 ? smallest : last;
+        if (remainder >= 0 && shares.signum() != 0) {
+            cuts[remainder] = cuts[remainder].add(pot.subtract(sum));
         }
         List<PoolResponse.Member> withCuts = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
