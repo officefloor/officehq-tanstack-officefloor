@@ -1,0 +1,69 @@
+diff --git a/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx b/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
+index 598ee4d4..3845531b 100644
+--- a/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
++++ b/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
+@@ -1,19 +1,22 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+-import { useSheetFigures } from '../people/useSheetFigures';
++import { GRADES, gradeOn } from '../people/usePeople';
++import { STATUSES, useSheetFigures } from '../people/useSheetFigures';
+ import { formatCents, toCents } from '../rates/due';
+ import { useDescendants } from './useDescendants';
+ 
+-type Totals = { people: number; due: bigint; overdue: bigint };
++type Totals = { people: number; due: bigint; overdue: bigint; grades: bigint[]; statuses: number[] };
+ 
+ // The figures over the sheet and all its descendants: their people, and each sheet's due-total and
+-// overdue-total as that sheet shows them, added up. A sheet with no children shows its own. While the
++// overdue-total as that sheet shows them, added up. Per grade, the due-totals of the people on it
++// today (retired people left out, n/a skipped) as each sheet's summary shows them, added up; per
++// status, how many claims have it, added up. A sheet with no children shows its own. While the
+ // screen is shown as of a date, so are they: every sheet of the tree as it stood at the end of that day,
+ // with that date as its today.
+ export function ConsolidatedFigures() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const descendants = useDescendants(sheet);
+   return (
+-    <Add sheets={[sheet, ...descendants]} totals={{ people: 0, due: 0n, overdue: 0n }} />
++    <Add sheets={[sheet, ...descendants]} totals={{ people: 0, due: 0n, overdue: 0n, grades: GRADES.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
+   );
+ }
+ 
+@@ -25,7 +28,10 @@ function Add({ sheets, totals }: { sheets: string[]; totals: Totals }) {
+ }
+ 
+ function AddSheet({ sheets, totals }: { sheets: string[]; totals: Totals }) {
+-  const { people, sheetDueTotal, sheetOverdueTotal } = useSheetFigures(sheets[0]);
++  const { people, today, totalOf, statusCount, sheetDueTotal, sheetOverdueTotal } = useSheetFigures(sheets[0]);
++  const current = people.filter((p) => !p.retired);
++  const gradeDue = (g: (typeof GRADES)[number]) =>
++    current.filter((p) => gradeOn(p, today) === g).reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
+   return (
+     <Add
+       sheets={sheets.slice(1)}
+@@ -33,6 +39,8 @@ function AddSheet({ sheets, totals }: { sheets: string[]; totals: Totals }) {
+         people: totals.people + people.length,
+         due: totals.due + toCents(sheetDueTotal),
+         overdue: totals.overdue + toCents(sheetOverdueTotal),
++        grades: GRADES.map((g, i) => totals.grades[i] + gradeDue(g)),
++        statuses: STATUSES.map((s, i) => totals.statuses[i] + statusCount(s)),
+       }}
+     />
+   );
+@@ -44,6 +52,16 @@ function Shown({ totals }: { totals: Totals }) {
+       Consolidated — People: <span data-testid="consolidated-people-count">{totals.people}</span>
+       {' · '}Due: <span data-testid="consolidated-due-total">{formatCents(totals.due)}</span>
+       {' · '}Overdue: <span data-testid="consolidated-overdue-total">{formatCents(totals.overdue)}</span>
++      {GRADES.map((g, i) => (
++        <span key={g}>
++          {' · '}Grade {g}: <span data-testid={`consolidated-grade-${g}-due-total`}>{formatCents(totals.grades[i])}</span>
++        </span>
++      ))}
++      {STATUSES.map((s, i) => (
++        <span key={s}>
++          {' · '}{s}: <span data-testid={`consolidated-status-${s}-count`}>{totals.statuses[i]}</span>
++        </span>
++      ))}
+     </section>
+   );
+ }
