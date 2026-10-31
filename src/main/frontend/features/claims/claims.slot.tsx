@@ -36,6 +36,7 @@ const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to an
 const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
 const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
+const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never in or into a closed period, nor to a date after its person's retirement.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
 const NEEDS_PROOF = "A claim whose due is above the sheet's proof threshold cannot be settled or approved until it has a proof.";
 const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one dated in a closed period.';
@@ -63,6 +64,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * and their dues added up.
  * A steward can reassign a DRAFT, OPEN or PENDING claim to another person on the sheet: it keeps its
  * number and date, is no longer bound by a statement, and is listed as its new person's newest claim.
+ * A steward can re-date an OPEN or PENDING claim (not in or into a closed period, nor after its person's
+ * retirement): its due-by and any figure a statement bound stay; its period follows the new date.
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
@@ -105,6 +108,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [reasons, setReasons] = useState<Record<number, string>>({});
   // The date typed for deferring each claim, by claim id.
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
+  // The new date typed for re-dating each claim, by claim id.
+  const [redateTo, setRedateTo] = useState<Record<number, string>>({});
   // The person chosen to reassign each claim to, by claim id.
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   // The amount typed for splitting each claim, by claim id.
@@ -178,6 +183,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => setDeferTo((d) => ({ ...d, [c.id]: '' })),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_DEFER }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A steward re-dates an OPEN or PENDING claim: its due-by and any bound figure stay as they were.
+  const redate = useMutation({
+    mutationFn: (c: { id: number; date: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/redate`, { date: c.date, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setRedateTo((d) => ({ ...d, [c.id]: '' })),
+    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_REDATE }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -427,6 +442,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => defer.mutate({ id: c.id, until: (deferTo[c.id] ?? '').trim() })}
               >
                 Defer
+              </button>{' '}
+              <input
+                data-testid="claim-date-new"
+                aria-label="New date"
+                placeholder="yyyy-mm-dd"
+                value={redateTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setRedateTo({ ...redateTo, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-redate"
+                disabled={redate.isPending}
+                onClick={() => redate.mutate({ id: c.id, date: (redateTo[c.id] ?? '').trim() })}
+              >
+                Re-date
               </button>{' '}
               <input
                 data-testid="claim-split-amount"
