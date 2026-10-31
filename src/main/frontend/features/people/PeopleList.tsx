@@ -72,7 +72,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -338,6 +338,15 @@ export function PeopleList() {
       </p>
       <p>
         Cut total: <span data-testid="rollup-cut-total">{formatCents(sheetCutTotal)}</span>
+      </p>
+      <p>
+        Aged 0-30: <span data-testid="rollup-aged-0-30">{sheetAged[0]}</span>
+      </p>
+      <p>
+        Aged 31-60: <span data-testid="rollup-aged-31-60">{sheetAged[1]}</span>
+      </p>
+      <p>
+        Aged 61+: <span data-testid="rollup-aged-61">{sheetAged[2]}</span>
       </p>
       <p>
         Overdue: <span data-testid="rollup-overdue-count">{overdue.length}</span>

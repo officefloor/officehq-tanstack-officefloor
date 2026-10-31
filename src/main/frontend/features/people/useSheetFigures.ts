@@ -95,6 +95,11 @@ export function useSheetFigures(sheet: string) {
     }
     return buckets;
   };
+  // The sheet's aged buckets: the people's buckets added up, not trimmed.
+  const sheetAged = people
+    .map(agedOf)
+    .reduce((sum, b) => sum.map((v, i) => v + b[i]), [0n, 0n, 0n])
+    .map(formatCents);
   // Each tag ever used on the sheet with its due-total: the dues of the counting claims that carry it,
   // or whose person carries it, each claim once (a claim with two tags counts in both); n/a adds nothing.
   const tagTotals = tags.map((tag) => ({
@@ -121,7 +126,7 @@ export function useSheetFigures(sheet: string) {
   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
