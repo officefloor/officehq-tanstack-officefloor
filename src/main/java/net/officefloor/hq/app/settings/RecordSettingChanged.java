@@ -14,5 +14,8 @@ public class RecordSettingChanged {
         if (change.floor() != null) {
             audit.record(prefix + " key=floor value=" + change.floor().toPlainString());
         }
+        if (change.terms() != null) {
+            audit.record(prefix + " key=terms value=" + change.terms());
+        }
     }
 }

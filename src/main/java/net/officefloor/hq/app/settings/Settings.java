@@ -5,12 +5,15 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, its clerk limit and its floor. */
+/** Each sheet's settings: the roles given to user names, its clerk limit, its floor and its terms. */
 @Repository
 public class Settings {
 
     /** The floor of a sheet that has not set one. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+
+    /** The terms, in days, of a sheet that has not set them. */
+    public static final int DEFAULT_TERMS = 14;
 
     private final JdbcTemplate jdbc;
 
@@ -54,6 +57,16 @@ public class Settings {
 
     public void setFloor(String sheetId, BigDecimal floor) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, floor) KEY (sheet_id) VALUES (?, ?)", sheetId, floor);
+    }
+
+    /** The sheet's terms: a claim is due by its date plus this many days. 14 unless set. */
+    public int terms(String sheetId) {
+        BigDecimal terms = column("terms", sheetId);
+        return terms != null ? terms.intValue() : DEFAULT_TERMS;
+    }
+
+    public void setTerms(String sheetId, int terms) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, terms) KEY (sheet_id) VALUES (?, ?)", sheetId, terms);
     }
 
     /** One setting's stored value, null when the sheet has no row or the setting is unset. */

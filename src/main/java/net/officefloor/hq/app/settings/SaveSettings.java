@@ -6,5 +6,6 @@ public class SaveSettings {
     public void save(@Val SettingsChange change, Settings settings) {
         if (change.setsClerkLimit()) settings.setClerkLimit(change.sheetId(), change.clerkLimit());
         if (change.floor() != null) settings.setFloor(change.sheetId(), change.floor());
+        if (change.terms() != null) settings.setTerms(change.sheetId(), change.terms());
     }
 }

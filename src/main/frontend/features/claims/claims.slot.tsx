@@ -6,14 +6,17 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
-import { useFloor } from '../settings/useSettings';
+import { useFloor, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import {
   AMOUNT,
   claimDueCents,
   claimed,
   claimsKey,
+  dueBy,
   live,
+  overdue,
+  overdueFigures,
   personDueCents,
   useClaims,
   type Claim,
@@ -29,6 +32,9 @@ const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, vo
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, at least the sheet's floor; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total, and not the OPEN ones while the person is held.
+ * Each claim shows its due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and
+ * due by before the sheet's today); the person shows how many of the claims that count are overdue
+ * and their dues added up.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -41,6 +47,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const today = useSheetToday(sheet);
   const pct = rateOn(rates, person.grade, today);
   const floor = useFloor(sheet);
+  const terms = useTerms(sheet);
+  const late = overdueFigures(liveClaims, terms, today, floor, (d) => rateOn(rates, person.grade, d));
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
@@ -117,6 +125,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     <>
       <td data-testid="person-claimed">{claimed(liveClaims)}</td>
       <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, person.grade, d)))}</td>
+      <td data-testid="person-overdue-count">{late.count}</td>
+      <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -188,6 +198,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+              <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
               {(['open', 'settle', 'void'] as const).map((action) => (
                 <span key={action}>
                   <button
@@ -232,6 +244,8 @@ export const contributions = [
       <>
         <th>Claimed</th>
         <th>Due</th>
+        <th>Overdue</th>
+        <th>Overdue due</th>
         <th>Claims</th>
       </>
     ),

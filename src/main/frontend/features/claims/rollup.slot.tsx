@@ -1,14 +1,15 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
-import { useFloor } from '../settings/useSettings';
+import { useFloor, useTerms } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-import { claimed, live, personDueCents, useClaims } from './useClaims';
+import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
 
 /**
  * The sheet's claimed-total, everyone's counted (OPEN or SETTLED) claims added up
  * (not a held person's OPEN ones), and its due-total, everyone's due-total
- * added up (a person whose due-total is n/a is skipped).
+ * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
+ * overdue, with their dues added up.
  */
 function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
@@ -21,6 +22,10 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
   const dues = people.map((p) =>
     personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, p.grade, today), (d) => rateOn(rates, p.grade, d)),
   );
+  const terms = useTerms(sheet);
+  const late = people.map((p) =>
+    overdueFigures(claims.filter((c) => c.personId === p.id), terms, today, floor, (d) => rateOn(rates, p.grade, d)),
+  );
   return (
     <>
       <p>
@@ -28,6 +33,10 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
       </p>
       <p>
         Due in total: <strong data-testid="rollup-due-total">{totalDue(dues)}</strong>
+      </p>
+      <p>
+        Overdue: <strong data-testid="rollup-overdue-count">{late.reduce((n, o) => n + o.count, 0)}</strong>, due{' '}
+        <strong data-testid="rollup-overdue-total">{totalDue(late.map((o) => o.cents))}</strong>
       </p>
     </>
   );

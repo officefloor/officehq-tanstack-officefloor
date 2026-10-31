@@ -12,6 +12,9 @@ public class ValidateSettings {
     /** An amount: 0.00 or more, with up to two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
 
+    /** Terms: a whole number of days, 0 or more. */
+    private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest request,
             Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
         String limit = request == null || request.clerkLimit() == null ? null : request.clerkLimit().trim();
@@ -22,11 +25,16 @@ public class ValidateSettings {
         if (floor != null && !floor.isEmpty() && !AMOUNT.matcher(floor).matches()) {
             throw new InvalidSheetRequestException("The floor must be an amount with up to two decimals, or blank");
         }
+        String terms = request == null || request.terms() == null ? null : request.terms().trim();
+        if (terms != null && !terms.isEmpty() && !DAYS.matcher(terms).matches()) {
+            throw new InvalidSheetRequestException("The terms must be a whole number of days, or blank");
+        }
         String by = request == null ? null : request.user();
         actor.set(new Actor(by));
         change.set(new SettingsChange(sheetId, limit != null,
                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
+                terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 by));
     }
 }
