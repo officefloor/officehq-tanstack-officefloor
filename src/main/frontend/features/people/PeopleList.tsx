@@ -41,6 +41,8 @@ import { dueBy } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
+import { useCrews } from '../crews/useCrews';
+import { useSettings } from '../settings/useSettings';
 
 // Every person on the sheet in the order they were added, with their name shown as "<name> (<grade in force today>)", grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
@@ -66,6 +68,8 @@ import { usePools } from '../pools/usePools';
 // are given a grade together with the bulk grade.
 // Each person also shows their cut total: their cuts across every pool they are a member of, added up (a pool showing
 // no cut adds nothing); the sheet's cut total is everyone's added up.
+// A restricted user's list has only the person with their name (or alias; case and outer spaces ignored) and the
+// people of the crews that person leads or belongs to; every total and figure is still over everyone.
 // Names sorted without regard to case, then by case (as the server sorts them).
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const BY_NAME = (a: string, b: string) => cmp(a.toLowerCase(), b.toLowerCase()) || cmp(a, b);
@@ -107,7 +111,24 @@ export function PeopleList() {
         return 0;
     }
   };
-  const listed = (showRetired ? people : people.filter((p) => !p.retired)).slice().sort(bySort);
+  const settings = useSettings(sheet);
+  const crews = useCrews(sheet);
+  // A delegation covering the sheet's today makes the user a steward, as the server judges it.
+  const restricted =
+    settings?.roles.some((r) => r.user === user.trim() && r.role === 'restricted') === true &&
+    !(settings?.delegations ?? []).some((d) => d.user === user.trim() && today !== undefined && d.from <= today && today <= d.to);
+  const key = (name: string) => name.trim().toLowerCase();
+  const me = restricted && user !== '' ? people.find((p) => [p.name, ...p.aliases].some((n) => key(n) === key(user))) : undefined;
+  const visible = new Set<string>(
+    me === undefined
+      ? []
+      : [me.id, ...crews.filter((c) => c.leadId === me.id || c.members.some((m) => m.personId === me.id)).flatMap((c) => [c.leadId, ...c.members.map((m) => m.personId)])],
+  );
+  // No row shows until the settings say whether the user is restricted.
+  const listed = (showRetired ? people : people.filter((p) => !p.retired))
+    .filter((p) => settings !== undefined && (!restricted || visible.has(p.id)))
+    .slice()
+    .sort(bySort);
   const backing = (p: (typeof people)[number]) =>
     formatCents(sharedCents(patronShares(p).reduce((sum, { id, share }) => {
       const patron = byId.get(id);

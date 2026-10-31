@@ -4,7 +4,8 @@ import { readPath, useAsOf } from '../asof/useAsOf';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { Policy } from '../rates/due';
 
-/** A role a user name holds on the sheet: clerk (any name not listed), steward or viewer (sees everything, changes nothing). */
+/** A role a user name holds on the sheet: clerk (any name not listed), steward, viewer (sees everything, changes nothing)
+ *  or restricted (sees on the people list only the people of their crews and themselves). */
 export type Role = { user: string; role: string };
 
 /** The sheet's settings, each dated one as in force on the sheet's today: the clerk limit with two decimals ("" for no limit), the floor with two

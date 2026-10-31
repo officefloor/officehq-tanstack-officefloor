@@ -20,6 +20,9 @@ public class Settings {
     /** Sees every screen and figure and changes nothing. */
     public static final String VIEWER = "viewer";
 
+    /** Acts as a clerk, but sees on the people list only the people of the crews they lead or belong to and themselves. */
+    public static final String RESTRICTED = "restricted";
+
     private final JdbcTemplate jdbc;
 
     private final Sheets sheets;

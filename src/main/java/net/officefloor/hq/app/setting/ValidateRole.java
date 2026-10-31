@@ -13,8 +13,9 @@ public class ValidateRole {
             throw new InvalidSettingException("A role needs a user name");
         }
         String role = request.role() == null ? "" : request.role().trim();
-        if (!Settings.CLERK.equals(role) && !Settings.STEWARD.equals(role) && !Settings.VIEWER.equals(role)) {
-            throw new InvalidSettingException("The role must be clerk, steward or viewer");
+        if (!Settings.CLERK.equals(role) && !Settings.STEWARD.equals(role) && !Settings.VIEWER.equals(role)
+                && !Settings.RESTRICTED.equals(role)) {
+            throw new InvalidSettingException("The role must be clerk, steward, viewer or restricted");
         }
         body.set(new ValidRole(name, role, request.user()));
     }
