@@ -1,0 +1,115 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index fa3314c2..03e5b905 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -11,7 +11,8 @@ import { plansKey, usePlans, type Plan } from './usePlans';
+ /**
+  * A person's plans: an amount, a start date (blank for the sheet's today), every N days (a whole
+  * number, at least 1) or instead monthly on a day of the month (1 to 31), and an end date. A bad amount or interval, or an end before the start, is
+- * refused. Each plan shows how many claims it has made so far.
++ * refused. Each plan shows how many claims it has made so far
++ * and its next five plan dates after the sheet's today, up to its end.
+  */
+ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+   const queryClient = useQueryClient();
+@@ -66,7 +67,8 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
+                 </>
+               )}{' '}
+               to <span data-testid="plan-end">{p.end}</span>; made{' '}
+-              <span data-testid="plan-generated">{p.generated}</span>
++              <span data-testid="plan-generated">{p.generated}</span>; next{' '}
++              <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
+             </li>
+           ))}
+       </ul>
+diff --git a/src/main/frontend/features/plans/usePlans.ts b/src/main/frontend/features/plans/usePlans.ts
+index c337a3ee..8e9fd289 100644
+--- a/src/main/frontend/features/plans/usePlans.ts
++++ b/src/main/frontend/features/plans/usePlans.ts
+@@ -4,7 +4,8 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** A plan as the server sends it: its person, amount (two decimals), start, every N days (null when monthly) or day of
+  *  the month (null otherwise), end
+- *  (yyyy-mm-dd) and how many claims it has made so far. */
++ *  (yyyy-mm-dd), how many claims it has made so far and its next (up to five) plan dates after the sheet's
++ *  today. */
+ export type Plan = {
+   id: number;
+   personId: number;
+@@ -14,6 +15,7 @@ export type Plan = {
+   day: number | null;
+   end: string;
+   generated: number;
++  nextDates: string[];
+ };
+ 
+ export const plansKey = (sheet: string) => ['sheet', sheet, 'plans'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index 12eee721..f3dad141 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -27,4 +27,14 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
+         }
+         return dates;
+     }
++
++    /** The first `count` plan dates after `today` and on or before the end, in order. */
++    public List<LocalDate> nextDates(LocalDate today, int count) {
++        List<LocalDate> next = new ArrayList<>();
++        for (LocalDate date : dates(end)) {
++            if (next.size() == count) break;
++            if (date.isAfter(today)) next.add(date);
++        }
++        return next;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index 7cc8d5bb..9082fe14 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -1,10 +1,15 @@
+ package net.officefloor.hq.app.plan;
+ 
+-/** A plan as the screens show it: amounts with two decimals, dates as yyyy-mm-dd. */
++import java.time.LocalDate;
++import java.util.List;
++
++/** A plan as the screens show it: amounts with two decimals, dates as yyyy-mm-dd; `nextDates` its
++ *  first five plan dates after the sheet's today and on or before its end. */
+ public record PlanResponse(long id, long personId, String amount, String start, Integer every, Integer day, String end,
+-        int generated) {
+-    static PlanResponse from(Plan plan) {
++        int generated, List<String> nextDates) {
++    static PlanResponse from(Plan plan, LocalDate today) {
+         return new PlanResponse(plan.id(), plan.personId(), plan.amount().toPlainString(), plan.start().toString(),
+-                plan.every(), plan.day(), plan.end().toString(), plan.generated());
++                plan.every(), plan.day(), plan.end().toString(), plan.generated(),
++                plan.nextDates(today, 5).stream().map(LocalDate::toString).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index cb4bbb13..167d6eea 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -3,15 +3,19 @@ package net.officefloor.hq.app.plan;
+ import java.util.List;
+ import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithPlans {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Plans plans, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf, Plans plans, Sheets sheets, AsOf asOfSheet,
+             ObjectResponse<List<PlanResponse>> response) throws InvalidSheetRequestException {
+         response.send(asOfSheet.view(sheetId, asOf,
+-                () -> plans.onSheet(sheetId).stream().map(PlanResponse::from).toList()));
++                () -> {
++                    var today = sheets.today(sheetId);
++                    return plans.onSheet(sheetId).stream().map(plan -> PlanResponse.from(plan, today)).toList();
++                }));
+     }
+ }
