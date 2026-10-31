@@ -87,6 +87,11 @@ public class Plans {
         return n != null && n > 0;
     }
 
+    /** The ids of the claims the plan made, in the order of their plan dates. */
+    public List<Long> claimIds(long planId) {
+        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? AND claim_id IS NOT NULL ORDER BY claim_date", Long.class, planId);
+    }
+
     /** Records that the plan made the claim for the date. */
     public void recordMade(long planId, LocalDate date, long claimId) {
         jdbc.update("INSERT INTO plan_claim (plan_id, claim_date, claim_id) VALUES (?, ?, ?)", planId, Date.valueOf(date), claimId);
