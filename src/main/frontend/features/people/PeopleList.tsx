@@ -8,6 +8,7 @@ import { claimRate } from '../rates/useRates';
 import { StatementButton } from '../statements/StatementButton';
 import { UnstateButton } from '../statements/UnstateButton';
 import { SummaryPanel } from '../summary/SummaryPanel';
+import { SheetCompare } from '../compare/SheetCompare';
 import { AliasControl } from './AliasControl';
 import { openedEditor } from './editorOpens';
 import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
@@ -421,6 +422,7 @@ export function PeopleList() {
         ))}
       </ul>
       <SnapshotCompare people={people} totalOf={totalOf} />
+      <SheetCompare people={people} today={today} totalOf={totalOf} />
       <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} reviewLateCount={reviewLateCount} voidReasonCount={voidReasonCount} />
       </PersonSelection>
     </ClaimSelection>
