@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
@@ -14,6 +15,12 @@ public class ApplyPerson {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(PersonResponse.from(person));
         }
+        check(request, person, people);
+        applied(request, person, sheets);
+    }
+
+    /** Refused when the edit's name, an alias of the person, or the edit's contact is taken. */
+    static void check(PersonRequest request, Person person, People people) throws InvalidSheetRequestException {
         if (people.nameUsedInTree(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidSheetRequestException("The name is already in use on this sheet or its tree");
         }
@@ -27,11 +34,15 @@ public class ApplyPerson {
                 && people.contactTaken(person.getSheetId(), request.contactKey(), person.getId())) {
             throw new InvalidSheetRequestException("The contact is already in use on this sheet");
         }
+    }
+
+    /** Makes the checked edit to the person, ready to be saved. */
+    static void applied(PersonRequest request, Person person, Sheets sheets) {
         person.setName(request.name());
         person.changeContact(request.contactKey());
         person.changeTerms(request.termsDays());
-        var from = request.gradeFromDate();
-        var today = sheets.today(person.getSheetId());
+        LocalDate from = request.gradeFromDate();
+        LocalDate today = sheets.today(person.getSheetId());
         person.setToday(today);
         if (from == null && request.grade().equals(person.getGrade())) return;
         person.recordGrade(request.grade(), from != null ? from : today);
