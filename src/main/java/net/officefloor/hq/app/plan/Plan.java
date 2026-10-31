@@ -27,4 +27,14 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
         }
         return dates;
     }
+
+    /** The first `count` plan dates after `today` and on or before the end, in order. */
+    public List<LocalDate> nextDates(LocalDate today, int count) {
+        List<LocalDate> next = new ArrayList<>();
+        for (LocalDate date : dates(end)) {
+            if (next.size() == count) break;
+            if (date.isAfter(today)) next.add(date);
+        }
+        return next;
+    }
 }

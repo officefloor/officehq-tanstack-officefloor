@@ -11,7 +11,8 @@ import { plansKey, usePlans, type Plan } from './usePlans';
 /**
  * A person's plans: an amount, a start date (blank for the sheet's today), every N days (a whole
  * number, at least 1) or instead monthly on a day of the month (1 to 31), and an end date. A bad amount or interval, or an end before the start, is
- * refused. Each plan shows how many claims it has made so far.
+ * refused. Each plan shows how many claims it has made so far
+ * and its next five plan dates after the sheet's today, up to its end.
  */
 function PersonPlans({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -66,7 +67,8 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
                 </>
               )}{' '}
               to <span data-testid="plan-end">{p.end}</span>; made{' '}
-              <span data-testid="plan-generated">{p.generated}</span>
+              <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+              <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
             </li>
           ))}
       </ul>
