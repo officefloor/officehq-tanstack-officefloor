@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index fa64244a..a7c1c612 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -64,7 +64,9 @@ import { scoreBand, useSettings } from '../settings/useSettings';
+ // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
+ // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. The export claims button
+ // downloads every claim as CSV — people in list order (retired too), each person's claims oldest first — with person,
+-// number, date, amount, due, status and period as the claim's row shows them. Each person's export statement button downloads, as CSV, their claims bound by their last statement, oldest first: number, date, amount, the bound figure as the claim shows it, and status.
++// number, date, amount, due, status and period as the claim's row shows them. The export periods button downloads the
++// period figures as CSV: person, period, figure (the period's due-total) and carried as the row shows them, one line per
++// person and period, people in list order (retired too) and periods in the order added. Each person's export statement button downloads, as CSV, their claims bound by their last statement, oldest first: number, date, amount, the bound figure as the claim shows it, and status.
+ // Claims ticked
+ // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
+ // are given a grade together with the bulk grade.
+@@ -171,6 +173,12 @@ export function PeopleList() {
+           periodOf(periods, dueBy(c))?.name ?? '',
+         ]),
+     );
++  const periodRows = () => {
++    const added = periods.slice().sort((a, b) => a.addedOrder - b.addedOrder);
++    return people.flatMap((p) =>
++      added.map((period) => [p.name, period.name, formatCents(periodDueOf(period, p.id)), formatCents(periodCarriedOf(period, p.id))]),
++    );
++  };
+ 
+   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
+   return (
+@@ -202,6 +210,13 @@ export function PeopleList() {
+       >
+         Export claims
+       </button>
++      <button
++        type="button"
++        data-testid="export-periods"
++        onClick={() => downloadCsv('periods.csv', [['person', 'period', 'figure', 'carried'], ...periodRows()])}
++      >
++        Export periods
++      </button>
+       <BulkOpenButton />
+       <BulkSettleButton />
+       <BulkReassignButton />
+diff --git a/src/main/frontend/features/periods/usePeriods.ts b/src/main/frontend/features/periods/usePeriods.ts
+index 066816a8..9ee24ee9 100644
+--- a/src/main/frontend/features/periods/usePeriods.ts
++++ b/src/main/frontend/features/periods/usePeriods.ts
+@@ -8,7 +8,8 @@ import { readPath, useAsOf } from '../asof/useAsOf';
+  *  has its figures fixed the same way, but its claims stay open to change. Its cap is the most OPEN or PENDING
+  *  claims a person may have in it ("" for none): opening one more is refused. Each person's carried figure for it is
+  *  fixed by a close or soft-close too, by person id (empty while open; none for a person added later, nor for a
+- *  close made before carried figures were kept). A locked period cannot be reopened. */
++ *  close made before carried figures were kept). A locked period cannot be reopened. Its added order is its place in the order the sheet's
++ *  periods were added. */
+ export type Period = {
+   name: string;
+   from: string;
+@@ -20,6 +21,7 @@ export type Period = {
+   cap: string;
+   closedPersonCarried: Record<string, string>;
+   locked: boolean;
++  addedOrder: number;
+ };
+ 
+ export const periodsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'periods', asOf] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 4ba9e79c..96089929 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -402,7 +402,7 @@ public class AsOfView {
+             Date added = addedOn.get(now.name());
+             if (added != null && added.toLocalDate().isAfter(date)) continue;
+             byName.put(now.name(), new PeriodResponse(now.name(), now.from(), now.to(), false, "", new LinkedHashMap<>(), false, now.cap(),
+-                    new LinkedHashMap<>(), now.locked()));
++                    new LinkedHashMap<>(), now.locked(), now.addedOrder()));
+         }
+         jdbc.query("SELECT name, closed, soft_closed, closed_total, person_totals, person_carried FROM period_history WHERE sheet_id = ?"
+                 + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
+@@ -411,7 +411,7 @@ public class AsOfView {
+                     BigDecimal total = rs.getBigDecimal(4);
+                     byName.put(was.name(), new PeriodResponse(was.name(), was.from(), was.to(), rs.getBoolean(2),
+                             total == null ? "" : total.setScale(2).toPlainString(), byPerson(rs.getString(5)), rs.getBoolean(3),
+-                            was.cap(), byPerson(rs.getString(6)), was.locked()));
++                            was.cap(), byPerson(rs.getString(6)), was.locked(), was.addedOrder()));
+                 }, sheetId, end);
+         return new ArrayList<>(byName.values());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index 503488d8..d7aac805 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -6,8 +6,8 @@ import java.util.Map;
+  *  the due-total fixed when it was closed ("" while open), and each person's due-total for it fixed
+  *  then, by person id (empty while open; a person added later has none); whether it is soft-closed (its figures
+  *  fixed as when closed, but its claims still open to change); its cap on each person's OPEN or PENDING claims in it ("" for none); and each person's carried figure for it fixed when
+- *  it was closed, by person id (empty while open; a person added later, or a close made before these were kept, has none); and whether it is locked (a locked period cannot be reopened). */
++ *  it was closed, by person id (empty while open; a person added later, or a close made before these were kept, has none); and whether it is locked (a locked period cannot be reopened); and its place in the order the sheet's periods were added. */
+ public record PeriodResponse(String name, String from, String to, boolean closed, String closedTotal,
+         Map<String, String> closedPersonTotals, boolean softClosed, String cap,
+-        Map<String, String> closedPersonCarried, boolean locked) {
++        Map<String, String> closedPersonCarried, boolean locked, long addedOrder) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index 2e44cb6e..48c06898 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -23,7 +23,7 @@ public class Periods {
+                 rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
+                 total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>(),
+                 rs.getBoolean("soft_closed"), rs.getObject("claim_cap") == null ? "" : String.valueOf(rs.getInt("claim_cap")),
+-                new LinkedHashMap<>(), rs.getBoolean("locked"));
++                new LinkedHashMap<>(), rs.getBoolean("locked"), rs.getLong("added_seq"));
+     };
+ 
+     private final JdbcTemplate jdbc;
+diff --git a/src/main/resources/db/migration/V118__period_added_seq.sql b/src/main/resources/db/migration/V118__period_added_seq.sql
+new file mode 100644
+index 00000000..0acfb7ef
+--- /dev/null
++++ b/src/main/resources/db/migration/V118__period_added_seq.sql
+@@ -0,0 +1,6 @@
++-- The order periods were added in: each new period takes the next number. Periods already on a sheet are
++-- numbered by from-date, the order they were listed in.
++CREATE SEQUENCE period_added_seq;
++ALTER TABLE period ADD COLUMN added_seq BIGINT;
++UPDATE period SET added_seq = NEXT VALUE FOR period_added_seq;
++ALTER TABLE period ALTER COLUMN added_seq SET DEFAULT NEXT VALUE FOR period_added_seq;
