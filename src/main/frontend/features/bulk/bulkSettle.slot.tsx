@@ -1,18 +1,20 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { claimsKey } from '../claims/useClaims';
+import { claimsKey, lastBatch, useClaims } from '../claims/useClaims';
 import { useSelectedClaims } from './useSelectedClaims';
 
 /**
  * Settle the ticked claims together, by the signed-in user. Each that can be settled is settled
  * (or goes PENDING) in list order (people in list order, each person's newest claim first); each
  * that cannot is left as it is. Shows how many were settled and how many refused; the counts go
- * while the next press runs.
+ * while the next press runs. Beside the button, the number of the sheet's last batch: a press that
+ * settled at least one claim.
  */
 function BulkSettle({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useSelectedClaims();
+  const claims = useClaims(sheet);
   const bulk = useMutation({
     mutationFn: (claimIds: number[]) =>
       postJson<{ settled: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheet)}/bulk-settle`, { claimIds, user }),
@@ -31,7 +33,8 @@ function BulkSettle({ user, sheet }: { user: string; sheet: string }) {
         }}
       >
         Settle selected ({selected.length})
-      </button>
+      </button>{' '}
+      <span data-testid="bulk-settle-batch">{lastBatch(claims.data ?? []) ?? ''}</span>
       {bulk.isSuccess && (
         <span>
           {' '}

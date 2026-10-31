@@ -111,6 +111,8 @@ public class ApplyClaimStatus {
                     && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
         }
         claim.setStatus(pending ? ClaimStatus.PENDING : change.action().to());
+        // Settled one at a time: in no batch (a bulk settle sets its batch after this).
+        if (change.action() == ClaimAction.SETTLE) claim.setBatch(null);
         if (change.action() == ClaimAction.VOID) claim.setVoidReason(voidReason);
         if (change.action() == ClaimAction.OPEN) {
             claim.setNumber(numbers.next(claim));

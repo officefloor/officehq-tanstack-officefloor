@@ -592,6 +592,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-due-by">{c.dueBy}</span>{' '}

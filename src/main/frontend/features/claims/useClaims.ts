@@ -74,6 +74,8 @@ export type Claim = {
   voidReason: string | null;
   /** The claim's comments, oldest first, as "<user> on <date>: <text>" (the sheet's today when it was written). */
   comments: string[];
+  /** The number of the bulk settle batch (1, 2, ... on the sheet) that settled the claim (or sent it PENDING); null when none did. */
+  batch: number | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -87,6 +89,11 @@ export function useClaims(sheet: string) {
     staleTime: 0,
     gcTime: 0,
   });
+}
+
+/** The number of the sheet's last bulk settle batch; null when there has been none. */
+export function lastBatch(claims: Claim[]): number | null {
+  return claims.reduce<number | null>((last, c) => (c.batch != null && (last == null || c.batch > last) ? c.batch : last), null);
 }
 
 /** An amount the server accepts: up to two decimals; negative only for a correction. */

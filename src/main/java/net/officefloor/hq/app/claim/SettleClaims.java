@@ -19,7 +19,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Settles each selected claim that can be settled, in list order (people in list order, each
  *  person's newest claim first), by the signed-in user. Each is settled as a single settle would
  *  be — its own audit line, then the figures it moved; one that goes PENDING counts as settled. One
- *  that cannot be settled (or is not on the sheet) is left as it is and counted as refused. */
+ *  that cannot be settled (or is not on the sheet) is left as it is and counted as refused. The
+ *  claims it settles carry the sheet's next batch number; one that settles none takes no number. */
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettle bulk, Claims claims, People people,
             ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
@@ -29,6 +30,7 @@ public class SettleClaims {
         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
         List<Claim> all = claims.onSheet(sheetId);
         int settled = 0;
+        int batch = claims.nextBatch(sheetId);
         for (Person person : people.onSheet(sheetId)) {
             for (Claim listed : all) {
                 if (listed.getPersonId() != person.getId() || !bulk.claimIds().contains(listed.getId())) continue;
@@ -39,6 +41,7 @@ public class SettleClaims {
                 } catch (ClaimStatusRefusedException | PeriodClosedException e) {
                     continue;
                 }
+                claim.setBatch(batch);
                 claims.save(claim);
                 record.record(change, claim, people, log, watches, audit);
                 rollup.record(sheetId, before, bulk.user());

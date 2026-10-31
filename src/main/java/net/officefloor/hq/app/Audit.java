@@ -23,14 +23,14 @@ import org.springframework.stereotype.Service;
  * SYNC) so a test reads the record immediately.
  *
  * A change made by a user acting as a steward by delegation (the sheet's today inside the range)
- * ends each of its lines with for=<the steward who delegated>; the lines that only report figures
- * (ROLLUP, TOTALS, ALERT, SNAPSHOT) do not.
+ * ends each of its lines with for=<the steward who delegated> (a SNAPSHOT among them: it is written
+ * by the today change the user makes); the lines that only report figures (ROLLUP, TOTALS, ALERT) do not.
  */
 @Service
 public class Audit {
 
     /** The events that only report figures: never marked for a delegating steward. */
-    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT", "SNAPSHOT");
+    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
 
     private static final Pattern SHEET_BY = Pattern.compile("^(\\S+) sheet=(\\S+) by=(\\S+)");
 

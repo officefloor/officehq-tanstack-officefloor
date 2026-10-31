@@ -32,6 +32,7 @@ public class Claim {
     private String voidReason;
     private String editedBy;
     private Integer dueTerms;
+    private Integer batch;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -129,6 +130,9 @@ public class Claim {
     /** Who last edited the claim (its form or its row's amount entry); null while never edited. */
     public String getEditedBy() { return editedBy; }
     public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
+    /** The number of the bulk settle that settled the claim; null when none did. */
+    public Integer getBatch() { return batch; }
+    public void setBatch(Integer batch) { this.batch = batch; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }
