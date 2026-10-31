@@ -252,6 +252,22 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, parent_id) KEY (sheet_id) VALUES (?, ?)", sheetId, parent);
     }
 
+    /** The sheet's descendants: its children (the sheets naming it as their parent), their children,
+     *  and so on, nearest first. Not dated: read from the live sheets. */
+    public List<String> descendants(String sheetId) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(sheetId);
+        java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.query("SELECT sheet_id FROM PUBLIC.sheet_setting WHERE parent_id = ? ORDER BY sheet_id",
+                    (rs, i) -> rs.getString("sheet_id"), todo.poll())) {
+                if (seen.add(child)) todo.add(child);
+            }
+        }
+        seen.remove(sheetId);
+        return List.copyOf(seen);
+    }
+
     /** Whether the sheet `ancestor` is the sheet `sheetId` or one of its parents, any number of levels up. */
     public boolean isAncestor(String ancestor, String sheetId) {
         java.util.Set<String> seen = new java.util.HashSet<>();
