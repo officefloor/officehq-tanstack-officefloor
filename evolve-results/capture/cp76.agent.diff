@@ -1,0 +1,59 @@
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 273a007e..ccff8c51 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -24,13 +24,13 @@ import org.springframework.stereotype.Service;
+  *
+  * A change made by a user acting as a steward by delegation (the sheet's today inside the range)
+  * ends each of its lines with for=<the steward who delegated>; the lines that only report figures
+- * (ROLLUP, TOTALS, ALERT) do not.
++ * (ROLLUP, TOTALS, ALERT, SNAPSHOT) do not.
+  */
+ @Service
+ public class Audit {
+ 
+     /** The events that only report figures: never marked for a delegating steward. */
+-    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
++    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT", "SNAPSHOT");
+ 
+     private static final Pattern SHEET_BY = Pattern.compile("^(\\S+) sheet=(\\S+) by=(\\S+)");
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java b/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java
+new file mode 100644
+index 00000000..e2de065d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.rollup;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs before a new today takes effect: when the today moves, one SNAPSHOT line per person, in list
++ *  order, with their due-total as it stood on the day being left (n/a when it is n/a). */
++public class RecordSnapshot {
++    public void record(@Val RollupBefore before, @Val LocalDate today, @Val Actor actor, Sheets sheets, Audit audit) {
++        if (today.equals(sheets.today(before.sheetId()))) return;
++        String prefix = " sheet=" + before.sheetId() + " by=" + actor.user();
++        before.snapshot().people().values().forEach(was -> audit.record("SNAPSHOT" + prefix + " name=" + was.name()
++                + " due-total=" + (was.dueTotal() == null ? "n/a" : was.dueTotal().setScale(2).toPlainString())));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 49df3c9e..1985c3ac 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -6,6 +6,11 @@ validate:
+ snapshot:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   govern: [ transaction ]
++  next: record-snapshot
++# A changed today writes each person's due-total on the day being left, before it takes effect.
++record-snapshot:
++  class: net.officefloor.hq.app.rollup.RecordSnapshot
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplyToday
