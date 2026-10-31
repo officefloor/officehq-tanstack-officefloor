@@ -74,9 +74,12 @@ export function counted(claims: Claim[]): Claim[] {
 }
 
 /** The claims that count in the live totals: OPEN, PENDING and SETTLED ones, but not the OPEN or
- *  PENDING ones of a held person (`held` tells, by person id). */
-export function live(claims: Claim[], held: (personId: number) => boolean): Claim[] {
-  return counted(claims).filter((c) => !isOpen(c) || !held(c.personId));
+ *  PENDING ones dated within a hold of their person's (`heldOn` tells, by person id and date),
+ *  unless a statement binds them. */
+export function live(claims: Claim[], heldOn: (personId: number, date: string) => boolean): Claim[] {
+  return counted(claims).filter(
+    (c) => !isOpen(c) || (c.stated && c.status !== 'PENDING') || !heldOn(c.personId, c.date),
+  );
 }
 
 /** The sum of these claims' amounts, with two decimals. Added up in cents, so it is exact. */

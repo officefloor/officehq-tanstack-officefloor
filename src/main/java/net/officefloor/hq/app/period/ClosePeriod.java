@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Closes the period, fixing its due-total as the screen shows it now: the figures of everyone's
  *  counted (OPEN or SETTLED) claims dated in it — not
- *  the OPEN ones of a held person — n/a ones skipped. A closed period cannot be
+ *  the OPEN ones dated within their person's hold, unless stated — n/a ones skipped. A closed period cannot be
  *  closed again. Publishes the closed period. */
 public class ClosePeriod {
     public void close(@Val Period period, Periods periods, Claims claims, People people, Figures figures,
@@ -25,7 +25,7 @@ public class ClosePeriod {
         for (Claim claim : claims.onSheet(period.sheetId())) {
             if (!period.contains(claim.getDate())) continue;
             Person person = personOf.get(claim.getPersonId());
-            if (person == null || !person.counts(claim.getStatus())) continue;
+            if (person == null || !person.counts(claim)) continue;
             BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
             if (figure != null) total = total.add(figure);
         }

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 
 /** A person on a sheet. `id` is null until the person is first saved. */
@@ -25,7 +26,7 @@ public class Person {
     private BigDecimal statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
-    private boolean held;
+    private List<Hold> holds = new ArrayList<>();
     private List<Long> patronIds = new ArrayList<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
@@ -82,17 +83,26 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
-    /** Whether the person is on hold: their OPEN claims then count in no live total. */
-    public boolean isHeld() { return held; }
-    public void setHeld(boolean held) { this.held = held; }
+    /** Whether the person has any hold, whatever its dates. */
+    public boolean isHeld() { return !holds.isEmpty(); }
+    /** The person's holds, in the order they were added. */
+    public List<Hold> getHolds() { return holds; }
+    public void setHolds(List<Hold> holds) { this.holds = holds; }
+    /** Whether `date` falls within any of the person's holds. */
+    public boolean heldOn(LocalDate date) {
+        return holds.stream().anyMatch(h -> h.covers(date));
+    }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public List<Long> getPatronIds() { return patronIds; }
     public void setPatronIds(List<Long> patronIds) { this.patronIds = patronIds; }
 
-    /** Whether a claim of the person's in this status counts in the live totals: OPEN, PENDING and
-     *  SETTLED ones do, but not an OPEN or PENDING one while the person is held. */
-    public boolean counts(ClaimStatus status) {
-        return status.counts() && !(held && status.isOpen());
+    /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
+     *  but not an OPEN or PENDING one dated within one of the person's holds, unless a statement binds it. */
+    public boolean counts(Claim claim) {
+        ClaimStatus status = claim.getStatus();
+        if (!status.counts()) return false;
+        if (!status.isOpen() || !heldOn(claim.getDate())) return true;
+        return claim.isStated() && status != ClaimStatus.PENDING;
     }
 
     /** Refuses a claim dated after the person's retirement date. */

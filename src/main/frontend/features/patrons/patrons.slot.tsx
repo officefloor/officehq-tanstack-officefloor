@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
-import { gradeOn, peopleKey, usePeople, type Person } from '../people/usePeople';
+import { gradeOn, heldOnBy, peopleKey, usePeople, type Person } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
@@ -26,8 +26,7 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
 
   const patrons = people.filter((p) => person.patrons.includes(p.id));
   const names = patrons.map((p) => p.name).sort();
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  const claims = live(all, (id) => held.has(id));
+  const claims = live(all, heldOnBy(people));
   const backing = patrons.map((p) =>
     personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
   );

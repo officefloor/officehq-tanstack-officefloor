@@ -1,6 +1,6 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
-import { gradeOn, usePeople } from '../people/usePeople';
+import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
@@ -25,8 +25,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const late = useLate(sheet);
 
   const download = () => {
-    const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-    const claims = live(all, (id) => held.has(id));
+    const claims = live(all, heldOnBy(people));
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const due = personDueCents(

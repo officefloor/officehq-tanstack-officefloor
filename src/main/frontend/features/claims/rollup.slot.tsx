@@ -1,5 +1,5 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { gradeOn, usePeople } from '../people/usePeople';
+import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
@@ -7,15 +7,14 @@ import { claimed, live, overdueFigures, personDueCents, useClaims } from './useC
 
 /**
  * The sheet's claimed-total, everyone's counted (OPEN or SETTLED) claims added up
- * (not a held person's OPEN ones), and its due-total, everyone's due-total
+ * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
  * overdue, with their dues added up.
  */
 function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  const claims = live(all, (id) => held.has(id));
+  const claims = live(all, heldOnBy(people));
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);

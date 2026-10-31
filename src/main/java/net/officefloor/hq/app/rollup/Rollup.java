@@ -43,8 +43,8 @@ public class Rollup {
         this.audit = audit;
     }
 
-    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a held
-     *  person's OPEN claims do not count),
+    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
+     *  person's OPEN claims dated within a hold of theirs do not count, unless a statement binds them),
      *  n/a when there is no rate today and none has a figure; the sheet's skips the n/a ones. */
     public Snapshot snapshot(String sheetId) {
         LocalDate today = sheets.today(sheetId);
@@ -57,7 +57,7 @@ public class Rollup {
             BigDecimal due = ZERO;
             boolean any = false;
             for (Claim claim : all) {
-                if (claim.getPersonId() != person.getId() || !person.counts(claim.getStatus())) continue;
+                if (claim.getPersonId() != person.getId() || !person.counts(claim)) continue;
                 claimed = claimed.add(claim.getAmount());
                 BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
                 if (figure != null) {

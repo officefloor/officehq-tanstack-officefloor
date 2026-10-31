@@ -1,6 +1,6 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
-import { GRADES, gradeOn, usePeople } from '../people/usePeople';
+import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
@@ -24,7 +24,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const people = everyone.filter((p) => !p.retired);
   const dueOf = (p: (typeof people)[number]) =>
     personDueCents(
-      live(all.filter((c) => c.personId === p.id), () => p.held),
+      live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date)),
       floor,
       rateOn(rates, gradeOn(p, today), today),
       (d) => rateOn(rates, gradeOn(p, d), d),

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     private final JdbcTemplate jdbc;
@@ -42,7 +42,13 @@ public class People {
                     grades.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
                             .put(fromKey(rs.getDate("from_date")), rs.getString("grade"));
                 }, sheetId);
+        Map<Long, List<Hold>> holds = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY id",
+                (ResultSet rs) -> {
+                    holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(hold(rs));
+                }, sheetId);
         for (Person person : people) {
+            person.setHolds(holds.getOrDefault(person.getId(), new ArrayList<>()));
             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
             TreeMap<LocalDate, String> dated = grades.get(person.getId());
             if (dated != null) person.setGrades(dated);
@@ -120,9 +126,12 @@ public class People {
                 person.getRetiredFrom() != null ? Date.valueOf(person.getRetiredFrom()) : null, person.getId());
     }
 
-    /** Record whether the person is on hold. Not an edit: the person's version is untouched. */
-    public void saveHold(Person person) {
-        jdbc.update("UPDATE person SET held = ? WHERE id = ?", person.isHeld(), person.getId());
+    /** Add a hold to the person. Not an edit: the person's version is untouched. */
+    public void addHold(Person person, Hold hold) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), Date.valueOf(hold.from()),
+                hold.to() != null ? Date.valueOf(hold.to()) : null);
+        person.getHolds().add(hold);
     }
 
     /** Name `patron` as one of the person's patrons. Not an edit: the person's version is untouched. */
@@ -154,10 +163,18 @@ public class People {
                         grades.put(fromKey(rs.getDate("from_date")), rs.getString("grade"));
                     }, person.getId());
             if (!grades.isEmpty()) person.setGrades(grades);
+            person.setHolds(new ArrayList<>(jdbc.query(
+                    "SELECT from_date, to_date FROM person_hold WHERE person_id = ? ORDER BY id",
+                    (rs, i) -> hold(rs), person.getId())));
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
         }
         return person;
+    }
+
+    private static Hold hold(ResultSet rs) throws SQLException {
+        Date to = rs.getDate("to_date");
+        return new Hold(rs.getDate("from_date").toLocalDate(), to != null ? to.toLocalDate() : null);
     }
 
     private static Person person(ResultSet rs, int i) throws SQLException {
@@ -169,7 +186,6 @@ public class People {
         person.setStatementDate(date != null ? date.toLocalDate() : null);
         Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired != null ? retired.toLocalDate() : null);
-        person.setHeld(rs.getBoolean("held"));
         Date today = rs.getDate("sheet_today");
         person.setToday(today != null ? today.toLocalDate() : LocalDate.now());
         return person;

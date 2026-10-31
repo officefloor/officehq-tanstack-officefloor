@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { gradeOn, usePeople, type Person } from '../people/usePeople';
+import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
@@ -44,7 +44,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * or approve it). A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
- * PENDING ones while the person is held.
+ * PENDING ones dated within one of the person's holds, unless a statement binds them.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
  * Each claim shows its due-by (fixed when it was added, from the terms of its person's grade) and whether it is overdue (OPEN and
@@ -57,8 +57,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
-  // While the person is held, their OPEN and PENDING claims count toward neither claimed nor the due-total.
-  const liveClaims = live(claims, () => person.held);
+  // Their OPEN and PENDING claims dated within a hold count toward neither claimed nor the due-total,
+  // unless a statement binds them.
+  const liveClaims = live(claims, (_, date) => heldOn(person, date));
   const { data: everyone = [] } = usePeople(sheet);
   const others = everyone.filter((p) => p.id !== person.id);
   const { data: rates = [] } = useRates(sheet);
