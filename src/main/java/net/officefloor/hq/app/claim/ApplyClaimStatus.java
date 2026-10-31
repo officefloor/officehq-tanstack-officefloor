@@ -12,8 +12,11 @@ import net.officefloor.plugin.variable.Val;
  *  Opening gives the claim its number (see {@link ClaimNumbers}); a voided claim keeps it (and it is never reused).
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
  *  bound it to, else its person's grade's rate in force on the claim's date, at least the sheet's floor, plus its late charge then; with no rate it stays live. The user who opened a claim may not settle it.
- *  A clerk may settle a claim only when that due is at or below the sheet's clerk limit (a due of n/a
- *  is within any limit); a steward settles anything.
+ *  When a clerk settles a claim whose due is over the sheet's clerk limit (a due of n/a is within any
+ *  limit) it goes PENDING instead, its due still live; a steward settles anything. Only a steward
+ *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge),
+ *  and never the user who opened it; a rejection sends it back to OPEN, bound again by the last
+ *  statement if that bound it.
  *  A claim dated in a closed period cannot change status at all. */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, ClaimNumbers numbers, People people,
@@ -27,23 +30,31 @@ public class ApplyClaimStatus {
                 && claim.getOpenedBy().equals(change.user())) {
             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
         }
-        BigDecimal due = null;
-        if (change.action() == ClaimAction.SETTLE) {
-            String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
-            due = claim.isStated() ? claim.getStatedDue() : figures.live(claim, grade);
-            if (due != null) due = due.add(figures.charge(claim, due));
-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
-            if (limit != null && due != null && due.compareTo(limit) > 0
-                    && settings.role(claim.getSheetId(), change.user()) == Role.CLERK) {
-                throw new ClaimStatusRefusedException("A clerk cannot settle a claim whose due is over the clerk limit");
+        if (change.action() == ClaimAction.APPROVE) {
+            if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(change.user())) {
+                throw new ClaimStatusRefusedException("The user who opened a claim cannot approve it");
+            }
+            if (settings.role(claim.getSheetId(), change.user()) != Role.STEWARD) {
+                throw new ClaimStatusRefusedException("Only a steward can approve a pending claim");
             }
         }
-        claim.setStatus(change.action().to());
+        BigDecimal due = null;
+        boolean pending = false;
+        if (change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) {
+            String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+            // Figures.figure: the bound figure for an OPEN claim, the live one for a PENDING claim.
+            due = figures.figure(claim, grade);
+            if (due != null) due = due.add(figures.charge(claim, due));
+            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
+                    && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
+        }
+        claim.setStatus(pending ? ClaimStatus.PENDING : change.action().to());
         if (change.action() == ClaimAction.OPEN) {
             claim.setNumber(numbers.next(claim));
             claim.setOpenedBy(change.user());
         }
-        if (change.action() == ClaimAction.SETTLE) {
+        if ((change.action() == ClaimAction.SETTLE && !pending) || change.action() == ClaimAction.APPROVE) {
             claim.setDue(due);
         }
     }

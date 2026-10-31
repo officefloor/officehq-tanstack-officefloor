@@ -5,7 +5,9 @@ package net.officefloor.hq.app.claim;
 public enum ClaimAction {
     OPEN(ClaimStatus.OPEN, "CLAIM_OPENED", ClaimStatus.DRAFT),
     SETTLE(ClaimStatus.SETTLED, "CLAIM_SETTLED", ClaimStatus.OPEN),
-    VOID(ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN);
+    APPROVE(ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
+    REJECT(ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
+    VOID(ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING);
 
     private final ClaimStatus to;
     private final String event;

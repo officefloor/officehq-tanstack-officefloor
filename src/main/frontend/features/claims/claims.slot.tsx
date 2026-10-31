@@ -26,14 +26,23 @@ import {
 
 const STATUS_REFUSED = "This claim's status cannot change that way (whoever opened a claim cannot settle it).";
 const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
+const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the user who opened it.';
+const NO_REASON = 'A rejection needs a reason.';
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
+
+const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
+type Action = (typeof ACTIONS)[number];
+const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void' };
 
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, at least the sheet's floor; in the
- * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
- * count toward claimed and the due-total, and not the OPEN ones while the person is held.
+ * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (its opener cannot settle
+ * or approve it). A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
+ * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
+ * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
+ * PENDING ones while the person is held.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
  * Each claim shows its due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and
@@ -44,7 +53,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
-  // While the person is held, their OPEN claims count toward neither claimed nor the due-total.
+  // While the person is held, their OPEN and PENDING claims count toward neither claimed nor the due-total.
   const liveClaims = live(claims, () => person.held);
   const { data: rates = [] } = useRates(sheet);
   const { data: periods = [] } = usePeriods(sheet);
@@ -64,6 +73,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
   // The claims ticked for a bulk action (the bulk-open panel acts on them).
   const [selected, setSelected] = useSelectedClaims();
+  // The reason typed for rejecting each pending claim, by claim id.
+  const [reasons, setReasons] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   const submitOnce = useSubmitOnce();
@@ -88,13 +99,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   });
 
   const changeStatus = useMutation({
-    mutationFn: (c: { id: number; action: 'open' | 'settle' | 'void' }) =>
-      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user }),
+    mutationFn: (c: { id: number; action: Action; reason?: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user, reason: c.reason }),
     onMutate: () => setRefused(null),
+    onSuccess: (_, c) => {
+      if (c.action === 'reject') setReasons((r) => ({ ...r, [c.id]: '' }));
+    },
     onError: (e, c) =>
       setRefused({
         id: c.id,
-        message: e instanceof HttpError && e.body.includes('clerk limit') ? OVER_LIMIT : STATUS_REFUSED,
+        message: !(e instanceof HttpError)
+          ? STATUS_REFUSED
+          : e.body.includes('clerk limit')
+            ? OVER_LIMIT
+            : e.body.includes('approve')
+              ? NOT_STEWARD
+              : e.body.includes('reason')
+                ? NO_REASON
+                : STATUS_REFUSED,
       }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
@@ -233,15 +255,36 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
-              {(['open', 'settle', 'void'] as const).map((action) => (
+              {ACTIONS.map((action) => (
                 <span key={action}>
+                  {action === 'reject' && (
+                    <>
+                      <input
+                        data-testid="claim-reject-reason"
+                        aria-label="Reason for rejecting"
+                        placeholder="reason"
+                        value={reasons[c.id] ?? ''}
+                        onChange={(e) => {
+                          setReasons({ ...reasons, [c.id]: e.target.value });
+                          if (refused?.id === c.id) setRefused(null);
+                        }}
+                      />{' '}
+                    </>
+                  )}
                   <button
                     type="button"
                     data-testid={`claim-${action}`}
                     disabled={changeStatus.isPending}
-                    onClick={() => changeStatus.mutate({ id: c.id, action })}
+                    onClick={() => {
+                      if (action === 'reject' && (reasons[c.id] ?? '').trim() === '') {
+                        // Refused here, before anything is sent: the store is untouched.
+                        setRefused({ id: c.id, message: NO_REASON });
+                        return;
+                      }
+                      changeStatus.mutate({ id: c.id, action, reason: action === 'reject' ? (reasons[c.id] ?? '').trim() : undefined });
+                    }}
                   >
-                    {action === 'open' ? 'Open' : action === 'settle' ? 'Settle' : 'Void'}
+                    {ACTION_LABELS[action]}
                   </button>{' '}
                 </span>
               ))}

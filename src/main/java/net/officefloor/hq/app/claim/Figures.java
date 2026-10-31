@@ -56,20 +56,21 @@ public class Figures {
         return figure.add(charge(claim, figure));
     }
 
-    /** The claim's figure without any late charge: the fixed due, else the bound figure, else live. */
+    /** The claim's figure without any late charge: the fixed due, else the bound figure, else live.
+     *  A PENDING claim is not bound by a statement: it keeps its binding but shows its live figure. */
     public BigDecimal figure(Claim claim, String grade) {
         if (claim.getDue() != null) return claim.getDue();
-        if (claim.isStated()) return claim.getStatedDue();
+        if (claim.isStated() && claim.getStatus() != ClaimStatus.PENDING) return claim.getStatedDue();
         return live(claim, grade);
     }
 
-    /** The late charge on a figure of the claim: nothing unless the claim is OPEN and its due-by (its
+    /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING) and its due-by (its
      *  date plus the sheet's terms) is before the sheet's today; then the sheet's late percent of the
      *  figure for every full 30 days it is overdue (a correction has none), rounded by the claim's rounding to two decimals. Never bound
      *  by a statement: it follows the sheet's today. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.getStatus() != ClaimStatus.OPEN || claim.isCorrection()) return none;
+        if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) return none;
         String sheetId = claim.getSheetId();
         LocalDate dueBy = claim.getDate().plusDays(settings.terms(sheetId));
         long periods = ChronoUnit.DAYS.between(dueBy, sheets.today(sheetId)) / 30;

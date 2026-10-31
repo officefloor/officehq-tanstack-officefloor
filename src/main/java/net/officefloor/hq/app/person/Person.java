@@ -89,10 +89,10 @@ public class Person {
     public List<Long> getPatronIds() { return patronIds; }
     public void setPatronIds(List<Long> patronIds) { this.patronIds = patronIds; }
 
-    /** Whether a claim of the person's in this status counts in the live totals: OPEN and SETTLED
-     *  ones do, but not an OPEN one while the person is held. */
+    /** Whether a claim of the person's in this status counts in the live totals: OPEN, PENDING and
+     *  SETTLED ones do, but not an OPEN or PENDING one while the person is held. */
     public boolean counts(ClaimStatus status) {
-        return status.counts() && !(held && status == ClaimStatus.OPEN);
+        return status.counts() && !(held && status.isOpen());
     }
 
     /** Refuses a claim dated after the person's retirement date. */

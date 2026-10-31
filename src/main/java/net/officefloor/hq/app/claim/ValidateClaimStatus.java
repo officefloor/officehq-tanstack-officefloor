@@ -12,9 +12,14 @@ public class ValidateClaimStatus {
         String action = request == null || request.action() == null ? "" : request.action().trim();
         try {
             actor.set(new Actor(request.user()));
-            body.set(new ClaimStatusChange(ClaimAction.valueOf(action.toUpperCase(Locale.ROOT)), request.user()));
+            ClaimAction parsed = ClaimAction.valueOf(action.toUpperCase(Locale.ROOT));
+            String reason = request.reason() == null ? "" : request.reason().trim();
+            if (parsed == ClaimAction.REJECT && reason.isEmpty()) {
+                throw new InvalidSheetRequestException("A rejection needs a reason");
+            }
+            body.set(new ClaimStatusChange(parsed, request.user(), parsed == ClaimAction.REJECT ? reason : null));
         } catch (IllegalArgumentException e) {
-            throw new InvalidSheetRequestException("Not a claim action (open, settle or void): " + action);
+            throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject or void): " + action);
         }
     }
 }

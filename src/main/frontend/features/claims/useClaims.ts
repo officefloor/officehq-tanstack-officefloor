@@ -2,8 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
 
-/** Where a claim is in its life: DRAFT → OPEN → SETTLED, and DRAFT or OPEN → VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
+ *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
+ *  OPEN or PENDING → VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+
+/** Whether a claim is still open: OPEN or PENDING. A PENDING claim is handled like an OPEN one: it
+ *  goes overdue, bears the late charge, and a hold takes it out of the totals. */
+export function isOpen(claim: Claim): boolean {
+  return claim.status === 'OPEN' || claim.status === 'PENDING';
+}
 
 /** A claim as the server sends it: `amount` with two decimals, `date` as yyyy-mm-dd. */
 export type Claim = {
@@ -54,15 +62,15 @@ export function isCorrection(claim: Claim): boolean {
   return claim.amount.startsWith('-');
 }
 
-/** The claims that count toward claimed, due-total and every total: OPEN and SETTLED ones. */
+/** The claims that count toward claimed, due-total and every total: OPEN, PENDING and SETTLED ones. */
 export function counted(claims: Claim[]): Claim[] {
-  return claims.filter((c) => c.status === 'OPEN' || c.status === 'SETTLED');
+  return claims.filter((c) => isOpen(c) || c.status === 'SETTLED');
 }
 
-/** The claims that count in the live totals: OPEN and SETTLED ones, but not the OPEN ones of a
- *  held person (`held` tells, by person id). */
+/** The claims that count in the live totals: OPEN, PENDING and SETTLED ones, but not the OPEN or
+ *  PENDING ones of a held person (`held` tells, by person id). */
 export function live(claims: Claim[], held: (personId: number) => boolean): Claim[] {
-  return counted(claims).filter((c) => c.status !== 'OPEN' || !held(c.personId));
+  return counted(claims).filter((c) => !isOpen(c) || !held(c.personId));
 }
 
 /** The sum of these claims' amounts, with two decimals. Added up in cents, so it is exact. */
@@ -82,9 +90,10 @@ export function claimDueCents(claim: Claim, floor: string, pct: string | undefin
 }
 
 /** A claim's figure without any late charge, in cents: the figure its person's last statement bound
- *  it to, or else live at `pct`, at least the sheet's `floor` (null, n/a, when there is no rate). */
+ *  it to, or else live at `pct`, at least the sheet's `floor` (null, n/a, when there is no rate).
+ *  A PENDING claim is not bound by a statement: it shows its live figure. */
 function claimFigureCents(claim: Claim, floor: string, pct: string | undefined): bigint | null {
-  if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
+  if (claim.stated && claim.status !== 'PENDING') return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
   const due = dueCents(claim.amount, pct, claim.halfUp);
   if (due === null) return null;
   const least = hundredths(floor);
@@ -136,9 +145,9 @@ export function dueBy(claim: Claim, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's `today`. */
+/** Whether a claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's `today`. */
 export function overdue(claim: Claim, terms: number, today: string): boolean {
-  return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+  return isOpen(claim) && today !== '' && dueBy(claim, terms) < today;
 }
 
 /** These claims' overdue ones: their count, and their dues with late charges added up in cents (n/a ones skipped).
