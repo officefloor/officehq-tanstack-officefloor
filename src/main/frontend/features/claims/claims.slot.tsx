@@ -81,7 +81,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * one form to add a claim or edit the one whose editor is open (only a DRAFT outside a closed period can be edited; an open
  * editor locks its claim for every other user until it is saved or cancelled, or the sheet's today changes), and the claims, newest first, each
  * with its period (the one whose dates contain its due-by, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, plus its late charge, at least the sheet's floor; in the
- * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (a SETTLED one only by a steward within 7 days of its settlement; its opener cannot settle
+ * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (a SETTLED one only by a steward within 7 days of its settlement; its opener or last editor cannot settle
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or

@@ -30,6 +30,7 @@ public class Claim {
     private String tags;
     private String tagsUsed;
     private String voidReason;
+    private String editedBy;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -120,6 +121,9 @@ public class Claim {
     /** The reason from its sheet's list the claim was voided with; null when none was given. */
     public String getVoidReason() { return voidReason; }
     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+    /** Who last edited the claim (its form or its row's amount entry); null while never edited. */
+    public String getEditedBy() { return editedBy; }
+    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

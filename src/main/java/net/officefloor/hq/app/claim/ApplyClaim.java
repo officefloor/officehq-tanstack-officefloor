@@ -11,7 +11,8 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
 /** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is due by in a closed period (its due-by, fixed when it was added, stays as it is),
- *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person. */
+ *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person.
+ *  The editing user becomes the claim's last editor, who may not settle or approve it. */
 public class ApplyClaim {
     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods,
             People people, Claims claims)
@@ -33,5 +34,6 @@ public class ApplyClaim {
         claim.setRef(values.ref());
         claim.setTags(values.tags());
         claim.setLockedBy(null);
+        claim.setEditedBy(values.user());
     }
 }
