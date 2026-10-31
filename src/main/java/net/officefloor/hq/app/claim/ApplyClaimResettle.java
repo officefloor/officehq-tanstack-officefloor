@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Re-settles a SETTLED claim: only a steward may, and never one dated in a closed period. Its due is
  *  fixed again at the figure it would have today as an OPEN claim bound by no statement: the rate of
- *  its person's grade in force on its date, at least the sheet's floor, plus its late charge today
+ *  its person's grade in force on its date, plus its late charge today, at least the sheet's floor
  *  (n/a with no rate). It stays SETTLED, keeps its number and its binding. */
 public class ApplyClaimResettle {
     public void apply(@Val ClaimResettle change, @Val Claim claim, People people, Figures figures,

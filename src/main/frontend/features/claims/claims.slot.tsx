@@ -49,7 +49,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
- * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, at least the sheet's floor; in the
+ * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, plus its late charge, at least the sheet's floor; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (its opener cannot settle
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.

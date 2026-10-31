@@ -11,10 +11,10 @@ import net.officefloor.plugin.variable.Val;
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
  *  Opening gives the claim its number (see {@link ClaimNumbers}); a voided claim keeps it (and it is never reused).
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
- *  bound it to, else its person's grade's rate in force on the claim's date, at least the sheet's floor, plus its late charge then; with no rate it stays live. The user who opened a claim may not settle it.
+ *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. The user who opened a claim may not settle it.
  *  When a clerk settles a claim whose due is over the sheet's clerk limit (a due of n/a is within any
  *  limit) it goes PENDING instead, its due still live; a steward settles anything. Only a steward
- *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge),
+ *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge, at least the floor),
  *  and never the user who opened it; a rejection sends it back to OPEN, bound again by the last
  *  statement if that bound it.
  *  A claim whose due is above the sheet's proof threshold in force on its date cannot be settled or
@@ -54,9 +54,8 @@ public class ApplyClaimStatus {
         boolean pending = false;
         if (change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) {
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
-            // Figures.figure: the bound figure for an OPEN claim, the live one for a PENDING claim.
-            due = figures.figure(claim, grade);
-            if (due != null) due = due.add(figures.charge(claim, due));
+            // Figures.due: from the bound figure for an OPEN claim, the live one for a PENDING claim.
+            due = figures.due(claim, grade);
             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
             BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
             if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {

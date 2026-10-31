@@ -9,10 +9,10 @@ import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
-/** The figure a claim shows and totals: the due fixed when it was settled, else the figure its
- *  person's last statement bound it to, else live at its person's grade's rate in force on the
- *  claim's date, at least the sheet's floor (null, n/a, when there is no rate). An overdue claim's
- *  due adds its late charge on top of that figure. Every rounding of a claim's live figures follows
+/** The figure a claim shows and totals: the due fixed when it was settled, else the greater of the
+ *  sheet's floor in force on the claim's date and its figure plus its late charge, where its figure is
+ *  the one its person's last statement bound it to, else live at its person's grade's rate in force on
+ *  the claim's date (null, n/a, when there is no rate). A correction has neither floor nor charge. Every rounding of a claim's live figures follows
  *  the sheet's policy date: half up for a claim dated before it, half to even on or after it. */
 @Service
 public class Figures {
@@ -48,15 +48,16 @@ public class Figures {
         return corrected != null ? corrected : claim.getDate();
     }
 
-    /** The claim's due as the screen shows and totals it: its figure, plus its late charge while it
-     *  is overdue. A settled claim's fixed due already holds the charge it had then. */
+    /** The claim's due as the screen shows and totals it: its figure plus its late charge while it
+     *  is overdue, raised to the sheet's floor in force on the claim's date when it is below it (a
+     *  correction has neither). A settled claim's fixed due already holds the charge and floor it had then. */
     public BigDecimal due(Claim claim, String grade) {
         BigDecimal figure = figure(claim, grade);
-        if (figure == null || claim.getDue() != null) return figure;
-        return figure.add(charge(claim, figure));
+        if (figure == null || claim.getDue() != null || claim.isCorrection()) return figure;
+        return figure.add(charge(claim, figure)).max(settings.floor(claim.getSheetId(), claim.getDate()));
     }
 
-    /** The claim's figure without any late charge: the fixed due, else the bound figure, else live.
+    /** The claim's figure without any late charge or floor: the fixed due, else the bound figure, else live.
      *  A PENDING claim is not bound by a statement: it keeps its binding but shows its live figure. */
     public BigDecimal figure(Claim claim, String grade) {
         if (claim.getDue() != null) return claim.getDue();
@@ -84,12 +85,11 @@ public class Figures {
     }
 
     /** The claim's due at its person's grade's rate in force on the claim's date: amount times the
-     *  rate divided by 100, rounded by the claim's rounding to two decimals, raised to the sheet's floor in force on the claim's date when it
-     *  is below it (a correction has no floor); null when there is no rate. */
+     *  rate divided by 100, rounded by the claim's rounding to two decimals, before any late charge or
+     *  floor (see {@link #due}); null when there is no rate. */
     public BigDecimal live(Claim claim, String grade) {
         BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
         if (pct == null) return null;
-        BigDecimal due = claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
-        return claim.isCorrection() ? due : due.max(settings.floor(claim.getSheetId(), claim.getDate()));
+        return claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
     }
 }

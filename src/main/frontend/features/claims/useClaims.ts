@@ -102,25 +102,25 @@ export function claimed(claims: Claim[]): string {
   return (cents / 100).toFixed(2);
 }
 
-/** What is due on one claim, in cents: the due fixed when it was settled, or else the figure its
- *  person's last statement bound it to, or else live at `pct`, at least the sheet's `floor` on the claim's date (null,
- *  n/a, when there is no rate). */
+/** What is due on one claim, in cents: the due fixed when it was settled, or else the greater of the
+ *  sheet's `floor` on the claim's date and its figure (the one its person's last statement bound it to,
+ *  or else live at `pct`) plus its late charge (null, n/a, when there is no rate). A correction has
+ *  neither floor nor charge. */
 export function claimDueCents(claim: Claim, floor: FloorOn, pct: string | undefined, late?: Late): bigint | null {
   if (claim.due !== null) return hundredths(claim.due);
-  const figure = claimFigureCents(claim, floor, pct);
-  if (figure === null || late === undefined) return figure;
-  return figure + lateChargeCents(claim, figure, late);
+  const figure = claimFigureCents(claim, pct);
+  if (figure === null || isCorrection(claim)) return figure;
+  const due = late === undefined ? figure : figure + lateChargeCents(claim, figure, late);
+  const least = hundredths(floor(claim.date));
+  return due < least ? least : due;
 }
 
-/** A claim's figure without any late charge, in cents: the figure its person's last statement bound
- *  it to, or else live at `pct`, at least the sheet's `floor` on the claim's date (null, n/a, when there is no rate).
+/** A claim's figure without any late charge or floor, in cents: the figure its person's last statement
+ *  bound it to, or else live at `pct` (null, n/a, when there is no rate).
  *  A PENDING claim is not bound by a statement: it shows its live figure. */
-function claimFigureCents(claim: Claim, floor: FloorOn, pct: string | undefined): bigint | null {
+function claimFigureCents(claim: Claim, pct: string | undefined): bigint | null {
   if (claim.stated && claim.status !== 'PENDING') return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
-  const due = dueCents(claim.amount, pct, claim.halfUp);
-  if (due === null) return null;
-  const least = hundredths(floor(claim.date));
-  return due < least && !isCorrection(claim) ? least : due;
+  return dueCents(claim.amount, pct, claim.halfUp);
 }
 
 /** What makes an overdue claim's due grow: the sheet's `today` and its late percent in force on a
@@ -156,7 +156,7 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
 
 
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
- *  a settled claim's fixed due, else the figure a statement bound it to, else live (at least `floor`) at `pctOn(claim's date)`, the rate in force on the claim's
+ *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim's date)`, plus any late charge and at least `floor`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
