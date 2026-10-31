@@ -10,6 +10,7 @@ import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
+import { useTemplates } from '../templates/useTemplates';
 import {
   AMOUNT,
   CLAIM_NUMBER,
@@ -141,6 +142,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [ref, setRef] = useState('');
   const [tags, setTags] = useState('');
   const [invalid, setInvalid] = useState(false);
+  // The claim template chosen to add a claim from.
+  const { data: templates = [] } = useTemplates(sheet);
+  const [templateName, setTemplateName] = useState('');
   // The claim whose last status change or edit was refused: its row shows the error.
   const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
   // The claims ticked for a bulk action (the bulk-open panel acts on them).
@@ -432,9 +436,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  // A DRAFT claim from a template as the server holds it now, by every rule of the claim form.
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) => postJson<Claim>(`${base}/people/${person.id}/template-claims`, { template: name, user }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   // An error goes as soon as its form is changed or submitted again, or an editor is opened.
   const clearError = () => {
     save.reset();
+    fromTemplate.reset();
     setInvalid(false);
     setRefused(null);
   };
@@ -468,6 +479,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     }
     close();
   };
+
+  const claimError = fromTemplate.error ?? save.error;
 
   return (
     <>
@@ -557,21 +570,53 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
-          {(invalid || (save.isError && refused === null)) && (
+          {(invalid || (save.isError && refused === null) || fromTemplate.isError) && (
             <span data-testid="claim-form-error" role="alert">
               {' '}
               {invalid
                 ? BAD_AMOUNT
-                : save.error instanceof HttpError && save.error.status === 409 && save.error.body.includes('retired')
+                : claimError instanceof HttpError && claimError.status === 409 && claimError.body.includes('retired')
                   ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
-                  : save.error instanceof HttpError && save.error.body.includes('correction')
+                  : claimError instanceof HttpError && claimError.body.includes('correction')
                     ? `A correction must name a settled claim of ${person.name}.`
-                  : save.error instanceof HttpError && save.error.body.includes('reference')
+                  : claimError instanceof HttpError && claimError.body.includes('reference')
                     ? `The reference ${ref.trim()} is already used on this sheet.`
                   : 'Could not save this claim.'}
             </span>
           )}
         </form>
+        <select
+          data-testid="claim-template-select"
+          aria-label="Claim template"
+          value={templateName}
+          onChange={(e) => {
+            setTemplateName(e.target.value);
+            clearError();
+          }}
+        >
+          <option value="">template…</option>
+          {templates.map((t) => (
+            <option key={t.name} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+        </select>{' '}
+        <button
+          type="button"
+          data-testid="claim-template-add"
+          disabled={fromTemplate.isPending}
+          onClick={() => {
+            clearError();
+            if (templateName === '') {
+              // Nothing chosen: refused here, before anything is sent.
+              setInvalid(true);
+              return;
+            }
+            submitOnce(() => fromTemplate.mutateAsync(templateName));
+          }}
+        >
+          Add from template
+        </button>
         <ul data-testid="claim-list">
           {claims.map((c) => (
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
