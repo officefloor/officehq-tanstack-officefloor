@@ -31,7 +31,8 @@ public class ValidateSettings {
     private static final Set<String> DATED = Set.of(Settings.CLERK_LIMIT, Settings.FLOOR, Settings.TERMS,
             Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"),
             Settings.graceKey("A"), Settings.graceKey("B"), Settings.graceKey("C"), Settings.LATE_PCT, Settings.CAP,
-            Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD);
+            Settings.PROOF_THRESHOLD, Settings.proofKey("A"), Settings.proofKey("B"), Settings.proofKey("C"),
+            Settings.NOTE_THRESHOLD);
 
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
@@ -74,6 +75,19 @@ public class ValidateSettings {
                     throw new InvalidSheetRequestException("The grace days of a grade must be a whole number of days, or blank");
                 }
                 gradeGrace.put(e.getKey(), days.isEmpty() ? null : Integer.parseInt(days));
+            }
+        }
+        Map<String, BigDecimal> gradeProof = new TreeMap<>();
+        if (request != null && request.gradeProof() != null) {
+            for (Map.Entry<String, String> e : request.gradeProof().entrySet()) {
+                if (!GRADES.contains(e.getKey())) {
+                    throw new InvalidSheetRequestException("A proof threshold can be set only for grade A, B or C");
+                }
+                String amount = e.getValue() == null ? "" : e.getValue().trim();
+                if (!amount.isEmpty() && !AMOUNT.matcher(amount).matches()) {
+                    throw new InvalidSheetRequestException("The proof threshold of a grade must be an amount with up to two decimals, or blank");
+                }
+                gradeProof.put(e.getKey(), amount.isEmpty() ? null : new BigDecimal(amount).setScale(2));
             }
         }
         String late = request == null || request.latePct() == null ? null : request.latePct().trim();
@@ -170,6 +184,6 @@ public class ValidateSettings {
                 threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
                 noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
-                entry != null, entryDate, gradeGrace));
+                entry != null, entryDate, gradeGrace, gradeProof));
     }
 }

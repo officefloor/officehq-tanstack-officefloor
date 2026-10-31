@@ -41,7 +41,7 @@ const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
 const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
-const NEEDS_PROOF = "A claim whose due is above the sheet's proof threshold cannot be settled or approved until it has a proof.";
+const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof.";
 const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
 const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one due by in a closed period.';
 const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor due by in a closed period) can be split, by a user whose role may open a claim.";
@@ -99,7 +99,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
  * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
- * nor one due by in a closed period); one whose due is above the sheet's proof threshold on its date
+ * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
  * cannot be settled or approved while it has none.
  * One whose due is above the sheet's note threshold on its date cannot be opened, alone or in bulk,
  * while its note is empty.

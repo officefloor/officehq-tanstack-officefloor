@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
 import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -24,6 +24,8 @@ type Froms = Record<string, string>;
  * is at most it, the rest their excess; blank is no cap), its proof threshold (a claim whose due is above
  * the one on its date cannot be settled or approved without a proof; blank is none), its note threshold (a claim
  * whose due is above the one on its date cannot be opened with an empty note; blank is none),
+ * the proof threshold of each grade (when set on a claim's date, it is the one in force for a claim of a person of
+ * that grade then, in place of the sheet's; blank uses the sheet's),
  * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
  * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
@@ -35,14 +37,14 @@ type Froms = Record<string, string>;
  * and the delegations of the steward role (a steward delegates it to a user from a from-date to a to-date, inclusive,
  * by the sheet's today; a blank from-date is the sheet's today, a blank to-date the from-date). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
- * each grade's), the grace days of each grade, the late percent, the cap, the proof threshold and the note threshold are dated: a save records each from its from-date (blank
+ * each grade's), the grace days of each grade, the late percent, the cap, the proof threshold (the sheet's and each grade's) and the note threshold are dated: a save records each from its from-date (blank
  * is the sheet's today), and each shows the value in force on the sheet's today.
  */
 function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, gradeGrace: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -55,7 +57,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, gradeGrace: {}, perms: {} });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
       setFroms({});
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
@@ -85,7 +87,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     setLimitInvalid(false);
   };
   // A field is set by the next save once it has been touched, starting from the value in force.
-  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'gradeGrace' | 'perms'>, current: string) =>
+  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'gradeGrace' | 'gradeProof' | 'perms'>, current: string) =>
     setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
   // The from-date field of a dated setting, by its key.
   const fromField = (key: string) => (
@@ -149,6 +151,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const entryDate = edit.entryDate?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
+          const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
           const perms = Object.fromEntries(Object.entries(edit.perms).map(([a, v]) => [a, v.trim()]));
           const from = Object.fromEntries(Object.entries(froms).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''));
           if (
@@ -162,6 +165,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom)) ||
             (cap !== null && !LIMIT.test(cap)) ||
             (proofThreshold !== null && !LIMIT.test(proofThreshold)) ||
+            Object.values(gradeProof).some((v) => !LIMIT.test(v)) ||
             (noteThreshold !== null && !LIMIT.test(noteThreshold)) ||
             (graceDays !== null && !DAYS.test(graceDays)) ||
             (entryDate !== null && !POLICY_DATE.test(entryDate)) ||
@@ -174,7 +178,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, gradeTerms, gradeGrace, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, gradeTerms, gradeGrace, gradeProof, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -385,6 +389,30 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           />
         </label>{' '}
         {fromField('proof-threshold')}{' '}
+        {TERM_GRADES.map((g) => {
+          const own = data?.gradeProof?.[g] ?? '';
+          return (
+            <span key={g}>
+              Proof threshold {g}:{' '}
+              <strong data-testid={`setting-proof-threshold-${g}-current`}>{saveSettings.isPending ? '' : own}</strong>{' '}
+              <label>
+                Set to{' '}
+                <input
+                  data-testid={`setting-proof-threshold-${g}`}
+                  placeholder="blank: the sheet's"
+                  value={edit.gradeProof[g] ?? own}
+                  onFocus={() => setEdit((was) => (was.gradeProof[g] !== undefined ? was : { ...was, gradeProof: { ...was.gradeProof, [g]: own } }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEdit((was) => ({ ...was, gradeProof: { ...was.gradeProof, [g]: value } }));
+                    clearSettingsError();
+                  }}
+                />
+              </label>{' '}
+              {fromField(`proof-threshold-${g}`)}{' '}
+            </span>
+          );
+        })}
         Note threshold:{' '}
         <strong data-testid="setting-note-threshold-current">
           {saveSettings.isPending ? '' : (data?.noteThreshold ?? '')}

@@ -270,6 +270,29 @@ public class Settings {
         return valueOn(sheetId, PROOF_THRESHOLD, date, null);
     }
 
+    /** The proof threshold in force on `date` for a claim of `grade`: the grade's own when one is set
+     *  then, else the sheet's then. Null for none. */
+    public BigDecimal proofThreshold(String sheetId, String grade, LocalDate date) {
+        BigDecimal own = grade != null ? valueOn(sheetId, proofKey(grade), date, null) : null;
+        return own != null ? own : proofThreshold(sheetId, date);
+    }
+
+    /** Every grade's own proof threshold in force on the sheet's today, by grade (a grade not in it uses the sheet's). */
+    public Map<String, String> gradeProof(String sheetId) {
+        LocalDate today = sheets.today(sheetId);
+        Map<String, String> proof = new TreeMap<>();
+        for (String grade : List.of("A", "B", "C")) {
+            BigDecimal own = valueOn(sheetId, proofKey(grade), today, null);
+            if (own != null) proof.put(grade, own.toPlainString());
+        }
+        return proof;
+    }
+
+    /** The key a grade's own proof threshold is recorded under. */
+    public static String proofKey(String grade) {
+        return PROOF_THRESHOLD + "-" + grade;
+    }
+
     /** The sheet's note threshold in force on `date`: a claim dated then whose due is above it
      *  cannot be opened while its note is empty. Null for none. */
     public BigDecimal noteThreshold(String sheetId, LocalDate date) {

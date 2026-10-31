@@ -46,6 +46,9 @@ public class RecordSettingChanged {
                     + (change.proofThreshold() != null ? change.proofThreshold().toPlainString() : "")
                     + from(change, Settings.PROOF_THRESHOLD));
         }
+        change.gradeProof().forEach((grade, threshold) ->
+                audit.record(prefix + " key=" + Settings.proofKey(grade) + " value="
+                        + (threshold != null ? threshold.toPlainString() : "") + from(change, Settings.proofKey(grade))));
         if (change.setsNoteThreshold()) {
             audit.record(prefix + " key=note-threshold value="
                     + (change.noteThreshold() != null ? change.noteThreshold().toPlainString() : "")

@@ -20,7 +20,8 @@ import net.officefloor.plugin.variable.Val;
  *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge, at least the floor),
  *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, bound again by the last
  *  statement if that bound it.
- *  A claim whose due is above the sheet's proof threshold in force on its date cannot be settled or
+ *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
+ *  one is set, else the sheet's) cannot be settled or
  *  approved while it has no proofs (refused before the clerk limit is considered).
  *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
  *  its note is empty.
@@ -101,7 +102,7 @@ public class ApplyClaimStatus {
             // Figures.due: from the bound figure for an OPEN claim, the live one for a PENDING claim.
             due = figures.due(claim, grade);
             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
-            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
+            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
             if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
                 throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof");
             }
