@@ -395,7 +395,7 @@ public class AsOfView {
                 net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)),
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
                 plain.getOrDefault(Settings.ESCALATE, ""), plain.getOrDefault(Settings.REVIEW_SLA, ""),
-                plain.getOrDefault(Settings.PROOF_KINDS, ""));
+                plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""));
     }
 
     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */

@@ -77,6 +77,9 @@ public class ValidateSetting {
      *  at least one proof of each listed kind to be settled or approved; blank: none. */
     public static final String PROOF_KINDS = "proof-kinds";
 
+    /** Not dated: the grade the quick-add bar gives a new person, and an import line with a blank grade takes; blank: A. */
+    public static final String DEFAULT_GRADE = "default-grade";
+
     /** An action's permission: perm-<action>, the roles that may take it. */
     public static final String PERM = "perm-";
 
@@ -96,7 +99,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
@@ -132,6 +135,13 @@ public class ValidateSetting {
                 }
             }
             body.set(new ValidSetting(key, null, request.user(), null, null, null, String.join(",", kinds)));
+            return;
+        }
+        if (DEFAULT_GRADE.equals(key)) {
+            if (!raw.isEmpty() && !GRADES.contains(raw)) {
+                throw new InvalidSettingException("The default grade must be one of the grades A, B and C, or blank for A");
+            }
+            body.set(new ValidSetting(key, null, request.user(), null, null, null, raw));
             return;
         }
         if (FISCAL_START_MONTH.equals(key)) {

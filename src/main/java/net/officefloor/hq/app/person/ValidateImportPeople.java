@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * Splits the import into lines of name,grade,terms,contact (terms and contact may be absent or blank)
- * and checks each by the person form's rules. Blank lines are skipped; a name or contact given twice
+ * and checks each by the person form's rules; a blank grade is the sheet's default grade. Blank lines are skipped; a name or contact given twice
  * in the import, or an import with no one in it, is refused.
  */
 public class ValidateImportPeople {
@@ -24,6 +24,7 @@ public class ValidateImportPeople {
         List<PersonRequest> people = new ArrayList<>();
         Set<String> names = new HashSet<>();
         Set<String> contacts = new HashSet<>();
+        String defaultGrade = settings.defaultGrade(sheetId);
         int number = 0;
         for (String raw : text.split("\\r?\\n")) {
             number++;
@@ -34,7 +35,7 @@ public class ValidateImportPeople {
             }
             PersonRequest person;
             try {
-                person = PersonRules.check(new PersonRequest(fields[0], fields[1], request.user(), null, "",
+                person = PersonRules.check(new PersonRequest(fields[0], fields[1].isBlank() ? defaultGrade : fields[1], request.user(), null, "",
                         fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "", ""));
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());

@@ -114,6 +114,14 @@ export function SettingsPanel() {
   // The proof kinds (not dated; comma separated); likewise may be saved blank (none).
   const [proofKinds, setProofKinds] = useState('');
   const proofKindsChosen = useRef(false);
+  // The default grade (not dated); likewise may be saved blank (A).
+  const [defaultGrade, setDefaultGrade] = useState('');
+  const defaultGradeChosen = useRef(false);
+  // Entering the default grade marks it as the one to save, as it is.
+  const focusDefaultGrade = () => {
+    unchoosePolicy();
+    defaultGradeChosen.current = true;
+  };
   // Entering the proof kinds marks them as the one to save, as they are.
   const focusProofKinds = () => {
     unchoosePolicy();
@@ -208,6 +216,7 @@ export function SettingsPanel() {
     if (alertThreshold.trim() === '') alertChosen.current = false;
     if (parent.trim() === '') parentChosen.current = false;
     if (proofKinds.trim() === '') proofKindsChosen.current = false;
+    if (defaultGrade.trim() === '') defaultGradeChosen.current = false;
     if (rounding.trim() === '') roundingChosen.current = false;
     if (reviewThreshold.trim() === '') reviewChosen.current = false;
     unchooseGradeGrace();
@@ -372,6 +381,10 @@ export function SettingsPanel() {
         setProofKinds('');
         proofKindsChosen.current = false;
       }
+      else if (body.key === 'default-grade') {
+        setDefaultGrade('');
+        defaultGradeChosen.current = false;
+      }
       else if (body.key === 'parent') {
         setParent('');
         parentChosen.current = false;
@@ -451,12 +464,13 @@ export function SettingsPanel() {
             const alerted = alertThreshold.trim() !== '' || alertChosen.current;
             const parented = parent.trim() !== '' || parentChosen.current;
             const kinded = proofKinds.trim() !== '' || proofKindsChosen.current;
+            const defaulted = defaultGrade.trim() !== '' || defaultGradeChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
@@ -481,6 +495,7 @@ export function SettingsPanel() {
                 ...(alerted ? [{ key: 'alert-threshold', value: alertThreshold.trim() }] : []),
                 ...(parented ? [{ key: 'parent', value: parent.trim() }] : []),
                 ...(kinded ? [{ key: 'proof-kinds', value: proofKinds.trim() }] : []),
+                ...(defaulted ? [{ key: 'default-grade', value: defaultGrade.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -797,6 +812,18 @@ export function SettingsPanel() {
           onChange={(e) => {
             setProofKinds(e.target.value);
             proofKindsChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Default grade: <span data-testid="setting-default-grade-current">{settings?.defaultGrade ?? ''}</span>{' '}
+        <input
+          data-testid="setting-default-grade"
+          value={defaultGrade}
+          placeholder="Default grade: A, B or C (blank: A)"
+          onFocus={focusDefaultGrade}
+          onChange={(e) => {
+            setDefaultGrade(e.target.value);
+            defaultGradeChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}

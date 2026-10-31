@@ -374,6 +374,14 @@ public class People {
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ? AND pool_name IN"
                 + " (SELECT pool_name FROM pool_member WHERE sheet_id = ? AND person_id = ?)", sheetId, fromId, sheetId, intoId);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+        // Crews (each a pool of its lead and members): a crew they lead is led by the other, who is then no member of
+        // it; a crew they are a member of has the other as member instead (never twice, never its lead).
+        jdbc.update("UPDATE crew SET lead_person_id = ? WHERE sheet_id = ? AND lead_person_id = ?", intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM crew_member m WHERE m.sheet_id = ? AND m.person_id IN (?, ?) AND EXISTS (SELECT 1 FROM crew c"
+                + " WHERE c.sheet_id = m.sheet_id AND c.name = m.crew_name AND c.lead_person_id = ?)", sheetId, fromId, intoId, intoId);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ? AND crew_name IN"
+                + " (SELECT crew_name FROM crew_member WHERE sheet_id = ? AND person_id = ?)", sheetId, fromId, sheetId, intoId);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
         // Fixed period figures.
         jdbc.update("UPDATE period_person_total t SET (total, carried) = (SELECT t.total + f.total,"
                 + " CASE WHEN t.carried IS NULL OR f.carried IS NULL THEN NULL ELSE t.carried + f.carried END"

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -276,6 +277,26 @@ public class Settings {
         plainHistory(sheetId, PROOF_KINDS, kinds);
     }
 
+    /** The sheet's default grade as set; null when blank (A). */
+    public String defaultGradeSet(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the default grade
+        return jdbc.queryForObject("SELECT default_grade FROM sheet WHERE id = ?", String.class, sheetId);
+    }
+
+    /** The grade a new person takes when none is given: the sheet's default grade, A when blank. */
+    public String defaultGrade(String sheetId) {
+        String grade = defaultGradeSet(sheetId);
+        return grade == null ? START_DEFAULT_GRADE : grade;
+    }
+
+    public void setDefaultGrade(String sheetId, String grade) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET default_grade = ? WHERE id = ?", grade.isEmpty() ? null : grade, sheetId);
+        plainHistory(sheetId, DEFAULT_GRADE, grade);
+    }
+
+    public static final String START_DEFAULT_GRADE = "A";
+
     /** The sheet's pot at two decimals; null when none. */
     public BigDecimal pot(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the pot
@@ -388,7 +409,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", PROOF_KINDS = "proof-kinds", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", PROOF_KINDS = "proof-kinds", DEFAULT_GRADE = "default-grade", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -464,6 +485,6 @@ public class Settings {
                 alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()),
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
                 escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
-                String.join(",", proofKinds(sheetId)));
+                String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""));
     }
 }
