@@ -3,6 +3,7 @@ import { getJson } from '../../api/http';
 import type { Late } from '../claims/useClaims';
 import { useSheetToday } from '../sheet/useSheet';
 import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+import { gradeOn, usePeople } from '../people/usePeople';
 
 /** A role given to a user name: clerk (the default for any name) or steward. */
 export type RoleEntry = { name: string; role: string };
@@ -13,14 +14,14 @@ export type RoleEntry = { name: string; role: string };
  *  (yyyy-mm-dd), or null when off, and `gradeTerms` the terms set per grade (a grade not in it uses the
  *  sheet's terms), and `cap` with two decimals, or null for no cap — each dated one as in force on the
  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
- *  terms, terms-<grade>, late-pct, cap, proof-threshold, note-threshold), oldest from-date first; and `proofThreshold` with
+ *  terms, terms-<grade>, grace-<grade>, late-pct, cap, proof-threshold, note-threshold), oldest from-date first; and `proofThreshold` with
  *  two decimals, or null for none, as in force on the sheet's today; and `perms`, the roles set for each
- *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated). */
+ *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>). */
 /** A delegation of the steward role: the user acts as a steward while the sheet's today is from
  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
 export type DelegationEntry = { name: string; from: string; to: string; by: string };
 
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number> };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };
@@ -76,12 +77,20 @@ export function useTerms(sheet: string): number {
 /** The late percent of a sheet that has not set one. */
 export const DEFAULT_LATE_PCT = '0.00';
 
-/** What makes an overdue claim's due grow: the sheet's today and its late percent, by date. */
+/** What makes an overdue claim's due grow: the sheet's today and its late percent, by date; and a
+ *  claim's grace days: those of its person's grade in force on its date, in force on that date. */
 export function useLate(sheet: string): Late {
   const settings = useSettings(sheet).data;
+  const { data: people = [] } = usePeople(sheet);
   return {
     today: useSheetToday(sheet),
     pctOn: (date) => valueOn(settings, 'late-pct', date, DEFAULT_LATE_PCT) ?? DEFAULT_LATE_PCT,
+    graceOn: (claim) => {
+      const person = people.find((p) => p.id === claim.personId);
+      if (person === undefined) return 0;
+      const days = valueOn(settings, `grace-${gradeOn(person, claim.date)}`, claim.date, null);
+      return days === null ? 0 : Number(days);
+    },
   };
 }
 

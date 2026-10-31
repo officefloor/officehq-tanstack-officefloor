@@ -68,11 +68,12 @@ public class Rollup {
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.counts(claim)) continue;
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
+                String grade = person.gradeOn(claim.getDate());
+                BigDecimal figure = figures.due(claim, grade);
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;
-                    if (claim.getStatus().isOpen() && !claim.isDeferred() && today != null && claim.getDueBy().isBefore(today)) {
+                    if (figures.overdue(claim, grade)) {
                         overdue = overdue.add(figure);
                     }
                 }

@@ -137,6 +137,29 @@ public class Settings {
         return TERMS + "-" + grade;
     }
 
+    /** The grace days of `grade` in force on `date`: a claim of that grade then is overdue only once
+     *  its due-by plus them is before the sheet's today. 0 when none are set then. */
+    public int grace(String sheetId, String grade, LocalDate date) {
+        BigDecimal days = valueOn(sheetId, graceKey(grade), date, null);
+        return days != null ? days.intValue() : 0;
+    }
+
+    /** Every grade's grace days in force on the sheet's today, by grade (a grade not in it has none). */
+    public Map<String, Integer> gradeGrace(String sheetId) {
+        LocalDate today = sheets.today(sheetId);
+        Map<String, Integer> grace = new TreeMap<>();
+        for (String grade : List.of("A", "B", "C")) {
+            BigDecimal days = valueOn(sheetId, graceKey(grade), today, null);
+            if (days != null) grace.put(grade, days.intValue());
+        }
+        return grace;
+    }
+
+    /** The key a grade's grace days are recorded under. */
+    public static String graceKey(String grade) {
+        return "grace-" + grade;
+    }
+
     /** The sheet's late percent in force on `date`: an overdue claim's due gains the one in force on
      *  each 30-day boundary after its due-by of its figure. 0.00 before any is recorded. */
     public BigDecimal latePct(String sheetId, LocalDate date) {

@@ -8,10 +8,10 @@ import java.util.Map;
 /** The sheet's settings as the screen sees them, each dated one as in force on the sheet's today:
  *  the clerk limit with two decimals (null for no limit), the floor with two decimals, the terms in days, the late percent with two decimals, the policy date as set (yyyy-mm-dd, null when blank), the period numbering from (yyyy-mm-dd, null when off), the terms set per grade, by grade (a grade not in it uses the sheet's terms), the cap with two decimals (null for no cap), and the roles given, by user name;
  *  and every value recorded for the dated settings, by key, oldest from-date first; and the proof threshold
- *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off). */
+ *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off); and the grace days set per grade, by grade (a grade not in it has none). */
 public record SettingsResponse(String clerkLimit, String floor, int terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, Integer> gradeTerms, String cap, List<RoleResponse> roles,
         Map<String, List<Settings.DatedValue>> dated, String proofThreshold, Map<String, String> perms, Integer graceDays,
-        List<DelegationResponse> delegations, String noteThreshold, String entryDate) {
+        List<DelegationResponse> delegations, String noteThreshold, String entryDate, Map<String, Integer> gradeGrace) {
     public static SettingsResponse of(String sheetId, LocalDate today, Settings settings) {
         BigDecimal limit = settings.clerkLimit(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
@@ -29,6 +29,6 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Strin
                 threshold != null ? threshold.toPlainString() : null, settings.permissions(sheetId),
                 settings.graceDays(sheetId), settings.delegations(sheetId),
                 noteThreshold != null ? noteThreshold.toPlainString() : null,
-                entryDate != null ? entryDate.toString() : null);
+                entryDate != null ? entryDate.toString() : null, settings.gradeGrace(sheetId));
     }
 }

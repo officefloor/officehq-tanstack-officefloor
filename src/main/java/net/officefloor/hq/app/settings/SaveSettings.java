@@ -15,6 +15,8 @@ public class SaveSettings {
         if (change.terms() != null) setDated(settings, change, today, Settings.TERMS, BigDecimal.valueOf(change.terms()));
         change.gradeTerms().forEach((grade, terms) -> setDated(settings, change, today, Settings.gradeKey(grade),
                 terms != null ? BigDecimal.valueOf(terms) : null));
+        change.gradeGrace().forEach((grade, days) -> setDated(settings, change, today, Settings.graceKey(grade),
+                days != null ? BigDecimal.valueOf(days) : null));
         if (change.latePct() != null) setDated(settings, change, today, Settings.LATE_PCT, change.latePct());
         if (change.setsPolicyDate()) settings.setPolicyDate(sheetId, change.policyDate());
         if (change.setsCap()) setDated(settings, change, today, Settings.CAP, change.cap());

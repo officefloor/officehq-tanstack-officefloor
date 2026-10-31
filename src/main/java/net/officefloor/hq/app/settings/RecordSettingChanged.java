@@ -23,6 +23,9 @@ public class RecordSettingChanged {
         change.gradeTerms().forEach((grade, terms) ->
                 audit.record(prefix + " key=terms-" + grade + " value=" + (terms != null ? terms : "")
                         + from(change, Settings.gradeKey(grade))));
+        change.gradeGrace().forEach((grade, days) ->
+                audit.record(prefix + " key=" + Settings.graceKey(grade) + " value=" + (days != null ? days : "")
+                        + from(change, Settings.graceKey(grade))));
         if (change.latePct() != null) {
             audit.record(prefix + " key=late-pct value=" + change.latePct().toPlainString() + from(change, Settings.LATE_PCT));
         }

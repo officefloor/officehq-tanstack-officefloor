@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
 import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; gradeTerms: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -28,19 +28,21 @@ type Froms = Record<string, string>;
  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
  * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
  * period whose to-date plus them is before the new today is closed; blank is off; not dated),
+ * the grace days of each grade (a claim of a person of that grade on its date is overdue, and its late
+ * charge counted, only from its due-by plus the grace in force on its date; blank is none),
  * its entry date (while set, the default date of a new claim in place of the sheet's today; blank is off; not dated),
  * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing),
  * and the delegations of the steward role (a steward delegates it to a user from a from-date to a to-date, inclusive,
  * by the sheet's today; a blank from-date is the sheet's today, a blank to-date the from-date). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
- * each grade's), the late percent, the cap, the proof threshold and the note threshold are dated: a save records each from its from-date (blank
+ * each grade's), the grace days of each grade, the late percent, the cap, the proof threshold and the note threshold are dated: a save records each from its from-date (blank
  * is the sheet's today), and each shows the value in force on the sheet's today.
  */
 function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, gradeGrace: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -53,7 +55,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, perms: {} });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, gradeTerms: {}, gradeGrace: {}, perms: {} });
       setFroms({});
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
@@ -83,7 +85,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     setLimitInvalid(false);
   };
   // A field is set by the next save once it has been touched, starting from the value in force.
-  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'perms'>, current: string) =>
+  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'gradeGrace' | 'perms'>, current: string) =>
     setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
   // The from-date field of a dated setting, by its key.
   const fromField = (key: string) => (
@@ -146,6 +148,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const graceDays = edit.graceDays?.trim() ?? null;
           const entryDate = edit.entryDate?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
+          const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
           const perms = Object.fromEntries(Object.entries(edit.perms).map(([a, v]) => [a, v.trim()]));
           const from = Object.fromEntries(Object.entries(froms).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''));
           if (
@@ -153,6 +156,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (floor !== null && !LIMIT.test(floor)) ||
             (terms !== null && !DAYS.test(terms)) ||
             Object.values(gradeTerms).some((v) => !DAYS.test(v)) ||
+            Object.values(gradeGrace).some((v) => !DAYS.test(v)) ||
             (latePct !== null && !PERCENT.test(latePct)) ||
             (policyDate !== null && !POLICY_DATE.test(policyDate)) ||
             (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom)) ||
@@ -170,7 +174,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, gradeTerms, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, gradeTerms, gradeGrace, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -249,6 +253,30 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
                 />
               </label>{' '}
               {fromField(`terms-${g}`)}{' '}
+            </span>
+          );
+        })}
+        {TERM_GRADES.map((g) => {
+          const own = data?.gradeGrace?.[g] !== undefined ? String(data.gradeGrace[g]) : '';
+          return (
+            <span key={g}>
+              Grace {g}:{' '}
+              <strong data-testid={`setting-grace-${g}-current`}>{saveSettings.isPending ? '' : own}</strong>{' '}
+              <label>
+                Set to{' '}
+                <input
+                  data-testid={`setting-grace-${g}`}
+                  placeholder="blank: none"
+                  value={edit.gradeGrace[g] ?? own}
+                  onFocus={() => setEdit((was) => (was.gradeGrace[g] !== undefined ? was : { ...was, gradeGrace: { ...was.gradeGrace, [g]: own } }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEdit((was) => ({ ...was, gradeGrace: { ...was.gradeGrace, [g]: value } }));
+                    clearSettingsError();
+                  }}
+                />
+              </label>{' '}
+              {fromField(`grace-${g}`)}{' '}
             </span>
           );
         })}

@@ -54,7 +54,7 @@ public class Figures {
     public BigDecimal due(Claim claim, String grade) {
         BigDecimal figure = figure(claim, grade);
         if (figure == null || claim.getDue() != null || claim.isCorrection()) return figure;
-        return figure.add(charge(claim, figure)).max(settings.floor(claim.getSheetId(), claim.getDate()));
+        return figure.add(charge(claim, grade, figure)).max(settings.floor(claim.getSheetId(), claim.getDate()));
     }
 
     /** The claim's figure without any late charge or floor: the fixed due, else the bound figure, else live.
@@ -65,19 +65,34 @@ public class Figures {
         return live(claim, grade);
     }
 
+    /** The date the claim goes overdue after: its due-by (fixed when it was added) plus the grace days
+     *  of its person's grade in force on the claim's date (`grade`), in force on that date. */
+    public LocalDate overdueFrom(Claim claim, String grade) {
+        return claim.getDueBy().plusDays(settings.grace(claim.getSheetId(), grade, claim.getDate()));
+    }
+
+    /** Whether the claim is overdue: OPEN (or PENDING), not deferred, and its due-by plus its grace
+     *  (see {@link #overdueFrom}) is before the sheet's today. */
+    public boolean overdue(Claim claim, String grade) {
+        if (!claim.getStatus().isOpen() || claim.isDeferred()) return false;
+        LocalDate today = sheets.today(claim.getSheetId());
+        return today != null && overdueFrom(claim, grade).isBefore(today);
+    }
+
     /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING), not deferred, and its due-by (fixed
-     *  when it was added) is before the sheet's today (a correction has none); then, for every full 30 days it is overdue, the
-     *  sheet's late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of the figure, each rounded by
-     *  the claim's rounding to two decimals, added up. A boundary whose percent is 0.00 adds nothing. Never bound
-     *  by a statement: it follows the sheet's today. */
-    public BigDecimal charge(Claim claim, BigDecimal figure) {
+     *  when it was added) plus its grace is before the sheet's today (a correction has none); then, for every full 30 days it is
+     *  overdue, counted from its due-by plus its grace, the sheet's late percent in force on that boundary date (the due-by plus
+     *  the grace plus 30, 60, 90 ... days) of the figure, each rounded by the claim's rounding to two decimals, added up. A
+     *  boundary whose percent is 0.00 adds nothing. Never bound by a statement: it follows the sheet's today. */
+    public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
         if (figure == null || !claim.getStatus().isOpen() || claim.isDeferred() || claim.isCorrection()) return none;
         String sheetId = claim.getSheetId();
-        long periods = ChronoUnit.DAYS.between(claim.getDueBy(), sheets.today(sheetId)) / 30;
+        LocalDate from = overdueFrom(claim, grade);
+        long periods = ChronoUnit.DAYS.between(from, sheets.today(sheetId)) / 30;
         BigDecimal total = none;
         for (long k = 1; k <= periods; k++) {
-            BigDecimal pct = settings.latePct(sheetId, claim.getDueBy().plusDays(30 * k));
+            BigDecimal pct = settings.latePct(sheetId, from.plusDays(30 * k));
             if (pct.signum() == 0) continue;
             total = total.add(figure.multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim)));
         }

@@ -489,7 +489,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-due-by">{c.dueBy}</span>{' '}
-              <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-overdue">{overdue(c, lateBy) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
