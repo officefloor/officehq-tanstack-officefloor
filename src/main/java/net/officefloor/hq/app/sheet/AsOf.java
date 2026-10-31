@@ -30,7 +30,7 @@ public class AsOf {
             "PERSON_WATCH", "PERSON_STATEMENT", "PERIOD", "PERIOD_PERSON_TOTAL", "PERIOD_NUMBER", "RATE",
             "SHEET_SETTING", "SHEET_SETTING_DATED", "SHEET_ROLE", "SHEET_PERMISSION", "SHEET_DELEGATION",
             "CLAIM_LOG", "SHEET_GRADE_TERMS", "SHEET_HOLIDAY", "SHEET_VOID_REASON", "CLAIM_COMMENT", "PERSON_ALIAS",
-            "POOL", "POOL_MEMBER");
+            "POOL", "POOL_MEMBER", "PLAN", "PLAN_CLAIM");
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
