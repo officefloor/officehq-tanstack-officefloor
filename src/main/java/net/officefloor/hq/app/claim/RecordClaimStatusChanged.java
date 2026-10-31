@@ -21,7 +21,8 @@ public class RecordClaimStatusChanged {
                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
                 + (fixesDue ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")
                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : "")
-                + (voidsSettled ? " reversed=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : ""));
+                + (voidsSettled ? " reversed=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")
+                + (change.action() == ClaimAction.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
         // A watched person's claim settled or approved: a line per watching user, after the claim's own.
         if (fixesDue) watches.notify(claim, person, change.user(), audit);
     }

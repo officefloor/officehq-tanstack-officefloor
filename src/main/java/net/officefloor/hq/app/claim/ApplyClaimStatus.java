@@ -8,6 +8,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.settings.Role;
 import net.officefloor.hq.app.settings.Settings;
+import net.officefloor.hq.app.voidreason.VoidReasons;
 import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
@@ -27,13 +28,16 @@ import net.officefloor.plugin.variable.Val;
  *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
  *  A claim due by in a closed period cannot change status at all. Opening, settling and voiding are
- *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}). */
+ *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}).
+ *  While the sheet's list of void reasons is not empty, a void needs a reason from it, which the
+ *  claim keeps. */
 public class ApplyClaimStatus {
     /** How many days after its settlement (the status log's SETTLED date) a steward may still void a claim. */
     static final int SETTLED_VOID_DAYS = 7;
 
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, ClaimNumbers numbers, People people,
-            Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets)
+            Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets,
+            VoidReasons voidReasons)
             throws ClaimStatusRefusedException, PeriodClosedException {
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         if (!change.action().allowedFrom(claim.getStatus())) {
@@ -61,6 +65,13 @@ public class ApplyClaimStatus {
                 throw new ClaimStatusRefusedException("Only a steward can void a settled claim, and only within "
                         + SETTLED_VOID_DAYS + " days of its settlement");
             }
+        }
+        String voidReason = null;
+        if (change.action() == ClaimAction.VOID && !voidReasons.onSheet(claim.getSheetId()).isEmpty()) {
+            if (change.reason() == null || !voidReasons.has(claim.getSheetId(), change.reason())) {
+                throw new ClaimStatusRefusedException("A void needs a void reason from the sheet's list");
+            }
+            voidReason = change.reason();
         }
         if (change.action() == ClaimAction.SETTLE && claim.isDeferred()) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
@@ -93,6 +104,7 @@ public class ApplyClaimStatus {
                     && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
         }
         claim.setStatus(pending ? ClaimStatus.PENDING : change.action().to());
+        if (change.action() == ClaimAction.VOID) claim.setVoidReason(voidReason);
         if (change.action() == ClaimAction.OPEN) {
             claim.setNumber(numbers.next(claim));
             claim.setOpenedBy(change.user());

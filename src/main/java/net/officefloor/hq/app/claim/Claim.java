@@ -29,6 +29,7 @@ public class Claim {
     private String ref;
     private String tags;
     private String tagsUsed;
+    private String voidReason;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -116,6 +117,9 @@ public class Claim {
     /** Every tag the claim has ever carried, in the same form as its tags; null when none. */
     public String getTagsUsed() { return tagsUsed; }
     public void setTagsUsed(String tagsUsed) { this.tagsUsed = tagsUsed; }
+    /** The reason from its sheet's list the claim was voided with; null when none was given. */
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

@@ -70,6 +70,8 @@ export type Claim = {
   tags: string[];
   /** Every tag the claim has ever carried (its tags now among them). */
   tagsUsed: string[];
+  /** The reason from the sheet's list the claim was voided with; null when none was given. */
+  voidReason: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

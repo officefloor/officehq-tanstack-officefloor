@@ -17,7 +17,7 @@ public class ValidateClaimStatus {
             if (parsed == ClaimAction.REJECT && reason.isEmpty()) {
                 throw new InvalidSheetRequestException("A rejection needs a reason");
             }
-            body.set(new ClaimStatusChange(parsed, request.user(), parsed == ClaimAction.REJECT ? reason : null));
+            body.set(new ClaimStatusChange(parsed, request.user(), parsed == ClaimAction.REJECT || (parsed == ClaimAction.VOID && !reason.isEmpty()) ? reason : null));
         } catch (IllegalArgumentException e) {
             throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject or void): " + action);
         }

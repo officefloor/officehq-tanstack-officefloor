@@ -9,6 +9,7 @@ import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
+import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import {
   AMOUNT,
   CLAIM_NUMBER,
@@ -32,6 +33,7 @@ const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the u
 const NOT_ALLOWED = "Your role may not do that: the sheet's permission matrix decides who opens, settles and voids claims.";
 const CANNOT_VOID_SETTLED = 'Only a steward can void a SETTLED claim, and only within 7 days of its settlement (never one due by in a closed period).';
 const NO_REASON = 'A rejection needs a reason.';
+const NO_VOID_REASON = "Choose a void reason from the sheet's list to void this claim.";
 const NOT_STEWARD_MOVE = "Your role may not reassign a claim (by default only a steward can).";
 const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
 const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
@@ -142,6 +144,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [selected, setSelected] = useSelectedClaims();
   // The reason typed for rejecting each pending claim, by claim id.
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  // The void reason chosen for each claim, by claim id: one is needed while the sheet has any.
+  const { data: voidReasons = [] } = useVoidReasons(sheet);
+  const [voidWith, setVoidWith] = useState<Record<number, string>>({});
   // The date typed for deferring each claim, by claim id.
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The new date typed for re-dating each claim, by claim id.
@@ -204,12 +209,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => {
       if (c.action === 'reject') setReasons((r) => ({ ...r, [c.id]: '' }));
+      if (c.action === 'void') setVoidWith((r) => ({ ...r, [c.id]: '' }));
     },
     onError: (e, c) =>
       setRefused({
         id: c.id,
         message: !(e instanceof HttpError)
           ? STATUS_REFUSED
+          : e.body.includes('void reason')
+            ? NO_VOID_REASON
           : e.body.includes('void a settled')
             ? CANNOT_VOID_SETTLED
           : e.body.includes('proof threshold')
@@ -599,6 +607,26 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                       />{' '}
                     </>
                   )}
+                  {action === 'void' && voidReasons.length > 0 && (
+                    <>
+                      <select
+                        data-testid="claim-void-reason"
+                        aria-label="Reason for voiding"
+                        value={voidWith[c.id] ?? ''}
+                        onChange={(e) => {
+                          setVoidWith({ ...voidWith, [c.id]: e.target.value });
+                          if (refused?.id === c.id) setRefused(null);
+                        }}
+                      >
+                        <option value="">(void reason)</option>
+                        {voidReasons.map((v) => (
+                          <option key={v.reason} value={v.reason}>
+                            {v.reason}
+                          </option>
+                        ))}
+                      </select>{' '}
+                    </>
+                  )}
                   <button
                     type="button"
                     data-testid={`claim-${action}`}
@@ -609,7 +637,22 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                         setRefused({ id: c.id, message: NO_REASON });
                         return;
                       }
-                      changeStatus.mutate({ id: c.id, action, reason: action === 'reject' ? (reasons[c.id] ?? '').trim() : undefined });
+                      const voidReason = voidWith[c.id] ?? '';
+                      if (action === 'void' && voidReasons.length > 0 && !voidReasons.some((v) => v.reason === voidReason)) {
+                        // Refused here, before anything is sent: the store is untouched.
+                        setRefused({ id: c.id, message: NO_VOID_REASON });
+                        return;
+                      }
+                      changeStatus.mutate({
+                        id: c.id,
+                        action,
+                        reason:
+                          action === 'reject'
+                            ? (reasons[c.id] ?? '').trim()
+                            : action === 'void' && voidReason !== ''
+                              ? voidReason
+                              : undefined,
+                      });
                     }}
                   >
                     {ACTION_LABELS[action]}

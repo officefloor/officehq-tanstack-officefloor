@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -92,10 +92,10 @@ public class Claims {
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, locked_by = ?, ref = ?, tags = ?, tags_used = ? WHERE id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, locked_by = ?, ref = ?, tags = ?, tags_used = ?, void_reason = ? WHERE id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
                     claim.getNumber(), claim.getDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
-                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getLockedBy(), claim.getRef(), claim.getTags(), claim.getTagsUsed(), claim.getId());
+                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getLockedBy(), claim.getRef(), claim.getTags(), claim.getTagsUsed(), claim.getVoidReason(), claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -139,6 +139,7 @@ public class Claims {
         claim.setRef(rs.getString("ref"));
         claim.setTagsUsed(rs.getString("tags_used"));
         claim.setTags(rs.getString("tags"));
+        claim.setVoidReason(rs.getString("void_reason"));
         Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
         Date until = rs.getDate("deferred_until");
