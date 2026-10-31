@@ -1,0 +1,148 @@
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 00000000..c5fd2ddb
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,35 @@
++import { useState } from 'react';
++import { useCurrentUser } from './useSession';
++
++/** Sign in by typing a name; there is no password. */
++export function SignIn() {
++  const [, setUser] = useCurrentUser();
++  const [name, setName] = useState('');
++
++  return (
++    <form
++      data-testid="signin-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = name.trim();
++        if (trimmed !== '') setUser(trimmed);
++      }}
++    >
++      <label>
++        Name{' '}
++        <input data-testid="signin-name" value={name} onChange={(e) => setName(e.target.value)} />
++      </label>{' '}
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++    </form>
++  );
++}
++
++export function CurrentUser({ user }: { user: string }) {
++  return (
++    <p>
++      Signed in as <strong data-testid="current-user">{user}</strong>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/session/useSession.ts b/src/main/frontend/features/session/useSession.ts
+new file mode 100644
+index 00000000..bcfca1f3
+--- /dev/null
++++ b/src/main/frontend/features/session/useSession.ts
+@@ -0,0 +1,13 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/**
++ * Who is signed in and which sheet is active. Both live in the URL (`user`, `sheet`) like any other
++ * state that outlives a click; every feature that needs them reads them from here.
++ */
++export function useCurrentUser() {
++  return useSearchParam('user', asString);
++}
++
++export function useCurrentSheet() {
++  return useSearchParam('sheet', asString);
++}
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+new file mode 100644
+index 00000000..faf21dbc
+--- /dev/null
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -0,0 +1,32 @@
++import { useState } from 'react';
++import { useCurrentSheet } from '../session/useSession';
++
++/** Choose the active sheet by typing its id and loading it. */
++export function SheetPicker() {
++  const [sheet, setSheet] = useCurrentSheet();
++  const [id, setId] = useState('');
++
++  return (
++    <form
++      data-testid="sheet-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = id.trim();
++        if (trimmed !== '') setSheet(trimmed);
++      }}
++    >
++      <label>
++        Sheet id{' '}
++        <input data-testid="sheet-id-input" value={id} onChange={(e) => setId(e.target.value)} />
++      </label>{' '}
++      <button type="submit" data-testid="sheet-load">
++        Load
++      </button>{' '}
++      {sheet !== '' && (
++        <span>
++          Sheet: <strong data-testid="sheet-current-id">{sheet}</strong>
++        </span>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb03126..8453e6bc 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,29 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { CurrentUser, SignIn } from '../features/session/SignIn';
++import { useCurrentSheet, useCurrentUser } from '../features/session/useSession';
++import { SheetPicker } from '../features/sheet/SheetPicker';
++import { SheetPanels } from '../slots/defs/sheetPanels';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The one screen. Sign in first; then load a sheet, whose content fills the sheet.panels slot.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++
++  if (user === '') return <SignIn />;
++  return (
++    <>
++      <CurrentUser user={user} />
++      <SheetPicker />
++      {sheet === '' ? (
++        <p data-testid="home-empty">Nothing here yet.</p>
++      ) : (
++        // Keyed by sheet so loading another sheet starts its panels afresh.
++        <SheetPanels.Slot key={sheet} user={user} sheet={sheet} />
++      )}
++    </>
++  );
+ }
+diff --git a/src/main/frontend/slots/defs/sheetPanels.ts b/src/main/frontend/slots/defs/sheetPanels.ts
+new file mode 100644
+index 00000000..5cfe94bc
+--- /dev/null
++++ b/src/main/frontend/slots/defs/sheetPanels.ts
+@@ -0,0 +1,7 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The active sheet's content on the home screen. Rendered only once someone is signed in and a
++ * sheet is loaded; everything kept per sheet contributes a panel here, keyed by `sheet`.
++ */
++export const SheetPanels = defineSlot<{ user: string; sheet: string }>('sheet.panels');
