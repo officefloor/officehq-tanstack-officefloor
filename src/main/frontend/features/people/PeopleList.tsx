@@ -33,6 +33,7 @@ import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SnapshotCompare } from './SnapshotCompare';
+import { timelineOf } from './timeline';
 import { SortBy, useSortBy } from './SortBy';
 import { ColumnChooser, useColumns } from './ColumnChooser';
 import { gradeOn, patronShares, sharedCents, shownName } from './usePeople';
@@ -266,6 +267,7 @@ export function PeopleList() {
             <th>Retired from</th>
             <th>Past retirements</th>
             <th>Snapshots</th>
+            <th>Timeline</th>
             {shown('hold') && <th>Hold</th>}
             {shown('statement-count') && <th>Statements</th>}
             {shown('stated-total') && <th>Last stated</th>}
@@ -363,6 +365,13 @@ export function PeopleList() {
                 <td>
                   {(p.snapshots ?? []).map((line, i) => (
                     <div key={i} data-testid="person-snapshot-line">
+                      {line}
+                    </div>
+                  ))}
+                </td>
+                <td>
+                  {timelineOf(p, claims).map((line, i) => (
+                    <div key={i} data-testid="person-timeline-line">
                       {line}
                     </div>
                   ))}

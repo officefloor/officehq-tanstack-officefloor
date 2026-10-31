@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
@@ -41,6 +41,9 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
     setTags('');
   };
 
+  // Set when a refused save closes the editor: closing it then keeps the save's error showing.
+  const keepError = useRef(false);
+
   const save = useMutation({
     mutationFn: (body: { amount: string; date: string; note: string; corrects: string; ref: string; tags: string }) =>
       editing !== ''
@@ -49,6 +52,16 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
             `/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/claims`,
             { ...body, user },
           ),
+    // A refused save closes the editor (releasing its lock), its error still showing, so the form is back to adding.
+    onError: () => {
+      if (editing === '') return;
+      const refused = editing;
+      keepError.current = true;
+      setEditing(undefined);
+      void postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(refused)}/unlock`, { user })
+        .catch(() => undefined)
+        .then(() => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }));
+    },
     onSuccess: () => {
       clear();
       if (editing !== '') setEditing(undefined);
@@ -72,8 +85,11 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
   // Opening (or closing) an editor fills the form with that claim's values (or empties it).
   const editedId = edited?.id;
   useEffect(() => {
-    save.reset();
-    fromTemplate.reset();
+    if (keepError.current) keepError.current = false;
+    else {
+      save.reset();
+      fromTemplate.reset();
+    }
     if (edited) {
       setAmount(edited.amount);
       setDate(edited.date);
