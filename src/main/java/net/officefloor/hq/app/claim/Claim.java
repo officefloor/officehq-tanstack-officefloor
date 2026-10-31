@@ -93,10 +93,11 @@ public class Claim {
     /** The date the claim was last deferred until; null if it was never deferred. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
-    /** Whether the claim is deferred on the date: OPEN and deferred until a later date. A deferred claim counts in no
-     *  total, is not overdue, cannot be settled and is left unbound by a statement. */
+    /** Whether the claim is deferred on the date: OPEN (or SETTLED while a statement bound it), deferred until a later
+     *  date and not bound by a statement (a deferral takes effect only once the binding ends). A deferred claim counts in
+     *  no total, is not overdue, cannot be settled and is left unbound by a statement. */
     public boolean isDeferredOn(LocalDate today) {
-        return status == ClaimStatus.OPEN && deferredUntil != null && today.isBefore(deferredUntil);
+        return (status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED) && !stated && deferredUntil != null && today.isBefore(deferredUntil);
     }
     /** The last day (the sheet's today then) a reminder was written for the claim; null if it was never reminded. */
     private LocalDate remindedOn;

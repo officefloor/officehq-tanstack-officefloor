@@ -79,7 +79,7 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
  *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
  *  before it (compounding), each rounded like due, the charges added up. A statement binds it into the due it binds; settling freezes it into the settled due.
  *  A claim whose late charge a steward waived gains none, whatever its overdue state. */
-export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string; waived?: boolean }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
+export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; stated?: boolean; personId?: string; waived?: boolean }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
   if (late === undefined || late.today === undefined || !claim.dueBy || claim.waived || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
   const from = lateFrom(claim, late.grace);
   const days = Math.round((Date.parse(late.today) - Date.parse(from)) / DAY_MS);

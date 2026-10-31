@@ -31,6 +31,7 @@ public class SavePasteClaims {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidPasteClaims request, People people, Claims claims,
             Sheets sheets, Periods periods, Audit audit, Rollup rollup, Settings settings, Rates rates,
             ClaimNumbering numbering, ClaimLog log, Watches watches, net.officefloor.hq.app.holiday.Holidays holidays,
+            org.springframework.transaction.PlatformTransactionManager transactions,
             ObjectResponse<PasteClaimsResponse> response) throws InvalidClaimException {
         LocalDate today = settings.claimDate(sheetId);
         List<Claim> existing = claims.list(sheetId);
@@ -87,6 +88,25 @@ public class SavePasteClaims {
             matched.add(match);
         }
         ValidClaimStatus open = new ValidClaimStatus(ClaimStatus.OPEN, request.user(), ValidClaimStatus.Decision.NONE, null);
+        // The lines are written in one transaction: a refused open rolls back the lines added before it (and their audit).
+        org.springframework.transaction.TransactionStatus transaction = transactions.getTransaction(
+                new org.springframework.transaction.support.DefaultTransactionDefinition());
+        try {
+            write(sheetId, request, persons, dates, matched, open, people, claims, sheets, periods, audit, rollup, settings,
+                    rates, numbering, log, watches, holidays);
+        } catch (InvalidClaimException | RuntimeException e) {
+            transactions.rollback(transaction);
+            throw e;
+        }
+        transactions.commit(transaction);
+        response.send(new PasteClaimsResponse(request.lines().size()));
+    }
+
+    /** Adds (or updates) and opens each line in order; throws on the first refusal. */
+    private static void write(String sheetId, ValidPasteClaims request, List<Person> persons, List<LocalDate> dates,
+            List<Claim> matched, ValidClaimStatus open, People people, Claims claims, Sheets sheets, Periods periods,
+            Audit audit, Rollup rollup, Settings settings, Rates rates, ClaimNumbering numbering, ClaimLog log,
+            Watches watches, net.officefloor.hq.app.holiday.Holidays holidays) throws InvalidClaimException {
         for (int i = 0; i < request.lines().size(); i++) {
             ValidClaim valid = request.lines().get(i).claim();
             Person person = persons.get(i);
@@ -130,7 +150,6 @@ public class SavePasteClaims {
             claims.save(claim);
             AuditClaimStatus.record(open, claim, opened, people, audit, before, rollup, log, watches);
         }
-        response.send(new PasteClaimsResponse(request.lines().size()));
     }
 
     /** The newest DRAFT among the person's claims (not VOID nor DELETED) of that date and note; null when none

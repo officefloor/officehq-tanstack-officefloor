@@ -79,15 +79,17 @@ export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 /** Whether a statement binds the claim's figure now (a PENDING claim included). */
 export const isBound = (c: Claim) => c.stated;
 
-/** Whether a claim is deferred on the sheet's today: OPEN and deferred until a later date. A deferred claim
- *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
-/** Whether the row shows the claim as deferred: it was deferred until a date after the sheet's today, whatever its
- *  status now (a deferred claim later voided still shows it). Only an OPEN one is held back from the totals (`isDeferred`). */
-export const deferredShown = (c: { deferredUntil?: string }, today: string | undefined) =>
-  !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
+/** Whether the row shows the claim as deferred: it was deferred until a date after the sheet's today and no statement
+ *  binds it now, whatever its status (a deferred claim later voided still shows it). Only an OPEN one is held back from
+ *  the totals (`isDeferred`), or a SETTLED one settled while a statement bound it. */
+export const deferredShown = (c: { deferredUntil?: string; stated?: boolean }, today: string | undefined) =>
+  !c.stated && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
 
-export const isDeferred = (c: { status?: string; deferredUntil?: string }, today: string | undefined) =>
-  c.status === 'OPEN' && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
+/** Whether a claim is deferred on the sheet's today: OPEN (or SETTLED while a statement bound it), deferred until a later date and not bound by a statement
+ *  (a deferral takes effect only once the binding ends). A deferred claim counts in no total, is not overdue, cannot
+ *  be settled and is left unbound by a statement. */
+export const isDeferred = (c: { status?: string; deferredUntil?: string; stated?: boolean }, today: string | undefined) =>
+  (c.status === 'OPEN' || c.status === 'SETTLED') && !c.stated && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
 
 /** Whether a claim counts in the live totals: it counts, is not deferred on the sheet's today, and is not
  *  open, unbound and its person retired (`retiredOn`). A hold does not take it out — it only matters to the pools' cuts. */
