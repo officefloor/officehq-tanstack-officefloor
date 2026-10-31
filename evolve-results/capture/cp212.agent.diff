@@ -1,0 +1,57 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 595fc652..08a7a865 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -48,7 +48,7 @@ import { scoreBand, useSettings } from '../settings/useSettings';
+ // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
+ // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+ // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
+-// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number) and its band
++// their score (the dues of their counting SETTLED claims that correct nothing, over 100, minus 5 per overdue counting claim, rounded half to even to a whole number) and its band
+ // (HIGH, MID or LOW by the sheet's score thresholds; blank while either is),
+ // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
+ // claims; together the sum of their figures before the cap),
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index cc752d79..6db07527 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -65,11 +65,12 @@ export function useSheetFigures(sheet: string) {
+   const overdueSum = (cs: typeof overdue) =>
+     cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
+   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
+-  // A person's score: their settled-total over 100, minus 5 for each of their overdue counting
+-  // claims, rounded half to even to a whole number.
++  // A person's score: the dues of their counting SETTLED claims that correct nothing, over 100,
++  // minus 5 for each of their overdue counting claims, rounded half to even to a whole number.
+   const scoreOf = (person: Person) => {
+     const overdueCount = BigInt(overdue.filter((c) => c.personId === person.id).length);
+-    return halfEvenDiv(settledTotalOf(person) - overdueCount * 50000n, 10000n).toString();
++    const settled = dueSumOf(person, (c) => c.status === 'SETTLED' && !c.corrects);
++    return halfEvenDiv(settled - overdueCount * 50000n, 10000n).toString();
+   };
+   // Each person's due-total, skipping n/a, and overdue-total (always a figure), in list order.
+   const dueFigures = people.map(totalOf).filter((due): due is bigint => due !== null);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 27694dd9..2be3294c 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -83,7 +83,9 @@ public class Rollup {
+                 if (isOverdue(claim, grace(claim, person), today)) {
+                     overdueCount++;
+                 }
+-                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED) {
++                // The score's settled figures leave out corrections.
++                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED
++                        && (claim.getCorrects() == null || claim.getCorrects().isEmpty())) {
+                     settled = settled.add(figure);
+                 }
+                 if (figure != null) {
+@@ -167,7 +169,7 @@ public class Rollup {
+         }
+     }
+ 
+-    /** A person's score: their settled-total over 100, minus 5 for each of their overdue counting claims, rounded half to
++    /** A person's score: the dues of their counting SETTLED claims that correct nothing over 100, minus 5 for each of their overdue counting claims, rounded half to
+      *  even to a whole number. */
+     private static String score(BigDecimal settled, int overdueCount) {
+         return settled.subtract(BigDecimal.valueOf(5L * overdueCount * 100)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_EVEN)
