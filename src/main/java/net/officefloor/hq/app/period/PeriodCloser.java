@@ -16,13 +16,15 @@ import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.opening.Openings;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
 /** Closes a period, fixing its due-total as it is now: the dues as shown now of the claims whose due-by is in it that counted
- *  at the end of its last day (see {@link Person#countsAtEnd}), each with its late charge, and each person's share of it (a hold takes no claim out; a claim whose due is n/a adds nothing).
+ *  at the end of its last day (see {@link Person#countsAtEnd}), each with its late charge, and each person's share of it (a hold takes no claim out; a claim whose due is n/a adds nothing),
+ *  and every pool member's cut as it stands now (see {@link Pools#liveCuts}).
  *  Used by a close by hand and by the auto close when the sheet's today is changed (see {@link #closeDue}). */
 @Service
 public class PeriodCloser {
@@ -35,10 +37,12 @@ public class PeriodCloser {
     private final Sheets sheets;
     private final Audit audit;
     private final Openings openings;
+    private final Pools pools;
 
     public PeriodCloser(Periods periods, People people, Claims claims, Rates rates, Settings settings, Sheets sheets,
-            Audit audit, Openings openings) {
+            Audit audit, Openings openings, Pools pools) {
         this.openings = openings;
+        this.pools = pools;
         this.periods = periods;
         this.people = people;
         this.claims = claims;
@@ -84,7 +88,7 @@ public class PeriodCloser {
             personTotals.put(person.getId(), personTotal);
             total = total.add(personTotal);
         }
-        periods.close(sheetId, period.name(), total, personTotals, personCarried, soft);
+        periods.close(sheetId, period.name(), total, personTotals, personCarried, soft, pools.liveCuts(sheetId));
         audit.recordOnCommit((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + user
                 + " period=" + period.name() + " total=" + total.toPlainString() + (auto ? " auto=yes" : ""));
     }

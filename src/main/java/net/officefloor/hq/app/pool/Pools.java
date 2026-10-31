@@ -43,17 +43,26 @@ public class Pools {
     public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
         List<PoolResponse> pools = compute(sheetId, on, false);
         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
+        Map<String, Map<String, String>> frozen = frozenCuts(sheetId, day);
         Map<String, Map<String, String>> history = new LinkedHashMap<>();
-        jdbc.query("SELECT p.name, p.to_date FROM period p JOIN sheet s ON s.id = p.sheet_id WHERE p.sheet_id = ?"
-                + " AND p.to_date <= COALESCE(CAST(? AS DATE), s.today) ORDER BY p.from_date, p.name", rs -> {
+        jdbc.query("SELECT p.name, p.to_date, p.to_date <= COALESCE(CAST(? AS DATE), s.today) FROM period p"
+                + " JOIN sheet s ON s.id = p.sheet_id WHERE p.sheet_id = ? ORDER BY p.from_date, p.name", rs -> {
+                    String period = rs.getString(1);
+                    if (frozen.containsKey(period)) {
+                        history.put(period, frozen.get(period));
+                        return;
+                    }
+                    if (!rs.getBoolean(3)) {
+                        return;
+                    }
                     Map<String, String> cuts = new HashMap<>();
                     for (PoolResponse then : compute(sheetId, rs.getDate(2).toLocalDate(), true)) {
                         for (PoolResponse.Member m : then.members()) {
                             cuts.put(memberKey(then.name(), m), m.cut());
                         }
                     }
-                    history.put(rs.getString(1), cuts);
-                }, sheetId, day);
+                    history.put(period, cuts);
+                }, day, sheetId);
         if (history.isEmpty()) {
             return pools;
         }
@@ -69,6 +78,46 @@ public class Pools {
             withHistory.add(new PoolResponse(pool.name(), pool.totalShare(), pool.balanced(), members, pool.crew()));
         }
         return withHistory;
+    }
+
+    /** Every pool member's cut as it stands now (see {@link #list(String)}), to be fixed by a close or soft-close of a
+     *  period: one "<pool>\t<member key>\t<cut>" line per member. */
+    public String liveCuts(String sheetId) {
+        StringBuilder lines = new StringBuilder();
+        for (PoolResponse pool : compute(sheetId, null, false)) {
+            for (PoolResponse.Member m : pool.members()) {
+                String key = memberKey(pool.name(), m);
+                lines.append(lines.isEmpty() ? "" : "\n").append(pool.name()).append('\t')
+                        .append(key.substring(key.indexOf('\u0000') + 1)).append('\t').append(m.cut());
+            }
+        }
+        return lines.toString();
+    }
+
+    /** The cuts fixed for each period that was closed or soft-closed at the end of the date (null: now), as its latest
+     *  close fixed them, by member key; a period open then (or closed before cuts were fixed) is left out. */
+    private Map<String, Map<String, String>> frozenCuts(String sheetId, java.sql.Date day) {
+        Map<String, String> latest = new HashMap<>();
+        jdbc.query("SELECT name, closed OR soft_closed, pool_cuts FROM period_history WHERE sheet_id = ?"
+                + (day == null ? "" : " AND (set_on IS NULL OR set_on <= ?)") + " ORDER BY seq",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> latest.put(rs.getString(1),
+                        rs.getBoolean(2) ? rs.getString(3) : null),
+                day == null ? new Object[] {sheetId} : new Object[] {sheetId, day});
+        Map<String, Map<String, String>> frozen = new HashMap<>();
+        latest.forEach((period, lines) -> {
+            if (lines == null) {
+                return;
+            }
+            Map<String, String> cuts = new HashMap<>();
+            for (String line : lines.split("\n")) {
+                String[] parts = line.split("\t", -1);
+                if (parts.length == 3) {
+                    cuts.put(parts[0] + "\u0000" + parts[1], parts[2]);
+                }
+            }
+            frozen.put(period, cuts);
+        });
+        return frozen;
     }
 
     /** The key a member is matched by across dates: its pool and the person's id or the member pool's name. */

@@ -60,24 +60,26 @@ public class Periods {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Close (or soft-close) the named period, fixing its due-total and each person's due-total and carried figure for it. */
+    /** Close (or soft-close) the named period, fixing its due-total, each person's due-total and carried figure for it,
+     *  and every pool member's cut as it stands now (see {@code Pools#frozenCuts}). */
     public void close(String sheetId, String name, BigDecimal total, Map<Long, BigDecimal> personTotals,
-            Map<Long, BigDecimal> personCarried, boolean soft) {
+            Map<Long, BigDecimal> personCarried, boolean soft, String poolCuts) {
         jdbc.update("UPDATE period SET closed = ?, soft_closed = ?, closed_total = ? WHERE sheet_id = ? AND name = ?",
                 !soft, soft, total, sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
         personTotals.forEach((personId, personTotal) -> jdbc.update(
                 "INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
                 sheetId, name, personId, personTotal, personCarried.getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
-        history(sheetId, name, !soft, soft, total, personTotals, personCarried);
+        history(sheetId, name, !soft, soft, total, personTotals, personCarried, poolCuts);
     }
 
-    /** Records a close, soft-close or reopen of the period in its history, dated the sheet's today. */
+    /** Records a close, soft-close or reopen of the period in its history, dated the sheet's today, with the pool
+     *  members' cuts it fixed (null on a reopen). */
     private void history(String sheetId, String name, boolean closed, boolean soft, BigDecimal total,
-            Map<Long, BigDecimal> personTotals, Map<Long, BigDecimal> personCarried) {
+            Map<Long, BigDecimal> personTotals, Map<Long, BigDecimal> personCarried, String poolCuts) {
         jdbc.update("INSERT INTO period_history (sheet_id, name, set_on, closed, soft_closed, closed_total, person_totals,"
-                + " person_carried) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?, ?)", sheetId, name, sheetId,
-                closed, soft, total, joined(personTotals), joined(personCarried));
+                + " person_carried, pool_cuts) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?, ?, ?)", sheetId,
+                name, sheetId, closed, soft, total, joined(personTotals), joined(personCarried), poolCuts);
     }
 
     /** Figures by person id as "<person id>=<figure>" joined by ";". */
@@ -93,7 +95,7 @@ public class Periods {
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
                 sheetId, name);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
-        history(sheetId, name, false, false, null, Map.of(), Map.of());
+        history(sheetId, name, false, false, null, Map.of(), Map.of(), null);
     }
 
     /** Lock or unlock the named period. */
