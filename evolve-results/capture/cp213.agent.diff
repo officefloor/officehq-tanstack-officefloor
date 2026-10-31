@@ -1,0 +1,322 @@
+diff --git a/src/main/frontend/features/plans/PlanControl.tsx b/src/main/frontend/features/plans/PlanControl.tsx
+index a2b3490c..cfba88bb 100644
+--- a/src/main/frontend/features/plans/PlanControl.tsx
++++ b/src/main/frontend/features/plans/PlanControl.tsx
+@@ -9,7 +9,8 @@ import { plansKey, usePlans, type Plan } from './usePlans';
+ // The person's plans, each with how many claims it has made so far, its next five dates after the sheet's today and whether it is
+ // paused (with its pause and resume buttons), and the form that adds one: an amount
+ // the claim form takes, a start (blank: the sheet's today), every N days (a whole number, at least 1) or
+-// instead monthly on a day of the month (1 to 31), and an end not before the start. A refusal shows the plan error on the row.
++// instead monthly on a day of the month (1 to 31), and an end not before the start, and optionally a descendant sheet
++// whose person of the same name gets its claims. A refusal shows the plan error on the row.
+ export function PlanControl({ personId }: { personId: string }) {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+@@ -19,11 +20,12 @@ export function PlanControl({ personId }: { personId: string }) {
+   const [every, setEvery] = useState('');
+   const [day, setDay] = useState('');
+   const [end, setEnd] = useState('');
++  const [target, setTarget] = useState('');
+   const queryClient = useQueryClient();
+   const once = useSubmitOnce();
+ 
+   const add = useMutation({
+-    mutationFn: (body: { amount: string; start: string; every: string; day: string; end: string }) =>
++    mutationFn: (body: { amount: string; start: string; every: string; day: string; end: string; sheet: string }) =>
+       postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/plans`, { ...body, user }),
+     onSuccess: () => {
+       setAmount('');
+@@ -31,6 +33,7 @@ export function PlanControl({ personId }: { personId: string }) {
+       setEvery('');
+       setDay('');
+       setEnd('');
++      setTarget('');
+       return queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+     },
+   });
+@@ -51,7 +54,7 @@ export function PlanControl({ personId }: { personId: string }) {
+         onSubmit={(e) => {
+           e.preventDefault();
+           taken();
+-          once(() => add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim() }));
++          once(() => add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim(), sheet: target.trim() }));
+         }}
+       >
+         <input data-testid="plan-form-amount" value={amount} placeholder="Amount" inputMode="decimal" onChange={changed(setAmount)} />{' '}
+@@ -59,12 +62,13 @@ export function PlanControl({ personId }: { personId: string }) {
+         <input data-testid="plan-form-every" value={every} placeholder="Every N days" inputMode="numeric" onChange={changed(setEvery)} />{' '}
+         <input data-testid="plan-form-day" value={day} placeholder="Or day of month" inputMode="numeric" onChange={changed(setDay)} />{' '}
+         <input data-testid="plan-form-end" value={end} placeholder="End yyyy-mm-dd" onChange={changed(setEnd)} />{' '}
++        <input data-testid="plan-form-sheet" value={target} placeholder="On sheet (a descendant)" onChange={changed(setTarget)} />{' '}
+         <button type="submit" data-testid="plan-form-submit">Add plan</button>
+         {add.isError && (
+           <span data-testid="plan-error" role="alert">
+             {' '}
+             The plan could not be added: the amount must be 0.00 or more with at most two decimals, every a whole number of days of
+-            at least 1 or the day of the month 1 to 31 (not both), and the end not before the start.
++            at least 1 or the day of the month 1 to 31 (not both), the end not before the start, and the sheet blank or one of this sheet's descendants.
+           </span>
+         )}
+       </form>
+@@ -118,7 +122,8 @@ function PlanRow({ plan: p }: { plan: Plan }) {
+         </>
+       )}{' '}
+       from{' '}
+-      <span data-testid="plan-start">{p.start}</span> to <span data-testid="plan-end">{p.end}</span>, made{' '}
++      <span data-testid="plan-start">{p.start}</span> to <span data-testid="plan-end">{p.end}</span>
++      {p.sheet !== null && <> on sheet <span data-testid="plan-sheet">{p.sheet}</span></>}, made{' '}
+       <span data-testid="plan-generated">{p.generated}</span>, next{' '}
+       <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>, paused{' '}
+       <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+diff --git a/src/main/frontend/features/plans/usePlans.ts b/src/main/frontend/features/plans/usePlans.ts
+index a2ffef05..fed71815 100644
+--- a/src/main/frontend/features/plans/usePlans.ts
++++ b/src/main/frontend/features/plans/usePlans.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+ /** A person's plan: the amount (two decimals) from the start every `every` days, or monthly on `day` of the month (the
+- *  other null), up to the end; `generated` is how many claims it has made so far; `nextDates` its first five plan dates after
++ *  other null), up to the end, generating on the descendant `sheet` (null: this sheet); `generated` is how many claims it has made so far; `nextDates` its first five plan dates after
+  *  the sheet's today and on or before the end, skipping those a pause covers (none while paused); `paused` whether it is paused now;
+  *  `changes` its amount changes, oldest first, each "<date> amount=<amount>". */
+ export type Plan = {
+@@ -13,6 +13,7 @@ export type Plan = {
+   every: number | null;
+   day: number | null;
+   end: string;
++  sheet: string | null;
+   generated: number;
+   nextDates: string[];
+   paused: boolean;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
+index 2ed91c2c..5cf69fb2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
++import java.util.LinkedHashMap;
++import java.util.Map;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.holiday.Holidays;
+ import net.officefloor.hq.app.period.Periods;
+@@ -26,7 +28,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * dates before the start left out) up to the end and the sheet's today that has none yet, dated that day with an empty note, each
+  * audited as CLAIM_ADDED. A date the claim form refuses (its due-by inside a closed period, after the person's retirement) is
+  * skipped, and tried again on the next generate. A viewer changes nothing: their generate makes no claim (an archived sheet
+- * refuses it).
++ * refuses it). A plan naming a descendant sheet makes its claims there instead, for the person of the same name on that sheet (none
++ * when there is no such person), by that sheet's rules and audited on that sheet; they still count towards what the plan made.
+  */
+ public class GeneratePlanClaims {
+     public void generate(@PathVariable("sheetId") String sheetId, @RequestBody GenerateRequest request, Plans plans, People people,
+@@ -40,15 +43,23 @@ public class GeneratePlanClaims {
+         }
+         LocalDate today = sheets.today(sheetId);
+         int made = 0;
++        Map<String, RollupFigures> targets = new LinkedHashMap<>();
+         for (Plan plan : plans.list(sheetId)) {
+             Person person = people.find(sheetId, plan.personId());
+             if (person == null) continue;
++            String on = sheetId;
++            if (plan.target() != null) {
++                on = plan.target();
++                person = people.findByName(on, person.getName());
++                if (person == null) continue;
++                targets.computeIfAbsent(on, rollup::figures);
++            }
+             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
+             for (LocalDate date : plan.dates(last)) {
+                 if (plans.made(plan.id(), date)) continue;
+-                LocalDate dueBy = holidays.dueBy(sheetId, date, settings.termsOnCreation(sheetId, person));
+-                if (periods.isClosed(sheetId, dueBy) || !person.allowsClaimOn(date)) continue;
+-                Claim claim = claims.add(sheetId, person.getId(), plan.amount(), date, "", null, dueBy, null);
++                LocalDate dueBy = holidays.dueBy(on, date, settings.termsOnCreation(on, person));
++                if (periods.isClosed(on, dueBy) || !person.allowsClaimOn(date)) continue;
++                Claim claim = claims.add(on, person.getId(), plan.amount(), date, "", null, dueBy, null);
+                 plans.recordMade(plan.id(), date, claim.getId());
+                 log.record(claim, person, request.user());
+                 audit.recordOnCommit(ClaimAudit.added(request.user(), person, claim));
+@@ -57,6 +68,7 @@ public class GeneratePlanClaims {
+             }
+         }
+         rollup.recordChanges(sheetId, request.user(), before);
++        targets.forEach((on, was) -> rollup.recordChanges(on, request.user(), was));
+         response.send(new GenerateResponse(made));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidatePlan.java b/src/main/java/net/officefloor/hq/app/claim/ValidatePlan.java
+index 6d0f052d..1ae1701c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidatePlan.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidatePlan.java
+@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** A plan's amount must be one the claim form takes for a new claim, its interval a whole number of days of at least 1
+  *  or (instead) its day of the month a whole number from 1 to 31,
+- *  its end a date (its start a date, or blank for the sheet's today). */
++ *  its end a date (its start a date, or blank for the sheet's today), its sheet blank or one of the sheet's descendants. */
+ public class ValidatePlan {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PlanRequest request, Out<ValidPlan> body,
+-            Settings settings) throws InvalidPlanException, ViewerRefusedException {
++            Settings settings, net.officefloor.hq.app.sheet.Sheets sheets) throws InvalidPlanException, ViewerRefusedException {
+         settings.refuseViewer(sheetId, request.user());
+         java.math.BigDecimal amount;
+         try {
+@@ -43,7 +43,11 @@ public class ValidatePlan {
+         if (start != null && end.isBefore(start)) {
+             throw new InvalidPlanException("A plan's end cannot be before its start");
+         }
+-        body.set(new ValidPlan(amount, start, days, day, end, request.user()));
++        String target = request.sheet() == null || request.sheet().trim().isEmpty() ? null : request.sheet().trim();
++        if (target != null && !sheets.descendants(sheetId).contains(target)) {
++            throw new InvalidPlanException("A plan's sheet must be one of the sheet's descendants");
++        }
++        body.set(new ValidPlan(amount, start, days, day, end, target, request.user()));
+     }
+ 
+     private static LocalDate date(String raw, boolean blankAllowed) throws InvalidPlanException {
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index 59734785..6f737e64 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -7,9 +7,9 @@ import java.util.ArrayList;
+ import java.util.List;
+ 
+ /** A person's plan: the amount, from the start every N days (or monthly on a day of the month) up to the end; generated is
+- *  how many claims it has made; pauses its pauses in the order they were taken; changes its amount changes, oldest first. Exactly one of every and day is set. */
++ *  how many claims it has made; target the descendant sheet it generates its claims on (null for its own sheet); pauses its pauses in the order they were taken; changes its amount changes, oldest first. Exactly one of every and day is set. */
+ public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end,
+-        int generated, List<Pause> pauses, List<Change> changes) {
++        String target, int generated, List<Pause> pauses, List<Change> changes) {
+ 
+     /** A pause: from the day it was paused up to (not including) the day it was resumed, null while still paused. */
+     public record Pause(LocalDate from, LocalDate to) {
+@@ -28,11 +28,11 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
+     }
+ 
+     public Plan withPauses(List<Pause> pauses) {
+-        return new Plan(id, sheetId, personId, amount, start, every, day, end, generated, pauses, changes);
++        return new Plan(id, sheetId, personId, amount, start, every, day, end, target, generated, pauses, changes);
+     }
+ 
+     public Plan withChanges(List<Change> changes) {
+-        return new Plan(id, sheetId, personId, amount, start, every, day, end, generated, pauses, changes);
++        return new Plan(id, sheetId, personId, amount, start, every, day, end, target, generated, pauses, changes);
+     }
+ 
+     /** Whether a pause skips the date. */
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java b/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
+index 663e443c..bcc9ffac 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.plan;
+ 
+-/** Body of POST /api/sheets/{sheetId}/people/{personId}/plans: the plan to add (every N days, or monthly on a day). */
+-public record PlanRequest(String amount, String start, String every, String day, String end, String user) {
++/** Body of POST /api/sheets/{sheetId}/people/{personId}/plans: the plan to add (every N days, or monthly on a day; sheet a descendant sheet to generate on, blank for this one). */
++public record PlanRequest(String amount, String start, String every, String day, String end, String sheet, String user) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index 56c41d8c..59dee213 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -3,14 +3,14 @@ package net.officefloor.hq.app.plan;
+ import java.time.LocalDate;
+ import java.util.List;
+ 
+-/** A plan as the screen shows it (amount with two decimals, dates as yyyy-mm-dd; every or day, the other null); nextDates are its
++/** A plan as the screen shows it (amount with two decimals, dates as yyyy-mm-dd; every or day, the other null; sheet the descendant sheet it generates on, null for this one); nextDates are its
+  *  first five plan dates after the sheet's today and on or before the end (none while paused); paused whether it is paused now;
+  *  changes its amount changes, oldest first, each "<date> amount=<amount>". */
+-public record PlanResponse(String id, String personId, String amount, String start, Integer every, Integer day, String end, int generated,
++public record PlanResponse(String id, String personId, String amount, String start, Integer every, Integer day, String end, String sheet, int generated,
+         List<String> nextDates, boolean paused, List<String> changes) {
+     public static PlanResponse from(Plan p, LocalDate today) {
+         return new PlanResponse(String.valueOf(p.id()), String.valueOf(p.personId()), p.amount().toPlainString(), p.start().toString(),
+-                p.every(), p.day(), p.end().toString(), p.generated(), p.nextDates(today, 5).stream().map(LocalDate::toString).toList(), p.paused(),
++                p.every(), p.day(), p.end().toString(), p.target(), p.generated(), p.nextDates(today, 5).stream().map(LocalDate::toString).toList(), p.paused(),
+                 p.changes().stream().map(c -> c.on() + " amount=" + c.amount().toPlainString()).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plans.java b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+index ffb85289..21fc1ba2 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+@@ -15,12 +15,12 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Plans {
+ 
+-    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date,"
++    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, p.target_sheet,"
+             + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
+ 
+     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
+             rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
+-            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of(), List.of());
++            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getString("target_sheet"), rs.getInt("generated"), List.of(), List.of());
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -61,11 +61,11 @@ public class Plans {
+         jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", planId, Date.valueOf(on), amount);
+     }
+ 
+-    public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end) {
++    public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end, String target) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date, target_sheet) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, sheetId);
+             ps.setLong(2, personId);
+@@ -74,6 +74,7 @@ public class Plans {
+             ps.setObject(5, every, Types.INTEGER);
+             ps.setObject(6, day, Types.INTEGER);
+             ps.setDate(7, Date.valueOf(end));
++            ps.setString(8, target);
+             return ps;
+         }, keys);
+         return find(keys.getKey().longValue());
+diff --git a/src/main/java/net/officefloor/hq/app/plan/SavePlan.java b/src/main/java/net/officefloor/hq/app/plan/SavePlan.java
+index 17166a48..ca9f3d5b 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/SavePlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/SavePlan.java
+@@ -18,9 +18,10 @@ public class SavePlan {
+         if (request.end().isBefore(start)) {
+             throw new InvalidPlanException("A plan's end cannot be before its start");
+         }
+-        Plan plan = plans.add(sheetId, person.getId(), request.amount(), start, request.every(), request.day(), request.end());
++        Plan plan = plans.add(sheetId, person.getId(), request.amount(), start, request.every(), request.day(), request.end(), request.target());
+         audit.recordOnCommit("PLAN_ADDED sheet=" + sheetId + " by=" + request.user() + " name=" + person.getName()
+-                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every()) + " end=" + plan.end());
++                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every()) + " end=" + plan.end()
++                + (plan.target() != null ? " sheet=" + plan.target() : ""));
+         response.send(new ResponseEntity<>(PlanResponse.from(plan, sheets.today(sheetId)), HttpStatus.CREATED));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java b/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java
+index 9262f38e..3f83149a 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidPlan.java
+@@ -3,6 +3,6 @@ package net.officefloor.hq.app.plan;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A plan form that passed validation; a null start takes the sheet's today. Exactly one of every and day is set. */
+-public record ValidPlan(BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end, String user) {
++/** A plan form that passed validation; a null start takes the sheet's today. Exactly one of every and day is set; target the descendant sheet, null for none. */
++public record ValidPlan(BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end, String target, String user) {
+ }
+diff --git a/src/main/resources/db/migration/V109__plan_target_sheet.sql b/src/main/resources/db/migration/V109__plan_target_sheet.sql
+new file mode 100644
+index 00000000..7b6ee240
+--- /dev/null
++++ b/src/main/resources/db/migration/V109__plan_target_sheet.sql
+@@ -0,0 +1,2 @@
++-- The descendant sheet a plan generates its claims on (for the person of the same name there); null for the plan's own sheet.
++ALTER TABLE plan ADD COLUMN target_sheet VARCHAR(200);
