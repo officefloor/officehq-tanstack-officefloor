@@ -8,6 +8,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class BuildPerson {
     public void build(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
             People people, Out<Person> person) throws InvalidSheetRequestException {
+        person.set(built(sheetId, request, people));
+    }
+
+    /** The new person the checked request makes, or refused when its name or contact is taken. */
+    static Person built(String sheetId, PersonRequest request, People people) throws InvalidSheetRequestException {
         if (people.nameUsedInTree(sheetId, request.name(), null)) {
             throw new InvalidSheetRequestException("The name is already in use on this sheet");
         }
@@ -17,6 +22,6 @@ public class BuildPerson {
         Person built = new Person(null, sheetId, request.name(), request.grade());
         built.setTerms(request.termsDays());
         built.setContact(request.contactKey());
-        person.set(built);
+        return built;
     }
 }
