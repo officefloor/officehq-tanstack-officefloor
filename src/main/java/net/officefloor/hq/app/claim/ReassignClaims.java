@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  that cannot move (or is not on the sheet) is left as it is and counted as refused. */
 public class ReassignClaims {
     public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassign bulk, Claims claims, People people,
-            ClosedPeriods closedPeriods, Settings settings, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
+            ClosedPeriods closedPeriods, ClaimNumbers numbers, Settings settings, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
         RecordClaimReassigned record = new RecordClaimReassigned();
         Person to = people.find(sheetId, bulk.toPersonId());
         int reassigned = 0;
@@ -36,7 +36,7 @@ public class ReassignClaims {
                     ClaimReassignment change = new ClaimReassignment(to.getId(), bulk.user());
                     Snapshot before = rollup.snapshot(sheetId);
                     try {
-                        ApplyClaimReassign.move(change, claim, to, people, closedPeriods);
+                        ApplyClaimReassign.move(change, claim, to, people, closedPeriods, numbers);
                     } catch (PersonRetiredException | PeriodClosedException e) {
                         continue;
                     }

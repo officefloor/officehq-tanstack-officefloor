@@ -70,8 +70,8 @@ public class Claims {
 
     /** Move the claim to its (new) person: unbound from any statement, and listed as that person's newest claim. */
     public void reassign(Claim claim) {
-        jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed WHERE id = ?",
-                claim.getPersonId(), claim.getId());
+        jdbc.update("UPDATE claim SET person_id = ?, number = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed WHERE id = ?",
+                claim.getPersonId(), claim.getNumber(), claim.getId());
     }
 
     /** Release every editor's lock on the sheet's claims: the sheet's today has changed. */

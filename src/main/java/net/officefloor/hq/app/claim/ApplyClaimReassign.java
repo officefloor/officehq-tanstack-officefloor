@@ -11,12 +11,13 @@ import net.officefloor.plugin.variable.Val;
 
 /** Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the permission matrix allows may (a steward by
  *  default). The
- *  claim keeps its number and date but loses any figure a statement bound it to: it is live again
+ *  claim keeps its date, takes the next number in its sequence (see {@link ClaimNumbers}; its old
+ *  number is never used again, and a draft has none to renumber), but loses any figure a statement bound it to: it is live again
  *  until its new person's next statement. A SETTLED or VOID claim cannot move, nor a claim dated in
  *  a closed period, nor one dated after its new person's retirement date. */
 public class ApplyClaimReassign {
     public void apply(@Val ClaimReassignment change, @Val Claim claim, People people, Settings settings,
-            ClosedPeriods closedPeriods)
+            ClosedPeriods closedPeriods, ClaimNumbers numbers)
             throws ClaimStatusRefusedException, PersonNotFoundException, PersonRetiredException, PeriodClosedException {
         if (!settings.allows(claim.getSheetId(), "reassign", change.user())) {
             throw new ClaimStatusRefusedException("Your role may not reassign a claim");
@@ -29,18 +30,19 @@ public class ApplyClaimReassign {
         if (to.getId() == claim.getPersonId()) {
             throw new ClaimStatusRefusedException("The claim is already " + to.getName() + "'s: reassign it to another person");
         }
-        move(change, claim, to, people, closedPeriods);
+        move(change, claim, to, people, closedPeriods, numbers);
     }
 
     /** The checks and the move once the claim's status and the user's role allow it: a claim due in a
      *  closed period, or dated after its new person's retirement, stays where it is. */
-    static void move(ClaimReassignment change, Claim claim, Person to, People people, ClosedPeriods closedPeriods)
-            throws PersonRetiredException, PeriodClosedException {
+    static void move(ClaimReassignment change, Claim claim, Person to, People people, ClosedPeriods closedPeriods,
+            ClaimNumbers numbers) throws PersonRetiredException, PeriodClosedException {
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         to.refuseRetired(claim.getDate());
         Person from = people.find(claim.getSheetId(), claim.getPersonId());
         change.moved(from.getName(), to.getName());
         claim.setPersonId(to.getId());
+        if (claim.getNumber() != null) claim.setNumber(numbers.next(claim));
         claim.setStated(false);
         claim.setStatedDue(null);
     }
