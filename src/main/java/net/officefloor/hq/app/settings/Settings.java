@@ -7,7 +7,7 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms, its late percent and its policy date. */
+/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms, its late percent, its policy date and its period numbering from. */
 @Repository
 public class Settings {
 
@@ -95,6 +95,19 @@ public class Settings {
 
     public void setPolicyDate(String sheetId, LocalDate date) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, policy_date) KEY (sheet_id) VALUES (?, ?)",
+                sheetId, date != null ? Date.valueOf(date) : null);
+    }
+
+    /** The sheet's period numbering from: while set and the sheet's today is on or after it, a
+     *  claim opened is numbered within its period. Null when unset (off). */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        List<Date> values = jdbc.query("SELECT period_numbering_from FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getDate("period_numbering_from"), sheetId);
+        return values.isEmpty() || values.get(0) == null ? null : values.get(0).toLocalDate();
+    }
+
+    public void setPeriodNumberingFrom(String sheetId, LocalDate date) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, period_numbering_from) KEY (sheet_id) VALUES (?, ?)",
                 sheetId, date != null ? Date.valueOf(date) : null);
     }
 

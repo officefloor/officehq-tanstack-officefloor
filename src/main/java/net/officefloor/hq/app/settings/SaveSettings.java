@@ -9,5 +9,6 @@ public class SaveSettings {
         if (change.terms() != null) settings.setTerms(change.sheetId(), change.terms());
         if (change.latePct() != null) settings.setLatePct(change.sheetId(), change.latePct());
         if (change.setsPolicyDate()) settings.setPolicyDate(change.sheetId(), change.policyDate());
+        if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(change.sheetId(), change.periodNumberingFrom());
     }
 }

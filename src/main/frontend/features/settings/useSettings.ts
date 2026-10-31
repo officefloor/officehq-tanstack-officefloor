@@ -8,8 +8,9 @@ export type RoleEntry = { name: string; role: string };
 
 /** The sheet's settings as the server sends them: `clerkLimit` with two decimals, or null for no
  *  limit, `floor` with two decimals `terms` in days, `latePct` with two decimals and `policyDate` as
- *  set (yyyy-mm-dd), or null when blank: then the policy date is the sheet's today. */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; roles: RoleEntry[] };
+ *  set (yyyy-mm-dd), or null when blank: then the policy date is the sheet's today, and `periodNumberingFrom`
+ *  (yyyy-mm-dd), or null when off. */
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; roles: RoleEntry[] };
 
 /** The floor of a sheet that has not set one. */
 export const DEFAULT_FLOOR = '1.00';

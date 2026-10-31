@@ -11,7 +11,7 @@ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 public record ClaimRequest(String amount, String date, String note, String corrects, String user) {
     /** Up to two decimals; negative only for a correction. */
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
-    private static final Pattern NUMBER = Pattern.compile("\\d+");
+    private static final Pattern NUMBER = Pattern.compile("\\d+|.+-\\d+");
 
     /** The request's values as the claim rules accept them, or refused. A negative amount is a
      *  correction and must name the number of the claim it corrects; any other claim corrects none. */
@@ -22,12 +22,12 @@ public record ClaimRequest(String amount, String date, String note, String corre
         }
         BigDecimal value = new BigDecimal(amount).setScale(2);
         String rawCorrects = request.corrects() == null ? "" : request.corrects().trim();
-        Long corrects = null;
+        String corrects = null;
         if (value.signum() < 0) {
             if (!NUMBER.matcher(rawCorrects).matches()) {
                 throw new InvalidSheetRequestException("A negative amount must name the number of the settled claim it corrects");
             }
-            corrects = Long.valueOf(rawCorrects);
+            corrects = rawCorrects;
         }
         String rawDate = request.date() == null ? "" : request.date().trim();
         LocalDate date = null;

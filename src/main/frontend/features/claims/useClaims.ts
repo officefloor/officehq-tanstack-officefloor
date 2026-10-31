@@ -13,8 +13,8 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  /** Given when the claim is opened (a voided claim keeps it); null for a DRAFT, or a claim voided while a DRAFT. */
-  number: number | null;
+  /** Given when the claim is opened (a voided claim keeps it); null for a DRAFT, or a claim voided while a DRAFT. Sheet-wide ("7"), or within its period ("P1-2", "X-1" in no period). */
+  number: string | null;
   /** The due fixed when the claim was settled, two decimals; null when it has none, so its due is live. */
   due: string | null;
   /** The user who opened the claim; null while it has not been opened. */
@@ -24,7 +24,7 @@ export type Claim = {
   /** The figure the last statement bound the claim to, two decimals; null when unbound or bound to n/a. */
   statedDue: string | null;
   /** The number of the SETTLED claim of the same person a correction (a negative amount) corrects; null for any other claim. */
-  corrects: number | null;
+  corrects: string | null;
   /** Whether the claim's live figures (its rate step and late charge) round half up, else half to
    *  even: half up when it is dated before the sheet's policy date (a correction goes by the date of
    *  the claim it corrects). */
@@ -47,7 +47,7 @@ export function useClaims(sheet: string) {
 export const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
 /** A correction's `corrects`: the number of the claim it corrects. */
-export const CLAIM_NUMBER = /^\d+$/;
+export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /** Whether a claim is a correction: its amount is negative. Its due has no floor and no late charge. */
 export function isCorrection(claim: Claim): boolean {

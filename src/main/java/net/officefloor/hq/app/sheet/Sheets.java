@@ -39,6 +39,20 @@ public class Sheets {
         return jdbc.queryForObject("SELECT claim_numbers FROM sheet WHERE id = ?", Long.class, sheetId);
     }
 
+    /**
+     * The next number of one of the sheet's period sequences (a period's name, or "X" for claims in
+     * no period): 1 for its first, then 2, and so on. Locks the sheet's row as {@link #nextClaimNumber}
+     * does, so a number is never given twice.
+     */
+    public long nextPeriodNumber(String sheetId, String seq) {
+        today(sheetId);
+        jdbc.update("UPDATE sheet SET claim_numbers = claim_numbers WHERE id = ?", sheetId);
+        jdbc.update("MERGE INTO period_number (sheet_id, seq, given) KEY (sheet_id, seq) "
+                + "VALUES (?, ?, COALESCE((SELECT given FROM period_number WHERE sheet_id = ? AND seq = ?), 0) + 1)",
+                sheetId, seq, sheetId, seq);
+        return jdbc.queryForObject("SELECT given FROM period_number WHERE sheet_id = ? AND seq = ?", Long.class, sheetId, seq);
+    }
+
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }

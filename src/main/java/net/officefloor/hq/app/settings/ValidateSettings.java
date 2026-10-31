@@ -47,6 +47,15 @@ public class ValidateSettings {
                 throw new InvalidSheetRequestException("The policy date must be a date (yyyy-mm-dd), or blank");
             }
         }
+        String numbering = request == null || request.periodNumberingFrom() == null ? null : request.periodNumberingFrom().trim();
+        LocalDate numberingFrom = null;
+        if (numbering != null && !numbering.isEmpty()) {
+            try {
+                numberingFrom = LocalDate.parse(numbering);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSheetRequestException("The period numbering from must be a date (yyyy-mm-dd), or blank");
+            }
+        }
         String by = request == null ? null : request.user();
         actor.set(new Actor(by));
         change.set(new SettingsChange(sheetId, limit != null,
@@ -54,6 +63,6 @@ public class ValidateSettings {
                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
-                policy != null, policyDate, by));
+                policy != null, policyDate, numbering != null, numberingFrom, by));
     }
 }

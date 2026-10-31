@@ -24,5 +24,9 @@ public class RecordSettingChanged {
             audit.record(prefix + " key=policy-date value="
                     + (change.policyDate() != null ? change.policyDate().toString() : ""));
         }
+        if (change.setsPeriodNumberingFrom()) {
+            audit.record(prefix + " key=period-numbering-from value="
+                    + (change.periodNumberingFrom() != null ? change.periodNumberingFrom().toString() : ""));
+        }
     }
 }

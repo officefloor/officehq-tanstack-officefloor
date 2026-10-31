@@ -5,6 +5,6 @@ import java.time.LocalDate;
 
 /** A validated settings change on a sheet: whether the clerk limit is set and to what (null for no
  *  limit), the floor, the terms and the late percent, each null when it is not being set, and
- *  whether the policy date is set and to what (null for blank: the sheet's today). */
-public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, String by) {
+ *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off). */
+public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, String by) {
 }

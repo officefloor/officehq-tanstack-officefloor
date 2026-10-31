@@ -40,14 +40,14 @@ public class Claims {
     }
 
     /** Whether the person has a SETTLED claim with this number: one a correction may correct. */
-    public boolean settled(String sheetId, long personId, long number) {
+    public boolean settled(String sheetId, long personId, String number) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
                 Integer.class, sheetId, personId, number);
         return n != null && n > 0;
     }
 
     /** The date of the person's claim with this number, or null when there is none. */
-    public LocalDate dateOf(String sheetId, long personId, long number) {
+    public LocalDate dateOf(String sheetId, long personId, String number) {
         return jdbc.query("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ?",
                 (rs, i) -> rs.getDate("claim_date").toLocalDate(), sheetId, personId, number)
                 .stream().findFirst().orElse(null);
@@ -72,7 +72,7 @@ public class Claims {
             ps.setDate(4, Date.valueOf(claim.getDate()));
             ps.setString(5, claim.getNote());
             ps.setString(6, claim.getStatus().name());
-            ps.setObject(7, claim.getCorrects());
+            ps.setString(7, claim.getCorrects());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -81,11 +81,11 @@ public class Claims {
     private static Claim claim(ResultSet rs, int i) throws SQLException {
         Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
-                ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number", Long.class),
+                ClaimStatus.valueOf(rs.getString("status")), rs.getString("number"),
                 rs.getBigDecimal("due"), rs.getString("opened_by"));
         claim.setStated(rs.getBoolean("stated"));
         claim.setStatedDue(rs.getBigDecimal("stated_due"));
-        claim.setCorrects(rs.getObject("corrects", Long.class));
+        claim.setCorrects(rs.getString("corrects"));
         return claim;
     }
 }

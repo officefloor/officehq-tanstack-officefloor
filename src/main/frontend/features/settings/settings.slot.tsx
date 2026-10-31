@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
 import { DAYS, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null };
 
 /**
  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
@@ -15,7 +15,8 @@ type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: st
  * its terms (a claim is due by its date plus this many days; blank is the default, 14), its late
  * percent (an overdue claim's due gains it of its figure for every full 30 days; blank is 0.00),
  * its policy date (a claim dated before it rounds half up, on or after it half to even; blank is
- * the sheet's today),
+ * the sheet's today), its period numbering from (while it is a date on or before the sheet's
+ * today, a claim opened is numbered within its period; blank is off),
  * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
  * whose fields were touched since the last one.
  */
@@ -23,7 +24,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null });
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -33,7 +34,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null });
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
@@ -73,12 +74,14 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const terms = edit.terms?.trim() ?? null;
           const latePct = edit.latePct?.trim() ?? null;
           const policyDate = edit.policyDate?.trim() ?? null;
+          const periodNumberingFrom = edit.periodNumberingFrom?.trim() ?? null;
           if (
             (limit !== null && !LIMIT.test(limit)) ||
             (floor !== null && !LIMIT.test(floor)) ||
             (terms !== null && !DAYS.test(terms)) ||
             (latePct !== null && !PERCENT.test(latePct)) ||
-            (policyDate !== null && !POLICY_DATE.test(policyDate))
+            (policyDate !== null && !POLICY_DATE.test(policyDate)) ||
+            (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom))
           ) {
             // Refused here, before anything is sent: the store and the audit file are untouched.
             saveSettings.reset();
@@ -86,7 +89,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate }));
+          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -176,6 +179,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        Period numbering from:{' '}
+        <strong data-testid="setting-period-numbering-from-current">
+          {saveSettings.isPending ? '' : (data?.periodNumberingFrom ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="blank: off"
+            value={edit.periodNumberingFrom ?? (data?.periodNumberingFrom ?? '')}
+            onFocus={() => touch('periodNumberingFrom', data?.periodNumberingFrom ?? '')}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, periodNumberingFrom: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={saveSettings.isPending}>
           Save
         </button>
@@ -183,7 +203,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14), and the late percent a percent with up to
-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today).
+            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off).
           </span>
         )}
       </form>

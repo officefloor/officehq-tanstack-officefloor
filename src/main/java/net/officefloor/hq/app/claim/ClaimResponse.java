@@ -10,7 +10,7 @@ import java.math.RoundingMode;
  *  of the claim a correction corrects (null when it is not a correction), and whether its live
  *  figures round half up (else half to even), by the sheet's policy date. */
 public record ClaimResponse(long id, long personId, String amount, String date, String note,
-        String status, Long number, String due, String openedBy, boolean stated, String statedDue, Long corrects, boolean halfUp) {
+        String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects, boolean halfUp) {
     public static ClaimResponse from(Claim claim, Figures figures) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),

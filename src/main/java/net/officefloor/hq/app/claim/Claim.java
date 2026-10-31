@@ -12,15 +12,15 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
-    private Long number;
+    private String number;
     private BigDecimal due;
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
-    private Long corrects;
+    private String corrects;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Long number, BigDecimal due, String openedBy) {
+            ClaimStatus status, String number, BigDecimal due, String openedBy) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -45,9 +45,9 @@ public class Claim {
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
     public void setStatus(ClaimStatus status) { this.status = status; }
-    /** The claim's number on its sheet, given when it is opened; null for a DRAFT, or a claim voided while a DRAFT. A voided claim keeps its number. */
-    public Long getNumber() { return number; }
-    public void setNumber(Long number) { this.number = number; }
+    /** The claim's number on its sheet, given when it is opened (sheet-wide "7", or within its period "P1-2" / "X-1"); null for a DRAFT, or a claim voided while a DRAFT. A voided claim keeps its number. */
+    public String getNumber() { return number; }
+    public void setNumber(String number) { this.number = number; }
     /** The due fixed when the claim was settled; null when it has none (not settled, or settled with no rate). */
     public BigDecimal getDue() { return due; }
     public void setDue(BigDecimal due) { this.due = due; }
@@ -61,8 +61,8 @@ public class Claim {
     public BigDecimal getStatedDue() { return statedDue; }
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
     /** The number of the SETTLED claim of the same person this correction corrects; null when it is not a correction. */
-    public Long getCorrects() { return corrects; }
-    public void setCorrects(Long corrects) { this.corrects = corrects; }
+    public String getCorrects() { return corrects; }
+    public void setCorrects(String corrects) { this.corrects = corrects; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }
