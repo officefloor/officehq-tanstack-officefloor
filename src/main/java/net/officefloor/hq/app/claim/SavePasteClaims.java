@@ -37,6 +37,10 @@ public class SavePasteClaims {
         List<LocalDate> dates = new ArrayList<>();
         List<Claim> matched = new ArrayList<>();
         boolean steward = Settings.STEWARD.equals(settings.role(sheetId, request.user()));
+        // Every line is opened: a role that may not open refuses the paste before anything is written.
+        if (!settings.allows(sheetId, request.user(), "open")) {
+            throw new InvalidClaimException("Your role may not open a claim on this sheet");
+        }
         int number = 0;
         for (ValidPasteClaims.Line line : request.lines()) {
             number++;

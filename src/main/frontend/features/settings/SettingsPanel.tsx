@@ -68,6 +68,9 @@ export function SettingsPanel() {
   // Each grade's proof threshold, by grade, as typed; likewise each may be saved blank (none).
   const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
   const proofGradeChosen = useRef(new Set<string>());
+  // Each grade's clerk limit, by grade, as typed; likewise each may be saved blank (none: the sheet's applies).
+  const [gradeLimit, setGradeLimit] = useState<Record<string, string>>({});
+  const limitGradeChosen = useRef(new Set<string>());
   const today = useSheetToday(sheet);
   const [policyDate, setPolicyDate] = useState('');
   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
@@ -226,6 +229,7 @@ export function SettingsPanel() {
     for (const g of GRADES) {
       if ((gradeGrace[g] ?? '').trim() === '') graceGradeChosen.current.delete(g);
       if ((gradeProof[g] ?? '').trim() === '') proofGradeChosen.current.delete(g);
+      if ((gradeLimit[g] ?? '').trim() === '') limitGradeChosen.current.delete(g);
     }
   };
   // Entering a grade's grace days (or their from-date) marks them as one to save, as they are.
@@ -237,6 +241,11 @@ export function SettingsPanel() {
   const focusGradeProof = (grade: string) => {
     unchoosePolicy();
     proofGradeChosen.current.add(grade);
+  };
+  // Entering a grade's clerk limit (or its from-date) marks it as one to save, as it is.
+  const focusGradeLimit = (grade: string) => {
+    unchoosePolicy();
+    limitGradeChosen.current.add(grade);
   };
   // Entering a permission marks it as one to save, as it is.
   const focusPerm = (action: string) => {
@@ -394,6 +403,11 @@ export function SettingsPanel() {
         setEntryDate('');
         entryChosen.current = false;
       }
+      else if (body.key.startsWith('clerk-limit-')) {
+        const grade = body.key.slice('clerk-limit-'.length);
+        setGradeLimit((t) => ({ ...t, [grade]: '' }));
+        limitGradeChosen.current.delete(grade);
+      }
       else if (body.key.startsWith('proof-threshold-')) {
         const grade = body.key.slice('proof-threshold-'.length);
         setGradeProof((t) => ({ ...t, [grade]: '' }));
@@ -468,11 +482,13 @@ export function SettingsPanel() {
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
+            const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
-            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
+            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
                 || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
+                ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
                 ...ownTerms.map((g) => ({ key: `terms-${g}`, value: gradeTerms[g].trim() })),
@@ -520,6 +536,24 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('clerk-limit')}{' '}
+        {GRADES.map((g) => (
+          <span key={g}>
+            Clerk limit for grade {g}: <span data-testid={`setting-clerk-limit-${g}-current`}>{today === undefined ? '' : inForce(settings, `clerk-limit-${g}`, today, '')}</span>{' '}
+            <input
+              data-testid={`setting-clerk-limit-${g}`}
+              onFocus={() => focusGradeLimit(g)}
+              value={gradeLimit[g] ?? ''}
+              placeholder={`Grade ${g} clerk limit (blank: none)`}
+              onChange={(e) => {
+                const value = e.target.value;
+                setGradeLimit((t) => ({ ...t, [g]: value }));
+                limitGradeChosen.current.add(g);
+                saveSetting.reset();
+              }}
+            />{' '}
+            {fromField(`clerk-limit-${g}`, () => focusGradeLimit(g))}{' '}
+          </span>
+        ))}
         Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>{' '}
         <input
           data-testid="setting-floor"

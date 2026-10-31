@@ -110,9 +110,10 @@ public class ApplyClaimStatus {
             }
         }
         if (target == ClaimStatus.SETTLED && request.decision() == ValidClaimStatus.Decision.NONE && !steward) {
-            // A clerk settles only within the sheet's clerk limit, judged on the claim's due as shown;
-            // a due of n/a is within any limit.
-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            // A clerk settles only within the clerk limit in force (the person's grade's own, else the sheet's),
+            // judged on the claim's due as shown; a due of n/a is within any limit.
+            BigDecimal limit = settings.clerkLimitFor(claim.getSheetId(),
+                    people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(sheets.today(claim.getSheetId())));
             BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 // Above the clerk limit the claim awaits a steward's approval.

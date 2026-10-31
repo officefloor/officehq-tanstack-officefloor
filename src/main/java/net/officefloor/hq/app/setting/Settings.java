@@ -81,6 +81,13 @@ public class Settings {
         return found == null ? null : found.value();
     }
 
+    /** The clerk limit a claim of a person of this grade takes on the sheet's today: the grade's own in force then
+     *  when one is set, else the sheet's; null for no limit. */
+    public BigDecimal clerkLimitFor(String sheetId, String grade) {
+        InForce own = grade == null ? null : on(sheetId, ValidateSetting.GRADE_CLERK_LIMIT + grade, sheets.today(sheetId));
+        return own != null && own.value() != null ? own.value() : clerkLimit(sheetId);
+    }
+
     /** The sheet's cap in force on its today: a person's due-total is at most it; null for no cap. */
     public BigDecimal cap(String sheetId) {
         InForce found = on(sheetId, ValidateSetting.CAP, sheets.today(sheetId));
