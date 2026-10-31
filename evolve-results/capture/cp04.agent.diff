@@ -1,0 +1,113 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 4dbcdcd7..3d27354b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -1,9 +1,14 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+-    public void apply(@Val PersonRequest request, @Val Person person) {
++    public void apply(@Val PersonRequest request, @Val Person person, People people)
++            throws InvalidSheetRequestException {
++        if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
++            throw new InvalidSheetRequestException("The name is already in use on this sheet");
++        }
+         person.setName(request.name());
+         person.setGrade(request.grade());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+index 0e6c6235..5e41a1e4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -1,12 +1,16 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class BuildPerson {
+     public void build(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
+-            Out<Person> person) {
++            People people, Out<Person> person) throws InvalidSheetRequestException {
++        if (people.nameTaken(sheetId, request.name(), null)) {
++            throw new InvalidSheetRequestException("The name is already in use on this sheet");
++        }
+         person.set(new Person(null, sheetId, request.name(), request.grade()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index b8dd780f..edb1c158 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -1,7 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.sql.PreparedStatement;
+-import java.sql.Statement;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+@@ -32,6 +31,14 @@ public class People {
+                 sheetId, id).stream().findFirst().orElse(null);
+     }
+ 
++    /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
++    public boolean nameTaken(String sheetId, String name, Long exceptId) {
++        Integer n = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
++                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
++        return n != null && n > 0;
++    }
++
+     /** Insert a new person (assigning its id) or update an existing one. */
+     public void save(Person person) {
+         if (person.getId() != null) {
+@@ -42,7 +49,7 @@ public class People {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
++                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
+             ps.setString(1, person.getSheetId());
+             ps.setString(2, person.getName());
+             ps.setString(3, person.getGrade());
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index fea71fc3..d7d04e38 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -16,6 +16,7 @@ public class ValidatePerson {
+         if (request.grade() == null || !GRADES.contains(request.grade())) {
+             throw new InvalidSheetRequestException("The grade must be A, B or C");
+         }
+-        body.set(request);
++        // Names are kept without the spaces around them.
++        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user()));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V3__person_unique_name.sql b/src/main/resources/db/migration/V3__person_unique_name.sql
+new file mode 100644
+index 00000000..051ff57b
+--- /dev/null
++++ b/src/main/resources/db/migration/V3__person_unique_name.sql
+@@ -0,0 +1,5 @@
++-- A person's name is unique on its sheet, compared without case and ignoring surrounding spaces.
++-- Names are stored trimmed; `name_key` is the form they are compared in.
++UPDATE person SET name = TRIM(name);
++ALTER TABLE person ADD COLUMN name_key VARCHAR(500) GENERATED ALWAYS AS (LOWER(TRIM(name)));
++CREATE UNIQUE INDEX person_sheet_name ON person (sheet_id, name_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index d6e8c461..a994cba4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,5 @@
+-# Add a person. Validate first so a blank name or bad grade is a 400 and writes nothing.
++# Add a person. Validate first so a blank name or bad grade is a 400 and writes nothing;
++# a name already in use on the sheet is refused by Build, also a 400.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: build
