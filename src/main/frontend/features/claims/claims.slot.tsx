@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -43,6 +43,27 @@ const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to
 const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor dated in a closed period) can be split, by a user whose role may open a claim.";
 const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the claim's amount, with up to two decimals.";
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
+const LOCKED = 'Another user is editing this claim: it is locked until they save or cancel their editor.';
+const CLOSED_EDIT = 'This claim is dated in a closed period: it cannot be edited.';
+const VIEWER = 'A viewer can change nothing.';
+const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
+
+/** Why the server refused to open a claim's editor. */
+function lockRefusal(e: unknown): string {
+  if (!(e instanceof HttpError)) return "Could not open this claim's editor.";
+  if (e.body.includes('locked')) return LOCKED;
+  if (e.body.includes('viewer')) return VIEWER;
+  if (e.body.includes('archived')) return ARCHIVED;
+  if (e.body.includes('closed')) return CLOSED_EDIT;
+  return NOT_DRAFT;
+}
+
+/** A save refused because its editor's lock was not taken. */
+class LockRefused extends Error {
+  constructor(readonly refusal: { id: number; message: string }) {
+    super(refusal.message);
+  }
+}
 
 const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
 type Action = (typeof ACTIONS)[number];
@@ -50,7 +71,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
 
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
- * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
+ * one form to add a claim or edit the one whose editor is open (only a DRAFT outside a closed period can be edited; an open
+ * editor locks its claim for every other user until it is saved or cancelled, or the sheet's today changes), and the claims, newest first, each
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, plus its late charge, at least the sheet's floor; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (a SETTLED one only by a steward within 7 days of its settlement; its opener cannot settle
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
@@ -94,7 +116,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   // The sum of their figures; their due-total is at most the cap, the rest their excess.
   const dueSum = personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
   const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
-  const [editing, setEditing] = useState<number | null>(null);
+  // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
+  const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
+  const editing = editingClaim?.id ?? null;
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
@@ -116,22 +140,45 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [splitOff, setSplitOff] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
+  // Put a claim the server answered with into the sheet's claims, so its lock shows at once.
+  const putClaim = (claim: Claim) =>
+    queryClient.setQueryData<Claim[]>(claimsKey(sheet), (old) =>
+      old?.map((c) =>
+        c.id === claim.id
+          ? claim
+          : claim.lockedBy === user && c.personId === claim.personId && c.lockedBy === user
+            ? { ...c, lockedBy: null }
+            : c,
+      ),
+    );
+
+  // The last edit button's lock, once the server has answered: null when it was taken, else the claim and why it was refused.
+  const locking = useRef<Promise<{ id: number; message: string } | null>>(Promise.resolve(null));
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (c: { id: number | null; amount: string; date: string; note: string; corrects: string }) => {
+    mutationFn: async (c: { id: number | null; amount: string; date: string; note: string; corrects: string }) => {
+      // An edit goes only once its editor's lock is taken; a refused lock is shown on the claim.
+      const refusal = c.id !== null ? await locking.current : null;
+      if (refusal !== null && refusal.id === c.id) throw new LockRefused(refusal);
       const body = { amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, user };
       return c.id === null
         ? postJson<Claim>(`${base}/people/${person.id}/claims`, body)
         : putJson<Claim>(`${base}/claims/${c.id}`, body);
     },
-    onSuccess: async () => {
+    onSuccess: async (claim, c) => {
+      // A saved edit releases the claim's lock, closing its editor.
+      if (c.id !== null) putClaim(claim);
       close();
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
-    // An edit of a claim no longer a DRAFT is refused on the claim itself; the editor stays open.
+    // An edit of a claim no longer a DRAFT, or locked by another user, is refused on the claim itself; the editor stays open.
     onError: async (e, c) => {
-      if (c.id !== null && e instanceof HttpError && e.status === 409 && e.body.includes('DRAFT')) {
-        setRefused({ id: c.id, message: NOT_DRAFT });
+      if (e instanceof LockRefused) {
+        setRefused(e.refusal);
+        return;
+      }
+      if (c.id !== null && e instanceof HttpError && e.status === 409 && (e.body.includes('DRAFT') || e.body.includes('locked'))) {
+        setRefused({ id: c.id, message: e.body.includes('locked') ? LOCKED : NOT_DRAFT });
         await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       }
     },
@@ -237,6 +284,47 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  // The edit button: the server locks the claim for this user, or refuses (another user's lock, not a
+  // DRAFT, dated in a closed period, a viewer) on the claim itself, taking no lock.
+  // The editor opens at once, as if locked; a refusal puts the claims back as they were.
+  const lock = useMutation({
+    mutationFn: (c: Claim) => postJson<Claim>(`${base}/claims/${c.id}/lock`, { user }),
+    onMutate: (c) => {
+      clearError();
+      const before = queryClient.getQueryData<Claim[]>(claimsKey(sheet));
+      putClaim({ ...c, lockedBy: user });
+      fill(c);
+      return { before };
+    },
+    onSuccess: (claim) => putClaim(claim),
+    onError: (e, c, context) => {
+      if (context?.before) queryClient.setQueryData(claimsKey(sheet), context.before);
+      setRefused({ id: c.id, message: lockRefusal(e) });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+  const openEditor = (c: Claim) => {
+    // What the screen already knows is refused at once, as before: a claim no longer a DRAFT, or one
+    // another user's editor locks. The server decides the rest (a closed period, a viewer).
+    const known = c.status !== 'DRAFT' ? NOT_DRAFT : c.lockedBy !== null && c.lockedBy !== user ? LOCKED : null;
+    if (known !== null) {
+      clearError();
+      setRefused({ id: c.id, message: known });
+      locking.current = Promise.resolve({ id: c.id, message: known });
+      return;
+    }
+    locking.current = lock.mutateAsync(c).then(
+      () => null,
+      (e) => ({ id: c.id, message: lockRefusal(e) }),
+    );
+  };
+
+  // The cancel button: the server releases this user's lock on the claim.
+  const unlock = useMutation({
+    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/unlock`, { user }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   // An error goes as soon as its form is changed or submitted again, or an editor is opened.
   const clearError = () => {
     save.reset();
@@ -244,28 +332,29 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     setRefused(null);
   };
   const close = () => {
-    setEditing(null);
     setAmount('');
     setDate('');
     setNote('');
     setCorrects('');
   };
-  const open = (c: Claim) => {
-    clearError();
-    // Only a DRAFT can be edited: to change an open claim, void it and add a new one.
-    if (c.status !== 'DRAFT') {
-      cancel();
-      setRefused({ id: c.id, message: NOT_DRAFT });
-      return;
-    }
-    setEditing(c.id);
+  const fill = (c: Claim) => {
     setAmount(c.amount);
     setDate(c.date);
     setNote(c.note);
     setCorrects(c.corrects === null ? '' : String(c.corrects));
   };
+  // The form follows the editor this user's lock holds: filled when it opens (also on a re-load), cleared when it closes.
+  useEffect(() => {
+    if (editingClaim === null) close();
+    else fill(editingClaim);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
   const cancel = () => {
     clearError();
+    if (editingClaim !== null) {
+      putClaim({ ...editingClaim, lockedBy: null });
+      unlock.mutate({ id: editingClaim.id });
+    }
     close();
   };
 
@@ -519,7 +608,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               >
                 Reassign
               </button>{' '}
-              <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
+              <button type="button" data-testid="claim-edit" onClick={() => openEditor(c)}>
                 Edit
               </button>
               {editing === c.id && (

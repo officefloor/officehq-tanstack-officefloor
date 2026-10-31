@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -60,13 +60,24 @@ public class Claims {
                 claim.getPersonId(), claim.getId());
     }
 
+    /** Release every editor's lock on the sheet's claims: the sheet's today has changed. */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+    }
+
+    /** Release the user's locks on the person's other claims: the person's one claim form edits one claim at a time. */
+    public void unlockOthers(String sheetId, long personId, String user, long keptId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND person_id = ? AND locked_by = ? AND id <> ?",
+                sheetId, personId, user, keptId);
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ? WHERE id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, locked_by = ? WHERE id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
                     claim.getNumber(), claim.getDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
-                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getId());
+                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getLockedBy(), claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -101,6 +112,7 @@ public class Claims {
         claim.setDueBy(rs.getDate("due_by").toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
+        claim.setLockedBy(rs.getString("locked_by"));
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");
         claim.setDeferredUntil(until != null ? until.toLocalDate() : null);

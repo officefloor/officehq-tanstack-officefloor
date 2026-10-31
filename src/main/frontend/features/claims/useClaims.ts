@@ -57,6 +57,8 @@ export type Claim = {
   proofs: number;
   /** The number of the claim this one was split off; null when it was not split off one. */
   splitFrom: string | null;
+  /** The user whose open editor locks the claim for everyone else; null when no editor holds it. */
+  lockedBy: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

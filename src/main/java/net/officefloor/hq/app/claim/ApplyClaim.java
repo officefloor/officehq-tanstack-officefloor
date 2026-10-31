@@ -10,12 +10,13 @@ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
-/** Edits the claim, refusing when it is no longer a DRAFT, or is dated in a closed period, or would be moved into one,
+/** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is dated in a closed period, or would be moved into one,
  *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person. */
 public class ApplyClaim {
     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods,
             People people, Claims claims)
-            throws ClaimEditRefusedException, PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+            throws ClaimEditRefusedException, ClaimLockedException, PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+        ApplyClaimLock.refuseLocked(claim, values.user());
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw new ClaimEditRefusedException(claim.getStatus());
         }
@@ -29,5 +30,6 @@ public class ApplyClaim {
         claim.setDate(date);
         claim.setNote(values.note());
         claim.setCorrects(values.corrects());
+        claim.setLockedBy(null);
     }
 }

@@ -23,6 +23,7 @@ public class Claim {
     private boolean deferred;
     private int proofs;
     private String splitFrom;
+    private String lockedBy;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -88,6 +89,9 @@ public class Claim {
     /** The number of the claim this one was split off; null when it was not split off one. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
+    /** The user whose open editor locks the claim for everyone else; null when no editor holds it. */
+    public String getLockedBy() { return lockedBy; }
+    public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }
