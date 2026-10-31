@@ -1,0 +1,198 @@
+diff --git a/src/main/frontend/features/rates/RatePanel.tsx b/src/main/frontend/features/rates/RatePanel.tsx
+index bb51af63..bd8b1bbd 100644
+--- a/src/main/frontend/features/rates/RatePanel.tsx
++++ b/src/main/frontend/features/rates/RatePanel.tsx
+@@ -40,6 +40,14 @@ export function RatePanel() {
+       queryClient.setQueryData(ratesKey(sheet), saved);
+     },
+   });
++  // A steward withdraws a rate's newest version: the one before it applies again, or with none the rate is gone.
++  const withdraw = useMutation({
++    mutationFn: (body: { grade: string; from: string }) =>
++      postJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates/withdraw`, { ...body, user }),
++    onSuccess: (saved) => {
++      queryClient.setQueryData(ratesKey(sheet), saved);
++    },
++  });
+   return (
+     <>
+       <table data-testid="rates">
+@@ -86,6 +94,7 @@ export function RatePanel() {
+             <th>To</th>
+             <th>Rate %</th>
+             <th>Versions</th>
++            <th></th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -96,6 +105,21 @@ export function RatePanel() {
+               <td data-testid="rate-to">{r.to}</td>
+               <td data-testid="rate-pct">{r.rate}</td>
+               <td data-testid="rate-version">{r.version}</td>
++              <td>
++                <button
++                  type="button"
++                  data-testid="rate-withdraw"
++                  onClick={() =>
++                    submitOnce(() => {
++                      save.reset();
++                      withdraw.reset();
++                      return withdraw.mutateAsync({ grade: r.grade, from: r.from });
++                    })
++                  }
++                >
++                  Withdraw
++                </button>
++              </td>
+             </tr>
+           ))}
+         </tbody>
+@@ -106,6 +130,7 @@ export function RatePanel() {
+           e.preventDefault();
+           submitOnce(() => {
+             save.reset();
++            withdraw.reset();
+             return save.mutateAsync({ grade, rate: pct.trim(), from: from.trim(), to: to.trim() });
+           });
+         }}
+@@ -116,6 +141,7 @@ export function RatePanel() {
+           onChange={(e) => {
+             setGrade(e.target.value);
+             save.reset();
++            withdraw.reset();
+           }}
+         >
+           {grades.map((g) => (
+@@ -129,6 +155,7 @@ export function RatePanel() {
+           onChange={(e) => {
+             setPct(e.target.value);
+             save.reset();
++            withdraw.reset();
+           }}
+         />{' '}
+         <input
+@@ -138,6 +165,7 @@ export function RatePanel() {
+           onChange={(e) => {
+             setFrom(e.target.value);
+             save.reset();
++            withdraw.reset();
+           }}
+         />{' '}
+         <input
+@@ -147,9 +175,11 @@ export function RatePanel() {
+           onChange={(e) => {
+             setTo(e.target.value);
+             save.reset();
++            withdraw.reset();
+           }}
+         />{' '}
+         <button type="submit" data-testid="rate-form-submit">Set rate</button>
++        {withdraw.isError && <span data-testid="rate-form-error" role="alert"> Could not withdraw the rate: only a steward may withdraw one.</span>}
+         {save.isError && <span data-testid="rate-form-error" role="alert"> Could not set the rate: it must be a percent of 0.00 or more with at most two decimals, from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.</span>}
+       </form>
+       <ImportRates />
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index a6e7e8c7..3eead17e 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -173,4 +173,25 @@ public class Rates {
+                 + " VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?, ?)",
+                 sheetId, sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), afterMark);
+     }
++
++    /** Withdraw the newest version of the grade's rate from a date (null: from the beginning of time): the version
++     *  before it, when there is one, is the rate again; with none the rate is gone. False when there is no such rate. */
++    public boolean withdraw(String sheetId, String grade, LocalDate from) {
++        Date fromDate = from == null ? null : Date.valueOf(from);
++        String sameFrom = fromDate == null ? " AND from_date IS NULL" : " AND from_date = ?";
++        Object[] key = fromDate == null ? new Object[] { sheetId, grade } : new Object[] { sheetId, grade, fromDate };
++        if (jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key) == 0) {
++            return false;
++        }
++        Integer previous = jdbc.queryForObject("SELECT MAX(version) FROM rate_version WHERE sheet_id = ? AND grade = ?" + sameFrom,
++                Integer.class, key);
++        if (previous != null) {
++            Object[] versionKey = java.util.stream.Stream.concat(java.util.Arrays.stream(key), java.util.stream.Stream.of(previous)).toArray();
++            jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_mark)"
++                    + " SELECT sheet_id, grade, rate, from_date, to_date, version, after_mark FROM rate_version"
++                    + " WHERE sheet_id = ? AND grade = ?" + sameFrom + " AND version = ?", versionKey);
++            jdbc.update("DELETE FROM rate_version WHERE sheet_id = ? AND grade = ?" + sameFrom + " AND version = ?", versionKey);
++        }
++        return true;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/WithdrawRate.java b/src/main/java/net/officefloor/hq/app/rate/WithdrawRate.java
+new file mode 100644
+index 00000000..c9ed396b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/WithdrawRate.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app.rate;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupFigures;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.ViewerRefusedException;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Withdraws a rate's newest version, by a steward only: the version before it applies again; with none before it the
++ *  rate is gone. */
++public class WithdrawRate {
++    public void withdraw(@PathVariable("sheetId") String sheetId, @RequestBody WithdrawRateRequest request, Rates rates,
++            Settings settings, Audit audit, @Val RollupFigures before, Rollup rollup,
++            ObjectResponse<List<RateResponse>> response) throws InvalidRateException, ViewerRefusedException {
++        settings.refuseViewer(sheetId, request.user());
++        if (!Settings.STEWARD.equals(settings.role(sheetId, request.user()))) {
++            throw new InvalidRateException("Only a steward may withdraw a rate");
++        }
++        String grade = request.grade() == null ? "" : request.grade().trim();
++        String rawFrom = request.from() == null ? "" : request.from().trim();
++        LocalDate from;
++        try {
++            from = rawFrom.isEmpty() ? null : LocalDate.parse(rawFrom);
++        } catch (DateTimeParseException e) {
++            throw new InvalidRateException("The from-date must be a date (YYYY-MM-DD)");
++        }
++        if (!rates.withdraw(sheetId, grade, from)) {
++            throw new InvalidRateException("No rate for grade " + grade + " from " + (from == null ? "the start" : from));
++        }
++        audit.recordOnCommit("RATE_WITHDRAWN sheet=" + sheetId + " by=" + request.user() + " grade=" + grade
++                + (from == null ? "" : " from=" + from));
++        rollup.recordChanges(sheetId, request.user(), before);
++        response.send(rates.list(sheetId));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/WithdrawRateRequest.java b/src/main/java/net/officefloor/hq/app/rate/WithdrawRateRequest.java
+new file mode 100644
+index 00000000..e559f0ce
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/WithdrawRateRequest.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.rate;
++
++/** Body of POST /api/sheets/{sheetId}/rates/withdraw: the grade and the from-date (YYYY-MM-DD; blank for from the
++ *  beginning of time) of the rate whose newest version is withdrawn, and the user withdrawing it. */
++public record WithdrawRateRequest(String grade, String from, String user) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/withdraw.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/withdraw.POST.yml
+new file mode 100644
+index 00000000..9bcdf003
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/withdraw.POST.yml
+@@ -0,0 +1,9 @@
++# The sheet's figures before the change, so the change can audit what it moved.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: withdraw
++# A steward withdraws the newest version of a grade's rate from a date; the one before it applies again.
++withdraw:
++  class: net.officefloor.hq.app.rate.WithdrawRate
++  govern: [ transaction ]
