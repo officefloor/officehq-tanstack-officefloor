@@ -1,0 +1,158 @@
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 0b5dee98..f4b1ef04 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -6,7 +6,8 @@ import { readPath, useAsOf } from '../asof/useAsOf';
+ /** A grade's rate: a percent shown with two decimals ("12.50"), in force from a date (YYYY-MM-DD;
+  *  "" for from the beginning of time) through a date ("" for no end), and its version: how many times a
+  *  rate has been set for the grade and from-date, this the newest. One inherited from an ancestor
+- *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above; the sheet's own have none.
++ *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above, then a clone's source and its own
++ *  ancestors in turn; the sheet's own have none.
+  *  afterMark is 0 for a rate applying to every claim; a forward-only one (saved with a from-date on or after the
+  *  sheet's today) applies only to claims whose rateMark is greater, the others falling back to the older versions
+  *  it replaced (earlier, newest first). */
+@@ -65,10 +66,12 @@ function ownRateOn(rates: Rate[], grade: string, date: string, level: number, ma
+ }
+ 
+ /** The grade's rate in force on a date: the sheet's own (see ownRateOn); when it has none, its parent's,
+- *  then the parent's parent's, up to three levels up; undefined when none has one (or the date is not known yet). */
++ *  then the parent's parent's, up to three levels up, then a clone's source's and so on (each a level further);
++ *  undefined when none has one (or the date is not known yet). */
+ export function rateOn(rates: Rate[], grade: string, date: string | undefined, mark?: number): string | undefined {
+   if (date === undefined) return undefined;
+-  for (let level = 0; level <= 3; level++) {
++  const levels = rates.reduce((max, r) => Math.max(max, r.level ?? 0), 0);
++  for (let level = 0; level <= levels; level++) {
+     const found = ownRateOn(rates, grade, date, level, mark);
+     if (found !== undefined) return found;
+   }
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 604779fa..85660fe7 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -274,16 +274,11 @@ public class AsOfView {
+     }
+ 
+     /** The sheet's ancestors as they stood at the end of the date: its parent as last set by then (none when never set by
+-     *  then), that sheet's parent as last set by then, and so on, up to {@link Rates#ANCESTOR_LEVELS} levels up. A parent
+-     *  set before its history was kept counts as of any date. */
++     *  then), that sheet's parent as last set by then, and so on, up to {@link Rates#ANCESTOR_LEVELS} levels up; then a clone's
++     *  source and its own ancestors, in turn (see {@link Rates#chain}). A parent set before its history was kept counts as
++     *  of any date. */
+     public List<String> ancestors(String sheetId, LocalDate date) {
+-        List<String> chain = new ArrayList<>();
+-        String at = parentOn(sheetId, date);
+-        while (at != null && chain.size() < Rates.ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
+-            chain.add(at);
+-            at = parentOn(at, date);
+-        }
+-        return chain;
++        return Rates.chain(sheetId, at -> parentOn(at, date), sheets::source);
+     }
+ 
+     private String parentOn(String sheetId, LocalDate date) {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index 6a33db2e..a6e7e8c7 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -69,15 +69,32 @@ public class Rates {
+     public static final int ANCESTOR_LEVELS = 3;
+ 
+     /** The sheet's ancestors asked for a rate it has not: its parent, then the parent's parent, up to
+-     *  {@link #ANCESTOR_LEVELS} levels up. */
++     *  {@link #ANCESTOR_LEVELS} levels up; then, for a clone, the sheet it was cloned from and that sheet's own
++     *  ancestors, and so on. */
+     public List<String> ancestors(String sheetId) {
+-        List<String> chain = new java.util.ArrayList<>();
+-        String at = sheets.parent(sheetId);
+-        while (at != null && chain.size() < ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
+-            chain.add(at);
+-            at = sheets.parent(at);
++        return chain(sheetId, sheets::parent, sheets::source);
++    }
++
++    /** The chain of sheets asked for a rate the sheet has not, by the parent and source of each: the sheet's parents up to
++     *  {@link #ANCESTOR_LEVELS} levels up, then its source (when it is a clone) and that one's parents and source in turn;
++     *  each sheet once. */
++    public static List<String> chain(String sheetId, java.util.function.UnaryOperator<String> parent,
++            java.util.function.UnaryOperator<String> source) {
++        List<String> chain = new ArrayList<>();
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        for (String from = sheetId; ; ) {
++            int levels = 0;
++            for (String at = parent.apply(from); at != null && levels < ANCESTOR_LEVELS && seen.add(at); at = parent.apply(at)) {
++                chain.add(at);
++                levels++;
++            }
++            String next = source.apply(from);
++            if (next == null || !seen.add(next)) {
++                return chain;
++            }
++            chain.add(next);
++            from = next;
+         }
+-        return chain;
+     }
+ 
+     /** The rates of the sheet's ancestors (see {@link #ancestors(String)}), nearest first. */
+@@ -86,7 +103,8 @@ public class Rates {
+     }
+ 
+     /** The rate for a grade on the sheet in force on a date (see {@link #findOwn}); when the sheet has
+-     *  none, its parent's, then the parent's parent's, up to {@link #ANCESTOR_LEVELS} levels up; null when none has one. */
++     *  none, its parent's, then the parent's parent's, up to {@link #ANCESTOR_LEVELS} levels up, then a clone's source's
++     *  (see {@link #ancestors}); null when none has one. */
+     public BigDecimal find(String sheetId, String grade, LocalDate date) {
+         return find(sheetId, grade, date, IN_FORCE);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 1bf8d2d9..079c2167 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -9,7 +9,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+ 
+ /**
+- * Copies a sheet's set-up and people to a sheet never used: its today, settings (but not its parent), roles,
++ * Copies a sheet's set-up and people to a sheet never used, which records it as its source: its today, settings (but not its parent), roles,
+  * delegations, permissions, rates, holidays, void reasons, templates, tags, periods (all open), pools and people
+  * (grades, terms, contacts, aliases, holds, retirements, patrons), with the history the as-of view reads. Statements,
+  * watches and fixed period figures are not copied. The claims are copied by {@link CloneSheet}.
+@@ -25,8 +25,8 @@ public class SheetCloner {
+ 
+     /** Copies the sheet to the other; returns each person's id on the clone by their id on the sheet, in list order. */
+     public Map<Long, Long> copy(String from, String to) {
+-        jdbc.update("INSERT INTO sheet (id, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch)"
+-                + " SELECT ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch"
++        jdbc.update("INSERT INTO sheet (id, source, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch)"
++                + " SELECT ?, id, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch"
+                 + " FROM sheet WHERE id = ?", to, from);
+         copyRows("sheet_setting", "setting_key, from_date, setting_value", "", from, to);
+         copyRows("setting_history", "set_on, setting_key, from_date, setting_value", " ORDER BY seq", from, to);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+index 68ad3a18..68a5bfed 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+@@ -117,6 +117,12 @@ public class Sheets {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** The sheet the sheet was cloned from; null when it was not cloned. */
++    public String source(String sheetId) {
++        List<String> found = jdbc.query("SELECT source FROM sheet WHERE id = ?", (rs, i) -> rs.getString(1), sheetId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** The sheet's descendants: the sheets naming it as their parent, their children and so on, nearest first. */
+     public List<String> descendants(String sheetId) {
+         List<String> found = new ArrayList<>();
+diff --git a/src/main/resources/db/migration/V102__sheet_source.sql b/src/main/resources/db/migration/V102__sheet_source.sql
+new file mode 100644
+index 00000000..0fefb461
+--- /dev/null
++++ b/src/main/resources/db/migration/V102__sheet_source.sql
+@@ -0,0 +1,3 @@
++-- The sheet a sheet was cloned from: a grade with no rate in force on a date on this sheet nor on its parents
++-- takes that sheet's (by its own rates, parents and source in turn). NULL: not a clone.
++ALTER TABLE sheet ADD COLUMN source VARCHAR(200);
