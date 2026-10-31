@@ -93,6 +93,19 @@ export function PeriodPanel() {
       void queryClient.invalidateQueries({ queryKey: openingsKey(sheet) });
     },
   });
+  // Undo the sheet's last rollover (the steward who made it, on the sheet's today it was made, while no claim belongs
+  // to a period it generated): its periods are removed and the openings it set taken back.
+  const rolloverUndo = useMutation({
+    mutationFn: () =>
+      postJson<{ generated: number; periods: Period[] }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/rollover-undo`,
+        { user },
+      ),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(periodsKey(sheet), saved.periods);
+      void queryClient.invalidateQueries({ queryKey: openingsKey(sheet) });
+    },
+  });
   const generated = [generate, generateFy, generateQuarters].reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
   const resetGenerated = () => {
     generate.reset();
@@ -350,6 +363,7 @@ export function PeriodPanel() {
           e.preventDefault();
           submitOnce(() => {
             rollover.reset();
+            rolloverUndo.reset();
             return rollover.mutateAsync({ year: rollYear.trim() });
           });
         }}
@@ -361,9 +375,23 @@ export function PeriodPanel() {
           onChange={(e) => {
             setRollYear(e.target.value);
             rollover.reset();
+            rolloverUndo.reset();
           }}
         />{' '}
-        <button type="submit" data-testid="rollover">Roll the year over</button>
+        <button type="submit" data-testid="rollover">Roll the year over</button>{' '}
+        <button
+          type="button"
+          data-testid="rollover-undo"
+          onClick={() =>
+            submitOnce(() => {
+              rollover.reset();
+              rolloverUndo.reset();
+              return rolloverUndo.mutateAsync();
+            })
+          }
+        >
+          Undo the last rollover
+        </button>
         {rollover.isSuccess && (
           <>
             {' '}
@@ -374,6 +402,13 @@ export function PeriodPanel() {
           <span data-testid="rollover-error" role="alert">
             {' '}
             Could not roll the year over: only a steward can, of a year (YYYY) with periods on the sheet.
+          </span>
+        )}
+        {rolloverUndo.isError && (
+          <span data-testid="rollover-error" role="alert">
+            {' '}
+            Could not undo the rollover: only the steward who made it can, on the day it was made, while no claim
+            belongs to a period it generated.
           </span>
         )}
       </form>

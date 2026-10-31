@@ -24,6 +24,17 @@ public class Openings {
                 sheetId, period, personId, amount);
     }
 
+    /** Adds the amount to the person's opening for the period, as set by the rollover (so undoing it takes it back). */
+    public void addByRollover(String sheetId, long personId, String period, BigDecimal amount, long rolloverId) {
+        jdbc.update("INSERT INTO period_opening (sheet_id, period_name, person_id, amount, rollover_id) VALUES (?, ?, ?, ?, ?)",
+                sheetId, period, personId, amount, rolloverId);
+    }
+
+    /** Takes back every opening the rollover set. */
+    public void removeByRollover(String sheetId, long rolloverId) {
+        jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND rollover_id = ?", sheetId, rolloverId);
+    }
+
     /** Each person's opening for each period on the sheet that has one. */
     public List<OpeningResponse> list(String sheetId) {
         return jdbc.query("SELECT person_id, period_name, SUM(amount) AS amount FROM period_opening WHERE sheet_id = ?"
