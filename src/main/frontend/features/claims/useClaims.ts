@@ -13,7 +13,7 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  /** Given when the claim is opened; null for a DRAFT or VOID claim. */
+  /** Given when the claim is opened (a voided claim keeps it); null for a DRAFT, or a claim voided while a DRAFT. */
   number: number | null;
   /** The due fixed when the claim was settled, two decimals; null when it has none, so its due is live. */
   due: string | null;

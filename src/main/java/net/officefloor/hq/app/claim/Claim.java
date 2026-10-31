@@ -44,7 +44,7 @@ public class Claim {
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
     public void setStatus(ClaimStatus status) { this.status = status; }
-    /** The claim's number on its sheet, given when it is opened; null for a DRAFT or VOID claim. */
+    /** The claim's number on its sheet, given when it is opened; null for a DRAFT, or a claim voided while a DRAFT. A voided claim keeps its number. */
     public Long getNumber() { return number; }
     public void setNumber(Long number) { this.number = number; }
     /** The due fixed when the claim was settled; null when it has none (not settled, or settled with no rate). */

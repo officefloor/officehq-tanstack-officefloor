@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
@@ -18,9 +18,12 @@ import {
   type Claim,
 } from './useClaims';
 
+const STATUS_REFUSED = "This claim's status cannot change that way (whoever opened a claim cannot settle it).";
+const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
+
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
- * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
+ * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total.
@@ -38,8 +41,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const [invalid, setInvalid] = useState(false);
-  // The claim whose last status change was refused: its row shows the error.
-  const [refused, setRefused] = useState<number | null>(null);
+  // The claim whose last status change or edit was refused: its row shows the error.
+  const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   const submitOnce = useSubmitOnce();
@@ -54,13 +57,20 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
       close();
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
+    // An edit of a claim no longer a DRAFT is refused on the claim itself; the editor stays open.
+    onError: async (e, c) => {
+      if (c.id !== null && e instanceof HttpError && e.status === 409 && e.body.includes('DRAFT')) {
+        setRefused({ id: c.id, message: NOT_DRAFT });
+        await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      }
+    },
   });
 
   const changeStatus = useMutation({
     mutationFn: (c: { id: number; action: 'open' | 'settle' | 'void' }) =>
       postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user }),
     onMutate: () => setRefused(null),
-    onError: (_e, c) => setRefused(c.id),
+    onError: (_e, c) => setRefused({ id: c.id, message: STATUS_REFUSED }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -68,6 +78,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const clearError = () => {
     save.reset();
     setInvalid(false);
+    setRefused(null);
   };
   const close = () => {
     setEditing(null);
@@ -77,7 +88,12 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   };
   const open = (c: Claim) => {
     clearError();
-    setRefused(null);
+    // Only a DRAFT can be edited: to change an open claim, void it and add a new one.
+    if (c.status !== 'DRAFT') {
+      cancel();
+      setRefused({ id: c.id, message: NOT_DRAFT });
+      return;
+    }
     setEditing(c.id);
     setAmount(c.amount);
     setDate(c.date);
@@ -140,7 +156,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
-          {(invalid || save.isError) && (
+          {(invalid || (save.isError && refused === null)) && (
             <span data-testid="claim-form-error" role="alert">
               {' '}
               {invalid
@@ -184,10 +200,10 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   </button>
                 </>
               )}
-              {refused === c.id && (
+              {refused?.id === c.id && (
                 <span data-testid="claim-error" role="alert">
                   {' '}
-                  This claim's status cannot change that way (whoever opened a claim cannot settle it).
+                  {refused.message}
                 </span>
               )}
             </li>
