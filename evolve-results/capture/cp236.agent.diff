@@ -1,0 +1,109 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 631eee92..08c31939 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -79,15 +79,17 @@ export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+ /** Whether a statement binds the claim's figure now (a PENDING claim included). */
+ export const isBound = (c: Claim) => c.stated;
+ 
+-/** Whether a claim is deferred on the sheet's today: OPEN and deferred until a later date. A deferred claim
+- *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+-/** Whether the row shows the claim as deferred: it was deferred until a date after the sheet's today, whatever its
+- *  status now (a deferred claim later voided still shows it). Only an OPEN one is held back from the totals (`isDeferred`). */
+-export const deferredShown = (c: { deferredUntil?: string }, today: string | undefined) =>
+-  !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
+-
+-export const isDeferred = (c: { status?: string; deferredUntil?: string }, today: string | undefined) =>
+-  c.status === 'OPEN' && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
++/** Whether the row shows the claim as deferred: it was deferred until a date after the sheet's today and no statement
++ *  binds it now, whatever its status (a deferred claim later voided still shows it). Only an OPEN one is held back from
++ *  the totals (`isDeferred`), or a SETTLED one settled while a statement bound it. */
++export const deferredShown = (c: { deferredUntil?: string; stated?: boolean }, today: string | undefined) =>
++  !c.stated && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
++
++/** Whether a claim is deferred on the sheet's today: OPEN (or SETTLED while a statement bound it), deferred until a later date and not bound by a statement
++ *  (a deferral takes effect only once the binding ends). A deferred claim counts in no total, is not overdue, cannot
++ *  be settled and is left unbound by a statement. */
++export const isDeferred = (c: { status?: string; deferredUntil?: string; stated?: boolean }, today: string | undefined) =>
++  (c.status === 'OPEN' || c.status === 'SETTLED') && !c.stated && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
+ 
+ /** Whether a claim counts in the live totals: it counts, is not deferred on the sheet's today, and is not
+  *  open, unbound and its person retired (`retiredOn`). A hold does not take it out — it only matters to the pools' cuts. */
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index 340a38d2..c914460f 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -79,7 +79,7 @@ export const isCorrection = (claim: { amount?: string }) => claim.amount !== und
+  *  boundary date (its due-by plus its grace days plus 30, 60, 90 ... days) of its figure plus the charges of the boundaries
+  *  before it (compounding), each rounded like due, the charges added up. A statement binds it into the due it binds; settling freezes it into the settled due.
+  *  A claim whose late charge a steward waived gains none, whatever its overdue state. */
+-export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string; waived?: boolean }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
++export function lateCents(claim: { amount?: string; date: string; status?: string; roundingDate?: string; dueBy?: string; deferredUntil?: string; stated?: boolean; personId?: string; waived?: boolean }, figure: bigint, late: Late | undefined, policy?: Policy): bigint {
+   if (late === undefined || late.today === undefined || !claim.dueBy || claim.waived || !isOpen(claim) || isDeferred(claim, late.today) || isCorrection(claim)) return 0n;
+   const from = lateFrom(claim, late.grace);
+   const days = Math.round((Date.parse(late.today) - Date.parse(from)) / DAY_MS);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 7bab1726..329f178a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -93,10 +93,11 @@ public class Claim {
+     /** The date the claim was last deferred until; null if it was never deferred. */
+     public LocalDate getDeferredUntil() { return deferredUntil; }
+     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+-    /** Whether the claim is deferred on the date: OPEN and deferred until a later date. A deferred claim counts in no
+-     *  total, is not overdue, cannot be settled and is left unbound by a statement. */
++    /** Whether the claim is deferred on the date: OPEN (or SETTLED while a statement bound it), deferred until a later
++     *  date and not bound by a statement (a deferral takes effect only once the binding ends). A deferred claim counts in
++     *  no total, is not overdue, cannot be settled and is left unbound by a statement. */
+     public boolean isDeferredOn(LocalDate today) {
+-        return status == ClaimStatus.OPEN && deferredUntil != null && today.isBefore(deferredUntil);
++        return (status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED) && !stated && deferredUntil != null && today.isBefore(deferredUntil);
+     }
+     /** The last day (the sheet's today then) a reminder was written for the claim; null if it was never reminded. */
+     private LocalDate remindedOn;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+index 480db178..9446c3db 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+@@ -31,6 +31,7 @@ public class SavePasteClaims {
+     public void save(@PathVariable("sheetId") String sheetId, @Val ValidPasteClaims request, People people, Claims claims,
+             Sheets sheets, Periods periods, Audit audit, Rollup rollup, Settings settings, Rates rates,
+             ClaimNumbering numbering, ClaimLog log, Watches watches, net.officefloor.hq.app.holiday.Holidays holidays,
++            org.springframework.transaction.PlatformTransactionManager transactions,
+             ObjectResponse<PasteClaimsResponse> response) throws InvalidClaimException {
+         LocalDate today = settings.claimDate(sheetId);
+         List<Claim> existing = claims.list(sheetId);
+@@ -87,6 +88,25 @@ public class SavePasteClaims {
+             matched.add(match);
+         }
+         ValidClaimStatus open = new ValidClaimStatus(ClaimStatus.OPEN, request.user(), ValidClaimStatus.Decision.NONE, null);
++        // The lines are written in one transaction: a refused open rolls back the lines added before it (and their audit).
++        org.springframework.transaction.TransactionStatus transaction = transactions.getTransaction(
++                new org.springframework.transaction.support.DefaultTransactionDefinition());
++        try {
++            write(sheetId, request, persons, dates, matched, open, people, claims, sheets, periods, audit, rollup, settings,
++                    rates, numbering, log, watches, holidays);
++        } catch (InvalidClaimException | RuntimeException e) {
++            transactions.rollback(transaction);
++            throw e;
++        }
++        transactions.commit(transaction);
++        response.send(new PasteClaimsResponse(request.lines().size()));
++    }
++
++    /** Adds (or updates) and opens each line in order; throws on the first refusal. */
++    private static void write(String sheetId, ValidPasteClaims request, List<Person> persons, List<LocalDate> dates,
++            List<Claim> matched, ValidClaimStatus open, People people, Claims claims, Sheets sheets, Periods periods,
++            Audit audit, Rollup rollup, Settings settings, Rates rates, ClaimNumbering numbering, ClaimLog log,
++            Watches watches, net.officefloor.hq.app.holiday.Holidays holidays) throws InvalidClaimException {
+         for (int i = 0; i < request.lines().size(); i++) {
+             ValidClaim valid = request.lines().get(i).claim();
+             Person person = persons.get(i);
+@@ -130,7 +150,6 @@ public class SavePasteClaims {
+             claims.save(claim);
+             AuditClaimStatus.record(open, claim, opened, people, audit, before, rollup, log, watches);
+         }
+-        response.send(new PasteClaimsResponse(request.lines().size()));
+     }
+ 
+     /** The newest DRAFT among the person's claims (not VOID nor DELETED) of that date and note; null when none
