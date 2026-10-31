@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note FROM claim";
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -34,20 +34,22 @@ public class Claims {
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ?",
-                    claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getId());
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE id = ?",
+                    claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
+                    claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
             ps.setBigDecimal(3, claim.getAmount());
             ps.setDate(4, Date.valueOf(claim.getDate()));
             ps.setString(5, claim.getNote());
+            ps.setString(6, claim.getStatus().name());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -55,6 +57,7 @@ public class Claims {
 
     private static Claim claim(ResultSet rs, int i) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
-                rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"));
+                rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
+                ClaimStatus.valueOf(rs.getString("status")));
     }
 }

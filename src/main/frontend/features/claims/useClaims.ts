@@ -1,8 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
+/** Where a claim is in its life: DRAFT → OPEN → SETTLED, and DRAFT or OPEN → VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+
 /** A claim as the server sends it: `amount` with two decimals, `date` as yyyy-mm-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+export type Claim = {
+  id: number;
+  personId: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+};
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
 
@@ -18,6 +28,11 @@ export function useClaims(sheet: string) {
 
 /** An amount the server accepts: 0.00 or more, with up to two decimals. */
 export const AMOUNT = /^\d+(\.\d{1,2})?$/;
+
+/** The claims that count toward claimed, due-total and every total: OPEN and SETTLED ones. */
+export function counted(claims: Claim[]): Claim[] {
+  return claims.filter((c) => c.status === 'OPEN' || c.status === 'SETTLED');
+}
 
 /** The sum of these claims' amounts, with two decimals. Added up in cents, so it is exact. */
 export function claimed(claims: Claim[]): string {

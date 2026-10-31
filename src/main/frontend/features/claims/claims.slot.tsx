@@ -4,12 +4,13 @@ import { postJson, putJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
 import { dueCents, rateByGrade, showDue, useRates } from '../rates/useRates';
-import { AMOUNT, claimed, claimsKey, useClaims, type Claim } from './useClaims';
+import { AMOUNT, claimed, claimsKey, counted, useClaims, type Claim } from './useClaims';
 
 /**
  * A person's claims: what they have claimed in all and what is due on that at their grade's rate,
  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
- * with its due.
+ * with its due, its status and the buttons to open, settle or void it. Only OPEN and SETTLED claims
+ * count toward claimed and the due-total.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -22,6 +23,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const [invalid, setInvalid] = useState(false);
+  // The claim whose last status change was refused: its row shows the error.
+  const [refused, setRefused] = useState<number | null>(null);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   const save = useMutation({
@@ -37,6 +40,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     },
   });
 
+  const changeStatus = useMutation({
+    mutationFn: (c: { id: number; action: 'open' | 'settle' | 'void' }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user }),
+    onMutate: () => setRefused(null),
+    onError: (_e, c) => setRefused(c.id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   // An error goes as soon as its form is changed or submitted again, or an editor is opened.
   const clearError = () => {
     save.reset();
@@ -50,6 +61,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   };
   const open = (c: Claim) => {
     clearError();
+    setRefused(null);
     setEditing(c.id);
     setAmount(c.amount);
     setDate(c.date);
@@ -62,8 +74,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(claims)}</td>
-      <td data-testid="person-due-total">{showDue(dueCents(claimed(claims), pct))}</td>
+      <td data-testid="person-claimed">{claimed(counted(claims))}</td>
+      <td data-testid="person-due-total">{showDue(dueCents(claimed(counted(claims)), pct))}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -128,6 +140,19 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{showDue(dueCents(c.amount, pct))}</span>{' '}
+              <span data-testid="claim-status">{c.status}</span>{' '}
+              {(['open', 'settle', 'void'] as const).map((action) => (
+                <span key={action}>
+                  <button
+                    type="button"
+                    data-testid={`claim-${action}`}
+                    disabled={changeStatus.isPending}
+                    onClick={() => changeStatus.mutate({ id: c.id, action })}
+                  >
+                    {action === 'open' ? 'Open' : action === 'settle' ? 'Settle' : 'Void'}
+                  </button>{' '}
+                </span>
+              ))}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
@@ -138,6 +163,12 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                     Cancel
                   </button>
                 </>
+              )}
+              {refused === c.id && (
+                <span data-testid="claim-error" role="alert">
+                  {' '}
+                  This claim's status cannot change that way.
+                </span>
               )}
             </li>
           ))}
