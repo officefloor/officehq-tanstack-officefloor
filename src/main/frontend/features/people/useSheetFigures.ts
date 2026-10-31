@@ -65,11 +65,12 @@ export function useSheetFigures(sheet: string) {
   const overdueSum = (cs: typeof overdue) =>
     cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
-  // A person's score: their settled-total over 100, minus 5 for each of their overdue counting
-  // claims, rounded half to even to a whole number.
+  // A person's score: the dues of their counting SETTLED claims that correct nothing, over 100,
+  // minus 5 for each of their overdue counting claims, rounded half to even to a whole number.
   const scoreOf = (person: Person) => {
     const overdueCount = BigInt(overdue.filter((c) => c.personId === person.id).length);
-    return halfEvenDiv(settledTotalOf(person) - overdueCount * 50000n, 10000n).toString();
+    const settled = dueSumOf(person, (c) => c.status === 'SETTLED' && !c.corrects);
+    return halfEvenDiv(settled - overdueCount * 50000n, 10000n).toString();
   };
   // Each person's due-total, skipping n/a, and overdue-total (always a figure), in list order.
   const dueFigures = people.map(totalOf).filter((due): due is bigint => due !== null);

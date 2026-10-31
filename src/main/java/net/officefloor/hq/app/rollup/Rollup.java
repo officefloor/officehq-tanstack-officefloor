@@ -83,7 +83,9 @@ public class Rollup {
                 if (isOverdue(claim, grace(claim, person), today)) {
                     overdueCount++;
                 }
-                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED) {
+                // The score's settled figures leave out corrections.
+                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED
+                        && (claim.getCorrects() == null || claim.getCorrects().isEmpty())) {
                     settled = settled.add(figure);
                 }
                 if (figure != null) {
@@ -167,7 +169,7 @@ public class Rollup {
         }
     }
 
-    /** A person's score: their settled-total over 100, minus 5 for each of their overdue counting claims, rounded half to
+    /** A person's score: the dues of their counting SETTLED claims that correct nothing over 100, minus 5 for each of their overdue counting claims, rounded half to
      *  even to a whole number. */
     private static String score(BigDecimal settled, int overdueCount) {
         return settled.subtract(BigDecimal.valueOf(5L * overdueCount * 100)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_EVEN)

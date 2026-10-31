@@ -48,7 +48,7 @@ import { scoreBand, useSettings } from '../settings/useSettings';
 // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
 // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
-// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number) and its band
+// their score (the dues of their counting SETTLED claims that correct nothing, over 100, minus 5 per overdue counting claim, rounded half to even to a whole number) and its band
 // (HIGH, MID or LOW by the sheet's score thresholds; blank while either is),
 // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
 // claims; together the sum of their figures before the cap),
