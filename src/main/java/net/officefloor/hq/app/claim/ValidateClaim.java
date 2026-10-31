@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -12,7 +13,7 @@ public class ValidateClaim {
     /** 0.00 or more, with up to two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
-    public void validate(@RequestBody ClaimRequest request, Out<ClaimValues> body)
+    public void validate(@RequestBody ClaimRequest request, Out<ClaimValues> body, Out<Actor> actor)
             throws InvalidSheetRequestException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         if (!AMOUNT.matcher(amount).matches()) {
@@ -28,6 +29,7 @@ public class ValidateClaim {
             }
         }
         String note = request.note() == null ? "" : request.note();
+        actor.set(new Actor(request.user()));
         body.set(new ClaimValues(new BigDecimal(amount).setScale(2), date, note, request.user()));
     }
 }
