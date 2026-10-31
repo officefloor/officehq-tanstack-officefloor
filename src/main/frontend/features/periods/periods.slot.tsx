@@ -30,6 +30,9 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
+  const [genFrom, setGenFrom] = useState('');
+  const [genTo, setGenTo] = useState('');
+  const [genInvalid, setGenInvalid] = useState<string | null>(null);
   // The period whose last close or reopen was refused: its row shows the error.
   const [refused, setRefused] = useState<string | null>(null);
 
@@ -44,6 +47,19 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
     },
   });
+
+  // One period per calendar month from the from-date's month to the to-date's, named yyyy-mm; a
+  // month already named or overlapping a period is left out. Answers how many were made.
+  const generate = useMutation({
+    mutationFn: (g: { from: string; to: string }) =>
+      postJson<{ generated: number }>(`/api/sheets/${encodeURIComponent(sheet)}/generate-periods`, { ...g, user }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+
+  const clearGenerate = () => {
+    generate.reset();
+    setGenInvalid(null);
+  };
 
   const close = useMutation({
     mutationFn: (name: string) =>
@@ -140,6 +156,64 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="period-form-error" role="alert">
             {' '}
             {invalid ?? 'Could not add this period.'}
+          </span>
+        )}
+      </form>
+      <form
+        data-testid="period-generate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          clearGenerate();
+          const f = genFrom.trim();
+          const t = genTo.trim();
+          if ((f !== '' && !DATE.test(f)) || (t !== '' && !DATE.test(t))) {
+            setGenInvalid('The dates must be yyyy-mm-dd.');
+            return;
+          }
+          if (f !== '' && t !== '' && f > t) {
+            setGenInvalid('The to-date must not be before the from-date.');
+            return;
+          }
+          generate.mutate({ from: f, to: t });
+        }}
+      >
+        <label>
+          From{' '}
+          <input
+            data-testid="period-generate-from"
+            placeholder="yyyy-mm-dd"
+            value={genFrom}
+            onChange={(e) => {
+              setGenFrom(e.target.value);
+              clearGenerate();
+            }}
+          />
+        </label>{' '}
+        <label>
+          To{' '}
+          <input
+            data-testid="period-generate-to"
+            placeholder="yyyy-mm-dd"
+            value={genTo}
+            onChange={(e) => {
+              setGenTo(e.target.value);
+              clearGenerate();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+          Generate monthly periods
+        </button>
+        {generate.isSuccess && (
+          <span>
+            {' '}
+            Made <strong data-testid="period-generated">{generate.data.generated}</strong>
+          </span>
+        )}
+        {(genInvalid !== null || generate.isError) && (
+          <span data-testid="period-generate-error" role="alert">
+            {' '}
+            {genInvalid ?? 'Could not generate these periods.'}
           </span>
         )}
       </form>
