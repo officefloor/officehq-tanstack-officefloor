@@ -1,0 +1,550 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 4c2c4cd4..0185c196 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -6,7 +6,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { rateOn, showDue, useRates } from '../rates/useRates';
+-import { useFloor, useLate } from '../settings/useSettings';
++import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { useSelectedClaims } from '../bulk/useSelectedClaims';
+ import {
+@@ -19,6 +19,8 @@ import {
+   overdue,
+   overdueFigures,
+   personDueCents,
++  capCents,
++  excessCents,
+   useClaims,
+   type Claim,
+ } from './useClaims';
+@@ -68,6 +70,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const pct = rateOn(rates, gradeOn(person, today), today);
+   const floor = useFloor(sheet);
+   const lateBy = useLate(sheet);
++  const cap = useCap(sheet);
++  // The sum of their figures; their due-total is at most the cap, the rest their excess.
++  const dueSum = personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
+   const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
+   const [editing, setEditing] = useState<number | null>(null);
+   const [amount, setAmount] = useState('');
+@@ -183,7 +188,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   return (
+     <>
+       <td data-testid="person-claimed">{claimed(liveClaims)}</td>
+-      <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy))}</td>
++      <td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td>
++      <td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td>
+       <td data-testid="person-overdue-count">{late.count}</td>
+       <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
+       <td>
+@@ -386,6 +392,7 @@ export const contributions = [
+       <>
+         <th>Claimed</th>
+         <th>Due</th>
++        <th>Excess</th>
+         <th>Overdue</th>
+         <th>Overdue due</th>
+         <th>Claims</th>
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 758c74cd..f902ce9d 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -137,8 +137,9 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
+  *  a settled claim's fixed due, else the figure a statement bound it to, else live (at least `floor`) at `pctOn(claim's date)`, the rate in force on the claim's
+  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
+  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
+- *  figure: then it is the sum of the figures there are. */
+-export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late): bigint | null {
++ *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
++ *  is not capped). */
++export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late, cap?: string | null): bigint | null {
+   let sum = 0n;
+   let any = false;
+   for (const c of counted(claims)) {
+@@ -147,7 +148,21 @@ export function personDueCents(claims: Claim[], floor: string, pct: string | und
+     sum += due;
+     any = true;
+   }
+-  return pct === undefined && !any ? null : sum;
++  if (pct === undefined && !any) return null;
++  return capCents(sum, cap);
++}
++
++/** A due-total at most the sheet's `cap` (null or blank: no cap); n/a is not capped. */
++export function capCents(due: bigint | null, cap?: string | null): bigint | null {
++  if (due === null || cap == null || cap === '') return due;
++  const most = hundredths(cap);
++  return due > most ? most : due;
++}
++
++/** How much a due-total is over the sheet's `cap`: 0 when it is not (or is n/a, or there is no cap). */
++export function excessCents(due: bigint | null, cap?: string | null): bigint {
++  const capped = capCents(due, cap);
++  return due === null || capped === null ? 0n : due - capped;
+ }
+ 
+ /** Whether a claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's `today`. */
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+index cef1444d..ab1d1e02 100644
+--- a/src/main/frontend/features/claims/useSheetTotals.ts
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -1,6 +1,6 @@
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+ import { rateOn, totalDue, useRates } from '../rates/useRates';
+-import { useFloor, useLate } from '../settings/useSettings';
++import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
+ 
+@@ -18,8 +18,9 @@ export function useSheetTotals(sheet: string) {
+   const today = useSheetToday(sheet);
+   const floor = useFloor(sheet);
+   const late = useLate(sheet);
++  const cap = useCap(sheet);
+   const dues = people.map((p) =>
+-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
++    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
+   );
+   const over = people.map((p) =>
+     overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 6ca9ce0f..ee601fa3 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -2,7 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { live, personDueCents, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+ import { rateOn, showDue, useRates } from '../rates/useRates';
+-import { useFloor, useLate } from '../settings/useSettings';
++import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+ /** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote
+@@ -23,6 +23,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
+   const today = useSheetToday(sheet);
+   const floor = useFloor(sheet);
+   const late = useLate(sheet);
++  const cap = useCap(sheet);
+ 
+   const download = () => {
+     const claims = live(all, heldOnBy(people));
+@@ -34,6 +35,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
+         rateOn(rates, gradeOn(p, today), today),
+         (d) => rateOn(rates, gradeOn(p, d), d),
+         late,
++        cap,
+       );
+       lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(due)]);
+     }
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 49c0ccdf..82620111 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -5,7 +5,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { live, personDueCents, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOnBy, peopleKey, usePeople, type Person } from '../people/usePeople';
+ import { rateOn, totalDue, useRates } from '../rates/useRates';
+-import { useFloor, useLate } from '../settings/useSettings';
++import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+ /**
+@@ -22,13 +22,14 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
+   const today = useSheetToday(sheet);
+   const floor = useFloor(sheet);
+   const late = useLate(sheet);
++  const cap = useCap(sheet);
+   const [chosen, setChosen] = useState('');
+ 
+   const patrons = people.filter((p) => person.patrons.includes(p.id));
+   const names = patrons.map((p) => p.name).sort();
+   const claims = live(all, heldOnBy(people));
+   const backing = patrons.map((p) =>
+-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
++    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
+   );
+ 
+   const add = useMutation({
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 16510e49..f5abbebf 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
+ import { DAYS, TERM_GRADES, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+ 
+ /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
+-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string> };
++type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; gradeTerms: Record<string, string> };
+ 
+ /**
+  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
+@@ -17,7 +17,8 @@ type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: st
+  * percent (an overdue claim's due gains it of its figure for every full 30 days; blank is 0.00),
+  * its policy date (a claim dated before it rounds half up, on or after it half to even; blank is
+  * the sheet's today), its period numbering from (while it is a date on or before the sheet's
+- * today, a claim opened is numbered within its period; blank is off),
++ * today, a claim opened is numbered within its period; blank is off), its cap (a person's due-total
++ * is at most it, the rest their excess; blank is no cap),
+  * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
+  * whose fields were touched since the last one.
+  */
+@@ -25,7 +26,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSettings(sheet);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, gradeTerms: {} });
++  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, gradeTerms: {} });
+   const [limitInvalid, setLimitInvalid] = useState(false);
+   const [name, setName] = useState('');
+   const [role, setRole] = useState('');
+@@ -35,7 +36,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const saveSettings = useMutation({
+     mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
+     onSuccess: (saved) => {
+-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, gradeTerms: {} });
++      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, gradeTerms: {} });
+       queryClient.setQueryData(settingsKey(sheet), saved);
+       // The policy date decides how each claim's live figures round.
+       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+@@ -76,6 +77,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           const latePct = edit.latePct?.trim() ?? null;
+           const policyDate = edit.policyDate?.trim() ?? null;
+           const periodNumberingFrom = edit.periodNumberingFrom?.trim() ?? null;
++          const cap = edit.cap?.trim() ?? null;
+           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
+           if (
+             (limit !== null && !LIMIT.test(limit)) ||
+@@ -84,7 +86,8 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             Object.values(gradeTerms).some((v) => !DAYS.test(v)) ||
+             (latePct !== null && !PERCENT.test(latePct)) ||
+             (policyDate !== null && !POLICY_DATE.test(policyDate)) ||
+-            (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom))
++            (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom)) ||
++            (cap !== null && !LIMIT.test(cap))
+           ) {
+             // Refused here, before anything is sent: the store and the audit file are untouched.
+             saveSettings.reset();
+@@ -92,7 +95,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             return;
+           }
+           setLimitInvalid(false);
+-          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, gradeTerms }));
++          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, gradeTerms }));
+         }}
+       >
+         {/* While a save is in flight the limit in force is not yet known: saving the same value again
+@@ -221,6 +224,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             }}
+           />
+         </label>{' '}
++        Cap:{' '}
++        <strong data-testid="setting-cap-current">
++          {saveSettings.isPending ? '' : (data?.cap ?? '')}
++        </strong>{' '}
++        <label>
++          Set to{' '}
++          <input
++            data-testid="setting-cap"
++            placeholder="blank: no cap"
++            value={edit.cap ?? (data?.cap ?? '')}
++            onFocus={() => touch('cap', data?.cap ?? '')}
++            onChange={(e) => {
++              setEdit((was) => ({ ...was, cap: e.target.value }));
++              clearSettingsError();
++            }}
++          />
++        </label>{' '}
+         <button type="submit" data-testid="settings-save" disabled={saveSettings.isPending}>
+           Save
+         </button>
+@@ -228,7 +248,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           <span data-testid="settings-error" role="alert">
+             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
+             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
+-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off).
++            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap an amount with up to two decimals (blank is no cap).
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index c2e43273..fafe4fd6 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -10,8 +10,8 @@ export type RoleEntry = { name: string; role: string };
+  *  limit, `floor` with two decimals `terms` in days, `latePct` with two decimals and `policyDate` as
+  *  set (yyyy-mm-dd), or null when blank: then the policy date is the sheet's today, and `periodNumberingFrom`
+  *  (yyyy-mm-dd), or null when off, and `gradeTerms` the terms set per grade (a grade not in it uses the
+- *  sheet's terms). */
+-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; roles: RoleEntry[] };
++ *  sheet's terms), and `cap` with two decimals, or null for no cap. */
++export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[] };
+ 
+ /** The floor of a sheet that has not set one. */
+ export const DEFAULT_FLOOR = '1.00';
+@@ -36,6 +36,11 @@ export function useFloor(sheet: string): string {
+   return useSettings(sheet).data?.floor ?? DEFAULT_FLOOR;
+ }
+ 
++/** The sheet's cap: a person's due-total is at most it. Null for no cap. */
++export function useCap(sheet: string): string | null {
++  return useSettings(sheet).data?.cap ?? null;
++}
++
+ /** The sheet's terms: a claim is due by its date plus this many days. */
+ export function useTerms(sheet: string): number {
+   return useSettings(sheet).data?.terms ?? DEFAULT_TERMS;
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index cf0379eb..5b9ae766 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -3,7 +3,7 @@ import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
+ import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
+ import { periodDue, usePeriods } from '../periods/usePeriods';
+ import { rateOn, totalDue, useRates } from '../rates/useRates';
+-import { useFloor, useLate } from '../settings/useSettings';
++import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+ /**
+@@ -19,6 +19,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
+   const today = useSheetToday(sheet);
+   const floor = useFloor(sheet);
+   const late = useLate(sheet);
++  const cap = useCap(sheet);
+   const people = everyone.filter((p) => !p.retired);
+   const dueOf = (p: (typeof people)[number]) =>
+     personDueCents(
+@@ -27,6 +28,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
+       rateOn(rates, gradeOn(p, today), today),
+       (d) => rateOn(rates, gradeOn(p, d), d),
+       late,
++      cap,
+     );
+ 
+   return (
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index 901d7c1e..bfd1efe3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -5,16 +5,17 @@ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.claim.Figures;
+ import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
+- *  with any late charges (n/a when there is no rate today and none has a figure), dated the sheet's today. Every claim
++ *  with any late charges (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
+  *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to the figure it has now, without its late charge; every other one is unbound. */
+ public class TakeStatement {
+     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
+-            Rates rates, Sheets sheets, People people, Out<Statement> statement) {
++            Rates rates, Sheets sheets, Settings settings, People people, Out<Statement> statement) {
+         Person locked = people.lock(person.getSheetId(), person.getId());
+         person.setStatementCount(locked.getStatementCount());
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+@@ -39,7 +40,8 @@ public class TakeStatement {
+             claims.save(claim);
+         }
+         var today = sheets.today(person.getSheetId());
+-        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.gradeOn(today), today) == null ? null : total;
++        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.gradeOn(today), today) == null ? null
++                : settings.capped(person.getSheetId(), total);
+         person.setStatementCount(person.getStatementCount() + 1);
+         person.setStatedTotal(dueTotal);
+         person.setStatementDate(today);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 0fc1be3b..f6e15777 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.Figures;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import org.springframework.stereotype.Service;
+ 
+@@ -33,19 +34,22 @@ public class Rollup {
+     private final Rates rates;
+     private final Sheets sheets;
+     private final Audit audit;
++    private final Settings settings;
+ 
+-    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit) {
++    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit, Settings settings) {
+         this.people = people;
+         this.claims = claims;
+         this.figures = figures;
+         this.rates = rates;
+         this.sheets = sheets;
+         this.audit = audit;
++        this.settings = settings;
+     }
+ 
+     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
+      *  person's OPEN claims dated within a hold of theirs do not count, unless a statement binds them),
+-     *  n/a when there is no rate today and none has a figure; the sheet's skips the n/a ones. */
++     *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
++     *  capped); the sheet's skips the n/a ones. */
+     public Snapshot snapshot(String sheetId) {
+         LocalDate today = sheets.today(sheetId);
+         List<Claim> all = claims.onSheet(sheetId);
+@@ -66,6 +70,7 @@ public class Rollup {
+                 }
+             }
+             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
++            due = settings.capped(sheetId, due);
+             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due));
+             claimedTotal = claimedTotal.add(claimed);
+             if (due != null) dueTotal = dueTotal.add(due);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+index acb4ffca..488ea4e0 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+@@ -30,5 +30,8 @@ public class RecordSettingChanged {
+             audit.record(prefix + " key=period-numbering-from value="
+                     + (change.periodNumberingFrom() != null ? change.periodNumberingFrom().toString() : ""));
+         }
++        if (change.setsCap()) {
++            audit.record(prefix + " key=cap value=" + (change.cap() != null ? change.cap().toPlainString() : ""));
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index 56aa2e46..9313bd21 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -10,6 +10,7 @@ public class SaveSettings {
+         change.gradeTerms().forEach((grade, terms) -> settings.setGradeTerms(change.sheetId(), grade, terms));
+         if (change.latePct() != null) settings.setLatePct(change.sheetId(), change.latePct());
+         if (change.setsPolicyDate()) settings.setPolicyDate(change.sheetId(), change.policyDate());
++        if (change.setsCap()) settings.setCap(change.sheetId(), change.cap());
+         if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(change.sheetId(), change.periodNumberingFrom());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 343a0aa3..3eafb703 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+-/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms (and any per grade), its late percent, its policy date and its period numbering from. */
++/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms (and any per grade), its late percent, its policy date, its period numbering from and its cap. */
+ @Repository
+ public class Settings {
+ 
+@@ -144,6 +144,21 @@ public class Settings {
+                 sheetId, date != null ? Date.valueOf(date) : null);
+     }
+ 
++    /** The sheet's cap: a person's due-total is at most it. Null for no cap. */
++    public BigDecimal cap(String sheetId) {
++        return column("cap", sheetId);
++    }
++
++    public void setCap(String sheetId, BigDecimal cap) {
++        jdbc.update("MERGE INTO sheet_setting (sheet_id, cap) KEY (sheet_id) VALUES (?, ?)", sheetId, cap);
++    }
++
++    /** A person's due-total at most the sheet's cap; n/a (null) is not capped. */
++    public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
++        BigDecimal cap = cap(sheetId);
++        return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
++    }
++
+     /** One setting's stored value, null when the sheet has no row or the setting is unset. */
+     private BigDecimal column(String column, String sheetId) {
+         List<BigDecimal> values = jdbc.query("SELECT " + column + " FROM sheet_setting WHERE sheet_id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+index 6d71645c..fe1e708f 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+@@ -6,6 +6,6 @@ import java.util.Map;
+ 
+ /** A validated settings change on a sheet: whether the clerk limit is set and to what (null for no
+  *  limit), the floor, the terms and the late percent, each null when it is not being set, and
+- *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off), and the terms set per grade, by grade (a null value clears the grade's own terms, so it uses the sheet's). */
+-public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, String by) {
++ *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off), and the terms set per grade, by grade (a null value clears the grade's own terms, so it uses the sheet's), and whether the cap is set and to what (null for no cap). */
++public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, String by, boolean setsCap, BigDecimal cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index bd6036f7..2a25b84c 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -4,6 +4,6 @@ import java.util.Map;
+ 
+ /** Body of a settings change: the settings being set, each left out (null) when it is not being
+  *  changed — the clerk limit (two decimals, blank for no limit), the floor (two decimals, blank for
+- *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00), the policy date (yyyy-mm-dd, blank for the sheet's today), the period numbering from (yyyy-mm-dd, blank for off), terms per grade (whole days by grade, blank for the sheet's terms) — and who makes the change. */
+-public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String user) {
++ *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00), the policy date (yyyy-mm-dd, blank for the sheet's today), the period numbering from (yyyy-mm-dd, blank for off), terms per grade (whole days by grade, blank for the sheet's terms) and the cap (two decimals, blank for no cap) — and who makes the change. */
++public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String user, String cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+index f91ad157..d0e5cc63 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+@@ -6,16 +6,18 @@ import java.util.List;
+ import java.util.Map;
+ 
+ /** The sheet's settings as the screen sees them: the clerk limit with two decimals (null for no
+- *  limit), the floor with two decimals, the terms in days, the late percent with two decimals, the policy date as set (yyyy-mm-dd, null when blank), the period numbering from (yyyy-mm-dd, null when off), the terms set per grade, by grade (a grade not in it uses the sheet's terms), and the roles given, by user name. */
+-public record SettingsResponse(String clerkLimit, String floor, int terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, Integer> gradeTerms, List<RoleResponse> roles) {
++ *  limit), the floor with two decimals, the terms in days, the late percent with two decimals, the policy date as set (yyyy-mm-dd, null when blank), the period numbering from (yyyy-mm-dd, null when off), the terms set per grade, by grade (a grade not in it uses the sheet's terms), the cap with two decimals (null for no cap), and the roles given, by user name. */
++public record SettingsResponse(String clerkLimit, String floor, int terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, Integer> gradeTerms, String cap, List<RoleResponse> roles) {
+     public static SettingsResponse of(String sheetId, Settings settings) {
+         BigDecimal limit = settings.clerkLimit(sheetId);
+         LocalDate policyDate = settings.policyDate(sheetId);
++        BigDecimal cap = settings.cap(sheetId);
+         LocalDate numberingFrom = settings.periodNumberingFrom(sheetId);
+         return new SettingsResponse(limit != null ? limit.toPlainString() : null,
+                 settings.floor(sheetId).toPlainString(), settings.terms(sheetId),
+                 settings.latePct(sheetId).toPlainString(),
+                 policyDate != null ? policyDate.toString() : null,
+-                numberingFrom != null ? numberingFrom.toString() : null, settings.gradeTerms(sheetId), settings.roles(sheetId));
++                numberingFrom != null ? numberingFrom.toString() : null, settings.gradeTerms(sheetId),
++                cap != null ? cap.toPlainString() : null, settings.roles(sheetId));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 5974c7af..b815d2ba 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -75,6 +75,10 @@ public class ValidateSettings {
+                 throw new InvalidSheetRequestException("The period numbering from must be a date (yyyy-mm-dd), or blank");
+             }
+         }
++        String cap = request == null || request.cap() == null ? null : request.cap().trim();
++        if (cap != null && !cap.isEmpty() && !AMOUNT.matcher(cap).matches()) {
++            throw new InvalidSheetRequestException("The cap must be an amount with up to two decimals, or blank");
++        }
+         String by = request == null ? null : request.user();
+         actor.set(new Actor(by));
+         change.set(new SettingsChange(sheetId, limit != null,
+@@ -82,6 +86,7 @@ public class ValidateSettings {
+                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
+                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
+                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
+-                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by));
++                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
++                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2)));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V31__cap.sql b/src/main/resources/db/migration/V31__cap.sql
+new file mode 100644
+index 00000000..1082136f
+--- /dev/null
++++ b/src/main/resources/db/migration/V31__cap.sql
+@@ -0,0 +1,2 @@
++-- The sheet's cap, two decimals: a person's due-total is at most it. Null (or no row) is no cap.
++ALTER TABLE sheet_setting ADD COLUMN cap DECIMAL(12,2);
