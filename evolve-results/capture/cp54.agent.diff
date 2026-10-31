@@ -1,0 +1,377 @@
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index e67a3e58..5a55c9fa 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { peopleKey, type Person } from '../people/usePeople';
++import { useRowAction } from '../people/useRowAction';
+ 
+ /**
+  * A person's holds: whether they have any, a line per hold with its dates, and the dates and button
+@@ -23,6 +24,7 @@ function PersonHold({ user, sheet, person }: { user: string; sheet: string; pers
+     },
+     onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+   });
++  const actionTaken = useRowAction(sheet, person.id, hold.reset);
+   return (
+     <>
+       <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>
+@@ -58,7 +60,10 @@ function PersonHold({ user, sheet, person }: { user: string; sheet: string; pers
+           type="button"
+           data-testid="person-hold-toggle"
+           disabled={hold.isPending}
+-          onClick={() => hold.mutate({ from, to })}
++          onClick={() => {
++            actionTaken();
++            hold.mutate({ from, to });
++          }}
+         >
+           Hold
+         </button>
+diff --git a/src/main/frontend/features/people/useRowAction.ts b/src/main/frontend/features/people/useRowAction.ts
+new file mode 100644
+index 00000000..594683c7
+--- /dev/null
++++ b/src/main/frontend/features/people/useRowAction.ts
+@@ -0,0 +1,25 @@
++import { useEffect, useRef } from 'react';
++
++// The actions of a person's row (statement, hold, retire) share the row's one error element; taking
++// any of them clears the error another left showing, so only the latest action's error remains.
++type Listener = { sheet: string; personId: number; owner: object; reset: () => void };
++const listeners = new Set<Listener>();
++
++/** Register a row action's `reset`; the returned `taken` is called as the action is taken. */
++export function useRowAction(sheet: string, personId: number, reset: () => void): () => void {
++  const owner = useRef({}).current;
++  const resetRef = useRef(reset);
++  resetRef.current = reset;
++  useEffect(() => {
++    const l: Listener = { sheet, personId, owner, reset: () => resetRef.current() };
++    listeners.add(l);
++    return () => {
++      listeners.delete(l);
++    };
++  }, [sheet, personId, owner]);
++  return () => {
++    for (const l of listeners) {
++      if (l.owner !== owner && l.sheet === sheet && l.personId === personId) l.reset();
++    }
++  };
++}
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index e58541bb..c9a77b22 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { peopleKey, type Person } from '../people/usePeople';
++import { useRowAction } from '../people/useRowAction';
+ 
+ /**
+  * A person's retirement: whether they are retired and from when, and the date and button to retire
+@@ -18,6 +19,7 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
+     onSuccess: () => setFrom(''),
+     onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+   });
++  const actionTaken = useRowAction(sheet, person.id, retire.reset);
+   return (
+     <>
+       <td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td>
+@@ -37,7 +39,10 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
+           type="button"
+           data-testid="person-retire"
+           disabled={retire.isPending}
+-          onClick={() => retire.mutate(from)}
++          onClick={() => {
++            actionTaken();
++            retire.mutate(from);
++          }}
+         >
+           Retire
+         </button>
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index ce62632a..0d29e84a 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -26,7 +26,7 @@ type Froms = Record<string, string>;
+  * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
+  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
+  * steward, reassign and reopen by steward; not dated),
+- * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
++ * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing). A save sets only the settings
+  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
+  * each grade's), the late percent, the cap and the proof threshold are dated: a save records each from its from-date (blank
+  * is the sheet's today), and each shows the value in force on the sheet's today.
+@@ -361,7 +361,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           Role{' '}
+           <input
+             data-testid="role-form-role"
+-            placeholder="clerk or steward"
++            placeholder="clerk, steward or viewer"
+             list="role-options"
+             value={role}
+             onChange={(e) => {
+@@ -380,7 +380,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+         </button>
+         {(roleInvalid || saveRole.isError) && (
+           <span data-testid="role-form-error" role="alert">
+-            {' '}Give a user name the role clerk or steward.
++            {' '}Give a user name the role clerk, steward or viewer.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 16043766..d575be17 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -79,7 +79,7 @@ export function useLate(sheet: string): Late {
+   };
+ }
+ 
+-export const ROLES = ['clerk', 'steward'] as const;
++export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+ 
+ /** A clerk limit the server accepts: an amount with up to two decimals, or blank for no limit. */
+ export const LIMIT = /^(\d{1,10}(\.\d{1,2})?)?$/;
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 5655556d..39e141da 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -3,6 +3,7 @@ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { claimsKey } from '../claims/useClaims';
+ import { peopleKey, type Person } from '../people/usePeople';
++import { useRowAction } from '../people/useRowAction';
+ 
+ /**
+  * A person's statements: the button to take one, which records their due-total now and binds each
+@@ -20,6 +21,7 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+       ]),
+   });
++  const actionTaken = useRowAction(sheet, person.id, take.reset);
+   const taken = person.statementCount > 0;
+   return (
+     <>
+@@ -27,7 +29,10 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
+       <td data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</td>
+       <td data-testid="person-statement-date">{taken ? (person.statementDate ?? '') : ''}</td>
+       <td>
+-        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => take.mutate()}>
++        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => {
++            actionTaken();
++            take.mutate();
++          }}>
+           Statement
+         </button>
+         {take.isError && (
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Role.java b/src/main/java/net/officefloor/hq/app/settings/Role.java
+index 110011b1..9919f2e4 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Role.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Role.java
+@@ -2,9 +2,10 @@ package net.officefloor.hq.app.settings;
+ 
+ import java.util.Locale;
+ 
+-/** A user name's role on a sheet: a clerk (the default for any name) or a steward. */
++/** A user name's role on a sheet: a clerk (the default for any name), a steward, or a viewer (who sees
++ *  everything and can change nothing). */
+ public enum Role {
+-    CLERK, STEWARD;
++    CLERK, STEWARD, VIEWER;
+ 
+     public String show() {
+         return name().toLowerCase(Locale.ROOT);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java b/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java
+index 21f6a6e3..87e3c339 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.settings;
+ 
+-/** Body of a role change: the user name given the role, the role (clerk or steward) and who makes the change. */
++/** Body of a role change: the user name given the role, the role (clerk, steward or viewer) and who makes the change. */
+ public record RoleRequest(String name, String role, String user) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index bfbcdfa4..7c70e2f2 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -213,9 +213,11 @@ public class Settings {
+     }
+ 
+     /** Whether the user's role may take `action` on the sheet: the roles set for it, else the standing
+-     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. */
++     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. A
++     *  viewer may take none. */
+     public boolean allows(String sheetId, String action, String user) {
+         Role role = role(sheetId, user);
++        if (role == Role.VIEWER) return false;
+         String roles = permission(sheetId, action);
+         if (roles == null) {
+             return role == Role.STEWARD || !(action.equals("reassign") || action.equals("reopen"));
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java b/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
+index 26188c7e..1e99e6b8 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
+@@ -17,7 +17,7 @@ public class ValidateRole {
+         try {
+             change.set(new RoleChange(sheetId, name, Role.valueOf(role.toUpperCase(Locale.ROOT)), request.user()));
+         } catch (IllegalArgumentException e) {
+-            throw new InvalidSheetRequestException("Not a role (clerk or steward): " + role);
++            throw new InvalidSheetRequestException("Not a role (clerk, steward or viewer): " + role);
+         }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
+new file mode 100644
+index 00000000..925a369b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
+@@ -0,0 +1,142 @@
++package net.officefloor.hq.app.settings;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ReadListener;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.ServletInputStream;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletRequestWrapper;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.BufferedReader;
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.io.InputStreamReader;
++import java.nio.charset.StandardCharsets;
++import java.util.Set;
++import org.springframework.core.Ordered;
++import org.springframework.core.annotation.Order;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++import org.springframework.web.util.UriUtils;
++import tools.jackson.databind.JsonNode;
++import tools.jackson.databind.ObjectMapper;
++
++/** A viewer sees every screen and can change nothing: every change to a sheet (a POST or PUT under
++ *  {@code /api/sheets/<id>/}) by a user who is a viewer on that sheet is refused 400 before it
++ *  reaches its pipeline, so it writes nothing and audits nothing. A bulk action still goes through,
++ *  each selected item refused by the permission matrix (see {@link Settings#allows}), so its counts
++ *  show none done. */
++@Component
++@Order(Ordered.HIGHEST_PRECEDENCE)
++public class ViewerGuard extends OncePerRequestFilter {
++
++    private static final String PREFIX = "/api/sheets/";
++
++    /** The bulk actions, by the path after the sheet id: they answer counts instead of refusing. */
++    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle");
++
++    private static final ObjectMapper JSON = new ObjectMapper();
++
++    private final Settings settings;
++
++    public ViewerGuard(Settings settings) {
++        this.settings = settings;
++    }
++
++    @Override
++    protected boolean shouldNotFilter(HttpServletRequest request) {
++        String method = request.getMethod();
++        return !(method.equals("POST") || method.equals("PUT") || method.equals("DELETE"))
++                || !request.getRequestURI().startsWith(PREFIX);
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String rest = request.getRequestURI().substring(PREFIX.length());
++        int slash = rest.indexOf('/');
++        if (slash <= 0) {
++            chain.doFilter(request, response);
++            return;
++        }
++        String sheetId = UriUtils.decode(rest.substring(0, slash), StandardCharsets.UTF_8);
++        String action = rest.substring(slash + 1);
++        byte[] body = request.getInputStream().readAllBytes();
++        String user = user(body);
++        if (user != null && !BULK.contains(action) && settings.role(sheetId, user) == Role.VIEWER) {
++            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
++            response.setContentType("text/plain;charset=UTF-8");
++            response.getWriter().write("A viewer can change nothing");
++            return;
++        }
++        chain.doFilter(new CachedBody(request, body), response);
++    }
++
++    private static String user(byte[] body) {
++        try {
++            JsonNode node = JSON.readTree(body);
++            JsonNode user = node == null ? null : node.get("user");
++            return user == null || !user.isString() ? null : user.asString().trim();
++        } catch (RuntimeException e) {
++            return null; // not JSON: left to the endpoint to refuse
++        }
++    }
++
++    /** The request with its body already read, so the endpoint can read it again. */
++    private static final class CachedBody extends HttpServletRequestWrapper {
++        private final byte[] body;
++
++        CachedBody(HttpServletRequest request, byte[] body) {
++            super(request);
++            this.body = body;
++        }
++
++        @Override
++        public ServletInputStream getInputStream() {
++            ByteArrayInputStream in = new ByteArrayInputStream(body);
++            return new ServletInputStream() {
++                @Override
++                public int read() {
++                    return in.read();
++                }
++
++                @Override
++                public int read(byte[] b, int off, int len) {
++                    return in.read(b, off, len);
++                }
++
++                @Override
++                public boolean isFinished() {
++                    return in.available() == 0;
++                }
++
++                @Override
++                public boolean isReady() {
++                    return true;
++                }
++
++                @Override
++                public void setReadListener(ReadListener listener) {
++                    throw new UnsupportedOperationException();
++                }
++            };
++        }
++
++        @Override
++        public BufferedReader getReader() {
++            String encoding = getCharacterEncoding();
++            return new BufferedReader(new InputStreamReader(getInputStream(),
++                    encoding == null ? StandardCharsets.UTF_8 : java.nio.charset.Charset.forName(encoding)));
++        }
++
++        @Override
++        public int getContentLength() {
++            return body.length;
++        }
++
++        @Override
++        public long getContentLengthLong() {
++            return body.length;
++        }
++    }
++}
