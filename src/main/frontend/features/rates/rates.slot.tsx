@@ -231,6 +231,8 @@ function RatePreview({ sheet }: { sheet: string }) {
           onChange={(e) => {
             setGrade(e.target.value);
             setInvalid(false);
+            // A result goes as soon as the form is changed.
+            setResult(null);
           }}
         >
           {GRADES.map((g) => (
@@ -249,6 +251,8 @@ function RatePreview({ sheet }: { sheet: string }) {
           onChange={(e) => {
             setPct(e.target.value);
             setInvalid(false);
+            // A result goes as soon as the form is changed.
+            setResult(null);
           }}
         />
       </label>{' '}

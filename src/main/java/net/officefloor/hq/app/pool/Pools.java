@@ -2,6 +2,8 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,7 +30,9 @@ public class Pools {
     }
 
     /** Every pool on the sheet with its members, its total share and whether it is balanced. A retired
-     *  member (a retirement date set, whatever the date) counts 0.00 toward the total. A member may be
+     *  member (a retirement date set, whatever the date) counts 0.00 toward the total; a member whose
+     *  from- and to-dates do not include the sheet's today is left out (no share toward the total, no
+     *  cut). A member may be
      *  another pool. A pool that is a member of none has the sheet's pot; a pool that is a member of
      *  another has its cut there as its pot (none when the pool above is unbalanced or has none). Each
      *  member of a balanced pool with a pot has a cut of it (see {@link #cuts}); otherwise, none. */
@@ -44,7 +48,11 @@ public class Pools {
         }, sheetId);
         Map<String, String> parents = new HashMap<>();
         jdbc.query("SELECT m.pool, m.person_id, COALESCE(p.name, m.member_pool), m.share, p.retired_from IS NOT NULL, "
-                + "m.member_pool FROM pool_member m LEFT JOIN person p ON p.id = m.person_id "
+                + "m.member_pool, m.from_date, m.to_date, "
+                + "(m.from_date IS NULL OR s.today IS NULL OR m.from_date <= s.today) "
+                + "AND (m.to_date IS NULL OR s.today IS NULL OR m.to_date >= s.today) "
+                + "FROM pool_member m LEFT JOIN person p ON p.id = m.person_id "
+                + "LEFT JOIN sheet s ON s.id = m.sheet_id "
                 + "WHERE m.sheet_id = ? ORDER BY m.position", rs -> {
                     String pool = rs.getString(1);
                     List<PoolMemberResponse> list = members.get(pool);
@@ -53,10 +61,14 @@ public class Pools {
                     Long personId = memberPool == null ? rs.getLong(2) : null;
                     BigDecimal share = rs.getBigDecimal(4).setScale(2);
                     boolean retired = memberPool == null && rs.getBoolean(5);
+                    Date from = rs.getDate(7);
+                    Date to = rs.getDate(8);
+                    boolean current = rs.getBoolean(9);
                     list.add(new PoolMemberResponse(personId, rs.getString(3), share.toPlainString(), retired, null,
-                            memberPool));
+                            memberPool, from == null ? null : from.toLocalDate().toString(),
+                            to == null ? null : to.toLocalDate().toString(), current));
                     if (memberPool != null) parents.put(memberPool, pool);
-                    if (!retired) totals.merge(pool, share, BigDecimal::add);
+                    if (!retired && current) totals.merge(pool, share, BigDecimal::add);
                 }, sheetId);
         // Each pool's pot, from the pools that are a member of none down through their member pools.
         // The people with a hold in force on the sheet's today: they get no cut.
@@ -95,14 +107,15 @@ public class Pools {
      *  the sheet's today, has no cut (0.00); each other member's is the pot times their share divided by
      *  the shares of the members with a cut added up, rounded half to even to two decimals. The
      *  remainder, the pot less the cuts, goes to the member with a cut with the largest share, the
-     *  earliest added on a tie, so the cuts total the pot (when no member has a cut, each is 0.00). */
+     *  earliest added on a tie, so the cuts total the pot (when no member has a cut, each is 0.00). A
+     *  member out of their dates is left out: no cut at all (null). */
     private static List<PoolMemberResponse> cuts(List<PoolMemberResponse> members, BigDecimal pot, Set<Long> held) {
         BigDecimal[] cuts = new BigDecimal[members.size()];
         boolean[] cut = new boolean[members.size()];
         BigDecimal shares = BigDecimal.ZERO;
         for (int i = 0; i < members.size(); i++) {
             PoolMemberResponse m = members.get(i);
-            cut[i] = !m.retired() && (m.personId() == null || !held.contains(m.personId()));
+            cut[i] = m.current() && !m.retired() && (m.personId() == null || !held.contains(m.personId()));
             if (cut[i]) shares = shares.add(new BigDecimal(m.share()));
         }
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
@@ -121,8 +134,8 @@ public class Pools {
         List<PoolMemberResponse> withCuts = new ArrayList<>(members.size());
         for (int i = 0; i < members.size(); i++) {
             PoolMemberResponse m = members.get(i);
-            withCuts.add(new PoolMemberResponse(m.personId(), m.name(), m.share(), m.retired(), cuts[i].toPlainString(),
-                    m.pool()));
+            withCuts.add(new PoolMemberResponse(m.personId(), m.name(), m.share(), m.retired(),
+                    m.current() ? cuts[i].toPlainString() : null, m.pool(), m.from(), m.to(), m.current()));
         }
         return withCuts;
     }
@@ -160,11 +173,14 @@ public class Pools {
                 (rs, i) -> rs.getString(1), sheetId, pool);
     }
 
-    /** A member of the pool: a person (memberPool null) or another pool (personId null). */
-    public void addMember(String sheetId, String pool, Long personId, String memberPool, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool, person_id, member_pool, share, position) VALUES (?, ?, ?, ?, ?, "
-                + "(SELECT COALESCE(MAX(position), 0) + 1 FROM pool_member WHERE sheet_id = ?))",
-                sheetId, pool, personId, memberPool, share, sheetId);
+    /** A member of the pool: a person (memberPool null) or another pool (personId null), between from
+     *  and to (each null for none). */
+    public void addMember(String sheetId, String pool, Long personId, String memberPool, BigDecimal share,
+            LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool, person_id, member_pool, share, from_date, to_date, position) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM pool_member WHERE sheet_id = ?))",
+                sheetId, pool, personId, memberPool, share, from == null ? null : Date.valueOf(from),
+                to == null ? null : Date.valueOf(to), sheetId);
     }
 
     /** The name of the sheet's person with that id, or null when the sheet has none. */

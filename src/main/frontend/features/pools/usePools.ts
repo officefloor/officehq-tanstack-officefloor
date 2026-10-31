@@ -6,8 +6,10 @@ import { hundredths } from '../rates/useRates';
 /** A pool's member as the server sends it: the person (or, for a member that is another pool, null
  *  and that pool's name in `pool`), their share (two decimals) and whether they are retired (a
  *  retirement date set, whatever the date), and their cut of the pool's pot (two decimals; null when
- *  the pool is unbalanced or has no pot). A pool that is a member of none has the sheet's pot; one
- *  that is a member of another has its cut there. */
+ *  the pool is unbalanced or has no pot, or the member is out of their dates), their from- and
+ *  to-dates (null when none) and whether those include the sheet's today (a member out of them is
+ *  left out of the pool). A pool that is a member of none has the sheet's pot; one that is a member
+ *  of another has its cut there. */
 export type PoolMember = {
   personId: number | null;
   name: string;
@@ -15,6 +17,9 @@ export type PoolMember = {
   retired: boolean;
   cut: string | null;
   pool: string | null;
+  from: string | null;
+  to: string | null;
+  current: boolean;
 };
 
 /** A pool as the server sends it: its name, its members in the order added, the total of their

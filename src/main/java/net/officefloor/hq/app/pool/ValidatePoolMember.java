@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.plugin.variable.Out;
@@ -9,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Refuses a member for a pool the sheet does not have, a person not on the sheet or already in the
  *  pool, a member pool the sheet does not have, already a member of a pool, that would contain itself
- *  or that would make a chain of pools more than three deep, or a share that is not a percent with up to two decimals, more than 0.00 and at most 100.00. */
+ *  or that would make a chain of pools more than three deep, or a share that is not a percent with up to two decimals, more than 0.00 and at most 100.00, or a
+ *  from- or to-date that is not a date, or a to-date before the from-date. */
 public class ValidatePoolMember {
 
     private static final Pattern SHARE = Pattern.compile("\\d{1,3}(\\.\\d{1,2})?");
@@ -42,15 +45,30 @@ public class ValidatePoolMember {
         if (share.signum() <= 0 || share.compareTo(MAX) > 0) {
             throw new InvalidSheetRequestException("A share is more than 0.00 and at most 100.00");
         }
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidSheetRequestException("A to-date cannot be before the from-date");
+        }
         if (memberPool != null) {
             validatePool(sheetId, request.pool(), memberPool, pools);
-            member.set(new PoolMember(sheetId, request.pool(), null, memberPool, name, share, request.user()));
+            member.set(new PoolMember(sheetId, request.pool(), null, memberPool, name, share, request.user(), from, to));
             return;
         }
         if (pools.hasMember(sheetId, request.pool(), request.personId())) {
             throw new InvalidSheetRequestException(name + " is already in " + request.pool());
         }
-        member.set(new PoolMember(sheetId, request.pool(), request.personId(), null, name, share, request.user()));
+        member.set(new PoolMember(sheetId, request.pool(), request.personId(), null, name, share, request.user(), from, to));
+    }
+
+    /** The date (yyyy-mm-dd), or null when blank. */
+    private static LocalDate date(String raw) throws InvalidSheetRequestException {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return LocalDate.parse(raw.trim());
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + raw);
+        }
     }
 
     /** Refuses a pool already a member of a pool, one that would contain itself through any chain, and

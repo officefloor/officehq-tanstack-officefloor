@@ -15,6 +15,9 @@ import { poolsKey, usePools, SHARE, type Pool } from './usePools';
  * contain itself through any chain, and a chain of pools is at most three deep (the server refuses).
  * Each member of a balanced pool shows their cut of the pool's pot; unbalanced, or no pot, none. A pool
  * that is a member of none has the sheet's pot; one that is a member of another has its cut there.
+ * A membership may carry a from-date and a to-date (both optional; a to-date before the from-date is
+ * refused); a member whose dates do not include the sheet's today is left out: no share in the total,
+ * no cut.
  */
 function PoolsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -105,15 +108,19 @@ function PoolRow({
   // A person's id, or pool:<name> for another pool.
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [invalid, setInvalid] = useState(false);
 
   const submitOnce = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (m: { personId?: number; memberPool?: string; share: string }) =>
+    mutationFn: (m: { personId?: number; memberPool?: string; share: string; from: string | null; to: string | null }) =>
       postJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pools/members`, { pool: pool.name, ...m, user }),
     onSuccess: async () => {
       setPersonId('');
       setShare('');
+      setFrom('');
+      setTo('');
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
   });
@@ -142,7 +149,9 @@ function PoolRow({
               <span>{m.name}</span>{' '}
               <span data-testid="pool-share">{m.share}</span>{' '}
               <span data-testid="pool-cut">{m.cut ?? ''}</span>
+              {m.from !== null || m.to !== null ? ` (${m.from ?? '…'} to ${m.to ?? '…'})` : ''}
               {m.retired ? ' (retired)' : ''}
+              {m.current ? '' : ' (out of dates)'}
             </li>
           ))}
         </ul>
@@ -155,13 +164,18 @@ function PoolRow({
             const id = Number(personId);
             const s = share.trim();
             const n = Number(s);
+            const f = from.trim();
+            const t = to.trim();
             if (
               personId === '' ||
               (memberPool === null
                 ? pool.members.some((m) => m.personId === id)
                 : memberPool === pool.name || pool.members.some((m) => m.pool === memberPool)) ||
               !SHARE.test(s) ||
-              !(n > 0 && n <= 100)
+              !(n > 0 && n <= 100) ||
+              (f !== '' && !DATE.test(f)) ||
+              (t !== '' && !DATE.test(t)) ||
+              (f !== '' && t !== '' && t < f)
             ) {
               // Refused here, before anything is sent: the store and the audit file are untouched.
               add.reset();
@@ -170,7 +184,12 @@ function PoolRow({
             }
             setInvalid(false);
             submitOnce(() =>
-              add.mutateAsync(memberPool === null ? { personId: id, share: s } : { memberPool, share: s }),
+              add.mutateAsync({
+                ...(memberPool === null ? { personId: id } : { memberPool }),
+                share: s,
+                from: f === '' ? null : f,
+                to: t === '' ? null : t,
+              }),
             );
           }}
         >
@@ -205,6 +224,26 @@ function PoolRow({
               clearError();
             }}
           />{' '}
+          <input
+            data-testid="pool-member-from"
+            aria-label="From date"
+            placeholder="from yyyy-mm-dd"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              clearError();
+            }}
+          />{' '}
+          <input
+            data-testid="pool-member-to"
+            aria-label="To date"
+            placeholder="to yyyy-mm-dd"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              clearError();
+            }}
+          />{' '}
           <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
             Add member
           </button>
@@ -212,7 +251,7 @@ function PoolRow({
             <span data-testid="pool-error" role="alert">
               {' '}
               {invalid
-                ? 'Choose a person or pool not already in the pool, with a share more than 0.00 and at most 100.00.'
+                ? 'Choose a person or pool not already in the pool, with a share more than 0.00 and at most 100.00, and a to-date not before the from-date.'
                 : 'Could not add this member (a pool is in at most one pool, never in itself, at most three deep).'}
             </span>
           )}
@@ -221,6 +260,9 @@ function PoolRow({
     </tr>
   );
 }
+
+/** A from- or to-date: yyyy-mm-dd. */
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The member select's value for another pool. */
 const POOL_PREFIX = 'pool:';
