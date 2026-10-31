@@ -30,6 +30,7 @@ import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
+import { SnapshotCompare } from './SnapshotCompare';
 import { SortBy, useSortBy } from './SortBy';
 import { ColumnChooser, useColumns } from './ColumnChooser';
 import { gradeOn, patronShares, sharedCents, shownName } from './usePeople';
@@ -392,6 +393,7 @@ export function PeopleList() {
           </li>
         ))}
       </ul>
+      <SnapshotCompare people={people} totalOf={totalOf} />
       <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} reviewLateCount={reviewLateCount} voidReasonCount={voidReasonCount} />
       </PersonSelection>
     </ClaimSelection>
