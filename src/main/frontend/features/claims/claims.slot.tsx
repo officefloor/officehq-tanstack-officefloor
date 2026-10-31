@@ -3,16 +3,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
+import { dueCents, rateByGrade, showDue, useRates } from '../rates/useRates';
 import { AMOUNT, claimed, claimsKey, useClaims, type Claim } from './useClaims';
 
 /**
- * A person's claims: what they have claimed in all, one form to add a claim or edit the one whose
- * editor is open, and the claims, newest first.
+ * A person's claims: what they have claimed in all and what is due on that at their grade's rate,
+ * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
+ * with its due.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
+  const { data: rates = [] } = useRates(sheet);
+  const pct = rateByGrade(rates).get(person.grade);
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
@@ -59,6 +63,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(claims)}</td>
+      <td data-testid="person-due-total">{showDue(dueCents(claimed(claims), pct))}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -122,6 +127,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-due">{showDue(dueCents(c.amount, pct))}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
@@ -147,6 +153,7 @@ export const contributions = [
     Component: () => (
       <>
         <th>Claimed</th>
+        <th>Due</th>
         <th>Claims</th>
       </>
     ),
