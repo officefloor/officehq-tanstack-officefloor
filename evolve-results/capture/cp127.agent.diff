@@ -1,0 +1,67 @@
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+index 50d06042..c3165937 100644
+--- a/src/main/frontend/features/claims/useSheetTotals.ts
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -10,7 +10,7 @@ import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from
+  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
+  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
+  * lowest person's figure when three or more people have one. Its settled-total and open-total are
+- * everyone's due-total before the cap split into SETTLED and OPEN-or-PENDING claims, simply added up. One place, so every screen repeating a total shows the same figure.
++ * everyone's due-total before the cap split into SETTLED and OPEN-or-PENDING claims, simply added up. Each person's own figures too. One place, so every screen repeating a total shows the same figure.
+  */
+ export function useSheetTotals(sheet: string) {
+   const { data: all = [] } = useClaims(sheet);
+@@ -33,6 +33,8 @@ export function useSheetTotals(sheet: string) {
+     overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
+   );
+   return {
++    /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */
++    perPerson: people.map((p, i) => ({ person: p, due: dues[i], overdue: over[i].cents })),
+     claimedTotal: claimed(claims),
+     dueTotal: trimmedTotal(dues),
+     settledTotal: totalDue(part((c) => c.status === 'SETTLED')),
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index dd32cba2..338084be 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -1,17 +1,22 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { STATUSES, useClaims } from '../claims/useClaims';
++import { showDue } from '../rates/useRates';
+ import { useSheetTotals } from '../claims/useSheetTotals';
+ import { usePeople } from '../people/usePeople';
+ 
+ /**
+  * The sheet's header, shown at all times: how many people are on the sheet (retired ones
+  * included), how many claims have each status (as the summary counts them), and the sheet's
+- * due-total and overdue-total (as the totals work them out).
++ * due-total and overdue-total (as the totals work them out). And the signed-in user's own figures:
++ * the due-total and overdue-total of the person whose name or an alias is the user's name (as names
++ * are compared: case and the spaces around it ignored); blank when there is no such person.
+  */
+-function SheetHeader({ sheet }: { user: string; sheet: string }) {
++function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
+   const { data: all = [] } = useClaims(sheet);
+   const { data: everyone = [] } = usePeople(sheet);
+-  const { dueTotal, overdueTotal } = useSheetTotals(sheet);
++  const { dueTotal, overdueTotal, perPerson } = useSheetTotals(sheet);
++  const key = (n: string) => n.trim().toLowerCase();
++  const me = perPerson.find(({ person }) => [person.name, ...person.aliases].some((n) => key(n) === key(user)));
+   return (
+     <header data-testid="sheet-header">
+       <span>
+@@ -31,6 +36,14 @@ function SheetHeader({ sheet }: { user: string; sheet: string }) {
+         {' '}
+         Overdue: <strong data-testid="header-overdue-total">{overdueTotal}</strong>
+       </span>
++      <span>
++        {' '}
++        My due: <strong data-testid="my-due-total">{me ? showDue(me.due) : ''}</strong>
++      </span>
++      <span>
++        {' '}
++        My overdue: <strong data-testid="my-overdue-total">{me ? showDue(me.overdue) : ''}</strong>
++      </span>
+     </header>
+   );
+ }
