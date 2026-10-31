@@ -17,6 +17,8 @@ export type Claim = {
   number: number | null;
   /** The due fixed when the claim was settled, two decimals; null when it has none, so its due is live. */
   due: string | null;
+  /** The user who opened the claim; null while it has not been opened. */
+  openedBy: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

@@ -5,4 +5,8 @@ public class ClaimStatusRefusedException extends Exception {
     public ClaimStatusRefusedException(ClaimStatus from, ClaimAction action) {
         super("A " + from + " claim cannot be " + action.to());
     }
+
+    public ClaimStatusRefusedException(String message) {
+        super(message);
+    }
 }

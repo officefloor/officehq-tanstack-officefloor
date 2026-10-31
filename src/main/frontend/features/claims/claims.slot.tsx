@@ -20,7 +20,7 @@ import {
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
  * with its due (fixed once it is settled, else at the rate in force on the claim's date; in the
- * due-total a live one is at the rate in force on the sheet's today), its status and the buttons to open, settle or void it. Only OPEN and SETTLED claims
+ * due-total a live one is at the rate in force on the sheet's today), its status, who opened it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
@@ -154,6 +154,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-due">{showDue(claimDueCents(c, rateOn(rates, person.grade, c.date)))}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               {(['open', 'settle', 'void'] as const).map((action) => (
                 <span key={action}>
                   <button
@@ -180,7 +181,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               {refused === c.id && (
                 <span data-testid="claim-error" role="alert">
                   {' '}
-                  This claim's status cannot change that way.
+                  This claim's status cannot change that way (whoever opened a claim cannot settle it).
                 </span>
               )}
             </li>
