@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * The figures the screen shows — each person's claimed and due-total, the sheet's claimed-total and
- * due-total — worked out as the screen does, so a change can audit the ones it moved: one ROLLUP
+ * due-total, and each one's overdue-total and the sheet's — worked out as the screen does, so a change can audit the ones it moved: one ROLLUP
  * line per person whose figures changed (a new person counts as changed), then a TOTALS line when
  * the sheet's totals changed.
  */
@@ -56,9 +56,11 @@ public class Rollup {
         Map<Long, Snapshot.PersonFigures> figuresOf = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         BigDecimal dueTotal = ZERO;
+        BigDecimal overdueTotal = ZERO;
         for (Person person : people.onSheet(sheetId)) {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
+            BigDecimal overdue = ZERO;
             boolean any = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.counts(claim)) continue;
@@ -67,15 +69,19 @@ public class Rollup {
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;
+                    if (claim.getStatus().isOpen() && today != null && claim.getDueBy().isBefore(today)) {
+                        overdue = overdue.add(figure);
+                    }
                 }
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
             due = settings.capped(sheetId, due);
-            figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due));
+            figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue));
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) dueTotal = dueTotal.add(due);
+            overdueTotal = overdueTotal.add(overdue);
         }
-        return new Snapshot(figuresOf, claimedTotal, dueTotal);
+        return new Snapshot(figuresOf, claimedTotal, dueTotal, overdueTotal);
     }
 
     /** Audit the figures that moved between `before` and the sheet now. */
@@ -84,13 +90,15 @@ public class Rollup {
         String prefix = " sheet=" + sheetId + " by=" + user;
         after.people().forEach((id, now) -> {
             Snapshot.PersonFigures was = before.people().get(id);
-            if (was != null && same(was.claimed(), now.claimed()) && same(was.dueTotal(), now.dueTotal())) return;
+            if (was != null && same(was.claimed(), now.claimed()) && same(was.dueTotal(), now.dueTotal())
+                    && same(was.overdueTotal(), now.overdueTotal())) return;
             audit.record("ROLLUP" + prefix + " person=" + now.name() + " claimed=" + show(now.claimed())
-                    + " due-total=" + show(now.dueTotal()));
+                    + " due-total=" + show(now.dueTotal()) + " overdue-total=" + show(now.overdueTotal()));
         });
-        if (!same(before.claimedTotal(), after.claimedTotal()) || !same(before.dueTotal(), after.dueTotal())) {
+        if (!same(before.claimedTotal(), after.claimedTotal()) || !same(before.dueTotal(), after.dueTotal())
+                || !same(before.overdueTotal(), after.overdueTotal())) {
             audit.record("TOTALS" + prefix + " claimed-total=" + show(after.claimedTotal())
-                    + " due-total=" + show(after.dueTotal()));
+                    + " due-total=" + show(after.dueTotal()) + " overdue-total=" + show(after.overdueTotal()));
         }
     }
 
