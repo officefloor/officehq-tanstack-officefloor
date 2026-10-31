@@ -1,0 +1,129 @@
+diff --git a/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx b/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
+index ceba9934..919f98e6 100644
+--- a/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
++++ b/src/main/frontend/features/consolidated/ConsolidatedFigures.tsx
+@@ -5,14 +5,14 @@ import { STATUSES, trimmedSum, useSheetFigures } from '../people/useSheetFigures
+ import { formatCents } from '../rates/due';
+ import { useDescendants } from './useDescendants';
+ 
+-type Totals = { people: string[][]; due: bigint[]; overdue: bigint[]; grades: bigint[]; statuses: number[] };
++type Totals = { people: string[][]; due: bigint[]; overdue: bigint[]; settled: bigint[]; open: bigint[]; cut: bigint[]; grades: bigint[]; statuses: number[] };
+ 
+ // The root sheet's grades, the order of Totals.grades.
+ type Grades = string[];
+ 
+ // The figures over the sheet and all its descendants: their people, each counted once across the
+-// tree (people whose names or aliases match, as names are compared, are one person); the due-total
+-// and overdue-total, every person's figure over the tree (n/a skipped for due) added up, leaving out
++// tree (people whose names or aliases match, as names are compared, are one person); the due-total,
++// overdue-total, settled-total, open-total and cut total, every person's figure over the tree (n/a skipped for due) added up, leaving out
+ // the single highest and the single lowest when there are three or more. Per grade, the due-totals of the people on it
+ // today (retired people left out, n/a skipped) as each sheet's summary shows them, added up; per
+ // status, how many claims have it, added up. A sheet with no children shows its own. While the
+@@ -23,7 +23,7 @@ export function ConsolidatedFigures() {
+   const descendants = useDescendants(sheet);
+   const grades = useGradeCodes(sheet);
+   return (
+-    <Add sheets={[sheet, ...descendants]} grades={grades} totals={{ people: [], due: [], overdue: [], grades: grades.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
++    <Add sheets={[sheet, ...descendants]} grades={grades} totals={{ people: [], due: [], overdue: [], settled: [], open: [], cut: [], grades: grades.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
+   );
+ }
+ 
+@@ -35,7 +35,7 @@ function Add({ sheets, grades, totals }: { sheets: string[]; grades: Grades; tot
+ }
+ 
+ function AddSheet({ sheets, grades, totals }: { sheets: string[]; grades: Grades; totals: Totals }) {
+-  const { people, today, totalOf, statusCount, dueFigures, overdueFigures } = useSheetFigures(sheets[0]);
++  const { people, today, totalOf, statusCount, dueFigures, overdueFigures, settledFigures, openFigures, cutFigures } = useSheetFigures(sheets[0]);
+   const current = people.filter((p) => !p.retired);
+   const gradeDue = (g: string) =>
+     current.filter((p) => gradeOn(p, today) === g).reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
+@@ -47,6 +47,9 @@ function AddSheet({ sheets, grades, totals }: { sheets: string[]; grades: Grades
+         people: [...totals.people, ...people.map((p) => [p.name, ...p.aliases].map(nameKey))],
+         due: [...totals.due, ...dueFigures],
+         overdue: [...totals.overdue, ...overdueFigures],
++        settled: [...totals.settled, ...settledFigures],
++        open: [...totals.open, ...openFigures],
++        cut: [...totals.cut, ...cutFigures],
+         grades: grades.map((g, i) => (totals.grades[i] ?? 0n) + gradeDue(g)),
+         statuses: STATUSES.map((s, i) => totals.statuses[i] + statusCount(s)),
+       }}
+@@ -78,6 +81,9 @@ function Shown({ grades, totals }: { grades: Grades; totals: Totals }) {
+       Consolidated — People: <span data-testid="consolidated-people-count">{distinctPeople(totals.people)}</span>
+       {' · '}Due: <span data-testid="consolidated-due-total">{formatCents(trimmedSum(totals.due))}</span>
+       {' · '}Overdue: <span data-testid="consolidated-overdue-total">{formatCents(trimmedSum(totals.overdue))}</span>
++      {' · '}Settled: <span data-testid="consolidated-settled-total">{formatCents(trimmedSum(totals.settled))}</span>
++      {' · '}Open: <span data-testid="consolidated-open-total">{formatCents(trimmedSum(totals.open))}</span>
++      {' · '}Cut: <span data-testid="consolidated-cut-total">{formatCents(trimmedSum(totals.cut))}</span>
+       {grades.map((g, i) => (
+         <span key={g}>
+           {' · '}Grade {g}: <span data-testid={`consolidated-grade-${g}-due-total`}>{formatCents(totals.grades[i])}</span>
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 9202d0ea..756d4cbd 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -59,8 +59,8 @@ import { scoreBand, useSettings } from '../settings/useSettings';
+ // takes none of their claims out of any figure or total; it only gives them no cut in the pools), their overdue count and
+ // aliases (sorted as names are compared, comma and space separated), whether they clash (their name or an alias is used by someone else on a sheet of the tree), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
+ // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
+-// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
+-// due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
++// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total, open-total and cut total (everyone's added up), overdue count and overdue-total (the
++// due-total, overdue-total, settled-total, open-total and cut total leave out the single highest and lowest person's figure when three or more have one).
+ // Then, for every tag ever used on the sheet's claims, its due-total: the dues of the counting claims carrying it. Retired
+ // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
+ // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
+@@ -87,12 +87,11 @@ export function PeopleList() {
+   const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+   const watched = useWatches(sheet, user);
+-  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
++  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, sheetCutTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+   const periodCarriedOf = usePersonPeriodCarried(sheet);
+-  const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
+   const [sortKey] = useSortBy();
+   const [shown] = useColumns();
+   // The rows as shown: list order, or sorted by the user's chosen key (by grade in force today, by
+@@ -433,7 +432,7 @@ export function PeopleList() {
+         Open total: <span data-testid="rollup-open-total">{sheetOpenTotal}</span>
+       </p>
+       <p>
+-        Cut total: <span data-testid="rollup-cut-total">{formatCents(sheetCutTotal)}</span>
++        Cut total: <span data-testid="rollup-cut-total">{sheetCutTotal}</span>
+       </p>
+       <p>
+         Aged 0-30: <span data-testid="rollup-aged-0-30">{sheetAged[0]}</span>
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 281dd18f..f17343f9 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -100,9 +100,14 @@ export function useSheetFigures(sheet: string) {
+   const settledOf = (c: (typeof live)[number]) => c.status === 'SETTLED';
+   const settledTotalOf = (person: Person) => dueSumOf(person, settledOf) + partsOf(person, settledOf);
+   const openTotalOf = (person: Person) => dueSumOf(person, isOpen) + partsOf(person, isOpen);
+-  // The sheet's settled-total and open-total: everyone's figure added up, not trimmed.
+-  const sheetSettledTotal = formatCents(people.reduce((sum, p) => sum + settledTotalOf(p), 0n));
+-  const sheetOpenTotal = formatCents(people.reduce((sum, p) => sum + openTotalOf(p), 0n));
++  // Each person's settled-total, open-total and cut total (always a figure), in list order.
++  const settledFigures = people.map(settledTotalOf);
++  const openFigures = people.map(openTotalOf);
++  const cutFigures = people.map((p) => cutOf(p.id));
++  // The sheet's settled-total, open-total and cut total: everyone's figure added up, trimmed.
++  const sheetSettledTotal = formatCents(trimmedSum(settledFigures));
++  const sheetOpenTotal = formatCents(trimmedSum(openFigures));
++  const sheetCutTotal = formatCents(trimmedSum(cutFigures));
+   const overdue = live.filter((c) => isOverdue(c, today, grace));
+   const overdueSum = (cs: typeof overdue) =>
+     cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
+@@ -179,7 +184,7 @@ export function useSheetFigures(sheet: string) {
+   // Pending-late: PENDING claims whose pending day plus the sheet's pending SLA is before the sheet's today.
+   const pendingLateCount = sheetClaims.filter((c) => isPendingLate(c, today, pendingSla)).length;
+   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
+-  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
++  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, sheetCutTotal, settledFigures, openFigures, cutFigures, tagTotals, monthTotals };
+ }
+ 
+ // People's figures added up, leaving out the single highest and the single lowest when there are
