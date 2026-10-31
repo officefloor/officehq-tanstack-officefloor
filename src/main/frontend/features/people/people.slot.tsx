@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
 
@@ -115,6 +116,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th />
+            <PersonColumns.Slot user={user} sheet={sheet} />
           </tr>
         </thead>
         <tbody>
@@ -127,6 +129,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
                   Edit
                 </button>
               </td>
+              <PersonCells.Slot user={user} sheet={sheet} person={p} />
             </tr>
           ))}
         </tbody>
