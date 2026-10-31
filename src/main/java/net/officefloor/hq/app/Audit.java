@@ -169,6 +169,31 @@ public class Audit {
         return found;
     }
 
+    /**
+     * The sheet's activity: for every user (by=) and every event in the sheet's lines, one line
+     * "<user> <EVENT> <count>", sorted by user then event. Read from the file: not a second record.
+     */
+    public synchronized List<String> activity(String sheet) {
+        java.util.TreeMap<String, java.util.TreeMap<String, Integer>> counts = new java.util.TreeMap<>();
+        for (String line : lines(sheet, null)) {
+            String event = line.split(" ", 2)[0];
+            String by = null;
+            for (String[] field : fields(line)) {
+                if (field[0].equals("by")) {
+                    by = field[1];
+                    break;
+                }
+            }
+            if (by == null || event.isEmpty()) {
+                continue;
+            }
+            counts.computeIfAbsent(by, k -> new java.util.TreeMap<>()).merge(event, 1, Integer::sum);
+        }
+        List<String> found = new ArrayList<>();
+        counts.forEach((user, events) -> events.forEach((event, n) -> found.add(user + " " + event + " " + n)));
+        return found;
+    }
+
     /** Whether the line carries a field with the key. */
     private static boolean hasKey(List<String[]> fields, String key) {
         return fields.stream().anyMatch(field -> field[0].equals(key));

@@ -21,6 +21,7 @@ import { StewardDashboard } from '../features/dashboard/StewardDashboard';
 import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
 import { TreeSearch } from '../features/search/TreeSearch';
 import { AuditViewer } from '../features/audit/AuditViewer';
+import { ActivityPanel } from '../features/audit/ActivityPanel';
 
 // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
 // picker, and — once a sheet is loaded — that sheet.
@@ -57,6 +58,7 @@ function Home() {
           <CrewPanel />
           <TreeSearch />
           <AuditViewer />
+          <ActivityPanel />
         </div>
       )}
       {sheet === '' && <p data-testid="home-empty">Nothing here yet.</p>}
