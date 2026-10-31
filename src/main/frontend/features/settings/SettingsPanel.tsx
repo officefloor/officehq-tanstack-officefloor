@@ -141,6 +141,13 @@ export function SettingsPanel() {
     unchoosePolicy();
     scoreLogChosen.current = true;
   };
+  // The maximum of open claims per person (not dated): a whole number, or saved blank (none).
+  const [maxOpen, setMaxOpen] = useState('');
+  const maxOpenChosen = useRef(false);
+  const focusMaxOpen = () => {
+    unchoosePolicy();
+    maxOpenChosen.current = true;
+  };
   // Entering the default grade marks it as the one to save, as it is.
   const focusDefaultGrade = () => {
     unchoosePolicy();
@@ -430,6 +437,10 @@ export function SettingsPanel() {
         setScoreLog('');
         scoreLogChosen.current = false;
       }
+      else if (body.key === 'max-open') {
+        setMaxOpen('');
+        maxOpenChosen.current = false;
+      }
       else if (body.key === 'parent') {
         setParent('');
         parentChosen.current = false;
@@ -518,13 +529,14 @@ export function SettingsPanel() {
             const scoredMid = scoreMid.trim() !== '' || scoreMidChosen.current;
             const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
             const scoreLogged = scoreLog.trim() !== '' || scoreLogChosen.current;
+            const maxed = maxOpen.trim() !== '' || maxOpenChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || maxed || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
@@ -554,6 +566,7 @@ export function SettingsPanel() {
                 ...(scoredMid ? [{ key: 'score-mid', value: scoreMid.trim() }] : []),
                 ...(scoredHigh ? [{ key: 'score-high', value: scoreHigh.trim() }] : []),
                 ...(scoreLogged ? [{ key: 'score-log', value: scoreLog.trim() }] : []),
+                ...(maxed ? [{ key: 'max-open', value: maxOpen.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -936,6 +949,18 @@ export function SettingsPanel() {
           onChange={(e) => {
             setScoreLog(e.target.value);
             scoreLogChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Max open claims: <span data-testid="setting-max-open-current">{settings?.maxOpen ?? ''}</span>{' '}
+        <input
+          data-testid="setting-max-open"
+          value={maxOpen}
+          placeholder="Max open claims per person (blank: none)"
+          onFocus={focusMaxOpen}
+          onChange={(e) => {
+            setMaxOpen(e.target.value);
+            maxOpenChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}

@@ -32,6 +32,7 @@ public class ApplyClaimStatus {
                 && claim.getStatus().canBecome(ClaimStatus.OPEN)
                 || request.decision() == ValidClaimStatus.Decision.REVIEW && claim.getStatus() == ClaimStatus.REVIEW)) {
             refuseOverCap(claim, periods, claims.list(claim.getSheetId()));
+            refuseOverMaxOpen(claim, settings, claims.list(claim.getSheetId()));
         }
         ClaimNumber changed = change(request, claim, sheets, people, rates, periods, settings, numbering, log);
         if (then != null && claim.getStatus() == ClaimStatus.SETTLED) {
@@ -212,6 +213,23 @@ public class ApplyClaimStatus {
         if (held >= Integer.parseInt(period.cap())) {
             throw new ClaimStatusRefusedException("The person already has " + period.cap()
                     + " OPEN or PENDING claims in period " + period.name() + ", its cap");
+        }
+    }
+
+    /** Refuses opening a claim of a person who already has as many OPEN or PENDING claims as the sheet's maximum
+     *  (none when blank). Bulk open and paste use it too. */
+    static void refuseOverMaxOpen(Claim claim, Settings settings, List<Claim> all) throws ClaimStatusRefusedException {
+        Integer max = settings.maxOpen(claim.getSheetId());
+        if (max == null) {
+            return;
+        }
+        long held = all.stream()
+                .filter(c -> c.getId() != claim.getId() && c.getPersonId() == claim.getPersonId())
+                .filter(c -> c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING)
+                .count();
+        if (held >= max) {
+            throw new ClaimStatusRefusedException("The person already has " + max
+                    + " OPEN or PENDING claims, the sheet's maximum");
         }
     }
 

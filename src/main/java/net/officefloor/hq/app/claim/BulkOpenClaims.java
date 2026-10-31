@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /**
  * Opens the selected claims in list order (people in the order they were added, newest claim first
  * within a person), unnumbered until settled, and auditing it as a single open would be. A selected
- * claim that cannot be opened (not DRAFT, its due-by inside a closed period, the user's role may not open, its note is empty while its due is above the note threshold, its person is flagged and the user is not a steward, or its person already has as many OPEN or PENDING claims in its period as the period's cap) is left as it is and counted
+ * claim that cannot be opened (not DRAFT, its due-by inside a closed period, the user's role may not open, its note is empty while its due is above the note threshold, its person is flagged and the user is not a steward, its person already has as many OPEN or PENDING claims in its period as the period's cap, or as many as the sheet's maximum of open claims) is left as it is and counted
  * as refused; so is a selected id that is not a claim on the sheet. A claim whose due is above the review threshold goes to
  * REVIEW instead and counts as opened.
  */
@@ -47,6 +47,7 @@ public class BulkOpenClaims {
                     ApplyClaimStatus.refuseFlagged(claim, sheets, people, steward);
                     ApplyClaimStatus.refuseNoteless(claim, sheets, people, rates, settings, rounding);
                     ApplyClaimStatus.refuseOverCap(claim, periods, all);
+                    ApplyClaimStatus.refuseOverMaxOpen(claim, settings, all);
                 } catch (ClaimStatusRefusedException e) {
                     continue;
                 }

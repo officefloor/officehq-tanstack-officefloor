@@ -64,6 +64,9 @@ public class ValidateSetting {
     /** Not dated: a REVIEW claim whose review day plus this many days is before the sheet's today is review-late; blank: none. */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The sheet's maximum of OPEN or PENDING claims per person: not dated, a whole number, blank for none. */
+    public static final String MAX_OPEN = "max-open";
+
     /** Not dated: a whole number; while it and the score-high are set, a person whose score is at or above it (and below the
      *  score-high) shows the band MID, one below it LOW; blank: none. */
     public static final String SCORE_MID = "score-mid";
@@ -115,7 +118,7 @@ public class ValidateSetting {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
+                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
                 && !(key.startsWith(GRADE_CLERK_LIMIT) && GRADES.contains(key.substring(GRADE_CLERK_LIMIT.length())))
                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
@@ -187,6 +190,17 @@ public class ValidateSetting {
             }
             if (!DAYS.matcher(raw).matches()) {
                 throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank for none");
+            }
+            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
+            return;
+        }
+        if (MAX_OPEN.equals(key)) {
+            if (raw.isEmpty()) {
+                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
+                return;
+            }
+            if (!DAYS.matcher(raw).matches()) {
+                throw new InvalidSettingException("The maximum of open claims must be a whole number, 0 or more, or blank for none");
             }
             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
             return;

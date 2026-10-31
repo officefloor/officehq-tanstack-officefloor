@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Takes the pasted claims in order, each arriving OPEN. Every line is checked against the sheet first
  * (the person is on the sheet, by name or alias, matched as names are compared; the date is not inside a
- * closed period nor after the person's retirement; a person flagged on the sheet's today only by a steward). A line whose person, date and note match one of the
+ * closed period nor after the person's retirement; a person flagged on the sheet's today only by a steward; the
+ * person, counting the lines before it, is below the sheet's maximum of OPEN or PENDING claims). A line whose person, date and note match one of the
  * person's claims as they stood before the paste (not VOID nor DELETED) updates the newest such DRAFT to
  * the line's amount (CLAIM_EDITED when it changes) instead of adding one; matches with no DRAFT among
  * them refuse the paste. Any other line is added as a DRAFT (CLAIM_ADDED). Each is then opened by the
@@ -41,6 +42,9 @@ public class SavePasteClaims {
         if (!settings.allows(sheetId, request.user(), "open")) {
             throw new InvalidClaimException("Your role may not open a claim on this sheet");
         }
+        // The sheet's maximum of open claims: each line opens one more for its person.
+        Integer maxOpen = settings.maxOpen(sheetId);
+        java.util.Map<Long, Long> held = new java.util.HashMap<>();
         int number = 0;
         for (ValidPasteClaims.Line line : request.lines()) {
             number++;
@@ -66,6 +70,17 @@ public class SavePasteClaims {
                 } catch (InvalidClaimException e) {
                     throw new InvalidClaimException("Claim " + number + ": " + e.getMessage());
                 }
+            }
+            if (maxOpen != null) {
+                long open = held.computeIfAbsent(person.getId(), id -> existing.stream()
+                        .filter(c -> c.getPersonId() == id)
+                        .filter(c -> c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING)
+                        .count());
+                if (open >= maxOpen) {
+                    throw new InvalidClaimException("Claim " + number + ": the person already has " + maxOpen
+                            + " OPEN or PENDING claims, the sheet's maximum");
+                }
+                held.put(person.getId(), open + 1);
             }
             persons.add(person);
             dates.add(date);
@@ -107,6 +122,7 @@ public class SavePasteClaims {
             ClaimNumber opened;
             try {
                 ApplyClaimStatus.refuseOverCap(claim, periods, claims.list(sheetId));
+                ApplyClaimStatus.refuseOverMaxOpen(claim, settings, claims.list(sheetId));
                 opened = ApplyClaimStatus.change(open, claim, sheets, people, rates, periods, settings, numbering, log);
             } catch (ClaimStatusRefusedException e) {
                 throw new InvalidClaimException("Claim " + (i + 1) + ": " + e.getMessage());

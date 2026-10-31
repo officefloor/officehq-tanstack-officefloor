@@ -64,6 +64,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.MAX_OPEN.equals(setting.key())) {
+            settings.setMaxOpen(sheetId, setting.value() == null ? null : setting.value().intValue());
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + (setting.value() == null ? "" : setting.value().toPlainString()));
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.SCORE_MID.equals(setting.key()) || ValidateSetting.SCORE_HIGH.equals(setting.key())) {
             settings.setScoreThreshold(sheetId, setting.key(), setting.value() == null ? null : setting.value().intValue());
             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

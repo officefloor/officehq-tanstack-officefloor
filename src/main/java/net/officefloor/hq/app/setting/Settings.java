@@ -274,6 +274,18 @@ public class Settings {
         plainHistory(sheetId, REVIEW_SLA, days == null ? "" : String.valueOf(days));
     }
 
+    /** The sheet's maximum of OPEN or PENDING claims per person; null when none. */
+    public Integer maxOpen(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the maximum
+        return jdbc.queryForObject("SELECT max_open FROM sheet WHERE id = ?", Integer.class, sheetId);
+    }
+
+    public void setMaxOpen(String sheetId, Integer max) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET max_open = ? WHERE id = ?", max, sheetId);
+        plainHistory(sheetId, MAX_OPEN, max == null ? "" : String.valueOf(max));
+    }
+
     /** The sheet's score threshold (score-mid or score-high); null when blank. */
     public Integer scoreThreshold(String sheetId, String key) {
         sheets.today(sheetId); // the sheet's row holds the score thresholds
@@ -447,7 +459,7 @@ public class Settings {
     }
 
     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", PROOF_KINDS = "proof-kinds", DEFAULT_GRADE = "default-grade", PERM = "perm-", ROLE = "role-";
+    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", MAX_OPEN = "max-open", PROOF_KINDS = "proof-kinds", DEFAULT_GRADE = "default-grade", PERM = "perm-", ROLE = "role-";
 
     /** Records an undated setting's value as set in its history, dated the sheet's today. */
     private void plainHistory(String sheetId, String key, String value) {
@@ -490,6 +502,7 @@ public class Settings {
         Integer grace = graceDays(sheetId);
         Integer escalate = escalateAfter(sheetId);
         Integer reviewSla = reviewSla(sheetId);
+        Integer maxOpen = maxOpen(sheetId);
         Integer scoreMid = scoreThreshold(sheetId, ValidateSetting.SCORE_MID);
         Integer scoreHigh = scoreThreshold(sheetId, ValidateSetting.SCORE_HIGH);
         LocalDate entry = entryDate(sheetId);
@@ -527,6 +540,6 @@ public class Settings {
                 escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
                 String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""),
                 scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh),
-                scoreLog(sheetId) ? "on" : "");
+                scoreLog(sheetId) ? "on" : "", maxOpen == null ? "" : String.valueOf(maxOpen));
     }
 }
