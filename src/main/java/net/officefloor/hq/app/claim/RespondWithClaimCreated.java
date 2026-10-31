@@ -8,6 +8,6 @@ import org.springframework.http.ResponseEntity;
 
 public class RespondWithClaimCreated {
     public void respond(@Val Claim claim, Figures figures, ClaimLog log, ObjectResponse<ResponseEntity<ClaimResponse>> response) {
-        response.send(new ResponseEntity<>(ClaimResponse.from(claim, figures, log.of(claim), List.of()), HttpStatus.CREATED));
+        response.send(new ResponseEntity<>(ClaimResponse.from(claim, figures, log.of(claim), List.of(), List.of()), HttpStatus.CREATED));
     }
 }

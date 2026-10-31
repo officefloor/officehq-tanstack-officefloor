@@ -53,6 +53,8 @@ const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edite
 const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.';
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
 const EMPTY_COMMENT = 'A comment cannot be empty.';
+const BAD_LINE = "A line needs a label, a whole quantity of at least 1 and a unit amount with up to two decimals.";
+const LINED = 'This claim has lines: its amount is them added up, and cannot be typed.';
 const VIEWER = 'A viewer can change nothing.';
 const CANNOT_DELETE = 'Only a DRAFT claim can be deleted, and never one due by in a closed period.';
 const CANNOT_RESTORE = 'A deleted claim can be restored to DRAFT only on the sheet\'s today it was deleted.';
@@ -113,6 +115,9 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * cannot be edited, opened or voided; on the sheet's today it was deleted it can be restored to DRAFT.
  * A claim can be commented: each comment shows on it, oldest first, as "<user> on <date>: <text>"
  * (the sheet's today when it was written); an empty comment is refused.
+ * A DRAFT claim can have lines, each shown as "<label> <qty> x <unit>": adding one edits the claim (refused
+ * as an edit is), and its amount becomes the quantities times the unit amounts added up; an edit that
+ * types another amount is then refused.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -168,6 +173,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [splitOff, setSplitOff] = useState<Record<number, string>>({});
   // The comment typed for each claim, by claim id.
   const [commentText, setCommentText] = useState<Record<number, string>>({});
+  // The line typed for each claim, by claim id.
+  const NO_LINE = { label: '', qty: '', unit: '' };
+  const [lineTyped, setLineTyped] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
   // The amount typed in each claim's row for its inline edit, by claim id.
   const [inlineAmount, setInlineAmount] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -332,6 +340,39 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  // A line on a DRAFT claim, as an edit of it: the claim's amount becomes its lines added up.
+  const addLine = useMutation({
+    mutationFn: (c: { id: number; label: string; qty: string; unit: string }) => {
+      if (c.label.trim() === '' || !/^\d+$/.test(c.qty.trim()) || Number(c.qty.trim()) < 1
+        || !/^\d+(\.\d{1,2})?$/.test(c.unit.trim())) {
+        return Promise.reject(new Error(BAD_LINE));
+      }
+      return postJson<Claim>(`${base}/claims/${c.id}/lines`, { label: c.label, qty: c.qty, unit: c.unit, user });
+    },
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setLineTyped((t) => ({ ...t, [c.id]: NO_LINE })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: !(e instanceof HttpError)
+          ? BAD_LINE
+          : e.body.includes('locked')
+            ? LOCKED
+            : e.body.includes('viewer')
+              ? VIEWER
+              : e.body.includes('archived')
+                ? ARCHIVED
+                : e.body.includes('closed')
+                  ? CLOSED_EDIT
+                  : e.body.includes('DRAFT')
+                    ? NOT_DRAFT
+                    : e.status === 400
+                      ? BAD_LINE
+                      : 'Could not add a line to this claim.',
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   // An amount split off an OPEN claim into a new OPEN claim.
   const split = useMutation({
     mutationFn: (c: { id: number; amount: string }) =>
@@ -377,6 +418,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                     ? NOT_DRAFT
                     : e.body.includes('retired')
                       ? e.body
+                      : e.body.includes('lines')
+                        ? LINED
                       : e.status === 400 || e.body.includes('correction')
                         ? BAD_AMOUNT
                         : 'Could not save this claim.',
@@ -587,6 +630,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   ? claimError.body
                   : claimError instanceof HttpError && claimError.body.includes('correction')
                     ? `A correction must name a settled claim of ${person.name}.`
+                  : claimError instanceof HttpError && claimError.body.includes('lines')
+                    ? LINED
                   : claimError instanceof HttpError && claimError.body.includes('reference')
                     ? `The reference ${ref.trim()} is already used on this sheet.`
                   : 'Could not save this claim.'}
@@ -690,6 +735,30 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => addComment.mutate({ id: c.id, text: commentText[c.id] ?? '' })}
               >
                 Comment
+              </button>{' '}
+              {(['label', 'qty', 'unit'] as const).map((k) => (
+                <span key={k}>
+                  <input
+                    data-testid={`claim-line-${k}`}
+                    aria-label={k === 'label' ? 'Line label' : k === 'qty' ? 'Line quantity' : 'Line unit amount'}
+                    placeholder={k === 'label' ? 'label' : k === 'qty' ? '1' : '0.00'}
+                    size={k === 'label' ? undefined : 5}
+                    value={lineTyped[c.id]?.[k] ?? ''}
+                    onChange={(e) => {
+                      if (refused?.id === c.id) setRefused(null);
+                      const v = e.target.value;
+                      setLineTyped((t) => ({ ...t, [c.id]: { ...(t[c.id] ?? NO_LINE), [k]: v } }));
+                    }}
+                  />{' '}
+                </span>
+              ))}
+              <button
+                type="button"
+                data-testid="claim-line-add"
+                disabled={addLine.isPending}
+                onClick={() => addLine.mutate({ id: c.id, ...(lineTyped[c.id] ?? NO_LINE) })}
+              >
+                Add line
               </button>{' '}
               {ACTIONS.map((action) => (
                 <span key={action}>
@@ -915,6 +984,13 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <ol data-testid="claim-comments">
                 {c.comments.map((line, i) => (
                   <li key={i} data-testid="claim-comments-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
+              <ol data-testid="claim-lines">
+                {c.lines.map((line, i) => (
+                  <li key={i} data-testid="claim-lines-line">
                     {line}
                   </li>
                 ))}

@@ -64,11 +64,15 @@ public class Transfers {
             jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, comment_text) "
                     + "SELECT ?, ?, by_user, on_date, comment_text FROM claim_comment WHERE claim_id = ? ORDER BY id",
                     to, newId, claim.getId());
+            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) "
+                    + "SELECT ?, ?, label, qty, unit FROM claim_line WHERE claim_id = ? ORDER BY id",
+                    to, newId, claim.getId());
         }
 
         for (Claim claim : kept) {
             jdbc.update("DELETE FROM claim_log WHERE claim_id = ?", claim.getId());
             jdbc.update("DELETE FROM claim_comment WHERE claim_id = ?", claim.getId());
+            jdbc.update("DELETE FROM claim_line WHERE claim_id = ?", claim.getId());
             jdbc.update("DELETE FROM claim WHERE id = ?", claim.getId());
         }
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", fromId, fromId);

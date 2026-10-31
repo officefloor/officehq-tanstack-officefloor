@@ -76,6 +76,8 @@ export type Claim = {
   voidReason: string | null;
   /** The claim's comments, oldest first, as "<user> on <date>: <text>" (the sheet's today when it was written). */
   comments: string[];
+  /** The claim's lines, in the order added, as "<label> <qty> x <unit>"; its amount is them added up. */
+  lines: string[];
   /** The number of the bulk settle batch (1, 2, ... on the sheet) that settled the claim (or sent it PENDING); null when none did. */
   batch: number | null;
 };

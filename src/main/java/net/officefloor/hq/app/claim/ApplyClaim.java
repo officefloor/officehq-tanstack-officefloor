@@ -11,15 +11,19 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
 /** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is due by in a closed period (its due-by, fixed when it was added, stays as it is),
+ *  or types another amount than its lines add up to (a claim with lines takes its amount from them),
  *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person.
  *  The editing user becomes the claim's last editor, who may not settle or approve it. */
 public class ApplyClaim {
     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods,
-            People people, Claims claims)
+            People people, Claims claims, ClaimLines lines)
             throws ClaimEditRefusedException, ClaimLockedException, PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         ApplyClaimLock.refuseLocked(claim, values.user());
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw new ClaimEditRefusedException(claim.getStatus());
+        }
+        if (values.amount().compareTo(claim.getAmount()) != 0 && lines.any(claim)) {
+            throw new InvalidSheetRequestException("A claim with lines takes its amount from them: " + claim.getAmount().toPlainString());
         }
         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.getSheetId());
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());

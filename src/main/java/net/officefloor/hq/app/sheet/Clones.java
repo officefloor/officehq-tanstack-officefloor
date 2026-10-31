@@ -124,6 +124,9 @@ public class Clones {
             jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, comment_text) "
                     + "SELECT ?, ?, by_user, on_date, comment_text FROM claim_comment WHERE claim_id = ? ORDER BY id",
                     to, newId, claim.getId());
+            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) "
+                    + "SELECT ?, ?, label, qty, unit FROM claim_line WHERE claim_id = ? ORDER BY id",
+                    to, newId, claim.getId());
         }
         Map<String, String> renumbered = renumber(kept, claimIds, to);
         for (Claim claim : kept) {
