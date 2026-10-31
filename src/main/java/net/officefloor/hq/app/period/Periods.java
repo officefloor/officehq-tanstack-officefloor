@@ -5,7 +5,9 @@ import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -44,15 +46,30 @@ public class Periods {
                 period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
     }
 
-    /** Close the period, fixing its due-total. */
-    public void close(Period period, BigDecimal total) {
+    /** Close the period, fixing its due-total and each person's (by person id). */
+    public void close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals) {
         jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ?",
                 total, period.sheetId(), period.name());
+        personTotals.forEach((personId, personTotal) -> jdbc.update(
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
+                period.sheetId(), period.name(), personId, personTotal));
     }
 
-    /** Reopen the period: its due-total is live again. */
+    /** Each person's due-total fixed when the period was closed, by person id; empty while it is open. */
+    public Map<Long, BigDecimal> personTotals(Period period) {
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, total FROM period_person_total WHERE sheet_id = ? AND period_name = ?"
+                + " ORDER BY person_id", rs -> {
+                    totals.put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+                }, period.sheetId(), period.name());
+        return totals;
+    }
+
+    /** Reopen the period: its due-total, and each person's, is live again. */
     public void reopen(Period period) {
         jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
+                period.sheetId(), period.name());
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
                 period.sheetId(), period.name());
     }
 
