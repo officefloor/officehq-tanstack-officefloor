@@ -31,7 +31,7 @@ import { downloadCsv } from './csv';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, useSortBy } from './SortBy';
 import { ColumnChooser, useColumns } from './ColumnChooser';
-import { gradeOn, patronShares, sharedCents } from './usePeople';
+import { gradeOn, patronShares, sharedCents, shownName } from './usePeople';
 import { usePersonPeriodCarried, usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useSheetFigures } from './useSheetFigures';
@@ -40,7 +40,7 @@ import { useGrace } from '../claims/useGrace';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
 
-// Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
+// Every person on the sheet in the order they were added, with their name shown as "<name> (<grade in force today>)", grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
 // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
@@ -114,10 +114,10 @@ export function PeopleList() {
     patronShares(p)
       .flatMap(({ id, share }) => {
         const patron = byId.get(id);
-        return patron ? [{ name: patron.name, share }] : [];
+        return patron ? [{ name: patron.name, shown: shownName(patron, today), share }] : [];
       })
       .sort((a, b) => BY_NAME(a.name, b.name))
-      .map(({ name, share }) => `${name} ${formatCents(share)}`)
+      .map(({ shown, share }) => `${shown} ${formatCents(share)}`)
       .join(', ');
 
   const floor = useFloor(sheet);
@@ -232,7 +232,7 @@ export function PeopleList() {
                 <td>
                   <PersonSelect personId={p.id} />
                 </td>
-                <td data-testid="person-name">{p.name}</td>
+                <td data-testid="person-name">{shownName(p, today)}</td>
                 {shown('aliases') && <td data-testid="person-aliases">{p.aliases.join(', ')}</td>}
                 <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
                 <td data-testid="person-origin">{p.origin}</td>

@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { formatCents } from '../rates/due';
-import type { Person } from '../people/usePeople';
+import { shownName, type Person } from '../people/usePeople';
 import { useSheetFigures } from '../people/useSheetFigures';
 import { poolsKey } from '../pools/usePools';
 import { crewDueCents, crewsKey, useCrews, type Crew } from './useCrews';
@@ -18,7 +18,7 @@ export function CrewPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const crews = useCrews(sheet);
-  const { people, byId, totalOf } = useSheetFigures(sheet);
+  const { people, byId, totalOf, today } = useSheetFigures(sheet);
   const [name, setName] = useState('');
   const [leadId, setLeadId] = useState('');
   const queryClient = useQueryClient();
@@ -38,7 +38,7 @@ export function CrewPanel() {
     <>
       <ul data-testid="crew-list">
         {crews.map((c) => (
-          <CrewRow key={c.name} crew={c} dueTotal={dueTotalOf(c)} people={people} sheet={sheet} user={user} />
+          <CrewRow key={c.name} crew={c} lead={byId.get(c.leadId)} today={today} dueTotal={dueTotalOf(c)} people={people} sheet={sheet} user={user} />
         ))}
       </ul>
       <form
@@ -80,7 +80,7 @@ export function CrewPanel() {
   );
 }
 
-function CrewRow({ crew, dueTotal, people, sheet, user }: { crew: Crew; dueTotal: string; people: Person[]; sheet: string; user: string }) {
+function CrewRow({ crew, lead, today, dueTotal, people, sheet, user }: { crew: Crew; lead: Person | undefined; today: string | undefined; dueTotal: string; people: Person[]; sheet: string; user: string }) {
   const [personId, setPersonId] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
@@ -96,7 +96,7 @@ function CrewRow({ crew, dueTotal, people, sheet, user }: { crew: Crew; dueTotal
   return (
     <li data-testid={`crew-row-${crew.name}`}>
       <span data-testid="crew-name">{crew.name}</span>{' '}
-      lead <span data-testid="crew-lead">{crew.leadName}</span>{' '}
+      lead <span data-testid="crew-lead">{lead ? shownName(lead, today) : crew.leadName}</span>{' '}
       due-total <span data-testid="crew-due-total">{dueTotal}</span>
       <ul>
         {crew.members.map((m) => (

@@ -5,6 +5,7 @@ import { LiveReads } from '../asof/useAsOf';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSheetFigures } from '../people/useSheetFigures';
 import { showDue } from '../rates/due';
+import { shownName } from '../people/usePeople';
 
 export const treeKey = (sheet: string) => ['sheet', sheet, 'tree'] as const;
 
@@ -20,7 +21,7 @@ function useTree(sheet: string): string[] | undefined {
 
 // Searches the sheet and every other sheet of its tree for the people whose name or an alias
 // contains the typed text (case ignored; blank matches everyone), one line per person:
-// <sheet id> <name> <due-total as their row shows it>. The sheet's people come first in list order
+// <sheet id> <name> (<grade in force on that sheet's today>) <due-total as their row shows it>. The sheet's people come first in list order
 // (retired too), then the other sheets' by sheet id. Each press re-reads every sheet, live figures
 // also while the screen is shown as of a date; the count is gone until the new lines are all in.
 export function TreeSearch() {
@@ -67,7 +68,7 @@ function Add({ sheets, text, lines }: { sheets: string[]; text: string; lines: s
 
 function AddSheet({ sheets, text, lines }: { sheets: string[]; text: string; lines: string[] }) {
   const sheet = sheets[0];
-  const { people, totalOf } = useSheetFigures(sheet);
+  const { people, totalOf, today } = useSheetFigures(sheet);
   const queryClient = useQueryClient();
   const fetching = useIsFetching({ queryKey: ['sheet', sheet] });
   const loaded = queryClient
@@ -78,7 +79,7 @@ function AddSheet({ sheets, text, lines }: { sheets: string[]; text: string; lin
   const matches = (name: string) => name.toLowerCase().includes(text);
   const found = people
     .filter((p) => matches(p.name) || p.aliases.some(matches))
-    .map((p) => `${sheet} ${p.name} ${showDue(totalOf(p))}`);
+    .map((p) => `${sheet} ${shownName(p, today)} ${showDue(totalOf(p))}`);
   return <Add sheets={sheets.slice(1)} text={text} lines={[...lines, ...found]} />;
 }
 
