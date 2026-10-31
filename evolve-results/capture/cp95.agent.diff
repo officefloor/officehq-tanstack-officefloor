@@ -1,0 +1,134 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 41cc5b2a..05c3941a 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -5,7 +5,10 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { PCT, rateOn, ratesKey, useRates, type Rate } from './useRates';
++import { PCT, rateOn, ratesKey, totalDue, useRates, type Rate } from './useRates';
++import { claimDueCents, isOpen, useClaims } from '../claims/useClaims';
++import { gradeOn, usePeople } from '../people/usePeople';
++import { useFloor, useLate } from '../settings/useSettings';
+ 
+ /**
+  * The rate in force on the sheet's today for each grade, every rate set (by grade, then from-date),
+@@ -121,6 +124,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
+           </span>
+         )}
+       </form>
++      <RatePreview sheet={sheet} />
+       <table data-testid="rate-current">
+         <thead>
+           <tr>
+@@ -163,4 +167,109 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
+   );
+ }
+ 
++/**
++ * A preview of a candidate rate for a grade, saving nothing: how many OPEN and PENDING claims of
++ * people on that grade (the grade in force on the claim's date) would show a different due if the
++ * rate applied to the grade on every date, and the differences (new due minus current) added up.
++ * A claim bound by a statement keeps its figure, so it does not change; a settled claim is not counted.
++ */
++function RatePreview({ sheet }: { sheet: string }) {
++  const claimsQuery = useClaims(sheet);
++  const peopleQuery = usePeople(sheet);
++  const ratesQuery = useRates(sheet);
++  const floor = useFloor(sheet);
++  const late = useLate(sheet);
++  const [grade, setGrade] = useState<string>('A');
++  const [pct, setPct] = useState('');
++  const [invalid, setInvalid] = useState(false);
++  const [running, setRunning] = useState(false);
++  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
++
++  const preview = async () => {
++    setResult(null);
++    if (!PCT.test(pct.trim())) {
++      setInvalid(true);
++      return;
++    }
++    setInvalid(false);
++    setRunning(true);
++    try {
++      // Re-read, so the preview goes by what the store holds now.
++      const [claims, people, rates] = await Promise.all([claimsQuery.refetch(), peopleQuery.refetch(), ratesQuery.refetch()]);
++      const byId = new Map((people.data ?? []).map((p) => [p.id, p]));
++      const candidate = pct.trim();
++      let count = 0;
++      let diff = 0n;
++      for (const c of claims.data ?? []) {
++        const person = byId.get(c.personId);
++        if (!isOpen(c) || person === undefined || gradeOn(person, c.date) !== grade) continue;
++        const current = claimDueCents(c, floor, rateOn(rates.data ?? [], grade, c.date), late);
++        const next = claimDueCents(c, floor, candidate, late);
++        if (current === next) continue;
++        count++;
++        diff += (next ?? 0n) - (current ?? 0n);
++      }
++      setResult({ count, diff: totalDue([diff]) });
++    } finally {
++      setRunning(false);
++    }
++  };
++
++  return (
++    <form
++      data-testid="rate-preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        void preview();
++      }}
++    >
++      <label>
++        Preview grade{' '}
++        <select
++          data-testid="rate-preview-grade"
++          value={grade}
++          onChange={(e) => {
++            setGrade(e.target.value);
++            setInvalid(false);
++          }}
++        >
++          {GRADES.map((g) => (
++            <option key={g} value={g}>
++              {g}
++            </option>
++          ))}
++        </select>
++      </label>{' '}
++      <label>
++        Candidate rate %{' '}
++        <input
++          data-testid="rate-preview-pct"
++          placeholder="0.00"
++          value={pct}
++          onChange={(e) => {
++            setPct(e.target.value);
++            setInvalid(false);
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="rate-preview" disabled={running}>
++        Preview
++      </button>
++      {result !== null && (
++        <span>
++          {' '}
++          Claims changing: <span data-testid="rate-preview-count">{result.count}</span>, difference:{' '}
++          <span data-testid="rate-preview-diff">{result.diff}</span>
++        </span>
++      )}
++      {invalid && (
++        <span data-testid="rate-preview-error" role="alert">
++          {' '}
++          The rate must be a percent, 0.00 or more, with up to two decimals.
++        </span>
++      )}
++    </form>
++  );
++}
++
+ export const contribution = SheetPanels.fill({ order: 5, Component: RatesPanel });
