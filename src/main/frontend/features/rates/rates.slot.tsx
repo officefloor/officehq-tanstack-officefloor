@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../sheet/useSheet';
@@ -19,6 +20,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const [from, setFrom] = useState('');
   const [invalid, setInvalid] = useState(false);
 
+  const submitOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (r: { grade: string; pct: string; from: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
@@ -49,7 +51,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setInvalid(false);
-          save.mutate({ grade, pct: pct.trim(), from: from.trim() });
+          submitOnce(() => save.mutateAsync({ grade, pct: pct.trim(), from: from.trim() }));
         }}
       >
         <label>

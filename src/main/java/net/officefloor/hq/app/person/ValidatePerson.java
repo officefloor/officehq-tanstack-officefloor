@@ -17,6 +17,6 @@ public class ValidatePerson {
             throw new InvalidSheetRequestException("The grade must be A, B or C");
         }
         // Names are kept without the spaces around them.
-        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user()));
+        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version()));
     }
 }

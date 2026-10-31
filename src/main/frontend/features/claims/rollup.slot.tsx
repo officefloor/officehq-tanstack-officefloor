@@ -15,7 +15,7 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const dues = people.map((p) =>
-    personDueCents(claims.filter((c) => c.personId === p.id), rateOn(rates, p.grade, today)),
+    personDueCents(claims.filter((c) => c.personId === p.id), rateOn(rates, p.grade, today), (d) => rateOn(rates, p.grade, d)),
   );
   return (
     <>

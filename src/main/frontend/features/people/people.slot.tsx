@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
@@ -10,16 +11,30 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data: people = [] } = usePeople(sheet);
   const [editing, setEditing] = useState<number | null>(null);
+  // The version of the person the editor loaded: a save is refused if someone saved since.
+  const [version, setVersion] = useState(0);
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
   const [blank, setBlank] = useState(false);
   const base = `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
+  const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (p: { id: number | null; name: string; grade: string }) =>
+    mutationFn: (p: { id: number | null; name: string; grade: string; version: number }) =>
       p.id === null
         ? postJson<Person>(base, { name: p.name, grade: p.grade, user })
-        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, user }),
+        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, version: p.version, user }),
+    onError: async (e) => {
+      // Someone else saved this person since the editor loaded it: the form shows what is stored
+      // now (and that version), and the list is re-read so a fresh editor loads it too.
+      if (e instanceof HttpError && e.status === 409 && e.body) {
+        const current = JSON.parse(e.body) as Person;
+        setName(current.name);
+        setGrade(current.grade);
+        setVersion(current.version);
+        await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      }
+    },
     onSuccess: async () => {
       setEditing(null);
       setName('');
@@ -37,6 +52,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const open = (p: Person) => {
     clearError();
     setEditing(p.id);
+    setVersion(p.version);
     setName(p.name);
     setGrade(p.grade);
   };
@@ -61,7 +77,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setBlank(false);
-          save.mutate({ id: editing, name, grade });
+          submitOnce(() => save.mutateAsync({ id: editing, name, grade, version }));
         }}
       >
         <label>
@@ -106,7 +122,11 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
         {(blank || save.isError) && (
           <span data-testid="person-form-error" role="alert">
             {' '}
-            {blank ? 'A name is required.' : 'Could not save this person.'}
+            {blank
+              ? 'A name is required.'
+              : save.error instanceof HttpError && save.error.status === 409
+                ? 'Someone else saved this person since you opened it; the form now shows what is stored.'
+                : 'Could not save this person.'}
           </span>
         )}
       </form>

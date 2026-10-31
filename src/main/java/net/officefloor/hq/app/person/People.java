@@ -17,17 +17,17 @@ public class People {
     }
 
     public List<Person> onSheet(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
                 (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                        rs.getString("grade")),
+                        rs.getString("grade"), rs.getInt("version")),
                 sheetId);
     }
 
     /** The person with this id on this sheet, or null when there is none. */
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
                 (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                        rs.getString("grade")),
+                        rs.getString("grade"), rs.getInt("version")),
                 sheetId, id).stream().findFirst().orElse(null);
     }
 
@@ -39,12 +39,15 @@ public class People {
         return n != null && n > 0;
     }
 
-    /** Insert a new person (assigning its id) or update an existing one. */
-    public void save(Person person) {
+    /** Insert a new person (assigning its id) or update an existing one, if it is still at the
+     *  version it was loaded at; false (nothing written) when someone has saved it since. */
+    public boolean save(Person person) {
         if (person.getId() != null) {
-            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ?",
-                    person.getName(), person.getGrade(), person.getId());
-            return;
+            int n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND version = ?",
+                    person.getName(), person.getGrade(), person.getId(), person.getVersion());
+            if (n == 0) return false;
+            person.setVersion(person.getVersion() + 1);
+            return true;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -56,5 +59,6 @@ public class People {
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
+        return true;
     }
 }

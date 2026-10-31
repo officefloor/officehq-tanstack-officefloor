@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
 import { rateOn, showDue, useRates } from '../rates/useRates';
@@ -20,7 +21,7 @@ import {
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
  * with its due (fixed once it is settled, else at the rate in force on the claim's date; in the
- * due-total a live one is at the rate in force on the sheet's today), its status, who opened it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
+ * due-total too), its status, who opened it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
@@ -39,6 +40,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [refused, setRefused] = useState<number | null>(null);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
+  const submitOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (c: { id: number | null; amount: string; date: string; note: string }) => {
       const body = { amount: c.amount, date: c.date, note: c.note, user };
@@ -87,7 +89,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(counted(claims))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, pct))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, pct, (d) => rateOn(rates, person.grade, d)))}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -100,7 +102,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               return;
             }
             setInvalid(false);
-            save.mutate({ id: editing, amount: amount.trim(), date: date.trim(), note });
+            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note }));
           }}
         >
           <input

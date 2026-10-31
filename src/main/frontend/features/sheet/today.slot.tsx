@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
@@ -9,6 +10,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
   const [date, setDate] = useState('');
+  const submitOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (today: string) =>
       postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today, user }),
@@ -20,7 +22,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
       data-testid="sheet-today-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate(date.trim());
+        submitOnce(() => save.mutateAsync(date.trim()));
       }}
     >
       Today: <strong data-testid="sheet-today">{data?.today ?? ''}</strong>{' '}

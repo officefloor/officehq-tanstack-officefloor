@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type Person = { id: number; name: string; grade: string };
+/** `version` counts the person's saves; an edit sends the version it loaded, so a save made by
+ *  someone else in the meantime refuses it. */
+export type Person = { id: number; name: string; grade: string; version: number };
 
 export const GRADES = ['A', 'B', 'C'] as const;
 

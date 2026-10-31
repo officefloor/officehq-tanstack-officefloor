@@ -55,14 +55,15 @@ export function claimDueCents(claim: Claim, pct: string | undefined): bigint | n
 
 
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
- *  a settled claim's fixed due, else live at `pct`, the rate in force on the sheet's today. 0 with
+ *  a settled claim's fixed due, else live at `pctOn(claim's date)`, the rate in force on the claim's
+ *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. */
-export function personDueCents(claims: Claim[], pct: string | undefined): bigint | null {
+export function personDueCents(claims: Claim[], pct: string | undefined, pctOn?: (date: string) => string | undefined): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
-    const due = claimDueCents(c, pct);
+    const due = claimDueCents(c, pctOn ? pctOn(c.date) : pct);
     if (due === null) continue;
     sum += due;
     any = true;
