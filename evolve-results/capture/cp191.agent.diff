@@ -1,0 +1,159 @@
+diff --git a/src/main/frontend/features/settings/SettingsPanel.tsx b/src/main/frontend/features/settings/SettingsPanel.tsx
+index 3c5b7837..ae6082d4 100644
+--- a/src/main/frontend/features/settings/SettingsPanel.tsx
++++ b/src/main/frontend/features/settings/SettingsPanel.tsx
+@@ -68,6 +68,9 @@ export function SettingsPanel() {
+   // Each grade's proof threshold, by grade, as typed; likewise each may be saved blank (none).
+   const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
+   const proofGradeChosen = useRef(new Set<string>());
++  // Each grade's clerk limit, by grade, as typed; likewise each may be saved blank (none: the sheet's applies).
++  const [gradeLimit, setGradeLimit] = useState<Record<string, string>>({});
++  const limitGradeChosen = useRef(new Set<string>());
+   const today = useSheetToday(sheet);
+   const [policyDate, setPolicyDate] = useState('');
+   // The policy date may be saved blank (back to the sheet's today), so entering its field marks it as the one to save.
+@@ -226,6 +229,7 @@ export function SettingsPanel() {
+     for (const g of GRADES) {
+       if ((gradeGrace[g] ?? '').trim() === '') graceGradeChosen.current.delete(g);
+       if ((gradeProof[g] ?? '').trim() === '') proofGradeChosen.current.delete(g);
++      if ((gradeLimit[g] ?? '').trim() === '') limitGradeChosen.current.delete(g);
+     }
+   };
+   // Entering a grade's grace days (or their from-date) marks them as one to save, as they are.
+@@ -238,6 +242,11 @@ export function SettingsPanel() {
+     unchoosePolicy();
+     proofGradeChosen.current.add(grade);
+   };
++  // Entering a grade's clerk limit (or its from-date) marks it as one to save, as it is.
++  const focusGradeLimit = (grade: string) => {
++    unchoosePolicy();
++    limitGradeChosen.current.add(grade);
++  };
+   // Entering a permission marks it as one to save, as it is.
+   const focusPerm = (action: string) => {
+     if (policyDate.trim() === '') policyChosen.current = false;
+@@ -394,6 +403,11 @@ export function SettingsPanel() {
+         setEntryDate('');
+         entryChosen.current = false;
+       }
++      else if (body.key.startsWith('clerk-limit-')) {
++        const grade = body.key.slice('clerk-limit-'.length);
++        setGradeLimit((t) => ({ ...t, [grade]: '' }));
++        limitGradeChosen.current.delete(grade);
++      }
+       else if (body.key.startsWith('proof-threshold-')) {
+         const grade = body.key.slice('proof-threshold-'.length);
+         setGradeProof((t) => ({ ...t, [grade]: '' }));
+@@ -468,11 +482,13 @@ export function SettingsPanel() {
+             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
+             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
++            const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
+             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
+-            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0
++            if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
+                 || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || permitted.length > 0) {
+               const saves = [
+                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
++                ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
+                 ...(floor.trim() !== '' ? [{ key: 'floor', value: floor.trim() }] : []),
+                 ...(terms.trim() !== '' ? [{ key: 'terms', value: terms.trim() }] : []),
+                 ...ownTerms.map((g) => ({ key: `terms-${g}`, value: gradeTerms[g].trim() })),
+@@ -520,6 +536,24 @@ export function SettingsPanel() {
+           }}
+         />{' '}
+         {fromField('clerk-limit')}{' '}
++        {GRADES.map((g) => (
++          <span key={g}>
++            Clerk limit for grade {g}: <span data-testid={`setting-clerk-limit-${g}-current`}>{today === undefined ? '' : inForce(settings, `clerk-limit-${g}`, today, '')}</span>{' '}
++            <input
++              data-testid={`setting-clerk-limit-${g}`}
++              onFocus={() => focusGradeLimit(g)}
++              value={gradeLimit[g] ?? ''}
++              placeholder={`Grade ${g} clerk limit (blank: none)`}
++              onChange={(e) => {
++                const value = e.target.value;
++                setGradeLimit((t) => ({ ...t, [g]: value }));
++                limitGradeChosen.current.add(g);
++                saveSetting.reset();
++              }}
++            />{' '}
++            {fromField(`clerk-limit-${g}`, () => focusGradeLimit(g))}{' '}
++          </span>
++        ))}
+         Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>{' '}
+         <input
+           data-testid="setting-floor"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index a7e00c0a..934fefd7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -110,9 +110,10 @@ public class ApplyClaimStatus {
+             }
+         }
+         if (target == ClaimStatus.SETTLED && request.decision() == ValidClaimStatus.Decision.NONE && !steward) {
+-            // A clerk settles only within the sheet's clerk limit, judged on the claim's due as shown;
+-            // a due of n/a is within any limit.
+-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
++            // A clerk settles only within the clerk limit in force (the person's grade's own, else the sheet's),
++            // judged on the claim's due as shown; a due of n/a is within any limit.
++            BigDecimal limit = settings.clerkLimitFor(claim.getSheetId(),
++                    people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(sheets.today(claim.getSheetId())));
+             BigDecimal due = shownDue(claim, sheets, people, rates, settings, rounding);
+             if (limit != null && due != null && due.compareTo(limit) > 0) {
+                 // Above the clerk limit the claim awaits a steward's approval.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+index 67a591bc..ff27e207 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SavePasteClaims.java
+@@ -37,6 +37,10 @@ public class SavePasteClaims {
+         List<LocalDate> dates = new ArrayList<>();
+         List<Claim> matched = new ArrayList<>();
+         boolean steward = Settings.STEWARD.equals(settings.role(sheetId, request.user()));
++        // Every line is opened: a role that may not open refuses the paste before anything is written.
++        if (!settings.allows(sheetId, request.user(), "open")) {
++            throw new InvalidClaimException("Your role may not open a claim on this sheet");
++        }
+         int number = 0;
+         for (ValidPasteClaims.Line line : request.lines()) {
+             number++;
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 024ecac2..f426ed1f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -81,6 +81,13 @@ public class Settings {
+         return found == null ? null : found.value();
+     }
+ 
++    /** The clerk limit a claim of a person of this grade takes on the sheet's today: the grade's own in force then
++     *  when one is set, else the sheet's; null for no limit. */
++    public BigDecimal clerkLimitFor(String sheetId, String grade) {
++        InForce own = grade == null ? null : on(sheetId, ValidateSetting.GRADE_CLERK_LIMIT + grade, sheets.today(sheetId));
++        return own != null && own.value() != null ? own.value() : clerkLimit(sheetId);
++    }
++
+     /** The sheet's cap in force on its today: a person's due-total is at most it; null for no cap. */
+     public BigDecimal cap(String sheetId) {
+         InForce found = on(sheetId, ValidateSetting.CAP, sheets.today(sheetId));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index a2c4b885..f31b2e62 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -38,6 +38,9 @@ public class ValidateSetting {
+     /** A grade's own terms: terms-<grade>. */
+     public static final String GRADE_TERMS = "terms-";
+ 
++    /** A grade's own clerk limit, followed by the grade: dated like the floor, blank for none (it uses the sheet's). */
++    public static final String GRADE_CLERK_LIMIT = "clerk-limit-";
++
+     /** A grade's grace days: grace-<grade>; dated; blank: none. */
+     public static final String GRADE_GRACE = "grace-";
+ 
+@@ -101,6 +104,7 @@ public class ValidateSetting {
+         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
+                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
++                && !(key.startsWith(GRADE_CLERK_LIMIT) && GRADES.contains(key.substring(GRADE_CLERK_LIMIT.length())))
+                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
+                 && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
+                 && !(key.startsWith(GRADE_PROOF_THRESHOLD) && GRADES.contains(key.substring(GRADE_PROOF_THRESHOLD.length())))) {
