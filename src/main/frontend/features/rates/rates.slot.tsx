@@ -3,22 +3,28 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES } from '../people/usePeople';
-import { PCT, rateByGrade, ratesKey, useRates, type Rate } from './useRates';
+import { useSheetToday } from '../sheet/useSheet';
+import { PCT, rateOn, ratesKey, useRates, type Rate } from './useRates';
 
-/** The sheet's rate for each grade, and one form to set a grade's rate. */
+/**
+ * The rate in force on the sheet's today for each grade, every rate set (by grade, then from-date),
+ * and one form to set a grade's rate, from a date or (left blank) from the beginning of time.
+ */
 function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data: rates = [] } = useRates(sheet);
-  const current = rateByGrade(rates);
+  const today = useSheetToday(sheet);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
+  const [from, setFrom] = useState('');
   const [invalid, setInvalid] = useState(false);
 
   const save = useMutation({
-    mutationFn: (r: { grade: string; pct: string }) =>
+    mutationFn: (r: { grade: string; pct: string; from: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
     onSuccess: async () => {
       setPct('');
+      setFrom('');
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
     },
   });
@@ -43,7 +49,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setInvalid(false);
-          save.mutate({ grade, pct: pct.trim() });
+          save.mutate({ grade, pct: pct.trim(), from: from.trim() });
         }}
       >
         <label>
@@ -75,6 +81,18 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="rate-form-from"
+            placeholder="yyyy-mm-dd"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              clearError();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -87,19 +105,37 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
           </span>
         )}
       </form>
-      <table data-testid="rate-list">
+      <table data-testid="rate-current">
         <thead>
           <tr>
             <th>Grade</th>
-            <th>Rate %</th>
+            <th>Rate % today</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => (
-            <tr key={g} data-testid={current.has(g) ? `rate-row-${g}-start` : undefined}>
+            <tr key={g}>
               <td>{g}</td>
-              <td data-testid={`rate-current-${g}`}>
-                {current.has(g) ? <span data-testid="rate-pct">{current.get(g)}</span> : 'n/a'}
+              <td data-testid={`rate-current-${g}`}>{rateOn(rates, g, today) ?? 'n/a'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="rate-list">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>From</th>
+            <th>Rate %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rates.map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td>
+                <span data-testid="rate-pct">{r.pct}</span>
               </td>
             </tr>
           ))}
