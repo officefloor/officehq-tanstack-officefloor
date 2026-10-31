@@ -10,8 +10,10 @@ import { useFloor, useLate } from '../settings/useSettings';
 import { DATE, periodDue, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /**
- * The sheet's periods, each with its due-total — the figures of everyone's counted (OPEN or
- * SETTLED) claims dated in it, not OPEN ones dated within their person's hold unless stated, n/a ones skipped — and one form to add a period: a name unique on
+ * The sheet's periods, each with its due-total — the figures, as shown now, of everyone's claims
+ * dated in it that were counted (OPEN, PENDING or SETTLED) at the end of its last day by their status
+ * log, not deferred ones, nor ones open then and dated within their person's hold unless stated, n/a
+ * ones skipped — and one form to add a period: a name unique on
  * the sheet and a from and to date, inclusive, overlapping no other period. A period can be closed:
  * its due-total is then the one it had when it was closed, whatever rates do later. A steward can
  * reopen a closed period, making its due-total live again.

@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.sql.Date;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -54,6 +55,22 @@ public class ClaimLog {
                             .add(line(rs.getString("status"), rs.getString("by_user"), rs.getDate("on_date"), rs.getBigDecimal("due")));
                 }, sheetId);
         return lines;
+    }
+
+    /** The status each claim on the sheet had at the end of `date`, by claim id: its last log line
+     *  dated on or before it, null when the claim was added after it. A claim with no lines (kept
+     *  before the log began) is not in the map. */
+    public Map<Long, ClaimStatus> statusesAt(String sheetId, LocalDate date) {
+        Map<Long, ClaimStatus> statuses = new HashMap<>();
+        jdbc.query("SELECT claim_id, status, on_date FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+            long id = rs.getLong("claim_id");
+            if (!rs.getDate("on_date").toLocalDate().isAfter(date)) {
+                statuses.put(id, ClaimStatus.valueOf(rs.getString("status")));
+            } else {
+                statuses.putIfAbsent(id, null);
+            }
+        }, sheetId);
+        return statuses;
     }
 
     private static String line(String status, String user, Date date, BigDecimal due) {

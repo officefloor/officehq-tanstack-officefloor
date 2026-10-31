@@ -18,7 +18,8 @@ function PeriodColumns({ sheet }: { user: string; sheet: string }) {
 }
 
 /**
- * A person's due-total for every period on the sheet: the due of their counted claims dated in it,
+ * A person's due-total for every period on the sheet: the due of their claims dated in it that were
+ * counted at the end of its last day (by their status log),
  * or, once the period is closed, the figure fixed then (0.00 for a person added since).
  */
 function PersonPeriods({ sheet, person }: { user: string; sheet: string; person: Person }) {

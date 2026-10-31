@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { claimDueCents, live, type Claim, type Late } from '../claims/useClaims';
-import { gradeOn, heldOnBy, type Person } from '../people/usePeople';
+import { claimDueCents, type Claim, type ClaimStatus, type Late } from '../claims/useClaims';
+import { gradeOn, heldOn, type Person } from '../people/usePeople';
 import { hundredths, rateOn, totalDue, type Rate } from '../rates/useRates';
 import type { FloorOn } from '../settings/useSettings';
 
@@ -38,16 +38,40 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
+/** The status a claim had at the end of `date` (yyyy-mm-dd), as its status log records it: the last
+ *  line dated on or before it; null when the claim was added after it. A claim kept before the log
+ *  began (no lines) goes by its status now. */
+export function statusAt(claim: Claim, date: string): ClaimStatus | null {
+  if (claim.log.length === 0) return claim.status;
+  let status: ClaimStatus | null = null;
+  for (const line of claim.log) {
+    const m = /^(\S+) by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(line);
+    if (m && m[2] <= date) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/** Whether a person's claim counts in a period's due-total: dated in it, and counted (OPEN, PENDING
+ *  or SETTLED) by the status it had at the end of the period's last day — not a deferred one, nor
+ *  one open then and dated within the person's hold, unless a statement binds it. */
+function countsIn(period: Period, person: Person, claim: Claim): boolean {
+  if (claim.personId !== person.id || periodOf([period], claim.date) === undefined || claim.deferred) return false;
+  const status = statusAt(claim, period.to);
+  if (status !== 'OPEN' && status !== 'PENDING' && status !== 'SETTLED') return false;
+  if (status === 'SETTLED' || !heldOn(person, claim.date)) return true;
+  return claim.stated && status !== 'PENDING';
+}
+
 /** A person's due-total for a period, in cents: the one fixed when the period was closed (0 for a
- *  person added since), else the figures of their counted (OPEN or SETTLED) claims dated in it, not
- *  OPEN ones dated within their hold unless stated, n/a ones skipped. */
+ *  person added since), else the dues, as shown now, of their claims that count in it (see
+ *  `countsIn`: by the status each had at the period's end), n/a ones skipped. */
 export function personPeriodDueCents(period: Period, person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late): bigint {
   if (period.closed) {
     const fixed = period.closedPersonTotals?.[String(person.id)];
     return fixed === undefined ? 0n : hundredths(fixed);
   }
-  return live(claims, heldOnBy([person]))
-    .filter((c) => c.personId === person.id && periodOf([period], c.date) !== undefined)
+  return claims
+    .filter((c) => countsIn(period, person, c))
     .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), late) ?? 0n), 0n);
 }
 
