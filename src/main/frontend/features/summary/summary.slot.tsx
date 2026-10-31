@@ -1,12 +1,10 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { live, personDueCents, useClaims } from '../claims/useClaims';
+import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
 import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 /**
  * The sheet in figures, each worked out as the list works it out. Per grade: how many people not

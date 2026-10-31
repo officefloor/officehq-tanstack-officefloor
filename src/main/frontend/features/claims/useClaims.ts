@@ -7,6 +7,9 @@ import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
  *  OPEN or PENDING → VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
+/** Every status, in life order — the order the summary and header list them in. */
+export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+
 /** Whether a claim is still open: OPEN or PENDING. A PENDING claim is handled like an OPEN one: it
  *  goes overdue, bears the late charge, and a hold takes it out of the totals. */
 export function isOpen(claim: Claim): boolean {
