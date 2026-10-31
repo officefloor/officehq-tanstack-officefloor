@@ -1,0 +1,116 @@
+diff --git a/src/main/frontend/features/claims/ClaimForm.tsx b/src/main/frontend/features/claims/ClaimForm.tsx
+index f929f188..f2a33d1a 100644
+--- a/src/main/frontend/features/claims/ClaimForm.tsx
++++ b/src/main/frontend/features/claims/ClaimForm.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useState } from 'react';
++import { useEffect, useRef, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+@@ -41,6 +41,9 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
+     setTags('');
+   };
+ 
++  // Set when a refused save closes the editor: closing it then keeps the save's error showing.
++  const keepError = useRef(false);
++
+   const save = useMutation({
+     mutationFn: (body: { amount: string; date: string; note: string; corrects: string; ref: string; tags: string }) =>
+       editing !== ''
+@@ -49,6 +52,16 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
+             `/api/sheets/${encodeURIComponent(sheet)}/people/${encodeURIComponent(personId)}/claims`,
+             { ...body, user },
+           ),
++    // A refused save closes the editor (releasing its lock), its error still showing, so the form is back to adding.
++    onError: () => {
++      if (editing === '') return;
++      const refused = editing;
++      keepError.current = true;
++      setEditing(undefined);
++      void postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(refused)}/unlock`, { user })
++        .catch(() => undefined)
++        .then(() => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }));
++    },
+     onSuccess: () => {
+       clear();
+       if (editing !== '') setEditing(undefined);
+@@ -72,8 +85,11 @@ export function ClaimForm({ personId, claims }: { personId: string; claims: Clai
+   // Opening (or closing) an editor fills the form with that claim's values (or empties it).
+   const editedId = edited?.id;
+   useEffect(() => {
+-    save.reset();
+-    fromTemplate.reset();
++    if (keepError.current) keepError.current = false;
++    else {
++      save.reset();
++      fromTemplate.reset();
++    }
+     if (edited) {
+       setAmount(edited.amount);
+       setDate(edited.date);
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index a2d6962e..ee307178 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -33,6 +33,7 @@ import { useWatches } from './useWatches';
+ import { downloadCsv } from './csv';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+ import { SnapshotCompare } from './SnapshotCompare';
++import { timelineOf } from './timeline';
+ import { SortBy, useSortBy } from './SortBy';
+ import { ColumnChooser, useColumns } from './ColumnChooser';
+ import { gradeOn, patronShares, sharedCents, shownName } from './usePeople';
+@@ -266,6 +267,7 @@ export function PeopleList() {
+             <th>Retired from</th>
+             <th>Past retirements</th>
+             <th>Snapshots</th>
++            <th>Timeline</th>
+             {shown('hold') && <th>Hold</th>}
+             {shown('statement-count') && <th>Statements</th>}
+             {shown('stated-total') && <th>Last stated</th>}
+@@ -367,6 +369,13 @@ export function PeopleList() {
+                     </div>
+                   ))}
+                 </td>
++                <td>
++                  {timelineOf(p, claims).map((line, i) => (
++                    <div key={i} data-testid="person-timeline-line">
++                      {line}
++                    </div>
++                  ))}
++                </td>
+                 {shown('hold') && <td data-testid="person-hold">{p.held ? 'yes' : 'no'}</td>}
+                 {shown('statement-count') && <td data-testid="person-statement-count">{p.statementCount}</td>}
+                 {shown('stated-total') && <td data-testid="person-stated-total">{p.statedTotal}</td>}
+diff --git a/src/main/frontend/features/people/timeline.ts b/src/main/frontend/features/people/timeline.ts
+new file mode 100644
+index 00000000..73c00306
+--- /dev/null
++++ b/src/main/frontend/features/people/timeline.ts
+@@ -0,0 +1,25 @@
++import type { Claim } from '../claims/useClaims';
++import { formatCents, toCents } from '../rates/due';
++import type { Person } from './usePeople';
++
++/** The person's timeline: one line per dated thing about them, by date, and on one date their grade changes, then
++ *  their claims, then holds, then retirements, then unretirements, each kind by its line's text:
++ *  "<date> grade <grade>", "<date> claim <amount> <status>", "<date> hold [to <date>]", "<date> retired",
++ *  "<date> unretired". The grade from the beginning of time has no date and no line. */
++export function timelineOf(person: Person, claims: Claim[]): string[] {
++  const entries: { date: string; kind: number; seq: number; line: string }[] = [];
++  const add = (date: string, kind: number, line: string) => entries.push({ date, kind, seq: entries.length, line: `${date} ${line}` });
++  for (const g of person.grades) if (g.from !== '') add(g.from, 0, `grade ${g.grade}`);
++  for (const c of claims.filter((c) => c.personId === person.id)) add(c.date, 1, `claim ${formatCents(toCents(c.amount))} ${c.status}`);
++  for (const h of person.holds) add(h.from, 2, h.to === '' ? 'hold' : `hold to ${h.to}`);
++  const unretired: string[] = [];
++  for (const r of person.retirements ?? []) {
++    const [from, to] = r.split(' to ');
++    add(from, 3, 'retired');
++    unretired.push(to);
++  }
++  if (person.retired && person.retiredFrom !== '') add(person.retiredFrom, 3, 'retired');
++  for (const to of unretired) add(to, 4, 'unretired');
++  entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.kind - b.kind || (a.line < b.line ? -1 : a.line > b.line ? 1 : a.seq - b.seq)));
++  return entries.map((e) => e.line);
++}
