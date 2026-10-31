@@ -62,6 +62,8 @@ export type Claim = {
   lockedBy: string | null;
   /** Whether the claim was added while its period was soft-closed. */
   lateEntry: boolean;
+  /** The last day (yyyy-mm-dd) a reminder was written for the claim; null when it never was. */
+  remindedOn: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

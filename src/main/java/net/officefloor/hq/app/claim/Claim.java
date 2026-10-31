@@ -25,6 +25,7 @@ public class Claim {
     private String splitFrom;
     private String lockedBy;
     private boolean lateEntry;
+    private LocalDate remindedOn;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -96,6 +97,9 @@ public class Claim {
     /** Whether the claim was added while its period was soft-closed. */
     public boolean isLateEntry() { return lateEntry; }
     public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
+    /** The last day (sheet-today) a reminder was written for the claim; null when it never was. */
+    public LocalDate getRemindedOn() { return remindedOn; }
+    public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

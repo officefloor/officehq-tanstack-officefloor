@@ -46,6 +46,7 @@ const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 const LOCKED = 'Another user is editing this claim: it is locked until they save or cancel their editor.';
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
+const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
 const VIEWER = 'A viewer can change nothing.';
 const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
 
@@ -91,6 +92,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * retirement): its due-by and any figure a statement bound stay, and so do its period and number.
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
+ * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one due by in a closed period); one whose due is above the sheet's proof threshold on its date
  * cannot be settled or approved while it has none.
@@ -235,6 +237,22 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => setDeferTo((d) => ({ ...d, [c.id]: '' })),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_DEFER }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // An OPEN or PENDING claim is reminded, once per sheet's today.
+  const remind = useMutation({
+    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/remind`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('viewer')
+          ? VIEWER
+          : e instanceof HttpError && e.body.includes('archived')
+            ? ARCHIVED
+            : CANNOT_REMIND,
+      }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -471,6 +489,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+              <button
+                type="button"
+                data-testid="claim-remind"
+                disabled={remind.isPending}
+                onClick={() => remind.mutate({ id: c.id })}
+              >
+                Remind
+              </button>{' '}
               <button
                 type="button"
                 data-testid="claim-proof"

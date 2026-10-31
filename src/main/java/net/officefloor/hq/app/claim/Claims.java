@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -77,6 +77,11 @@ public class Claims {
                 sheetId, personId, user, keptId);
     }
 
+    /** Record the day the claim was last reminded. */
+    public void remind(Claim claim) {
+        jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ?", Date.valueOf(claim.getRemindedOn()), claim.getId());
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
@@ -121,6 +126,8 @@ public class Claims {
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
+        Date reminded = rs.getDate("reminded_on");
+        claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");
         claim.setDeferredUntil(until != null ? until.toLocalDate() : null);
