@@ -94,9 +94,9 @@ export function lateCents(claim: { amount?: string; date: string; status?: strin
 }
 
 /** A claim's due: the one fixed when it was settled, frozen as it is; else the due a statement bound it to, as it was shown
- *  then (late charge and floor included; a claim bound to n/a stays n/a); else its amount at the current rate, with an overdue claim's late charge
- *  (each 30-day boundary at the late percent in force on it) worked on that figure alone and added on top, and the floor in
- *  force on its date applied last: the greater of the two. A correction is never floored and gains no late charge. Live
+ *  then (late charge and floor included; a claim bound to n/a stays n/a); else its amount at the current rate, raised first to the floor in force on its
+ *  date, with an overdue claim's late charge (each 30-day boundary at the late percent in force on it) worked on that
+ *  floored figure and added on top. A correction is never floored and gains no late charge. Live
  *  figures round by the sheet's rounding mode or policy date (see roundsHalfUp). */
 export function claimDue(
   claim: { amount: string; due: string; date: string; status?: string; stated?: boolean; roundingDate?: string; dueBy?: string; deferredUntil?: string; personId?: string; waived?: boolean },
@@ -108,8 +108,8 @@ export function claimDue(
   if (claim.due !== '' && (claim.status === 'SETTLED' || claim.stated)) return toCents(claim.due);
   const figure = claim.due !== '' ? toCents(claim.due) : claim.stated ? null : dueCents(toCents(claim.amount), rate, roundsHalfUp(claim, policy));
   if (figure === null) return null;
-  const charged = figure + lateCents(claim, figure, late, policy);
-  return isCorrection(claim) ? charged : floored(charged, floor(claim.date));
+  const base = isCorrection(claim) ? figure : floored(figure, floor(claim.date))!;
+  return base + lateCents(claim, base, late, policy);
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. With no rate for their

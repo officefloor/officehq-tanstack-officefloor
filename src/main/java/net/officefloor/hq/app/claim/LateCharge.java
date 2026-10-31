@@ -15,7 +15,7 @@ import net.officefloor.hq.app.rate.Rates;
  * (a boundary whose percent is 0.00 adds nothing); a deferred claim is not overdue. A correction, or a claim whose late
  * charge a steward waived, has no late charge (a waived claim may still be overdue). A statement binds the claim's due as shown, the charge (and floor)
  * included: while bound, the claim's due is that figure as it is. Settling freezes the charge in.
- * The charge is worked on the rate figure alone; the floor is applied last.
+ * The floor is applied to the rate figure first; the charge is worked on that floored figure.
  * With grace days (those of its person's grade in force on its date) the claim is overdue only once its due-by plus them is
  * before today, and the 30-day boundaries are counted from its due-by plus them.
  */
@@ -66,8 +66,8 @@ public final class LateCharge {
         return charge;
     }
 
-    /** A claim's due from its figure (the rate figure): the greater of the floor in force on its date and the figure with its
-     *  late charge on top. A settled due, and the due a statement bound (its figure), are kept as they are; a correction has
+    /** A claim's due from its figure (the rate figure): the figure raised to the floor in force on its date, with the late
+     *  charge worked on that floored figure on top. A settled due, and the due a statement bound (its figure), are kept as they are; a correction has
      *  no floor and no charge; null stays null. */
     public static BigDecimal due(Claim claim, BigDecimal figure, BigDecimal floor, Function<LocalDate, BigDecimal> pct,
             LocalDate today, RoundingMode rounding) {
@@ -80,7 +80,8 @@ public final class LateCharge {
         if (figure == null || claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)) {
             return figure;
         }
-        return floored(claim, figure.add(of(claim, figure, pct, today, rounding, grace)), floor);
+        BigDecimal base = floored(claim, figure, floor);
+        return base.add(of(claim, base, pct, today, rounding, grace));
     }
 
     /** The date a claim's lateness counts from: its due-by plus its grace days. */

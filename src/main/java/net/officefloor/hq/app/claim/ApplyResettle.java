@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
  * Re-settles a SETTLED claim; only a steward re-settles, and not a claim whose due-by is inside a closed period.
  * The settled due is frozen again at the figure the claim would have today as an open claim bound by no
  * statement: its amount at the rate of its person's grade in force on its date, with its late charge as of
- * today on top, raised to the floor in force on its date.
+ * today (worked on the floored figure) on top, the figure first raised to the floor in force on its date.
  */
 public class ApplyResettle {
     public void apply(@Val ResettleRequest request, @Val Claim claim, Sheets sheets, People people, Rates rates,
@@ -32,9 +32,10 @@ public class ApplyResettle {
         RoundingMode rounding = Rounding.of(claim, settings.policyDate(sheetId), on -> settings.roundingMode(sheetId, on));
         String grade = people.find(sheetId, claim.getPersonId()).gradeOn(claim.getDate());
         BigDecimal figure = Rates.due(claim.getAmount(), rates.find(claim, grade), rounding);
-        BigDecimal due = figure == null ? null
-                : LateCharge.floored(claim, figure.add(LateCharge.asOpen(claim, figure, on -> settings.latePct(sheetId, on),
-                        sheets.today(sheetId), rounding, settings.grace(sheetId, grade, claim.getDate()))), settings.floor(sheetId, claim.getDate()));
+        BigDecimal base = LateCharge.floored(claim, figure, settings.floor(sheetId, claim.getDate()));
+        BigDecimal due = base == null ? null
+                : base.add(LateCharge.asOpen(claim, base, on -> settings.latePct(sheetId, on),
+                        sheets.today(sheetId), rounding, settings.grace(sheetId, grade, claim.getDate())));
         BigDecimal old = claim.getSettledDue();
         claim.setSettledDue(due);
         resettle.set(new ClaimResettle(old, due));
