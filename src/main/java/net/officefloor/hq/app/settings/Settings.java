@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms (and any per grade), its late percent, its policy date and its period numbering from. */
+/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms (and any per grade), its late percent, its policy date, its period numbering from and its cap. */
 @Repository
 public class Settings {
 
@@ -142,6 +142,21 @@ public class Settings {
     public void setPeriodNumberingFrom(String sheetId, LocalDate date) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, period_numbering_from) KEY (sheet_id) VALUES (?, ?)",
                 sheetId, date != null ? Date.valueOf(date) : null);
+    }
+
+    /** The sheet's cap: a person's due-total is at most it. Null for no cap. */
+    public BigDecimal cap(String sheetId) {
+        return column("cap", sheetId);
+    }
+
+    public void setCap(String sheetId, BigDecimal cap) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, cap) KEY (sheet_id) VALUES (?, ?)", sheetId, cap);
+    }
+
+    /** A person's due-total at most the sheet's cap; n/a (null) is not capped. */
+    public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
+        BigDecimal cap = cap(sheetId);
+        return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
     }
 
     /** One setting's stored value, null when the sheet has no row or the setting is unset. */

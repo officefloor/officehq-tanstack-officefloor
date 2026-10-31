@@ -2,7 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { rateOn, showDue, useRates } from '../rates/useRates';
-import { useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
 /** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote
@@ -23,6 +23,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
+  const cap = useCap(sheet);
 
   const download = () => {
     const claims = live(all, heldOnBy(people));
@@ -34,6 +35,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
         rateOn(rates, gradeOn(p, today), today),
         (d) => rateOn(rates, gradeOn(p, d), d),
         late,
+        cap,
       );
       lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(due)]);
     }

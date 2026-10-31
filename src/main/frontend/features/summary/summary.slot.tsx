@@ -3,7 +3,7 @@ import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
 import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
-import { useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
 /**
@@ -19,6 +19,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
+  const cap = useCap(sheet);
   const people = everyone.filter((p) => !p.retired);
   const dueOf = (p: (typeof people)[number]) =>
     personDueCents(
@@ -27,6 +28,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
       rateOn(rates, gradeOn(p, today), today),
       (d) => rateOn(rates, gradeOn(p, d), d),
       late,
+      cap,
     );
 
   return (

@@ -1,6 +1,6 @@
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
-import { useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
 
@@ -18,8 +18,9 @@ export function useSheetTotals(sheet: string) {
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
+  const cap = useCap(sheet);
   const dues = people.map((p) =>
-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
+    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
   );
   const over = people.map((p) =>
     overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),

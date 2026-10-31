@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
@@ -33,19 +34,22 @@ public class Rollup {
     private final Rates rates;
     private final Sheets sheets;
     private final Audit audit;
+    private final Settings settings;
 
-    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit) {
+    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit, Settings settings) {
         this.people = people;
         this.claims = claims;
         this.figures = figures;
         this.rates = rates;
         this.sheets = sheets;
         this.audit = audit;
+        this.settings = settings;
     }
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
      *  person's OPEN claims dated within a hold of theirs do not count, unless a statement binds them),
-     *  n/a when there is no rate today and none has a figure; the sheet's skips the n/a ones. */
+     *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
+     *  capped); the sheet's skips the n/a ones. */
     public Snapshot snapshot(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.onSheet(sheetId);
@@ -66,6 +70,7 @@ public class Rollup {
                 }
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
+            due = settings.capped(sheetId, due);
             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due));
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) dueTotal = dueTotal.add(due);

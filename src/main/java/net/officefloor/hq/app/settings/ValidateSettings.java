@@ -75,6 +75,10 @@ public class ValidateSettings {
                 throw new InvalidSheetRequestException("The period numbering from must be a date (yyyy-mm-dd), or blank");
             }
         }
+        String cap = request == null || request.cap() == null ? null : request.cap().trim();
+        if (cap != null && !cap.isEmpty() && !AMOUNT.matcher(cap).matches()) {
+            throw new InvalidSheetRequestException("The cap must be an amount with up to two decimals, or blank");
+        }
         String by = request == null ? null : request.user();
         actor.set(new Actor(by));
         change.set(new SettingsChange(sheetId, limit != null,
@@ -82,6 +86,7 @@ public class ValidateSettings {
                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
-                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by));
+                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2)));
     }
 }

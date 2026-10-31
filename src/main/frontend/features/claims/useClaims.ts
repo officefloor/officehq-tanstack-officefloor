@@ -137,8 +137,9 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
  *  a settled claim's fixed due, else the figure a statement bound it to, else live (at least `floor`) at `pctOn(claim's date)`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
- *  figure: then it is the sum of the figures there are. */
-export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late): bigint | null {
+ *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
+ *  is not capped). */
+export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late, cap?: string | null): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
@@ -147,7 +148,21 @@ export function personDueCents(claims: Claim[], floor: string, pct: string | und
     sum += due;
     any = true;
   }
-  return pct === undefined && !any ? null : sum;
+  if (pct === undefined && !any) return null;
+  return capCents(sum, cap);
+}
+
+/** A due-total at most the sheet's `cap` (null or blank: no cap); n/a is not capped. */
+export function capCents(due: bigint | null, cap?: string | null): bigint | null {
+  if (due === null || cap == null || cap === '') return due;
+  const most = hundredths(cap);
+  return due > most ? most : due;
+}
+
+/** How much a due-total is over the sheet's `cap`: 0 when it is not (or is n/a, or there is no cap). */
+export function excessCents(due: bigint | null, cap?: string | null): bigint {
+  const capped = capCents(due, cap);
+  return due === null || capped === null ? 0n : due - capped;
 }
 
 /** Whether a claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's `today`. */

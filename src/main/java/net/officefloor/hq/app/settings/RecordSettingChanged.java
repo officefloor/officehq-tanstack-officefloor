@@ -30,5 +30,8 @@ public class RecordSettingChanged {
             audit.record(prefix + " key=period-numbering-from value="
                     + (change.periodNumberingFrom() != null ? change.periodNumberingFrom().toString() : ""));
         }
+        if (change.setsCap()) {
+            audit.record(prefix + " key=cap value=" + (change.cap() != null ? change.cap().toPlainString() : ""));
+        }
     }
 }

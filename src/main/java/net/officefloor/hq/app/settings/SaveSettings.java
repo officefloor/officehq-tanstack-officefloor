@@ -10,6 +10,7 @@ public class SaveSettings {
         change.gradeTerms().forEach((grade, terms) -> settings.setGradeTerms(change.sheetId(), grade, terms));
         if (change.latePct() != null) settings.setLatePct(change.sheetId(), change.latePct());
         if (change.setsPolicyDate()) settings.setPolicyDate(change.sheetId(), change.policyDate());
+        if (change.setsCap()) settings.setCap(change.sheetId(), change.cap());
         if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(change.sheetId(), change.periodNumberingFrom());
     }
 }

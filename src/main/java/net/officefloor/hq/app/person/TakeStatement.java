@@ -5,16 +5,17 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
- *  with any late charges (n/a when there is no rate today and none has a figure), dated the sheet's today. Every claim
+ *  with any late charges (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
  *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to the figure it has now, without its late charge; every other one is unbound. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
-            Rates rates, Sheets sheets, People people, Out<Statement> statement) {
+            Rates rates, Sheets sheets, Settings settings, People people, Out<Statement> statement) {
         Person locked = people.lock(person.getSheetId(), person.getId());
         person.setStatementCount(locked.getStatementCount());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -39,7 +40,8 @@ public class TakeStatement {
             claims.save(claim);
         }
         var today = sheets.today(person.getSheetId());
-        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.gradeOn(today), today) == null ? null : total;
+        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.gradeOn(today), today) == null ? null
+                : settings.capped(person.getSheetId(), total);
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);

@@ -10,8 +10,8 @@ export type RoleEntry = { name: string; role: string };
  *  limit, `floor` with two decimals `terms` in days, `latePct` with two decimals and `policyDate` as
  *  set (yyyy-mm-dd), or null when blank: then the policy date is the sheet's today, and `periodNumberingFrom`
  *  (yyyy-mm-dd), or null when off, and `gradeTerms` the terms set per grade (a grade not in it uses the
- *  sheet's terms). */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; roles: RoleEntry[] };
+ *  sheet's terms), and `cap` with two decimals, or null for no cap. */
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[] };
 
 /** The floor of a sheet that has not set one. */
 export const DEFAULT_FLOOR = '1.00';
@@ -34,6 +34,11 @@ export function useSettings(sheet: string) {
 /** The sheet's floor: a claim's live due is at least it. */
 export function useFloor(sheet: string): string {
   return useSettings(sheet).data?.floor ?? DEFAULT_FLOOR;
+}
+
+/** The sheet's cap: a person's due-total is at most it. Null for no cap. */
+export function useCap(sheet: string): string | null {
+  return useSettings(sheet).data?.cap ?? null;
 }
 
 /** The sheet's terms: a claim is due by its date plus this many days. */

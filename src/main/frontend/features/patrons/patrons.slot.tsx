@@ -5,7 +5,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOnBy, peopleKey, usePeople, type Person } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
-import { useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
 /**
@@ -22,13 +22,14 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
+  const cap = useCap(sheet);
   const [chosen, setChosen] = useState('');
 
   const patrons = people.filter((p) => person.patrons.includes(p.id));
   const names = patrons.map((p) => p.name).sort();
   const claims = live(all, heldOnBy(people));
   const backing = patrons.map((p) =>
-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
+    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
   );
 
   const add = useMutation({

@@ -6,7 +6,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
-import { useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import {
@@ -19,6 +19,8 @@ import {
   overdue,
   overdueFigures,
   personDueCents,
+  capCents,
+  excessCents,
   useClaims,
   type Claim,
 } from './useClaims';
@@ -68,6 +70,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const pct = rateOn(rates, gradeOn(person, today), today);
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);
+  const cap = useCap(sheet);
+  // The sum of their figures; their due-total is at most the cap, the rest their excess.
+  const dueSum = personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
   const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
@@ -183,7 +188,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(liveClaims)}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy))}</td>
+      <td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td>
+      <td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td>
       <td data-testid="person-overdue-count">{late.count}</td>
       <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
       <td>
@@ -386,6 +392,7 @@ export const contributions = [
       <>
         <th>Claimed</th>
         <th>Due</th>
+        <th>Excess</th>
         <th>Overdue</th>
         <th>Overdue due</th>
         <th>Claims</th>
