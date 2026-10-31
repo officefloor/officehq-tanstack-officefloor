@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import net.officefloor.hq.app.settings.Settings;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -17,18 +21,36 @@ import org.springframework.stereotype.Service;
  *
  * Inject this bean into any feature that must record an audit entry. Each write flushes (append +
  * SYNC) so a test reads the record immediately.
+ *
+ * A change made by a user acting as a steward by delegation (the sheet's today inside the range)
+ * ends each of its lines with for=<the steward who delegated>; the lines that only report figures
+ * (ROLLUP, TOTALS, ALERT) do not.
  */
 @Service
 public class Audit {
 
-    private final Path file;
+    /** The events that only report figures: never marked for a delegating steward. */
+    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
 
-    public Audit(@Value("${app.audit.file:.run/audit.log}") String path) {
+    private static final Pattern SHEET_BY = Pattern.compile("^(\\S+) sheet=(\\S+) by=(\\S+)");
+
+    private final Path file;
+    private final Settings settings;
+
+    public Audit(@Value("${app.audit.file:.run/audit.log}") String path, Settings settings) {
         this.file = Path.of(path);
+        this.settings = settings;
     }
 
     /** Append one audit record. Tests assert the exact line(s) in the file. */
     public synchronized void record(String entry) {
+        Matcher m = SHEET_BY.matcher(entry);
+        if (m.find() && !FIGURES.contains(m.group(1))) {
+            String delegator = settings.delegator(m.group(2), m.group(3));
+            if (delegator != null) {
+                entry = entry + " for=" + delegator;
+            }
+        }
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {

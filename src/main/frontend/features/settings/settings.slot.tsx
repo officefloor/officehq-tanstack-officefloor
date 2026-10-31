@@ -27,7 +27,9 @@ type Froms = Record<string, string>;
  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
  * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
  * period whose to-date plus them is before the new today is closed; blank is off; not dated),
- * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing). A save sets only the settings
+ * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing),
+ * and the delegations of the steward role (a steward delegates it to a user from a from-date to a to-date, inclusive,
+ * by the sheet's today; a blank from-date is the sheet's today, a blank to-date the from-date). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
  * each grade's), the late percent, the cap and the proof threshold are dated: a save records each from its from-date (blank
  * is the sheet's today), and each shows the value in force on the sheet's today.
@@ -42,6 +44,8 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [roleInvalid, setRoleInvalid] = useState(false);
+  const [delegate, setDelegate] = useState({ name: '', from: '', to: '' });
+  const [delegateInvalid, setDelegateInvalid] = useState(false);
 
   const submitOnce = useSubmitOnce();
   const saveSettings = useMutation({
@@ -59,6 +63,14 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     onSuccess: (saved) => {
       setName('');
       setRole('');
+      queryClient.setQueryData(settingsKey(sheet), saved);
+    },
+  });
+
+  const saveDelegation = useMutation({
+    mutationFn: (d: { name: string; from: string; to: string }) => postJson<Settings>(`${base}/delegations`, { ...d, user }),
+    onSuccess: (saved) => {
+      setDelegate({ name: '', from: '', to: '' });
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
   });
@@ -92,6 +104,26 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     saveRole.reset();
     setRoleInvalid(false);
   };
+  const clearDelegateError = () => {
+    saveDelegation.reset();
+    setDelegateInvalid(false);
+  };
+  const delegateField = (key: 'name' | 'from' | 'to', testId: string, label: string, placeholder?: string) => (
+    <label>
+      {label}{' '}
+      <input
+        data-testid={testId}
+        placeholder={placeholder}
+        size={key === 'name' ? undefined : 10}
+        value={delegate[key]}
+        onChange={(e) => {
+          const value = e.target.value;
+          setDelegate((was) => ({ ...was, [key]: value }));
+          clearDelegateError();
+        }}
+      />
+    </label>
+  );
 
   return (
     <section data-testid="settings-panel">
@@ -420,6 +452,40 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           ))}
         </tbody>
       </table>
+      <form
+        data-testid="delegate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const d = { name: delegate.name.trim(), from: delegate.from.trim(), to: delegate.to.trim() };
+          const dated = (v: string) => v === '' || FROM_DATE.test(v);
+          if (d.name === '' || !dated(d.from) || !dated(d.to) || (d.from !== '' && d.to !== '' && d.to < d.from)) {
+            saveDelegation.reset();
+            setDelegateInvalid(true);
+            return;
+          }
+          setDelegateInvalid(false);
+          submitOnce(() => saveDelegation.mutateAsync(d));
+        }}
+      >
+        {delegateField('name', 'delegate-user', 'Delegate the steward role to')}{' '}
+        {delegateField('from', 'delegate-from', 'from', "blank: the sheet's today")}{' '}
+        {delegateField('to', 'delegate-to', 'to', 'blank: the from-date')}{' '}
+        <button type="submit" data-testid="delegate-submit" disabled={saveDelegation.isPending}>
+          Delegate
+        </button>
+        {(delegateInvalid || saveDelegation.isError) && (
+          <span data-testid="delegate-error" role="alert">
+            {' '}Only a steward can delegate, to a user name, from a date to a date on or after it (yyyy-mm-dd).
+          </span>
+        )}
+      </form>
+      <ul data-testid="delegate-list">
+        {(data?.delegations ?? []).map((d, i) => (
+          <li key={i} data-testid="delegate-line">
+            {d.name} acts as a steward for {d.by} from {d.from} to {d.to}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

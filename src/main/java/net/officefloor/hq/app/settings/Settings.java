@@ -48,8 +48,14 @@ public class Settings {
         this.sheets = sheets;
     }
 
-    /** The user's role on the sheet: a clerk unless given another. */
+    /** The user's role on the sheet in every rule: a steward while a delegation to them covers the
+     *  sheet's today, else their own role. */
     public Role role(String sheetId, String user) {
+        return delegator(sheetId, user) != null ? Role.STEWARD : ownRole(sheetId, user);
+    }
+
+    /** The user's own role on the sheet: a clerk unless given another. */
+    public Role ownRole(String sheetId, String user) {
         return jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 (rs, i) -> Role.valueOf(rs.getString("role")), sheetId, user)
                 .stream().findFirst().orElse(Role.CLERK);
@@ -65,6 +71,31 @@ public class Settings {
     public void setRole(String sheetId, String user, Role role) {
         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
                 sheetId, user, role.name());
+    }
+
+    /** Record a delegation of the steward role. */
+    public void delegate(Delegation d) {
+        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, from_date, to_date, by_user) VALUES (?, ?, ?, ?, ?)",
+                d.sheetId(), d.name(), Date.valueOf(d.from()), Date.valueOf(d.to()), d.by());
+    }
+
+    /** Every delegation made on the sheet, oldest first. */
+    public List<DelegationResponse> delegations(String sheetId) {
+        return jdbc.query("SELECT user_name, from_date, to_date, by_user FROM sheet_delegation WHERE sheet_id = ? ORDER BY id",
+                (rs, i) -> new DelegationResponse(rs.getString("user_name"), rs.getDate("from_date").toLocalDate().toString(),
+                        rs.getDate("to_date").toLocalDate().toString(), rs.getString("by_user")),
+                sheetId);
+    }
+
+    /** The steward who delegated the steward role to the user for a range covering the sheet's today
+     *  (the latest such delegation), or null when none does. */
+    public String delegator(String sheetId, String user) {
+        if (user == null) return null;
+        Date today = Date.valueOf(sheets.today(sheetId));
+        return jdbc.query("SELECT by_user FROM sheet_delegation WHERE sheet_id = ? AND user_name = ? "
+                + "AND from_date <= ? AND to_date >= ? ORDER BY id DESC LIMIT 1",
+                (rs, i) -> rs.getString("by_user"), sheetId, user, today, today)
+                .stream().findFirst().orElse(null);
     }
 
     /** The sheet's clerk limit in force on its today, or null for no limit. */
