@@ -25,10 +25,12 @@ public class ApplyClaim {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         if (person != null) person.refuseRetired(date);
         BuildClaim.refuseUncorrected(values, claim.getSheetId(), claim.getPersonId(), claims);
+        BuildClaim.refuseUsedRef(values.ref(), claim.getSheetId(), claim.getId(), claims);
         claim.setAmount(values.amount());
         claim.setDate(date);
         claim.setNote(values.note());
         claim.setCorrects(values.corrects());
+        claim.setRef(values.ref());
         claim.setLockedBy(null);
     }
 }

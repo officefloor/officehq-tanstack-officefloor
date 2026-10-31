@@ -133,6 +133,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
+  const [ref, setRef] = useState('');
   const [invalid, setInvalid] = useState(false);
   // The claim whose last status change or edit was refused: its row shows the error.
   const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
@@ -168,11 +169,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const locking = useRef<Promise<{ id: number; message: string } | null>>(Promise.resolve(null));
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: async (c: { id: number | null; amount: string; date: string; note: string; corrects: string }) => {
+    mutationFn: async (c: { id: number | null; amount: string; date: string; note: string; corrects: string; ref: string }) => {
       // An edit goes only once its editor's lock is taken; a refused lock is shown on the claim.
       const refusal = c.id !== null ? await locking.current : null;
       if (refusal !== null && refusal.id === c.id) throw new LockRefused(refusal);
-      const body = { amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, user };
+      const body = { amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref, user };
       return c.id === null
         ? postJson<Claim>(`${base}/people/${person.id}/claims`, body)
         : putJson<Claim>(`${base}/claims/${c.id}`, body);
@@ -303,6 +304,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
         date: c.claim.date,
         note: c.claim.note,
         corrects: c.claim.corrects ?? '',
+        ref: c.claim.ref ?? '',
         user,
       }),
     onMutate: () => setRefused(null),
@@ -402,12 +404,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     setDate('');
     setNote('');
     setCorrects('');
+    setRef('');
   };
   const fill = (c: Claim) => {
     setAmount(c.amount);
     setDate(c.date);
     setNote(c.note);
     setCorrects(c.corrects === null ? '' : String(c.corrects));
+    setRef(c.ref ?? '');
   };
   // The form follows the editor this user's lock holds: filled when it opens (also on a re-load), cleared when it closes.
   useEffect(() => {
@@ -446,7 +450,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               return;
             }
             setInvalid(false);
-            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim() }));
+            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim() }));
           }}
         >
           <input
@@ -489,6 +493,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               clearError();
             }}
           />{' '}
+          <input
+            data-testid="claim-form-ref"
+            aria-label="External reference"
+            placeholder="ref"
+            value={ref}
+            onChange={(e) => {
+              setRef(e.target.value);
+              clearError();
+            }}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
@@ -501,6 +515,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
                   : save.error instanceof HttpError && save.error.body.includes('correction')
                     ? `A correction must name a settled claim of ${person.name}.`
+                  : save.error instanceof HttpError && save.error.body.includes('reference')
+                    ? `The reference ${ref.trim()} is already used on this sheet.`
                   : 'Could not save this claim.'}
             </span>
           )}
@@ -535,6 +551,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+              <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
               <button
                 type="button"
                 data-testid="claim-remind"

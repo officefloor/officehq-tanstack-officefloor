@@ -7,8 +7,9 @@ import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 
 /** Body of a claim add or edit, as typed: the amount, the date (blank for the sheet's today),
- *  the note, the number of the claim it corrects (blank for none) and who makes the change. */
-public record ClaimRequest(String amount, String date, String note, String corrects, String user) {
+ *  the note, the number of the claim it corrects (blank for none), who makes the change and the
+ *  external reference (blank for none). */
+public record ClaimRequest(String amount, String date, String note, String corrects, String user, String ref) {
     /** Up to two decimals; negative only for a correction. */
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
     private static final Pattern NUMBER = Pattern.compile("\\d+|.+-\\d+");
@@ -39,6 +40,7 @@ public record ClaimRequest(String amount, String date, String note, String corre
             }
         }
         String note = request.note() == null ? "" : request.note();
-        return new ClaimValues(value, date, note, corrects, request.user());
+        String ref = request.ref() == null || request.ref().isBlank() ? null : request.ref().trim();
+        return new ClaimValues(value, date, note, corrects, request.user(), ref);
     }
 }

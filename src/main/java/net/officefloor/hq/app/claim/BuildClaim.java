@@ -28,12 +28,21 @@ public class BuildClaim {
         closedPeriods.refuse(person.getSheetId(), dueBy);
         person.refuseRetired(date);
         refuseUncorrected(values, person.getSheetId(), person.getId(), claims);
+        refuseUsedRef(values.ref(), person.getSheetId(), null, claims);
         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
+        built.setRef(values.ref());
         built.setDueBy(dueBy);
         built.setLateEntry(closedPeriods.late(person.getSheetId(), dueBy));
         return built;
+    }
+
+    /** Refuses a reference another claim on the sheet (not `ownId`) already has, without regard to case. */
+    static void refuseUsedRef(String ref, String sheetId, Long ownId, Claims claims) throws InvalidSheetRequestException {
+        if (ref != null && claims.refUsed(sheetId, ref, ownId)) {
+            throw new InvalidSheetRequestException("The reference is already used on the sheet: " + ref);
+        }
     }
 
     /** Refuses a correction whose number is not a SETTLED claim of the same person. */

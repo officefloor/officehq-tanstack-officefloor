@@ -26,6 +26,7 @@ public class Claim {
     private String lockedBy;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private String ref;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -100,6 +101,9 @@ public class Claim {
     /** The last day (sheet-today) a reminder was written for the claim; null when it never was. */
     public LocalDate getRemindedOn() { return remindedOn; }
     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
+    public String getRef() { return ref; }
+    public void setRef(String ref) { this.ref = ref; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

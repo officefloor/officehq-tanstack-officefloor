@@ -15,7 +15,7 @@ public class ValidateQuickAdd {
             Out<ClaimValues> claim, Out<Actor> actor) throws InvalidSheetRequestException {
         String user = request == null ? null : request.user();
         person.set(PersonRequest.checked(new PersonRequest(request == null ? null : request.name(), "A", user, null)));
-        claim.set(ClaimRequest.checked(new ClaimRequest(request == null ? null : request.amount(), null, "", null, user)));
+        claim.set(ClaimRequest.checked(new ClaimRequest(request == null ? null : request.amount(), null, "", null, user, null)));
         actor.set(new Actor(user));
     }
 }

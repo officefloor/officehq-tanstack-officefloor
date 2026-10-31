@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -53,6 +53,13 @@ public class Claims {
         return n != null && n > 0;
     }
 
+    /** Whether a claim on the sheet other than `ownId` (null: any) has this reference, without regard to case. */
+    public boolean refUsed(String sheetId, String ref, Long ownId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+                Integer.class, sheetId, ref, ownId != null ? ownId : -1L);
+        return n != null && n > 0;
+    }
+
     /** The date of the person's claim with this number, or null when there is none. */
     public LocalDate dateOf(String sheetId, long personId, String number) {
         return jdbc.query("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ?",
@@ -85,16 +92,16 @@ public class Claims {
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, locked_by = ? WHERE id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, locked_by = ?, ref = ? WHERE id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
                     claim.getNumber(), claim.getDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
-                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getLockedBy(), claim.getId());
+                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getLockedBy(), claim.getRef(), claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, number, opened_by, split_from, late_entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, number, opened_by, split_from, late_entry, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -108,6 +115,7 @@ public class Claims {
             ps.setString(10, claim.getOpenedBy());
             ps.setString(11, claim.getSplitFrom());
             ps.setBoolean(12, claim.isLateEntry());
+            ps.setString(13, claim.getRef());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -126,6 +134,7 @@ public class Claims {
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLockedBy(rs.getString("locked_by"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
+        claim.setRef(rs.getString("ref"));
         Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
         Date until = rs.getDate("deferred_until");

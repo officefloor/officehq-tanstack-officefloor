@@ -64,6 +64,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The last day (yyyy-mm-dd) a reminder was written for the claim; null when it never was. */
   remindedOn: string | null;
+  /** The claim's external reference, unique on the sheet without regard to case; null when it has none. */
+  ref: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
