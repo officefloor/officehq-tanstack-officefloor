@@ -31,6 +31,7 @@ const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the u
 const NO_REASON = 'A rejection needs a reason.';
 const NOT_STEWARD_MOVE = 'Only a steward can reassign a claim.';
 const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
+const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
 const NO_TARGET = 'Choose another person to reassign this claim to.';
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 
@@ -43,7 +44,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, at least the sheet's floor; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (its opener cannot settle
- * or approve it). A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
+ * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
  * PENDING ones dated within one of the person's holds, unless a statement binds them.
@@ -131,6 +132,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 ? NO_REASON
                 : STATUS_REFUSED,
       }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A steward re-settles a SETTLED claim at the figure it would have today as an unbound open claim.
+  const resettle = useMutation({
+    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/resettle`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_RESETTLE }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -321,6 +330,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   </button>{' '}
                 </span>
               ))}
+              <button
+                type="button"
+                data-testid="claim-resettle"
+                disabled={resettle.isPending}
+                onClick={() => resettle.mutate({ id: c.id })}
+              >
+                Re-settle
+              </button>{' '}
               <select
                 data-testid="claim-reassign-to"
                 aria-label="Reassign to"
