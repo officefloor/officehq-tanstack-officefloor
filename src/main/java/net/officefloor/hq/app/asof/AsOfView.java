@@ -274,16 +274,11 @@ public class AsOfView {
     }
 
     /** The sheet's ancestors as they stood at the end of the date: its parent as last set by then (none when never set by
-     *  then), that sheet's parent as last set by then, and so on, up to {@link Rates#ANCESTOR_LEVELS} levels up. A parent
-     *  set before its history was kept counts as of any date. */
+     *  then), that sheet's parent as last set by then, and so on, up to {@link Rates#ANCESTOR_LEVELS} levels up; then a clone's
+     *  source and its own ancestors, in turn (see {@link Rates#chain}). A parent set before its history was kept counts as
+     *  of any date. */
     public List<String> ancestors(String sheetId, LocalDate date) {
-        List<String> chain = new ArrayList<>();
-        String at = parentOn(sheetId, date);
-        while (at != null && chain.size() < Rates.ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
-            chain.add(at);
-            at = parentOn(at, date);
-        }
-        return chain;
+        return Rates.chain(sheetId, at -> parentOn(at, date), sheets::source);
     }
 
     private String parentOn(String sheetId, LocalDate date) {

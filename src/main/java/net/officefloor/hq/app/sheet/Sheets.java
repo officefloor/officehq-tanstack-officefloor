@@ -117,6 +117,12 @@ public class Sheets {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The sheet the sheet was cloned from; null when it was not cloned. */
+    public String source(String sheetId) {
+        List<String> found = jdbc.query("SELECT source FROM sheet WHERE id = ?", (rs, i) -> rs.getString(1), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The sheet's descendants: the sheets naming it as their parent, their children and so on, nearest first. */
     public List<String> descendants(String sheetId) {
         List<String> found = new ArrayList<>();

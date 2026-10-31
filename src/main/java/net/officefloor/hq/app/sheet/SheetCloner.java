@@ -9,7 +9,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 /**
- * Copies a sheet's set-up and people to a sheet never used: its today, settings (but not its parent), roles,
+ * Copies a sheet's set-up and people to a sheet never used, which records it as its source: its today, settings (but not its parent), roles,
  * delegations, permissions, rates, holidays, void reasons, templates, tags, periods (all open), pools and people
  * (grades, terms, contacts, aliases, holds, retirements, patrons), with the history the as-of view reads. Statements,
  * watches and fixed period figures are not copied. The claims are copied by {@link CloneSheet}.
@@ -25,8 +25,8 @@ public class SheetCloner {
 
     /** Copies the sheet to the other; returns each person's id on the clone by their id on the sheet, in list order. */
     public Map<Long, Long> copy(String from, String to) {
-        jdbc.update("INSERT INTO sheet (id, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch)"
-                + " SELECT ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch"
+        jdbc.update("INSERT INTO sheet (id, source, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch)"
+                + " SELECT ?, id, today, policy_date, period_numbering_from, grace_days, entry_date, pot, last_settle_batch"
                 + " FROM sheet WHERE id = ?", to, from);
         copyRows("sheet_setting", "setting_key, from_date, setting_value", "", from, to);
         copyRows("setting_history", "set_on, setting_key, from_date, setting_value", " ORDER BY seq", from, to);

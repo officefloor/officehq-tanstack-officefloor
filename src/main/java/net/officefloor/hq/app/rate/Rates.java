@@ -69,15 +69,32 @@ public class Rates {
     public static final int ANCESTOR_LEVELS = 3;
 
     /** The sheet's ancestors asked for a rate it has not: its parent, then the parent's parent, up to
-     *  {@link #ANCESTOR_LEVELS} levels up. */
+     *  {@link #ANCESTOR_LEVELS} levels up; then, for a clone, the sheet it was cloned from and that sheet's own
+     *  ancestors, and so on. */
     public List<String> ancestors(String sheetId) {
-        List<String> chain = new java.util.ArrayList<>();
-        String at = sheets.parent(sheetId);
-        while (at != null && chain.size() < ANCESTOR_LEVELS && !at.equals(sheetId) && !chain.contains(at)) {
-            chain.add(at);
-            at = sheets.parent(at);
+        return chain(sheetId, sheets::parent, sheets::source);
+    }
+
+    /** The chain of sheets asked for a rate the sheet has not, by the parent and source of each: the sheet's parents up to
+     *  {@link #ANCESTOR_LEVELS} levels up, then its source (when it is a clone) and that one's parents and source in turn;
+     *  each sheet once. */
+    public static List<String> chain(String sheetId, java.util.function.UnaryOperator<String> parent,
+            java.util.function.UnaryOperator<String> source) {
+        List<String> chain = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        for (String from = sheetId; ; ) {
+            int levels = 0;
+            for (String at = parent.apply(from); at != null && levels < ANCESTOR_LEVELS && seen.add(at); at = parent.apply(at)) {
+                chain.add(at);
+                levels++;
+            }
+            String next = source.apply(from);
+            if (next == null || !seen.add(next)) {
+                return chain;
+            }
+            chain.add(next);
+            from = next;
         }
-        return chain;
     }
 
     /** The rates of the sheet's ancestors (see {@link #ancestors(String)}), nearest first. */
@@ -86,7 +103,8 @@ public class Rates {
     }
 
     /** The rate for a grade on the sheet in force on a date (see {@link #findOwn}); when the sheet has
-     *  none, its parent's, then the parent's parent's, up to {@link #ANCESTOR_LEVELS} levels up; null when none has one. */
+     *  none, its parent's, then the parent's parent's, up to {@link #ANCESTOR_LEVELS} levels up, then a clone's source's
+     *  (see {@link #ancestors}); null when none has one. */
     public BigDecimal find(String sheetId, String grade, LocalDate date) {
         return find(sheetId, grade, date, IN_FORCE);
     }

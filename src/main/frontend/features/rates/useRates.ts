@@ -6,7 +6,8 @@ import { readPath, useAsOf } from '../asof/useAsOf';
 /** A grade's rate: a percent shown with two decimals ("12.50"), in force from a date (YYYY-MM-DD;
  *  "" for from the beginning of time) through a date ("" for no end), and its version: how many times a
  *  rate has been set for the grade and from-date, this the newest. One inherited from an ancestor
- *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above; the sheet's own have none.
+ *  sheet has its level: 1 the parent, 2 the parent's parent, 3 the one above, then a clone's source and its own
+ *  ancestors in turn; the sheet's own have none.
  *  afterMark is 0 for a rate applying to every claim; a forward-only one (saved with a from-date on or after the
  *  sheet's today) applies only to claims whose rateMark is greater, the others falling back to the older versions
  *  it replaced (earlier, newest first). */
@@ -65,10 +66,12 @@ function ownRateOn(rates: Rate[], grade: string, date: string, level: number, ma
 }
 
 /** The grade's rate in force on a date: the sheet's own (see ownRateOn); when it has none, its parent's,
- *  then the parent's parent's, up to three levels up; undefined when none has one (or the date is not known yet). */
+ *  then the parent's parent's, up to three levels up, then a clone's source's and so on (each a level further);
+ *  undefined when none has one (or the date is not known yet). */
 export function rateOn(rates: Rate[], grade: string, date: string | undefined, mark?: number): string | undefined {
   if (date === undefined) return undefined;
-  for (let level = 0; level <= 3; level++) {
+  const levels = rates.reduce((max, r) => Math.max(max, r.level ?? 0), 0);
+  for (let level = 0; level <= levels; level++) {
     const found = ownRateOn(rates, grade, date, level, mark);
     if (found !== undefined) return found;
   }
