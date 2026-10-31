@@ -48,6 +48,7 @@ import { useSettings } from '../settings/useSettings';
 // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
 // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
+// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number),
 // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
 // claims; together the sum of their figures before the cap),
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
@@ -79,7 +80,7 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
@@ -229,6 +230,7 @@ export function PeopleList() {
             {shown('due-total') && <th>Due</th>}
             {shown('excess') && <th>Excess</th>}
             <th>Settled</th>
+            <th>Score</th>
             <th>Open</th>
             <th>Active</th>
             <th>Aged 0-30</th>
@@ -280,6 +282,7 @@ export function PeopleList() {
                 {shown('due-total') && <td data-testid="person-due-total">{showDue(totalOf(p))}</td>}
                 {shown('excess') && <td data-testid="person-excess">{formatCents(excessOf(p))}</td>}
                 <td data-testid="person-settled-total">{formatCents(settledTotalOf(p))}</td>
+                <td data-testid="person-score">{scoreOf(p)}</td>
                 <td data-testid="person-open-total">{formatCents(openTotalOf(p))}</td>
                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
                 <td data-testid="person-aged-0-30">{formatCents(aged[0])}</td>

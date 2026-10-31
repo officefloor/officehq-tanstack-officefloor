@@ -65,6 +65,12 @@ export function useSheetFigures(sheet: string) {
   const overdueSum = (cs: typeof overdue) =>
     cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
+  // A person's score: their settled-total over 100, minus 5 for each of their overdue counting
+  // claims, rounded half to even to a whole number.
+  const scoreOf = (person: Person) => {
+    const overdueCount = BigInt(overdue.filter((c) => c.personId === person.id).length);
+    return halfEvenDiv(settledTotalOf(person) - overdueCount * 50000n, 10000n).toString();
+  };
   // Each person's due-total, skipping n/a, and overdue-total (always a figure), in list order.
   const dueFigures = people.map(totalOf).filter((due): due is bigint => due !== null);
   const overdueFigures = people.map((p) => overdueSum(overdue.filter((c) => c.personId === p.id)));
@@ -128,7 +134,7 @@ export function useSheetFigures(sheet: string) {
   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
@@ -151,4 +157,16 @@ function daysBefore(date: string, days: number): string {
 // The whole days from one ISO date to a later one (negative when it is earlier).
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+// n / d (d > 0) rounded half to even.
+function halfEvenDiv(n: bigint, d: bigint): bigint {
+  let q = n / d;
+  let r = n % d;
+  if (r < 0n) {
+    q -= 1n;
+    r += d;
+  }
+  if (r * 2n > d || (r * 2n === d && q % 2n !== 0n)) q += 1n;
+  return q;
 }
