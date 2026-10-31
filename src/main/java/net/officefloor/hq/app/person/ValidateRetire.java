@@ -10,6 +10,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateRetire {
     public void validate(@RequestBody RetireRequest request, Out<Retirement> body, Out<Actor> actor)
             throws InvalidSheetRequestException {
+        Retirement retirement = checked(request);
+        body.set(retirement);
+        actor.set(new Actor(retirement.user()));
+    }
+
+    /** The retirement as typed, checked: a blank date is the sheet's today, anything else a date. */
+    static Retirement checked(RetireRequest request) throws InvalidSheetRequestException {
         String raw = request == null || request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
         if (!raw.isEmpty()) {
@@ -19,8 +26,6 @@ public class ValidateRetire {
                 throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + raw);
             }
         }
-        String user = request == null ? null : request.user();
-        body.set(new Retirement(from, user));
-        actor.set(new Actor(user));
+        return new Retirement(from, request == null ? null : request.user());
     }
 }
