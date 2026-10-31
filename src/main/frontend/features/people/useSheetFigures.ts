@@ -3,7 +3,7 @@ import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { isReviewLate } from '../claims/reviewLate';
 import { isPendingLate } from '../claims/pendingLate';
-import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
+import { capped, claimDue, dueTotal, excess, formatCents, roundsHalfUp, toCents } from '../rates/due';
 import { claimRate, rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
@@ -39,15 +39,25 @@ export function useSheetFigures(sheet: string) {
     const person = byId.get(c.personId);
     return person !== undefined && countsClaimed(c, retiredOn(person, today), today);
   });
-  // A shared claim's parts: each holder's part is the claim's due times their share over 100, rounded half to even,
+  // A shared claim's parts: each holder's part is the claim's amount times their share over 100, times the rate of the
+  // holder's own grade in force on the claim's date over 100, rounded like the claim (0.00 when that grade has no rate);
+  // a settled claim's parts stay frozen at its settled due times the share over 100, rounded half to even. Each part is
   // taken from the claim's own person; only a counting claim with a figure has parts.
   const parts = live.flatMap((c) => {
     const owner = byId.get(c.personId)!;
     const due = (c.shares ?? []).length === 0 ? null : claimDue(c, claimRate(rates, gradeOn(owner, c.date), c), floor, late, policy);
     if (due === null) return [];
+    const frozen = c.status === 'SETTLED' && c.due !== '';
     return (c.shares ?? [])
       .filter((h) => byId.has(h.personId))
-      .map((h) => ({ claim: c, ownerId: c.personId, holderId: h.personId, part: halfEvenDiv(due * toCents(h.share), 10000n) }));
+      .flatMap((h) => {
+        if (frozen) return [{ claim: c, ownerId: c.personId, holderId: h.personId, part: halfEvenDiv(due * toCents(h.share), 10000n) }];
+        const rate = claimRate(rates, gradeOn(byId.get(h.personId)!, c.date), c);
+        // A holder whose grade has no rate holds 0.00: it takes nothing and gives them no figure.
+        if (rate === undefined) return [];
+        const part = roundDiv(toCents(c.amount) * toCents(h.share) * toCents(rate), 100000000n, roundsHalfUp(c, policy));
+        return [{ claim: c, ownerId: c.personId, holderId: h.personId, part }];
+      });
   });
   // What a person's parts move: added for the parts they hold, taken off for the parts of their own claims.
   const partsOf = (person: Person, which: (c: (typeof live)[number]) => boolean) =>
@@ -192,6 +202,14 @@ function daysBefore(date: string, days: number): string {
 // The whole days from one ISO date to a later one (negative when it is earlier).
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+// n / d (d > 0) rounded half up (away from zero) or else half to even.
+function roundDiv(n: bigint, d: bigint, halfUp: boolean): bigint {
+  if (!halfUp) return halfEvenDiv(n, d);
+  const abs = n < 0n ? -n : n;
+  const q = (abs * 2n + d) / (2n * d);
+  return n < 0n ? -q : q;
 }
 
 // n / d (d > 0) rounded half to even.

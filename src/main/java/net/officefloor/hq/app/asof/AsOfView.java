@@ -391,7 +391,7 @@ public class AsOfView {
         return recorded != null && recorded > 0 ? null : sheets.parent(sheetId);
     }
 
-    /** The periods added by the end of the date, by from-date, each closed (or soft-closed) as it stood then. */
+    /** The periods added by the end of the date, by from-date, each closed (or soft-closed) and locked as it stood then. */
     public List<PeriodResponse> periods(String sheetId, LocalDate date) {
         Date end = Date.valueOf(date);
         Map<String, Date> addedOn = new HashMap<>();
@@ -402,8 +402,11 @@ public class AsOfView {
             Date added = addedOn.get(now.name());
             if (added != null && added.toLocalDate().isAfter(date)) continue;
             byName.put(now.name(), new PeriodResponse(now.name(), now.from(), now.to(), false, "", new LinkedHashMap<>(), false, now.cap(),
-                    new LinkedHashMap<>(), now.locked(), now.addedOrder()));
+                    new LinkedHashMap<>(), false, now.addedOrder()));
         }
+        Map<String, Boolean> locked = new HashMap<>();
+        jdbc.query("SELECT name, locked FROM period_lock_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                (RowCallbackHandler) rs -> locked.put(rs.getString(1), rs.getBoolean(2)), sheetId, end);
         jdbc.query("SELECT name, closed, soft_closed, closed_total, person_totals, person_carried FROM period_history WHERE sheet_id = ?"
                 + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
                     PeriodResponse was = byName.get(rs.getString(1));
@@ -411,8 +414,11 @@ public class AsOfView {
                     BigDecimal total = rs.getBigDecimal(4);
                     byName.put(was.name(), new PeriodResponse(was.name(), was.from(), was.to(), rs.getBoolean(2),
                             total == null ? "" : total.setScale(2).toPlainString(), byPerson(rs.getString(5)), rs.getBoolean(3),
-                            was.cap(), byPerson(rs.getString(6)), was.locked(), was.addedOrder()));
+                            was.cap(), byPerson(rs.getString(6)), false, was.addedOrder()));
                 }, sheetId, end);
+        byName.replaceAll((name, was) -> !locked.getOrDefault(name, false) ? was : new PeriodResponse(was.name(), was.from(), was.to(),
+                was.closed(), was.closedTotal(), was.closedPersonTotals(), was.softClosed(), was.cap(), was.closedPersonCarried(), true,
+                was.addedOrder()));
         return new ArrayList<>(byName.values());
     }
 

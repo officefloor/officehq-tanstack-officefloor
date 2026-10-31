@@ -24,8 +24,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections; a hold does not take a claim out) and due-total, and the
- * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap less their cut total, not below 0.00 (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
- * the claim's due less those parts) — worked out on the server so a change can audit what it
+ * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap less their cut total, not below 0.00 (a holder's due-total counting their parts of the claims shared with them — each the claim's amount times their share
+ * over 100 times the rate of their own grade in force on its date over 100, rounded like the claim, a settled claim's parts
+ * frozen at its settled due times the share — the claim's own person's the claim's due less those parts) — worked out on the server so a change can audit what it
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
  * totals changed. The sheet's due-total and overdue-total leave out the single highest and the single
@@ -156,7 +157,17 @@ public class Rollup {
                 if (!byId.containsKey(share.personId())) {
                     continue;
                 }
-                BigDecimal part = share.partOf(figure);
+                BigDecimal part = figure;
+                if (claim.getSettledDue() != null) {
+                    part = share.partOf(figure);
+                } else {
+                    // A holder whose grade has no rate holds 0.00: it takes nothing and gives them no figure.
+                    BigDecimal rate = rates.find(claim, byId.get(share.personId()).gradeOn(claim.getDate()));
+                    if (rate == null) {
+                        continue;
+                    }
+                    part = share.partOf(claim, rate, Rounding.of(claim, policyDate, on -> settings.roundingMode(claim.getSheetId(), on)));
+                }
                 partsIn.merge(share.personId(), part, BigDecimal::add);
                 partsOut.merge(owner.getId(), part, BigDecimal::add);
             }

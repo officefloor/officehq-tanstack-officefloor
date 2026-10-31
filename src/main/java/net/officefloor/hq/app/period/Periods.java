@@ -102,12 +102,15 @@ public class Periods {
     public void remove(String sheetId, String name) {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
         jdbc.update("DELETE FROM period_history WHERE sheet_id = ? AND name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_lock_history WHERE sheet_id = ? AND name = ?", sheetId, name);
         jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
     }
 
-    /** Lock or unlock the named period. */
+    /** Lock or unlock the named period, recorded in its lock history dated the sheet's today. */
     public void setLocked(String sheetId, String name, boolean locked) {
         jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ?", locked, sheetId, name);
+        jdbc.update("INSERT INTO period_lock_history (sheet_id, name, set_on, locked) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                sheetId, name, sheetId, locked);
     }
 
     /** Whether a date falls inside a closed period of the sheet. */
