@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number FROM claim";
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -35,9 +35,9 @@ public class Claims {
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ? WHERE id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ? WHERE id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                    claim.getNumber(), claim.getId());
+                    claim.getNumber(), claim.getDue(), claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -59,6 +59,7 @@ public class Claims {
     private static Claim claim(ResultSet rs, int i) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
-                ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number", Long.class));
+                ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number", Long.class),
+                rs.getBigDecimal("due"));
     }
 }

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.rate;
 
+import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -18,6 +19,12 @@ public class Rates {
         return jdbc.query("SELECT sheet_id, grade, pct FROM rate WHERE sheet_id = ? ORDER BY grade",
                 (rs, i) -> new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("pct")),
                 sheetId);
+    }
+
+    /** The grade's rate on the sheet, or null when it has none. */
+    public BigDecimal pct(String sheetId, String grade) {
+        return jdbc.query("SELECT pct FROM rate WHERE sheet_id = ? AND grade = ?",
+                (rs, i) -> rs.getBigDecimal("pct"), sheetId, grade).stream().findFirst().orElse(null);
     }
 
     /** Set the grade's rate, replacing the one it had. */

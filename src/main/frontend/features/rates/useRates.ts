@@ -25,7 +25,7 @@ export function rateByGrade(rates: Rate[]): Map<string, string> {
 }
 
 /** "12.34" as a whole number of hundredths (1234n), exactly. */
-function hundredths(value: string): bigint {
+export function hundredths(value: string): bigint {
   const [whole, frac = ''] = value.split('.');
   return BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
 }

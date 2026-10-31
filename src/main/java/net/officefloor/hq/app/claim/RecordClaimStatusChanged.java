@@ -11,6 +11,8 @@ public class RecordClaimStatusChanged {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         audit.record(change.action().event() + " sheet=" + claim.getSheetId() + " by=" + change.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
-                + " date=" + claim.getDate() + (number.value() != null ? " number=" + number.value() : ""));
+                + " date=" + claim.getDate() + (number.value() != null ? " number=" + number.value() : "")
+                + (change.action() == ClaimAction.SETTLE
+                        ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : ""));
     }
 }
