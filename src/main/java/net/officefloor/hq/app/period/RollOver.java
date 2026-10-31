@@ -20,7 +20,9 @@ import org.springframework.web.bind.annotation.PathVariable;
  * Rolls the year over: generates the new fiscal year's monthly periods as {@link GeneratePeriods} does (PERIOD_ADDED
  * each), then adds each person's open figure at the end of the old year's last period (see
  * {@link PeriodCloser#openAt}) to their opening for the new year's first period (OPENING_SET, a person with nothing
- * open is left out; not again when an earlier rollover of the year still stands), then ROLLOVER with the old year and how many periods were made.
+ * open is left out; not again when an earlier rollover of the year still stands), then ROLLOVER with the old year and how many periods were made,
+ * then soft-closes every period of the old year still open, in start-date order (PERIOD_SOFT_CLOSED each, see
+ * {@link PeriodCloser#softClose}).
  */
 public class RollOver {
     public void rollover(@PathVariable("sheetId") String sheetId, @Val ValidRollover request, Periods periods,
@@ -60,6 +62,15 @@ public class RollOver {
         }
         audit.recordOnCommit("ROLLOVER sheet=" + sheetId + " by=" + request.user() + " fy=" + request.fiscalYear()
                 + " periods=" + generated);
+        // Then every period of the old year still open is soft-closed, in start-date order.
+        List<PeriodResponse> old = request.periods().stream()
+                .sorted(Comparator.comparing((PeriodResponse p) -> LocalDate.parse(p.from()))).toList();
+        for (PeriodResponse period : old) {
+            PeriodResponse locked = periods.lock(sheetId, period.name());
+            if (locked != null && !locked.closed() && !locked.softClosed()) {
+                closer.softClose(sheetId, locked, request.user());
+            }
+        }
         response.send(new GenerateResponse(generated, periods.list(sheetId)));
     }
 }
