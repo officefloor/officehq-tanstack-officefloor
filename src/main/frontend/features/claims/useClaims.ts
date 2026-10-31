@@ -122,7 +122,7 @@ function claimFigureCents(claim: Claim, floor: FloorOn, pct: string | undefined)
 }
 
 /** What makes an overdue claim's due grow: the sheet's `today` and its late percent in force on a
- *  claim's date, `pctOn`. */
+ *  date, `pctOn`. */
 export type Late = { today: string; pctOn: (date: string) => string };
 
 /** Whole days from one yyyy-mm-dd to another. */
@@ -130,16 +130,26 @@ function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
-/** The late charge on an overdue claim's `figure`, in cents: the late percent of it for every full
- *  30 days it is overdue, rounded by the claim's rounding (`halfUp`). Nothing while it is not overdue. Never bound by a
- *  statement: it follows the sheet's today. */
+/** The yyyy-mm-dd `days` days after `date`. */
+function addDays(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The late charge on an overdue claim's `figure`, in cents: for every full 30 days it is overdue,
+ *  the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of it, each
+ *  rounded by the claim's rounding (`halfUp`), added up; a boundary at 0.00 adds nothing. Nothing
+ *  while it is not overdue. Never bound by a statement: it follows the sheet's today. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
   if (!overdue(claim, late.today) || isCorrection(claim)) return 0n;
-  const periods = BigInt(Math.floor(daysBetween(claim.dueBy, late.today) / 30));
-  if (periods <= 0n) return 0n;
-  // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
-  const product = figure * hundredths(late.pctOn(claim.date)) * periods;
-  return roundTenThousandths(product, claim.halfUp);
+  const periods = Math.floor(daysBetween(claim.dueBy, late.today) / 30);
+  let total = 0n;
+  for (let k = 1; k <= periods; k++) {
+    const pct = hundredths(late.pctOn(addDays(claim.dueBy, 30 * k)));
+    if (pct === 0n) continue;
+    // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
+    total += roundTenThousandths(figure * pct, claim.halfUp);
+  }
+  return total;
 }
 
 

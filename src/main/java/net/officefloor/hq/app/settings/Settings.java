@@ -106,8 +106,8 @@ public class Settings {
         return TERMS + "-" + grade;
     }
 
-    /** The sheet's late percent in force on `date`: an overdue claim's due gains the one on its date
-     *  of its figure for every full 30 days overdue. 0.00 before any is recorded. */
+    /** The sheet's late percent in force on `date`: an overdue claim's due gains the one in force on
+     *  each 30-day boundary after its due-by of its figure. 0.00 before any is recorded. */
     public BigDecimal latePct(String sheetId, LocalDate date) {
         return valueOn(sheetId, LATE_PCT, date, DEFAULT_LATE_PCT);
     }

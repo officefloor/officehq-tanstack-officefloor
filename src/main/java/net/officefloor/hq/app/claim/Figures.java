@@ -65,17 +65,22 @@ public class Figures {
     }
 
     /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING), not deferred, and its due-by (fixed
-     *  when it was added) is before the sheet's today; then the sheet's late percent of the
-     *  figure for every full 30 days it is overdue (the late percent in force on the claim's date) (a correction has none), rounded by the claim's rounding to two decimals. Never bound
+     *  when it was added) is before the sheet's today (a correction has none); then, for every full 30 days it is overdue, the
+     *  sheet's late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of the figure, each rounded by
+     *  the claim's rounding to two decimals, added up. A boundary whose percent is 0.00 adds nothing. Never bound
      *  by a statement: it follows the sheet's today. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
         if (figure == null || !claim.getStatus().isOpen() || claim.isDeferred() || claim.isCorrection()) return none;
         String sheetId = claim.getSheetId();
         long periods = ChronoUnit.DAYS.between(claim.getDueBy(), sheets.today(sheetId)) / 30;
-        if (periods <= 0) return none;
-        return figure.multiply(settings.latePct(sheetId, claim.getDate())).multiply(BigDecimal.valueOf(periods))
-                .divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
+        BigDecimal total = none;
+        for (long k = 1; k <= periods; k++) {
+            BigDecimal pct = settings.latePct(sheetId, claim.getDueBy().plusDays(30 * k));
+            if (pct.signum() == 0) continue;
+            total = total.add(figure.multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim)));
+        }
+        return total;
     }
 
     /** The claim's due at its person's grade's rate in force on the claim's date: amount times the
