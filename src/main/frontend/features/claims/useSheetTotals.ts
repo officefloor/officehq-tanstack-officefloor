@@ -10,7 +10,7 @@ import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from
  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
  * lowest person's figure when three or more people have one. Its settled-total and open-total are
- * everyone's due-total before the cap split into SETTLED and OPEN-or-PENDING claims, simply added up. One place, so every screen repeating a total shows the same figure.
+ * everyone's due-total before the cap split into SETTLED and OPEN-or-PENDING claims, simply added up. Each person's own figures too. One place, so every screen repeating a total shows the same figure.
  */
 export function useSheetTotals(sheet: string) {
   const { data: all = [] } = useClaims(sheet);
@@ -33,6 +33,8 @@ export function useSheetTotals(sheet: string) {
     overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
   );
   return {
+    /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */
+    perPerson: people.map((p, i) => ({ person: p, due: dues[i], overdue: over[i].cents })),
     claimedTotal: claimed(claims),
     dueTotal: trimmedTotal(dues),
     settledTotal: totalDue(part((c) => c.status === 'SETTLED')),
