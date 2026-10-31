@@ -10,8 +10,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
- *  (n/a when there is no rate today and none has a figure), dated the sheet's today. Every claim
- *  of theirs that counts is bound to the figure it has now; every other one is unbound. */
+ *  with any late charges (n/a when there is no rate today and none has a figure), dated the sheet's today. Every claim
+ *  of theirs that counts (not an OPEN one while they are held) is bound to the figure it has now, without its late charge; every other one is unbound. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
             Rates rates, Sheets sheets, People people, Out<Statement> statement) {
@@ -21,10 +21,12 @@ public class TakeStatement {
         boolean any = false;
         int counted = 0;
         for (Claim claim : claims.ofPerson(person.getSheetId(), person.getId())) {
-            if (claim.getStatus().counts()) {
-                BigDecimal figure = figures.figure(claim, person.getGrade());
+            if (person.counts(claim.getStatus())) {
+                BigDecimal bound = figures.figure(claim, person.getGrade());
+                // The statement binds the figure; the late charge on top keeps following today.
+                BigDecimal figure = bound == null || claim.getDue() != null ? bound : bound.add(figures.charge(claim, bound));
                 claim.setStated(true);
-                claim.setStatedDue(figure);
+                claim.setStatedDue(bound);
                 counted++;
                 if (figure != null) {
                     total = total.add(figure);

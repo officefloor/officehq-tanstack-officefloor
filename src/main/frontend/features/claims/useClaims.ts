@@ -60,8 +60,16 @@ export function claimed(claims: Claim[]): string {
 /** What is due on one claim, in cents: the due fixed when it was settled, or else the figure its
  *  person's last statement bound it to, or else live at `pct`, at least the sheet's `floor` (null,
  *  n/a, when there is no rate). */
-export function claimDueCents(claim: Claim, floor: string, pct: string | undefined): bigint | null {
+export function claimDueCents(claim: Claim, floor: string, pct: string | undefined, late?: Late): bigint | null {
   if (claim.due !== null) return hundredths(claim.due);
+  const figure = claimFigureCents(claim, floor, pct);
+  if (figure === null || late === undefined) return figure;
+  return figure + lateChargeCents(claim, figure, late);
+}
+
+/** A claim's figure without any late charge, in cents: the figure its person's last statement bound
+ *  it to, or else live at `pct`, at least the sheet's `floor` (null, n/a, when there is no rate). */
+function claimFigureCents(claim: Claim, floor: string, pct: string | undefined): bigint | null {
   if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
   const due = dueCents(claim.amount, pct);
   if (due === null) return null;
@@ -69,17 +77,39 @@ export function claimDueCents(claim: Claim, floor: string, pct: string | undefin
   return due < least ? least : due;
 }
 
+/** What makes an overdue claim's due grow: the sheet's `terms`, its `today` and its late percent `pct`. */
+export type Late = { terms: number; today: string; pct: string };
+
+/** Whole days from one yyyy-mm-dd to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+/** The late charge on an overdue claim's `figure`, in cents: the late percent of it for every full
+ *  30 days it is overdue, rounded half to even. Nothing while it is not overdue. Never bound by a
+ *  statement: it follows the sheet's today. */
+export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
+  if (!overdue(claim, late.terms, late.today)) return 0n;
+  const periods = BigInt(Math.floor(daysBetween(dueBy(claim, late.terms), late.today) / 30));
+  if (periods <= 0n) return 0n;
+  // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
+  const product = figure * hundredths(late.pct) * periods;
+  const whole = product / 10000n;
+  const rest = product % 10000n;
+  return rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+}
+
 
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
  *  a settled claim's fixed due, else the figure a statement bound it to, else live (at least `floor`) at `pctOn(claim's date)`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
- *  nothing that counts. Null (n/a) when there is no rate today, unless some settled claim keeps a
+ *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. */
-export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined): bigint | null {
+export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
-    const due = claimDueCents(c, floor, pctOn ? pctOn(c.date) : pct);
+    const due = claimDueCents(c, floor, pctOn ? pctOn(c.date) : pct, late);
     if (due === null) continue;
     sum += due;
     any = true;
@@ -99,10 +129,10 @@ export function overdue(claim: Claim, terms: number, today: string): boolean {
   return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
 }
 
-/** These claims' overdue ones: their count, and their dues added up in cents (n/a ones skipped).
+/** These claims' overdue ones: their count, and their dues with late charges added up in cents (n/a ones skipped).
  *  `pctOn` is the rate in force on a claim's date. */
-export function overdueFigures(claims: Claim[], terms: number, today: string, floor: string, pctOn: (date: string) => string | undefined): { count: number; cents: bigint } {
-  const late = claims.filter((c) => overdue(c, terms, today));
-  const cents = late.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c.date)) ?? 0n), 0n);
-  return { count: late.length, cents };
+export function overdueFigures(claims: Claim[], late: Late, floor: string, pctOn: (date: string) => string | undefined): { count: number; cents: bigint } {
+  const over = claims.filter((c) => overdue(c, late.terms, late.today));
+  const cents = over.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c.date), late) ?? 0n), 0n);
+  return { count: over.length, cents };
 }

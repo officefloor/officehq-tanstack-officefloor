@@ -59,7 +59,7 @@ public class Rollup {
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.counts(claim.getStatus())) continue;
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = figures.figure(claim, person.getGrade());
+                BigDecimal figure = figures.due(claim, person.getGrade());
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;

@@ -26,7 +26,7 @@ public class ClosePeriod {
             if (!period.contains(claim.getDate())) continue;
             Person person = personOf.get(claim.getPersonId());
             if (person == null || !person.counts(claim.getStatus())) continue;
-            BigDecimal figure = figures.figure(claim, person.getGrade());
+            BigDecimal figure = figures.due(claim, person.getGrade());
             if (figure != null) total = total.add(figure);
         }
         periods.close(period, total);

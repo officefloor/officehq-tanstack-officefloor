@@ -3,15 +3,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { DAYS, LIMIT, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+import { DAYS, LIMIT, PERCENT, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null };
 
 /**
  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
  * it; blank is no limit), its floor (a claim's live due is at least it; blank is the default, 1.00),
- * its terms (a claim is due by its date plus this many days; blank is the default, 14),
+ * its terms (a claim is due by its date plus this many days; blank is the default, 14), its late
+ * percent (an overdue claim's due gains it of its figure for every full 30 days; blank is 0.00),
  * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
  * whose fields were touched since the last one.
  */
@@ -19,7 +20,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null });
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -29,7 +30,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null });
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
   });
@@ -65,10 +66,12 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const limit = edit.clerkLimit?.trim() ?? null;
           const floor = edit.floor?.trim() ?? null;
           const terms = edit.terms?.trim() ?? null;
+          const latePct = edit.latePct?.trim() ?? null;
           if (
             (limit !== null && !LIMIT.test(limit)) ||
             (floor !== null && !LIMIT.test(floor)) ||
-            (terms !== null && !DAYS.test(terms))
+            (terms !== null && !DAYS.test(terms)) ||
+            (latePct !== null && !PERCENT.test(latePct))
           ) {
             // Refused here, before anything is sent: the store and the audit file are untouched.
             saveSettings.reset();
@@ -76,7 +79,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms }));
+          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -132,13 +135,31 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        Late percent:{' '}
+        <strong data-testid="setting-late-pct-current">
+          {saveSettings.isPending ? '' : (data?.latePct ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-late-pct"
+            placeholder="blank: 0.00"
+            value={edit.latePct ?? (data?.latePct ?? '')}
+            onFocus={() => touch('latePct', data?.latePct ?? '')}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, latePct: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={saveSettings.isPending}>
           Save
         </button>
         {(limitInvalid || saveSettings.isError) && (
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
-            limit, a blank floor is 1.00), and the terms a whole number of days (blank is 14).
+            limit, a blank floor is 1.00), the terms a whole number of days (blank is 14), and the late percent a percent with up to
+            two decimals (blank is 0.00).
           </span>
         )}
       </form>

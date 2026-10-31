@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, its clerk limit, its floor and its terms. */
+/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms and its late percent. */
 @Repository
 public class Settings {
 
@@ -14,6 +14,9 @@ public class Settings {
 
     /** The terms, in days, of a sheet that has not set them. */
     public static final int DEFAULT_TERMS = 14;
+
+    /** The late percent of a sheet that has not set one. */
+    public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
     private final JdbcTemplate jdbc;
 
@@ -67,6 +70,17 @@ public class Settings {
 
     public void setTerms(String sheetId, int terms) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, terms) KEY (sheet_id) VALUES (?, ?)", sheetId, terms);
+    }
+
+    /** The sheet's late percent: an overdue claim's due gains it of its figure for every full 30 days
+     *  overdue. 0.00 unless set. */
+    public BigDecimal latePct(String sheetId) {
+        BigDecimal pct = column("late_pct", sheetId);
+        return pct != null ? pct : DEFAULT_LATE_PCT;
+    }
+
+    public void setLatePct(String sheetId, BigDecimal pct) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, late_pct) KEY (sheet_id) VALUES (?, ?)", sheetId, pct);
     }
 
     /** One setting's stored value, null when the sheet has no row or the setting is unset. */

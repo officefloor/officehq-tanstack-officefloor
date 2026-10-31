@@ -2,6 +2,6 @@ package net.officefloor.hq.app.settings;
 
 /** Body of a settings change: the settings being set, each left out (null) when it is not being
  *  changed — the clerk limit (two decimals, blank for no limit), the floor (two decimals, blank for
- *  the default 1.00), the terms (whole days, blank for the default 14) — and who makes the change. */
-public record SettingsRequest(String clerkLimit, String floor, String terms, String user) {
+ *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00) — and who makes the change. */
+public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String user) {
 }

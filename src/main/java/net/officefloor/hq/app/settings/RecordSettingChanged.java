@@ -17,5 +17,8 @@ public class RecordSettingChanged {
         if (change.terms() != null) {
             audit.record(prefix + " key=terms value=" + change.terms());
         }
+        if (change.latePct() != null) {
+            audit.record(prefix + " key=late-pct value=" + change.latePct().toPlainString());
+        }
     }
 }
