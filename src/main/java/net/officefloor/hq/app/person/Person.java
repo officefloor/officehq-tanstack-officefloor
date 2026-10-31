@@ -13,6 +13,7 @@ public class Person {
     private int statementCount;
     private BigDecimal statedTotal;
     private LocalDate statementDate;
+    private LocalDate retiredFrom;
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -45,4 +46,16 @@ public class Person {
     /** The sheet's today when the last statement was taken; null when none was. */
     public LocalDate getStatementDate() { return statementDate; }
     public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
+    /** The date the person is retired from; null when they are not retired. Set at all, they count
+     *  as retired at once, whatever the date. */
+    public LocalDate getRetiredFrom() { return retiredFrom; }
+    public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
+    public boolean isRetired() { return retiredFrom != null; }
+
+    /** Refuses a claim dated after the person's retirement date. */
+    public void refuseRetired(LocalDate claimDate) throws PersonRetiredException {
+        if (retiredFrom != null && claimDate.isAfter(retiredFrom)) {
+            throw new PersonRetiredException(name, retiredFrom);
+        }
+    }
 }

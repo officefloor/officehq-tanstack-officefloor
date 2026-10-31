@@ -4,7 +4,9 @@ import { getJson } from '../../api/http';
 /** `version` counts the person's saves; an edit sends the version it loaded, so a save made by
  *  someone else in the meantime refuses it. `statementCount` is how many statements have been
  *  taken for them; `statedTotal` the last one's due-total (two decimals, null when it was n/a or
- *  none was taken) and `statementDate` its date (yyyy-mm-dd, null when none was taken). */
+ *  none was taken) and `statementDate` its date (yyyy-mm-dd, null when none was taken).
+ *  `retired` is whether a retirement date is set (whatever the date), `retiredFrom` that date
+ *  (yyyy-mm-dd, null when not retired). */
 export type Person = {
   id: number;
   name: string;
@@ -13,6 +15,8 @@ export type Person = {
   statementCount: number;
   statedTotal: string | null;
   statementDate: string | null;
+  retired: boolean;
+  retiredFrom: string | null;
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;

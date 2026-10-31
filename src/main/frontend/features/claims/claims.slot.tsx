@@ -161,7 +161,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               {' '}
               {invalid
                 ? 'The amount must be 0.00 or more, with up to two decimals.'
-                : 'Could not save this claim.'}
+                : save.error instanceof HttpError && save.error.status === 409 && save.error.body.includes('retired')
+                  ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
+                  : 'Could not save this claim.'}
             </span>
           )}
         </form>

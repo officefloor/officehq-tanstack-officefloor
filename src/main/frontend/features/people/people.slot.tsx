@@ -5,12 +5,16 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { QuickAddBar } from './QuickAddBar';
+import { ShowRetired, useShowRetired } from './ShowRetired';
 import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
 function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
-  const { data: people = [] } = usePeople(sheet);
+  const { data: everyone = [] } = usePeople(sheet);
+  // Retired people have no row unless they are shown; their claims still count in every total.
+  const [showRetired] = useShowRetired();
+  const people = showRetired ? everyone : everyone.filter((p) => !p.retired);
   const [editing, setEditing] = useState<number | null>(null);
   // The version of the person the editor loaded: a save is refused if someone saved since.
   const [version, setVersion] = useState(0);
@@ -132,6 +136,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
         )}
       </form>
       <QuickAddBar user={user} sheet={sheet} />
+      <ShowRetired />
       <table data-testid="people-list">
         <thead>
           <tr>
