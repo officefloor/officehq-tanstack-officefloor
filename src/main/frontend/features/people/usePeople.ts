@@ -16,7 +16,9 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  the person's own terms in days (null: none), ahead of their grade's and the sheet's.
  *  `contact` is the person's contact, trimmed and lower-cased (null: none). `aliases` are the
  *  person's aliases, sorted as names are compared; the quick-add bar and the paste box find a
- *  person by an alias as well as by the name. */
+ *  person by an alias as well as by the name. `clashing` is whether their name or an alias is used
+ *  on another sheet of the sheet's tree (its ancestors and descendants); such a person's edits are
+ *  refused until one renames them to a name that does not clash. */
 export type Person = {
   id: number;
   name: string;
@@ -34,6 +36,7 @@ export type Person = {
   terms: number | null;
   contact: string | null;
   aliases: string[];
+  clashing: boolean;
 };
 
 /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */

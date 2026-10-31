@@ -52,12 +52,14 @@ public class People {
                 (ResultSet rs) -> {
                     aliases.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getString("alias"));
                 }, sheetId);
+        java.util.Set<String> used = people.isEmpty() ? java.util.Set.of() : usedInTree(sheetId);
         for (Person person : people) {
             person.setAliases(aliases.getOrDefault(person.getId(), new ArrayList<>()));
             person.setHolds(holds.getOrDefault(person.getId(), new ArrayList<>()));
             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
             TreeMap<LocalDate, String> dated = grades.get(person.getId());
             if (dated != null) person.setGrades(dated);
+            person.setClashing(clashing(person, used));
         }
         return people;
     }
@@ -91,6 +93,66 @@ public class People {
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
         return (n != null && n > 0) || aliasTaken(sheetId, name);
+    }
+
+    /** Whether this is taken on the sheet (see {@link #nameTaken}) or, as names are compared, used as a
+     *  name or alias on any other sheet of its tree (see {@link #treeOf}). */
+    public boolean nameUsedInTree(String sheetId, String name, Long exceptId) {
+        return nameTaken(sheetId, name, exceptId) || usedInTree(sheetId).contains(name.trim().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** Whether the person's name or any of their aliases is used on another sheet of their tree. */
+    public boolean clashing(Person person) {
+        return clashing(person, usedInTree(person.getSheetId()));
+    }
+
+    private static boolean clashing(Person person, java.util.Set<String> used) {
+        if (used.isEmpty()) return false;
+        if (used.contains(person.getName().trim().toLowerCase(java.util.Locale.ROOT))) return true;
+        return person.getAliases().stream().anyMatch(a -> used.contains(a.trim().toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    /** Every name and alias (in the form they are compared in) used on the other sheets of the sheet's tree. */
+    private java.util.Set<String> usedInTree(String sheetId) {
+        java.util.Set<String> used = new java.util.HashSet<>();
+        for (String other : treeOf(sheetId)) {
+            used.addAll(jdbc.queryForList("SELECT name_key FROM PUBLIC.person WHERE sheet_id = ?", String.class, other));
+            used.addAll(jdbc.queryForList("SELECT alias_key FROM PUBLIC.person_alias WHERE sheet_id = ?", String.class, other));
+        }
+        return used;
+    }
+
+    /** The other sheets of the sheet's tree, among the sheets that exist: its ancestors (its parent, the
+     *  parent's parent, and so on) and its descendants (the sheets naming it as parent, their children,
+     *  and so on). Not dated: read from the live sheets. */
+    public java.util.Set<String> treeOf(String sheetId) {
+        java.util.Set<String> tree = new java.util.LinkedHashSet<>();
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        for (String sheet = parentOf(sheetId); sheet != null && seen.add(sheet); sheet = parentOf(sheet)) {
+            tree.add(sheet);
+        }
+        java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
+        java.util.Set<String> visited = new java.util.HashSet<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM PUBLIC.sheet_setting WHERE parent_id = ?",
+                    String.class, todo.poll())) {
+                if (visited.add(child)) {
+                    todo.add(child);
+                    tree.add(child);
+                }
+            }
+        }
+        tree.remove(sheetId);
+        tree.removeIf(sheet -> {
+            Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM PUBLIC.sheet WHERE id = ?", Integer.class, sheet);
+            return n == null || n == 0;
+        });
+        return tree;
+    }
+
+    private String parentOf(String sheetId) {
+        return jdbc.queryForList("SELECT parent_id FROM PUBLIC.sheet_setting WHERE sheet_id = ?", String.class, sheetId)
+                .stream().filter(p -> p != null && !p.isBlank()).findFirst().orElse(null);
     }
 
     /** Whether anyone on this sheet already has this as an alias. */
@@ -282,6 +344,7 @@ public class People {
             person.setAliases(aliasesOf(person.getId()));
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
+            person.setClashing(clashing(person));
         }
         return person;
     }

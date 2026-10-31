@@ -38,6 +38,8 @@ public class Person {
     private List<Long> patronIds = new ArrayList<>();
     /** The person's aliases, sorted as names are compared. */
     private List<String> aliases = new ArrayList<>();
+    /** Whether the person's name or an alias is used on another sheet of their sheet's tree. */
+    private boolean clashing;
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -131,6 +133,8 @@ public class Person {
     /** The person's aliases, sorted as names are compared. */
     public List<String> getAliases() { return aliases; }
     public void setAliases(List<String> aliases) { this.aliases = aliases; }
+    public boolean isClashing() { return clashing; }
+    public void setClashing(boolean clashing) { this.clashing = clashing; }
 
     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
      *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, nor

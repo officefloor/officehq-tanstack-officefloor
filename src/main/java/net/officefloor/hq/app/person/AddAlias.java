@@ -15,7 +15,7 @@ public class AddAlias {
         Person person = people.lock(sheetId, personId);
         if (person == null) throw new PersonNotFoundException(personId);
         String alias = request.alias().trim();
-        if (people.nameOrAliasTaken(sheetId, alias)) {
+        if (people.nameUsedInTree(sheetId, alias, null)) {
             throw new InvalidSheetRequestException("The alias is already in use on this sheet");
         }
         people.addAlias(person, alias);

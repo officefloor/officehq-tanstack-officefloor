@@ -9,11 +9,12 @@ import java.util.List;
  *  and whether they have any hold and each hold's dates, and the ids of the people they have named as patrons. `grade` is
  *  the grade in force on the sheet's today; `grades` every grade recorded, by from-date (null: from
  *  the beginning of time, first); `terms` the person's own terms (null: none); `contact` their
- *  contact (null: none); `aliases` their aliases, sorted as names are compared. */
+ *  contact (null: none); `aliases` their aliases, sorted as names are compared; `clashing` whether
+ *  their name or an alias is used on another sheet of their sheet's tree. */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
         boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms,
-        String contact, List<String> aliases) {
+        String contact, List<String> aliases, boolean clashing) {
 
     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
     public record HoldDates(String from, String to) {
@@ -36,6 +37,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
                 person.getGrades().entrySet().stream()
                         .map(e -> new GradeFrom(e.getValue(), e.getKey().equals(LocalDate.MIN) ? null : e.getKey().toString()))
                         .toList(),
-                person.getTerms(), person.getContact(), List.copyOf(person.getAliases()));
+                person.getTerms(), person.getContact(), List.copyOf(person.getAliases()),
+                person.isClashing());
     }
 }

@@ -14,8 +14,14 @@ public class ApplyPerson {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(PersonResponse.from(person));
         }
-        if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
-            throw new InvalidSheetRequestException("The name is already in use on this sheet");
+        if (people.nameUsedInTree(person.getSheetId(), request.name(), person.getId())) {
+            throw new InvalidSheetRequestException("The name is already in use on this sheet or its tree");
+        }
+        // A person whose alias clashes with its tree cannot be edited until no alias clashes.
+        Person renamed = new Person(person.getId(), person.getSheetId(), request.name(), person.getGrade());
+        renamed.setAliases(person.getAliases());
+        if (people.clashing(renamed)) {
+            throw new InvalidSheetRequestException("An alias of this person is in use on another sheet of its tree");
         }
         if (request.contactKey() != null
                 && people.contactTaken(person.getSheetId(), request.contactKey(), person.getId())) {
