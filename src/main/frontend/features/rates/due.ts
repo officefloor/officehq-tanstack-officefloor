@@ -129,15 +129,17 @@ export function dueTotal(
   return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
 }
 
-/** A due-total held to the sheet's cap ("" for none): the cap when it is above it. n/a is not capped. */
-export function capped(total: bigint | null, cap: string): bigint | null {
+/** A due-total held to the sheet's cap ("" for none) less the person's cut total (not below 0.00): that when it is
+ *  above it. n/a is not capped. */
+export function capped(total: bigint | null, cap: string, cut: bigint = 0n): bigint | null {
   if (total === null || cap === '') return total;
-  const max = toCents(cap);
+  const room = toCents(cap) - cut;
+  const max = room < 0n ? 0n : room;
   return total > max ? max : total;
 }
 
-/** How far a due-total is above the sheet's cap; 0 when it is not, or is n/a. */
-export function excess(total: bigint | null, cap: string): bigint {
-  const held = capped(total, cap);
+/** How far a due-total is above the sheet's cap less the person's cut total; 0 when it is not, or is n/a. */
+export function excess(total: bigint | null, cap: string, cut: bigint = 0n): bigint {
+  const held = capped(total, cap, cut);
   return total === null || held === null ? 0n : total - held;
 }

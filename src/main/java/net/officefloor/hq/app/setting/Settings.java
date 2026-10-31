@@ -122,6 +122,15 @@ public class Settings {
         return found == null ? null : found.value();
     }
 
+    /** A due-total held to the sheet's cap less the person's cut total (not below 0.00); null (n/a) stays null. */
+    public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap, BigDecimal cutTotal) {
+        if (cap == null || cutTotal == null) {
+            return capped(dueTotal, cap);
+        }
+        BigDecimal room = cap.subtract(cutTotal).max(BigDecimal.ZERO).setScale(2);
+        return capped(dueTotal, room);
+    }
+
     /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;

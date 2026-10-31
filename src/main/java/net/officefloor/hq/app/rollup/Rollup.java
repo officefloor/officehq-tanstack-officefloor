@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections; a hold does not take a claim out) and due-total, and the
- * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
+ * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap less their cut total, not below 0.00 (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
  * the claim's due less those parts) — worked out on the server so a change can audit what it
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
@@ -44,8 +44,11 @@ public class Rollup {
     private final Sheets sheets;
     private final Settings settings;
     private final Audit audit;
+    private final net.officefloor.hq.app.pool.Pools pools;
 
-    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Audit audit) {
+    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Audit audit,
+            net.officefloor.hq.app.pool.Pools pools) {
+        this.pools = pools;
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -59,6 +62,7 @@ public class Rollup {
         LocalDate today = sheets.today(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
         BigDecimal cap = settings.cap(sheetId);
+        Map<Long, BigDecimal> cutTotals = cap == null ? Map.of() : pools.cutTotals(sheetId, null);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -129,7 +133,7 @@ public class Rollup {
             due = due.subtract(partsOut.getOrDefault(person.getId(), BigDecimal.ZERO));
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
             boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
-            due = Settings.capped(due, cap);
+            due = Settings.capped(due, cap, cutTotals.getOrDefault(person.getId(), BigDecimal.ZERO));
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dues.add(due);

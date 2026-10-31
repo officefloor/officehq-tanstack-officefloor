@@ -41,7 +41,6 @@ import { useSheetFigures } from './useSheetFigures';
 import { dueBy } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
-import { usePools } from '../pools/usePools';
 import { useCrews } from '../crews/useCrews';
 import { scoreBand, useSettings } from '../settings/useSettings';
 
@@ -82,17 +81,11 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
   const periodCarriedOf = usePersonPeriodCarried(sheet);
-  const pools = usePools(sheet);
-  const cutOf = (personId: string) =>
-    pools.reduce(
-      (sum, pool) => pool.members.reduce((s, m) => (m.personId === personId && m.cut !== '' ? s + toCents(m.cut) : s), sum),
-      0n,
-    );
   const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
   const [sortKey] = useSortBy();
   const [shown] = useColumns();

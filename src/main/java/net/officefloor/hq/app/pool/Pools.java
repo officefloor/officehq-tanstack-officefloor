@@ -80,6 +80,20 @@ public class Pools {
         return withHistory;
     }
 
+    /** Each person's cut total: their cuts in every pool added up (see {@link #list(String, LocalDate)}; null: now), by person id;
+     *  a person with no cut is left out. */
+    public Map<Long, BigDecimal> cutTotals(String sheetId, LocalDate on) {
+        Map<Long, BigDecimal> totals = new HashMap<>();
+        for (PoolResponse pool : compute(sheetId, on, false)) {
+            for (PoolResponse.Member m : pool.members()) {
+                if (m.personId() != null && !m.cut().isEmpty()) {
+                    totals.merge(Long.valueOf(m.personId()), new BigDecimal(m.cut()), BigDecimal::add);
+                }
+            }
+        }
+        return totals;
+    }
+
     /** Every pool member's cut as it stands now (see {@link #list(String)}), to be fixed by a close or soft-close of a
      *  period: one "<pool>\t<member key>\t<cut>" line per member. */
     public String liveCuts(String sheetId) {

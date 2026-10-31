@@ -5,6 +5,7 @@ import { isReviewLate } from '../claims/reviewLate';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
 import { claimRate, rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
+import { usePools } from '../pools/usePools';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { gradeOn, retiredOn, usePeople, type Person } from './usePeople';
 
@@ -23,6 +24,7 @@ export function useSheetFigures(sheet: string) {
   const late = { pct: useLatePct(sheet), today, grace };
   const policy = usePolicy(sheet);
   const cap = useCap(sheet);
+  const pools = usePools(sheet);
   const reviewSla = useSettings(sheet)?.reviewSla;
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
@@ -64,10 +66,16 @@ export function useSheetFigures(sheet: string) {
     if (own === null && !parts.some((p) => p.holderId === person.id)) return null;
     return (own ?? 0n) + partsOf(person, () => true);
   };
-  // A person's due-total: at most the sheet's cap (n/a is not capped); everything that adds up
-  // due-totals uses it. Their excess is how far the sum of their figures is above the cap.
-  const totalOf = (person: Person) => capped(uncappedOf(person), cap);
-  const excessOf = (person: Person) => excess(uncappedOf(person), cap);
+  // A person's cut total: their cuts in every pool added up.
+  const cutOf = (personId: string) =>
+    pools.reduce(
+      (sum, pool) => pool.members.reduce((s, m) => (m.personId === personId && m.cut !== '' ? s + toCents(m.cut) : s), sum),
+      0n,
+    );
+  // A person's due-total: at most the sheet's cap less their cut total, not below 0.00 (n/a is not capped);
+  // everything that adds up due-totals uses it. Their excess is how far the sum of their figures is above that.
+  const totalOf = (person: Person) => capped(uncappedOf(person), cap, cutOf(person.id));
+  const excessOf = (person: Person) => excess(uncappedOf(person), cap, cutOf(person.id));
   // A person's settled-total and open-total: the dues of their counting SETTLED claims (frozen
   // figures, corrections included), and of their counting OPEN and PENDING claims; n/a adds nothing.
   // Together they make the sum of their figures before the cap.
@@ -156,7 +164,7 @@ export function useSheetFigures(sheet: string) {
   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are

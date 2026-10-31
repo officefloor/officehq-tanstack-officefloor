@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes a statement: the person's due-total as the screen shows it now (the sum of their counting
  * claims' dues — each fixed or at the rate in force on its date, its late charge on top, raised to the floor in force on its date;
- * n/a when their grade has no rate today and no claim keeps a figure; held to the sheet's cap), and binds each counting claim to
+ * n/a when their grade has no rate today and no claim keeps a figure; held to the sheet's cap less their cut total, not below 0.00), and binds each counting claim to
  * its due as shown now, its late charge and the floor included (a claim already bound keeps its bound figure); while bound
  * the claim shows and totals that figure, its late charge no longer following the sheet's today.
  * A claim that does not count (a deferred claim, or an unbound OPEN claim of a retired person, included) is left unbound.
@@ -35,7 +35,7 @@ import net.officefloor.plugin.variable.Val;
  */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, AsOf asOf, Sheets sheets,
-            People people, Settings settings, Out<Statement> statement) throws InvalidPersonException {
+            People people, Settings settings, net.officefloor.hq.app.pool.Pools pools, Out<Statement> statement) throws InvalidPersonException {
         String sheetId = person.getSheetId();
         LocalDate date = asOfDate(request, person, sheets.today(sheetId));
         AsOf.View view = date == null ? asOf.now(person) : asOf.at(person, date);
@@ -71,7 +71,8 @@ public class TakeStatement {
         }
         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
         boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;
-        BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap());
+        BigDecimal cutTotal = view.cap() == null ? null : pools.cutTotals(sheetId, date).getOrDefault(person.getId(), BigDecimal.ZERO);
+        BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap(), cutTotal);
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);
