@@ -27,7 +27,7 @@ public class ApplyClaimStatus {
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
             BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
             claim.setDue(pct == null ? null
-                    : claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP));
+                    : claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_EVEN));
         }
         number.set(new ClaimNumber(claim.getNumber()));
         if (change.action() == ClaimAction.VOID) {

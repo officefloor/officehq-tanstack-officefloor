@@ -45,13 +45,16 @@ function format(cents: bigint): string {
 
 /**
  * What is due on `amount` (two decimals) at `pct` percent: amount times pct divided by 100,
- * rounded half up to two decimals, worked in whole numbers so it is exact. In cents, or null
+ * rounded half to even to two decimals, worked in whole numbers so it is exact. In cents, or null
  * when there is no rate.
  */
 export function dueCents(amount: string, pct: string | undefined): bigint | null {
   if (pct === undefined) return null;
   // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
-  return (hundredths(amount) * hundredths(pct) + 5000n) / 10000n;
+  const product = hundredths(amount) * hundredths(pct);
+  const whole = product / 10000n;
+  const rest = product % 10000n;
+  return rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
 }
 
 /** A due in cents as shown: two decimals, or n/a when there is no rate. */

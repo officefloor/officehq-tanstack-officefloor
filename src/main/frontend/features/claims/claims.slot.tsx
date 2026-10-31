@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
-import { dueCents, rateOn, showDue, useRates } from '../rates/useRates';
+import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheet';
 import {
   AMOUNT,
@@ -11,15 +11,16 @@ import {
   claimed,
   claimsKey,
   counted,
+  personDueCents,
   useClaims,
   type Claim,
 } from './useClaims';
 
 /**
- * A person's claims: what they have claimed in all and what is due on that at their grade's rate,
+ * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
- * with its due (fixed once it is settled, else at the rate in force on the claim's date; the
- * due-total is always at the rate in force on the sheet's today), its status and the buttons to open, settle or void it. Only OPEN and SETTLED claims
+ * with its due (fixed once it is settled, else at the rate in force on the claim's date; in the
+ * due-total a live one is at the rate in force on the sheet's today), its status and the buttons to open, settle or void it. Only OPEN and SETTLED claims
  * count toward claimed and the due-total.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
@@ -86,7 +87,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(counted(claims))}</td>
-      <td data-testid="person-due-total">{showDue(dueCents(claimed(counted(claims)), pct))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, pct))}</td>
       <td>
         <form
           data-testid="claim-form"
