@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads who closes the period and loads it. */
+/** Reads who closes or reopens the period and loads it. */
 public class LoadPeriod {
     public void load(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
             @RequestBody PeriodCloseRequest request, Periods periods, Out<PeriodCloseRequest> body,

@@ -13,7 +13,8 @@ import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriod
  * The sheet's periods, each with its due-total — the figures of everyone's counted (OPEN or
  * SETTLED) claims dated in it, not a held person's OPEN ones, n/a ones skipped — and one form to add a period: a name unique on
  * the sheet and a from and to date, inclusive, overlapping no other period. A period can be closed:
- * its due-total is then the one it had when it was closed, whatever rates do later.
+ * its due-total is then the one it had when it was closed, whatever rates do later. A steward can
+ * reopen a closed period, making its due-total live again.
  */
 function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -27,7 +28,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
-  // The period whose last close was refused: its row shows the error.
+  // The period whose last close or reopen was refused: its row shows the error.
   const [refused, setRefused] = useState<string | null>(null);
 
   const submitOnce = useSubmitOnce();
@@ -45,6 +46,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const close = useMutation({
     mutationFn: (name: string) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_e, name) => setRefused(name),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+
+  const reopen = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/reopen`, { user }),
     onMutate: () => setRefused(null),
     onError: (_e, name) => setRefused(name),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
@@ -168,11 +177,19 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
                   onClick={() => close.mutate(p.name)}
                 >
                   Close
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-reopen"
+                  disabled={reopen.isPending}
+                  onClick={() => reopen.mutate(p.name)}
+                >
+                  Reopen
                 </button>
                 {refused === p.name && (
                   <span data-testid="period-error" role="alert">
                     {' '}
-                    Could not close this period.
+                    Could not change this period.
                   </span>
                 )}
               </td>

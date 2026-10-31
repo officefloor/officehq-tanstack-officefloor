@@ -50,6 +50,12 @@ public class Periods {
                 total, period.sheetId(), period.name());
     }
 
+    /** Reopen the period: its due-total is live again. */
+    public void reopen(Period period) {
+        jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
+                period.sheetId(), period.name());
+    }
+
     private static Period period(ResultSet rs, int i) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getDate("from_date").toLocalDate(),
                 rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"));
