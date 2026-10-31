@@ -1,0 +1,325 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index f2d15aff..595fc652 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -42,13 +42,14 @@ import { useGrace } from '../claims/useGrace';
+ import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+ import { usePools } from '../pools/usePools';
+ import { useCrews } from '../crews/useCrews';
+-import { useSettings } from '../settings/useSettings';
++import { scoreBand, useSettings } from '../settings/useSettings';
+ 
+ // Every person on the sheet in the order they were added, with their name shown as "<name> (<grade in force today>)", grade (the one in force on the sheet's today), claimed (the
+ // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
+ // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+ // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
+-// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number),
++// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number) and its band
++// (HIGH, MID or LOW by the sheet's score thresholds; blank while either is),
+ // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
+ // claims; together the sum of their figures before the cap),
+ // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
+@@ -231,6 +232,7 @@ export function PeopleList() {
+             {shown('excess') && <th>Excess</th>}
+             <th>Settled</th>
+             <th>Score</th>
++            <th>Band</th>
+             <th>Open</th>
+             <th>Active</th>
+             <th>Aged 0-30</th>
+@@ -283,6 +285,7 @@ export function PeopleList() {
+                 {shown('excess') && <td data-testid="person-excess">{formatCents(excessOf(p))}</td>}
+                 <td data-testid="person-settled-total">{formatCents(settledTotalOf(p))}</td>
+                 <td data-testid="person-score">{scoreOf(p)}</td>
++                <td data-testid="person-band">{scoreBand(settings, scoreOf(p))}</td>
+                 <td data-testid="person-open-total">{formatCents(openTotalOf(p))}</td>
+                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
+                 <td data-testid="person-aged-0-30">{formatCents(aged[0])}</td>
+diff --git a/src/main/frontend/features/settings/SettingsPanel.tsx b/src/main/frontend/features/settings/SettingsPanel.tsx
+index cd2d63fd..5ff37c68 100644
+--- a/src/main/frontend/features/settings/SettingsPanel.tsx
++++ b/src/main/frontend/features/settings/SettingsPanel.tsx
+@@ -120,6 +120,20 @@ export function SettingsPanel() {
+   // The default grade (not dated); likewise may be saved blank (A).
+   const [defaultGrade, setDefaultGrade] = useState('');
+   const defaultGradeChosen = useRef(false);
++  // The score thresholds (not dated); likewise each may be saved blank (none).
++  const [scoreMid, setScoreMid] = useState('');
++  const scoreMidChosen = useRef(false);
++  const [scoreHigh, setScoreHigh] = useState('');
++  const scoreHighChosen = useRef(false);
++  // Entering a score threshold marks it as the one to save, as it is.
++  const focusScoreMid = () => {
++    unchoosePolicy();
++    scoreMidChosen.current = true;
++  };
++  const focusScoreHigh = () => {
++    unchoosePolicy();
++    scoreHighChosen.current = true;
++  };
+   // Entering the default grade marks it as the one to save, as it is.
+   const focusDefaultGrade = () => {
+     unchoosePolicy();
+@@ -220,6 +234,8 @@ export function SettingsPanel() {
+     if (parent.trim() === '') parentChosen.current = false;
+     if (proofKinds.trim() === '') proofKindsChosen.current = false;
+     if (defaultGrade.trim() === '') defaultGradeChosen.current = false;
++    if (scoreMid.trim() === '') scoreMidChosen.current = false;
++    if (scoreHigh.trim() === '') scoreHighChosen.current = false;
+     if (rounding.trim() === '') roundingChosen.current = false;
+     if (reviewThreshold.trim() === '') reviewChosen.current = false;
+     unchooseGradeGrace();
+@@ -394,6 +410,14 @@ export function SettingsPanel() {
+         setDefaultGrade('');
+         defaultGradeChosen.current = false;
+       }
++      else if (body.key === 'score-mid') {
++        setScoreMid('');
++        scoreMidChosen.current = false;
++      }
++      else if (body.key === 'score-high') {
++        setScoreHigh('');
++        scoreHighChosen.current = false;
++      }
+       else if (body.key === 'parent') {
+         setParent('');
+         parentChosen.current = false;
+@@ -479,13 +503,15 @@ export function SettingsPanel() {
+             const parented = parent.trim() !== '' || parentChosen.current;
+             const kinded = proofKinds.trim() !== '' || proofKindsChosen.current;
+             const defaulted = defaultGrade.trim() !== '' || defaultGradeChosen.current;
++            const scoredMid = scoreMid.trim() !== '' || scoreMidChosen.current;
++            const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
+             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
+             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
+             const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
+             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
+             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
+-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || permitted.length > 0) {
++                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || permitted.length > 0) {
+               const saves = [
+                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
+                 ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
+@@ -512,6 +538,8 @@ export function SettingsPanel() {
+                 ...(parented ? [{ key: 'parent', value: parent.trim() }] : []),
+                 ...(kinded ? [{ key: 'proof-kinds', value: proofKinds.trim() }] : []),
+                 ...(defaulted ? [{ key: 'default-grade', value: defaultGrade.trim() }] : []),
++                ...(scoredMid ? [{ key: 'score-mid', value: scoreMid.trim() }] : []),
++                ...(scoredHigh ? [{ key: 'score-high', value: scoreHigh.trim() }] : []),
+                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
+               ];
+               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
+@@ -861,6 +889,30 @@ export function SettingsPanel() {
+             saveSetting.reset();
+           }}
+         />{' '}
++        Score mid: <span data-testid="setting-score-mid-current">{settings?.scoreMid ?? ''}</span>{' '}
++        <input
++          data-testid="setting-score-mid"
++          value={scoreMid}
++          placeholder="Score mid threshold, whole number (blank: none)"
++          onFocus={focusScoreMid}
++          onChange={(e) => {
++            setScoreMid(e.target.value);
++            scoreMidChosen.current = true;
++            saveSetting.reset();
++          }}
++        />{' '}
++        Score high: <span data-testid="setting-score-high-current">{settings?.scoreHigh ?? ''}</span>{' '}
++        <input
++          data-testid="setting-score-high"
++          value={scoreHigh}
++          placeholder="Score high threshold, whole number (blank: none)"
++          onFocus={focusScoreHigh}
++          onChange={(e) => {
++            setScoreHigh(e.target.value);
++            scoreHighChosen.current = true;
++            saveSetting.reset();
++          }}
++        />{' '}
+         Parent sheet: <span data-testid="setting-parent-current">{settings?.parent ?? ''}</span>{' '}
+         <input
+           data-testid="setting-parent"
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index b327243f..9d02f19d 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -19,8 +19,9 @@ export type Role = { user: string; role: string };
+  *  and every delegation of the steward role, in the order given, and the note threshold with two decimals ("" for none: above the one
+  *  in force on its date a claim cannot be opened with an empty note), and the fiscal year start month, 1 to 12 ("1" unless set), and the rounding mode in force
+  *  on the sheet's today (half-up or half-even; "" for none), and the review SLA in days ("" for none; not dated), and the proof kinds,
+- *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved. */
+-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string };
++ *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved,
++ *  and the score thresholds, whole numbers ("" for blank; not dated): while both are set each person shows a band (see scoreBand). */
++export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string };
+ 
+ /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
+  *  steward, and the audit lines of their changes end with for=<by>. */
+@@ -39,6 +40,16 @@ export function inForce(settings: Settings | undefined, key: string, date: strin
+   return found === undefined || found.value === '' ? start : found.value;
+ }
+ 
++/** A person's band for their score: HIGH at or above the score-high, MID at or above the score-mid, else LOW;
++ *  "" while either threshold is blank. */
++export function scoreBand(settings: Settings | undefined, score: string): string {
++  const mid = settings?.scoreMid ?? '';
++  const high = settings?.scoreHigh ?? '';
++  if (mid === '' || high === '') return '';
++  const value = Number(score);
++  return value >= Number(high) ? 'HIGH' : value >= Number(mid) ? 'MID' : 'LOW';
++}
++
+ /** The floor a sheet starts with, used until its settings have loaded. */
+ export const DEFAULT_FLOOR = '1.00';
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 2adc007f..388890ee 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -489,7 +489,8 @@ public class AsOfView {
+                 net.officefloor.hq.app.claim.Rounding.name(on.apply(ValidateSetting.ROUNDING)),
+                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
+                 plain.getOrDefault(Settings.ESCALATE, ""), plain.getOrDefault(Settings.REVIEW_SLA, ""),
+-                plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""));
++                plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""),
++                plain.getOrDefault(ValidateSetting.SCORE_MID, ""), plain.getOrDefault(ValidateSetting.SCORE_HIGH, ""));
+     }
+ 
+     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java b/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java
+index 66c3cba7..11a7e701 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java
+@@ -64,6 +64,14 @@ public class SaveSetting {
+             response.send(settings.load(sheetId));
+             return;
+         }
++        if (ValidateSetting.SCORE_MID.equals(setting.key()) || ValidateSetting.SCORE_HIGH.equals(setting.key())) {
++            settings.setScoreThreshold(sheetId, setting.key(), setting.value() == null ? null : setting.value().intValue());
++            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
++                    + " key=" + setting.key() + " value=" + (setting.value() == null ? "" : setting.value().toPlainString()));
++            rollup.recordChanges(sheetId, setting.user(), before);
++            response.send(settings.load(sheetId));
++            return;
++        }
+         if (ValidateSetting.GRACE_DAYS.equals(setting.key())) {
+             settings.setGraceDays(sheetId, setting.value() == null ? null : setting.value().intValue());
+             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index f4257ec8..93b4c867 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -274,6 +274,22 @@ public class Settings {
+         plainHistory(sheetId, REVIEW_SLA, days == null ? "" : String.valueOf(days));
+     }
+ 
++    /** The sheet's score threshold (score-mid or score-high); null when blank. */
++    public Integer scoreThreshold(String sheetId, String key) {
++        sheets.today(sheetId); // the sheet's row holds the score thresholds
++        return jdbc.queryForObject("SELECT " + scoreColumn(key) + " FROM sheet WHERE id = ?", Integer.class, sheetId);
++    }
++
++    public void setScoreThreshold(String sheetId, String key, Integer value) {
++        sheets.today(sheetId);
++        jdbc.update("UPDATE sheet SET " + scoreColumn(key) + " = ? WHERE id = ?", value, sheetId);
++        plainHistory(sheetId, key, value == null ? "" : String.valueOf(value));
++    }
++
++    private static String scoreColumn(String key) {
++        return ValidateSetting.SCORE_HIGH.equals(key) ? "score_high" : "score_mid";
++    }
++
+     /** The sheet's proof kinds, in the order set; empty when none. */
+     public List<String> proofKinds(String sheetId) {
+         sheets.today(sheetId); // the sheet's row holds the proof kinds
+@@ -462,6 +478,8 @@ public class Settings {
+         Integer grace = graceDays(sheetId);
+         Integer escalate = escalateAfter(sheetId);
+         Integer reviewSla = reviewSla(sheetId);
++        Integer scoreMid = scoreThreshold(sheetId, ValidateSetting.SCORE_MID);
++        Integer scoreHigh = scoreThreshold(sheetId, ValidateSetting.SCORE_HIGH);
+         LocalDate entry = entryDate(sheetId);
+         BigDecimal pot = pot(sheetId);
+         BigDecimal alert = alertThreshold(sheetId);
+@@ -495,6 +513,7 @@ public class Settings {
+                 alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()),
+                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
+                 escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
+-                String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""));
++                String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""),
++                scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 8c8ba2dd..69d36431 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -5,6 +5,6 @@ import java.util.List;
+ /** The sheet's settings: the clerk limit at two decimals ("" for no limit), the floor at two decimals
+  *  the terms in days, the late percent at two decimals, the policy date ("" for blank), the period numbering from ("" for off) the roles set and each grade's own terms in days, by grade (a grade not in it uses the sheet's terms) and the cap at two decimals ("" for none) — each of those as in force on the sheet's today — and every
+  *  value recorded for those dated settings, by key, oldest from-date first, and the proof threshold in force on the sheet's today ("" for none), and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule), and the grace days ("" for off; not dated), and every delegation of the steward role, in the order given, and the note threshold in force on the sheet's today ("" for none), the entry date ("" for off) and the pot ("" for none; not dated), and the alert threshold ("" for off; not dated), and the escalation gap in days ("" for off; not dated), and the review SLA in days ("" for none; not dated), and the proof kinds, comma separated ("" for none; not dated)
+- *  and the parent sheet id ("" for none; not dated), and the default grade ("" for A; not dated). */
+-public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, List<RoleResponse> roles, java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, List<DatedValue>> dated, String proofThreshold, java.util.Map<String, String> perms, String graceDays, List<DelegationResponse> delegations, String noteThreshold, String entryDate, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
++ *  and the parent sheet id ("" for none; not dated), and the default grade ("" for A; not dated), and the score thresholds, whole numbers ("" for blank; not dated). */
++public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, List<RoleResponse> roles, java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, List<DatedValue>> dated, String proofThreshold, java.util.Map<String, String> perms, String graceDays, List<DelegationResponse> delegations, String noteThreshold, String entryDate, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index f31b2e62..2b4ceb45 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -64,6 +64,16 @@ public class ValidateSetting {
+     /** Not dated: a REVIEW claim whose review day plus this many days is before the sheet's today is review-late; blank: none. */
+     public static final String REVIEW_SLA = "review-sla";
+ 
++    /** Not dated: a whole number; while it and the score-high are set, a person whose score is at or above it (and below the
++     *  score-high) shows the band MID, one below it LOW; blank: none. */
++    public static final String SCORE_MID = "score-mid";
++
++    /** Not dated: a whole number; while it and the score-mid are set, a person whose score is at or above it shows the band HIGH; blank: none. */
++    public static final String SCORE_HIGH = "score-high";
++
++    /** A score threshold: a whole number, possibly negative. */
++    private static final Pattern SCORE = Pattern.compile("-?\\d{1,6}");
++
+     /** Not dated: each member of a balanced pool shows their cut of it; blank: none. */
+     public static final String POT = "pot";
+ 
+@@ -102,7 +112,7 @@ public class ValidateSetting {
+         settings.refuseViewer(sheetId, request.user());
+         String key = request.key() == null ? "" : request.key().trim();
+         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
++                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
+                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
+                 && !(key.startsWith(GRADE_CLERK_LIMIT) && GRADES.contains(key.substring(GRADE_CLERK_LIMIT.length())))
+                 && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
+@@ -178,6 +188,17 @@ public class ValidateSetting {
+             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
+             return;
+         }
++        if (SCORE_MID.equals(key) || SCORE_HIGH.equals(key)) {
++            if (raw.isEmpty()) {
++                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
++                return;
++            }
++            if (!SCORE.matcher(raw).matches()) {
++                throw new InvalidSettingException("A score threshold must be a whole number, or blank for none");
++            }
++            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
++            return;
++        }
+         if (GRACE_DAYS.equals(key)) {
+             if (raw.isEmpty()) {
+                 body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: off
+diff --git a/src/main/resources/db/migration/V107__score_thresholds.sql b/src/main/resources/db/migration/V107__score_thresholds.sql
+new file mode 100644
+index 00000000..66997c80
+--- /dev/null
++++ b/src/main/resources/db/migration/V107__score_thresholds.sql
+@@ -0,0 +1,4 @@
++-- The sheet's score thresholds, whole numbers (not dated). Null: blank. While both are set each person shows a band:
++-- HIGH at or above score_high, MID at or above score_mid, else LOW.
++ALTER TABLE sheet ADD COLUMN score_mid INT;
++ALTER TABLE sheet ADD COLUMN score_high INT;
