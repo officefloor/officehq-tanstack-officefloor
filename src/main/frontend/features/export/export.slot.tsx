@@ -4,12 +4,7 @@ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-
-/** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote
- *  or a line break. */
-function csvValue(v: string): string {
-  return /[",\r\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v;
-}
+import { downloadCsv } from './csv';
 
 /**
  * Downloads the people as a CSV file: a header line, then one line per person in list order,
@@ -39,15 +34,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
       );
       lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(due)]);
     }
-    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `people-${sheet}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    downloadCsv(lines, `people-${sheet}.csv`);
   };
 
   return (
