@@ -243,6 +243,23 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  const [newDueBy, setNewDueBy] = useState('');
+
+  const setDueBy = useMutation({
+    mutationFn: (dueBy: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/due-by`,
+        { dueBy, user },
+      ),
+    onSuccess: () => {
+      setNewDueBy('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
   const [newDate, setNewDate] = useState('');
 
   const redate = useMutation({
@@ -398,6 +415,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     hold.reset();
     remind.reset();
     redate.reset();
+    setDueBy.reset();
     proof.reset();
     split.reset();
     settlePart.reset();
@@ -660,6 +678,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         Re-date
       </button>{' '}
       <input
+        type="date"
+        data-testid="claim-due-by-new"
+        value={newDueBy}
+        onChange={(e) => act(() => setNewDueBy(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-set-due-by" onClick={() => act(() => setDueBy.mutate(newDueBy))}>
+        Set due-by
+      </button>{' '}
+      <input
         data-testid="claim-split-amount"
         value={splitAmount}
         placeholder="Amount to split off"
@@ -782,6 +809,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only an OPEN or PENDING claim can be reminded, and only once per sheet-today.
+        </span>
+      )}
+      {setDueBy.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a steward can set a claim's due-by, and only on a DRAFT, OPEN or PENDING claim.
         </span>
       )}
       {redate.isError && (

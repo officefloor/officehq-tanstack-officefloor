@@ -442,6 +442,13 @@ public class Claims {
         history(claim.getSheetId(), claim.getId());
     }
 
+    /** Records the claim's due-by as set directly: it keeps no terms, so a holiday added later does not move it. */
+    public void setDueBy(Claim claim) {
+        jdbc.update("UPDATE claim SET due_by = ?, terms = NULL WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(claim.getDueBy()), claim.getSheetId(), claim.getId());
+        history(claim.getSheetId(), claim.getId());
+    }
+
     /** Records the claim's (new) date and number. */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ?",
