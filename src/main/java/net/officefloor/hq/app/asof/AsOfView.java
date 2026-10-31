@@ -402,7 +402,7 @@ public class AsOfView {
             Date added = addedOn.get(now.name());
             if (added != null && added.toLocalDate().isAfter(date)) continue;
             byName.put(now.name(), new PeriodResponse(now.name(), now.from(), now.to(), false, "", new LinkedHashMap<>(), false, now.cap(),
-                    new LinkedHashMap<>(), now.locked()));
+                    new LinkedHashMap<>(), now.locked(), now.addedOrder()));
         }
         jdbc.query("SELECT name, closed, soft_closed, closed_total, person_totals, person_carried FROM period_history WHERE sheet_id = ?"
                 + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
@@ -411,7 +411,7 @@ public class AsOfView {
                     BigDecimal total = rs.getBigDecimal(4);
                     byName.put(was.name(), new PeriodResponse(was.name(), was.from(), was.to(), rs.getBoolean(2),
                             total == null ? "" : total.setScale(2).toPlainString(), byPerson(rs.getString(5)), rs.getBoolean(3),
-                            was.cap(), byPerson(rs.getString(6)), was.locked()));
+                            was.cap(), byPerson(rs.getString(6)), was.locked(), was.addedOrder()));
                 }, sheetId, end);
         return new ArrayList<>(byName.values());
     }

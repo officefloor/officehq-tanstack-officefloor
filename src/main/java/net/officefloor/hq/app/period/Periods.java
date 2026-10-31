@@ -23,7 +23,7 @@ public class Periods {
                 rs.getDate("to_date").toLocalDate().toString(), rs.getBoolean("closed"),
                 total == null ? "" : total.setScale(2).toPlainString(), new LinkedHashMap<>(),
                 rs.getBoolean("soft_closed"), rs.getObject("claim_cap") == null ? "" : String.valueOf(rs.getInt("claim_cap")),
-                new LinkedHashMap<>(), rs.getBoolean("locked"));
+                new LinkedHashMap<>(), rs.getBoolean("locked"), rs.getLong("added_seq"));
     };
 
     private final JdbcTemplate jdbc;

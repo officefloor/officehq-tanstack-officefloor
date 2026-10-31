@@ -64,7 +64,9 @@ import { scoreBand, useSettings } from '../settings/useSettings';
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. The export claims button
 // downloads every claim as CSV — people in list order (retired too), each person's claims oldest first — with person,
-// number, date, amount, due, status and period as the claim's row shows them. Each person's export statement button downloads, as CSV, their claims bound by their last statement, oldest first: number, date, amount, the bound figure as the claim shows it, and status.
+// number, date, amount, due, status and period as the claim's row shows them. The export periods button downloads the
+// period figures as CSV: person, period, figure (the period's due-total) and carried as the row shows them, one line per
+// person and period, people in list order (retired too) and periods in the order added. Each person's export statement button downloads, as CSV, their claims bound by their last statement, oldest first: number, date, amount, the bound figure as the claim shows it, and status.
 // Claims ticked
 // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
@@ -171,6 +173,12 @@ export function PeopleList() {
           periodOf(periods, dueBy(c))?.name ?? '',
         ]),
     );
+  const periodRows = () => {
+    const added = periods.slice().sort((a, b) => a.addedOrder - b.addedOrder);
+    return people.flatMap((p) =>
+      added.map((period) => [p.name, period.name, formatCents(periodDueOf(period, p.id)), formatCents(periodCarriedOf(period, p.id))]),
+    );
+  };
 
   const overdueOf = (personId: string) => overdue.filter((c) => c.personId === personId);
   return (
@@ -201,6 +209,13 @@ export function PeopleList() {
         onClick={() => downloadCsv('claims.csv', [['person', 'number', 'date', 'amount', 'due', 'status', 'period'], ...claimRows()])}
       >
         Export claims
+      </button>
+      <button
+        type="button"
+        data-testid="export-periods"
+        onClick={() => downloadCsv('periods.csv', [['person', 'period', 'figure', 'carried'], ...periodRows()])}
+      >
+        Export periods
       </button>
       <BulkOpenButton />
       <BulkSettleButton />

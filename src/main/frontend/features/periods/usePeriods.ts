@@ -8,7 +8,8 @@ import { readPath, useAsOf } from '../asof/useAsOf';
  *  has its figures fixed the same way, but its claims stay open to change. Its cap is the most OPEN or PENDING
  *  claims a person may have in it ("" for none): opening one more is refused. Each person's carried figure for it is
  *  fixed by a close or soft-close too, by person id (empty while open; none for a person added later, nor for a
- *  close made before carried figures were kept). A locked period cannot be reopened. */
+ *  close made before carried figures were kept). A locked period cannot be reopened. Its added order is its place in the order the sheet's
+ *  periods were added. */
 export type Period = {
   name: string;
   from: string;
@@ -20,6 +21,7 @@ export type Period = {
   cap: string;
   closedPersonCarried: Record<string, string>;
   locked: boolean;
+  addedOrder: number;
 };
 
 export const periodsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'periods', asOf] as const;
