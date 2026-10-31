@@ -11,7 +11,8 @@ import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriod
 /**
  * The sheet's periods, each with its due-total — the figures of everyone's counted (OPEN or
  * SETTLED) claims dated in it, n/a ones skipped — and one form to add a period: a name unique on
- * the sheet and a from and to date, inclusive, overlapping no other period.
+ * the sheet and a from and to date, inclusive, overlapping no other period. A period can be closed:
+ * its due-total is then the one it had when it was closed, whatever rates do later.
  */
 function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -23,6 +24,8 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
+  // The period whose last close was refused: its row shows the error.
+  const [refused, setRefused] = useState<string | null>(null);
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
@@ -34,6 +37,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       setTo('');
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
     },
+  });
+
+  const close = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_e, name) => setRefused(name),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
 
   // An error goes as soon as its form is changed or submitted again.
@@ -56,11 +67,13 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
 
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
   const dueIn = (period: Period) =>
-    totalDue(
-      counted(all)
-        .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
-        .map((c) => claimDueCents(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
-    );
+    period.closed && period.closedTotal !== null
+      ? period.closedTotal
+      : totalDue(
+          counted(all)
+            .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
+            .map((c) => claimDueCents(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
+        );
 
   return (
     <section data-testid="periods-panel">
@@ -131,6 +144,8 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             <th>From</th>
             <th>To</th>
             <th>Due</th>
+            <th>Closed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -140,6 +155,23 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{dueIn(p)}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="period-close"
+                  disabled={close.isPending}
+                  onClick={() => close.mutate(p.name)}
+                >
+                  Close
+                </button>
+                {refused === p.name && (
+                  <span data-testid="period-error" role="alert">
+                    {' '}
+                    Could not close this period.
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
