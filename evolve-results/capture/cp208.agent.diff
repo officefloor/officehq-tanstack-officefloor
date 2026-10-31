@@ -1,0 +1,155 @@
+diff --git a/src/main/frontend/features/claims/BulkOpen.tsx b/src/main/frontend/features/claims/BulkOpen.tsx
+index 9045019f..d2fcacd7 100644
+--- a/src/main/frontend/features/claims/BulkOpen.tsx
++++ b/src/main/frontend/features/claims/BulkOpen.tsx
+@@ -44,7 +44,7 @@ export function ClaimSelect({ claimId }: { claimId: string }) {
+   );
+ }
+ 
+-// Opens the selected claims together: the server opens and numbers each that can be opened, in list
++// Opens the selected claims together: the server opens each that can be opened (unnumbered until settled), in list
+ // order (people in the order they were added, newest claim first within a person), and leaves each
+ // that cannot as it is. Then shows how many were opened and how many were refused, and clears the
+ // selection; pressing again removes the old counts until the new ones are in.
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 5cb2d14d..81be29e8 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -21,7 +21,7 @@ import { peopleKey, type Person } from '../people/usePeople';
+ // claim to PENDING, which keeps any figure a statement bound it to; a steward may void a SETTLED claim within 7 days of
+ // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
+ // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener or last editor cannot approve it), review (a steward's
+-// decision on a REVIEW claim — one whose due was above the review threshold in force on its date when opened — making it OPEN with its number) and an edit button that
++// decision on a REVIEW claim — one whose due was above the review threshold in force on its date when opened — making it OPEN, unnumbered until settled) and an edit button that
+ // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one whose due-by is inside a closed
+ // period, or one another user's open editor locks, is refused with the claim's error — to change an open claim, void it and
+ // add a new one. An open editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes. A steward (or the roles the sheet's
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 9c5544b2..1159ad53 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -137,14 +137,14 @@ public class ApplyClaimStatus {
+                 target = ClaimStatus.PENDING;
+             }
+         }
+-        if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.REVIEW) {
+-            // Reviewed: numbered as it opens; its opener stays the user who opened it.
+-            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
+-        }
++        // Reviewed: it opens unnumbered; its opener stays the user who opened it.
+         if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
+-            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
+             claim.setOpenedBy(request.user());
+         }
++        if (target == ClaimStatus.SETTLED && claim.getNumber() == null) {
++            // Numbered as it settles (or is approved), by the date that places it then; one numbered before keeps its number.
++            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
++        }
+         // A voided claim keeps its number; numbers are never reused.
+         ClaimNumber number = new ClaimNumber(claim.getNumber());
+         if (target == ClaimStatus.SETTLED) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index 3738db93..c58c9270 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the sheet's reassign permission allows
+  * (by default a steward) move a claim, and none whose due-by is inside a closed period moves.
+  * It keeps its date, takes the next number in the sequence it would be numbered in now (its old number is
+- * never used again; a DRAFT, having none, gets none), but loses any figure a statement bound it to: it is live again until
++ * never used again; a claim not yet numbered, having none, gets none), but loses any figure a statement bound it to: it is live again until
+  * its new person's next statement.
+  */
+ public class ApplyReassign {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+index e589156c..d0970c59 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+@@ -13,7 +13,7 @@ public class AuditClaimSplit {
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         Claim into = split.into();
+         audit.recordOnCommit(ClaimAudit.line("CLAIM_SPLIT", request.user(), person, claim, claim.getNumber())
+-                + " into=" + into.getNumber());
++                + " into=" + (into.getNumber() == null ? "" : into.getNumber()));
+         audit.recordOnCommit(ClaimAudit.line("CLAIM_OPENED", request.user(), person, into, into.getNumber()));
+         rollup.recordChanges(claim.getSheetId(), request.user(), before);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index d2225753..d624b73a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -18,14 +18,14 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+  * Opens the selected claims in list order (people in the order they were added, newest claim first
+- * within a person), numbering each as it opens and auditing it as a single open would be. A selected
++ * within a person), unnumbered until settled, and auditing it as a single open would be. A selected
+  * claim that cannot be opened (not DRAFT, its due-by inside a closed period, the user's role may not open, its note is empty while its due is above the note threshold, its person is flagged and the user is not a steward, or its person already has as many OPEN or PENDING claims in its period as the period's cap) is left as it is and counted
+  * as refused; so is a selected id that is not a claim on the sheet. A claim whose due is above the review threshold goes to
+  * REVIEW instead and counts as opened.
+  */
+ public class BulkOpenClaims {
+     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
+-            Claims claims, People people, Periods periods, Settings settings, Sheets sheets, Rates rates, ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log,
++            Claims claims, People people, Periods periods, Settings settings, Sheets sheets, Rates rates, Rollup rollup, Audit audit, ClaimLog log,
+             ObjectResponse<BulkOpenResponse> response) {
+         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
+         List<Claim> all = claims.list(sheetId);
+@@ -61,7 +61,6 @@ public class BulkOpenClaims {
+                     continue;
+                 }
+                 RollupFigures before = rollup.figures(sheetId);
+-                claim.setNumber(numbering.next(sheetId, claim.getPeriodDate()));
+                 claim.setOpenedBy(request.user());
+                 claim.setStatus(ClaimStatus.OPEN);
+                 claims.save(claim);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+index 98f7d66b..2a69e90f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbering.java
+@@ -8,7 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /**
+- * Gives an opening claim its number. While the sheet's period numbering from is set and the sheet's
++ * Gives a settling (or approved) claim its number. While the sheet's period numbering from is set and the sheet's
+  * today is on or after it, the number counts from 1 within the claim's period: {@code <period>-<n>},
+  * or {@code X-<n>} in its own sequence for a claim in no period. Otherwise it is the sheet-wide number
+  * {@code FY<yyyy>-<n>}, counting from 1 within the fiscal year of the claim's period date, in a sequence shared
+@@ -41,7 +41,7 @@ public class ClaimNumbering {
+         return from != null && !sheets.today(sheetId).isBefore(from);
+     }
+ 
+-    /** The next number for a claim dated on the date, opened now. */
++    /** The next number for a claim placed by the date, settled now. */
+     public String next(String sheetId, LocalDate claimDate) {
+         if (!perPeriod(sheetId)) {
+             String fy = fiscalYearOf(claimDate, settings.fiscalStartMonth(sheetId));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index 3cfc42cd..1ef9c803 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -6,12 +6,12 @@ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Saves the split claim and adds the new OPEN claim with the split-off amount, the same date and note, the next
+- *  number, opened by the user, its due-by fixed now from the terms in force on the sheet's today, split from the claim, carrying its tags, and a
++/** Saves the split claim and adds the new OPEN claim with the split-off amount, the same date and note, no number
++ *  (it is numbered when settled), opened by the user, its due-by fixed now from the terms in force on the sheet's today, split from the claim, carrying its tags, and a
+  *  late entry when the claim is one. */
+ public class SaveSplit {
+     public void save(@Val ValidSplit request, @Val Claim claim, Claims claims, People people, Settings settings,
+-            ClaimNumbering numbering, ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays, Out<ClaimSplit> split) {
++            ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays, Out<ClaimSplit> split) {
+         claims.save(claim);
+         claims.bind(claim);
+         String sheetId = claim.getSheetId();
+@@ -19,7 +19,6 @@ public class SaveSplit {
+         Claim into = claims.add(sheetId, person.getId(), request.amount(), claim.getDate(), claim.getNote(),
+                 holidays.dueBy(sheetId, claim.getDate(), settings.termsOnCreation(sheetId, person)));
+         into.setStatus(ClaimStatus.OPEN);
+-        into.setNumber(numbering.next(sheetId, into.getPeriodDate()));
+         into.setOpenedBy(request.user());
+         into.setSplitFrom(claim.getNumber());
+         into.setTags(claim.getTags());
