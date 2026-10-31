@@ -1,0 +1,44 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index bddab9be..869faf7e 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -154,7 +154,7 @@ export function overdueFrom(claim: Claim, late: Late): string {
+ 
+ /** The late charge on an overdue claim's `figure`, in cents: for every full 30 days it is overdue,
+  *  counted from its due-by plus its grace, the late percent in force on that boundary date (the due-by
+- *  plus the grace plus 30, 60, 90 ... days) of it, each
++ *  plus the grace plus 30, 60, 90 ... days) of it plus the charges of the boundaries before it (compounding), each
+  *  rounded by the claim's rounding (`halfUp`), added up; a boundary at 0.00 adds nothing. Nothing
+  *  while it is not overdue. Never bound by a statement: it follows the sheet's today. */
+ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
+@@ -166,7 +166,7 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
+     const pct = hundredths(late.pctOn(addDays(from, 30 * k)));
+     if (pct === 0n) continue;
+     // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
+-    total += roundTenThousandths(figure * pct, claim.halfUp);
++    total += roundTenThousandths((figure + total) * pct, claim.halfUp);
+   }
+   return total;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Figures.java b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+index bd544ab8..861e7812 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Figures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+@@ -82,7 +82,7 @@ public class Figures {
+     /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING), not deferred, and its due-by (fixed
+      *  when it was added) plus its grace is before the sheet's today (a correction has none); then, for every full 30 days it is
+      *  overdue, counted from its due-by plus its grace, the sheet's late percent in force on that boundary date (the due-by plus
+-     *  the grace plus 30, 60, 90 ... days) of the figure, each rounded by the claim's rounding to two decimals, added up. A
++     *  the grace plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it (compounding), each rounded by the claim's rounding to two decimals, added up. A
+      *  boundary whose percent is 0.00 adds nothing. Never bound by a statement: it follows the sheet's today. */
+     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
+         BigDecimal none = BigDecimal.ZERO.setScale(2);
+@@ -94,7 +94,7 @@ public class Figures {
+         for (long k = 1; k <= periods; k++) {
+             BigDecimal pct = settings.latePct(sheetId, from.plusDays(30 * k));
+             if (pct.signum() == 0) continue;
+-            total = total.add(figure.multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim)));
++            total = total.add(figure.add(total).multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim)));
+         }
+         return total;
+     }
