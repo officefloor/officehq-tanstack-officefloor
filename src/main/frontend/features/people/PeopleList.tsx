@@ -246,6 +246,8 @@ export function PeopleList() {
             <th>Settled</th>
             <th>Score</th>
             <th>Band</th>
+            <th>Open claims</th>
+            <th>Settled claims</th>
             <th>Open</th>
             <th>Active</th>
             <th>Aged 0-30</th>
@@ -300,6 +302,8 @@ export function PeopleList() {
                 <td data-testid="person-settled-total">{formatCents(settledTotalOf(p))}</td>
                 <td data-testid="person-score">{scoreOf(p)}</td>
                 <td data-testid="person-band">{scoreBand(settings, scoreOf(p))}</td>
+                <td data-testid="person-claims-OPEN-count">{own.filter((c) => c.status === 'OPEN').length}</td>
+                <td data-testid="person-claims-SETTLED-count">{own.filter((c) => c.status === 'SETTLED').length}</td>
                 <td data-testid="person-open-total">{formatCents(openTotalOf(p))}</td>
                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
                 <td data-testid="person-aged-0-30">{formatCents(aged[0])}</td>
