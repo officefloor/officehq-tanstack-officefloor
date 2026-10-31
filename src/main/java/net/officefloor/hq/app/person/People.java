@@ -150,6 +150,19 @@ public class People {
         person.clearRecordedGrade();
     }
 
+    /** Makes every grade record of the person on one grade the other grade, whatever its from-date (a retroactive
+     *  grade merge), each recorded in the grade history as set on the sheet's today. */
+    public void regrade(Person person, String from, String into) {
+        java.util.List<java.time.LocalDate> dates = new java.util.ArrayList<>();
+        person.getGrades().forEach((on, grade) -> {
+            if (from.equals(grade)) dates.add(on);
+        });
+        for (java.time.LocalDate on : dates) {
+            person.recordGrade(on, into);
+            writeRecordedGrade(person);
+        }
+    }
+
     /** Writes the terms the person's edit recorded from a date, replacing any recorded from the same date. */
     private void writeRecordedTerms(Person person) {
         java.time.LocalDate recorded = person.getRecordedTermsFrom();

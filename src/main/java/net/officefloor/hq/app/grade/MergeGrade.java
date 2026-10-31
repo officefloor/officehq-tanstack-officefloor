@@ -13,7 +13,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Gives every person whose grade in force on the sheet's today is the merged grade the other grade from
  * the sheet's today, in list order, each exactly as a person form save would: audited as PERSON_EDITED
- * with the rollup lines it moved; then the rollup lines the whole merge moved. Counted.
+ * with the rollup lines it moved; then, retroactively, every grade record of theirs on the merged grade becomes
+ * the other grade; then the rollup lines the whole merge moved. Counted.
  */
 public class MergeGrade {
     public void merge(@PathVariable("sheetId") String sheetId, @Val ValidGradeMerge request, People people,
@@ -21,7 +22,7 @@ public class MergeGrade {
         audit.recordOnCommit("GRADE_MERGED sheet=" + sheetId + " by=" + request.user()
                 + " from=" + request.from() + " into=" + request.into());
         RollupFigures start = rollup.figures(sheetId);
-        int merged = 0;
+        java.util.List<Person> moved = new java.util.ArrayList<>();
         for (Person person : people.list(sheetId)) {
             if (!request.from().equals(person.getGrade())) {
                 continue;
@@ -34,8 +35,13 @@ public class MergeGrade {
             audit.recordOnCommit("PERSON_EDITED sheet=" + sheetId + " by=" + request.user()
                     + " name=" + person.getName() + " grade=" + person.getGrade());
             rollup.recordChanges(sheetId, request.user(), before);
-            merged++;
+            moved.add(person);
         }
+        // The merge is retroactive: every grade record of each person it moved on the merged grade becomes the other.
+        for (Person person : moved) {
+            people.regrade(person, request.from(), request.into());
+        }
+        int merged = moved.size();
         if (merged > 0) {
             rollup.recordChanges(sheetId, request.user(), start);
         }
