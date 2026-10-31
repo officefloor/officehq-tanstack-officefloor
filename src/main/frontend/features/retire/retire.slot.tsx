@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { peopleKey, type Person } from '../people/usePeople';
+import { poolsKey } from '../pools/usePools';
 import { useRowAction } from '../people/useRowAction';
 
 /**
@@ -19,12 +20,21 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
     mutationFn: (date: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/retire`, { from: date, user }),
     onSuccess: () => setFrom(''),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+    // A retirement changes the pools' cuts (a retired member's share is spread over the others).
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]),
   });
   const unretire = useMutation({
     mutationFn: () =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unretire`, { user }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]),
   });
   const actionTaken = useRowAction(sheet, person.id, () => {
     retire.reset();
