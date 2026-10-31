@@ -47,7 +47,13 @@ public class People {
                 (ResultSet rs) -> {
                     holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(hold(rs));
                 }, sheetId);
+        Map<Long, List<String>> aliases = new HashMap<>();
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY alias_key, id",
+                (ResultSet rs) -> {
+                    aliases.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getString("alias"));
+                }, sheetId);
         for (Person person : people) {
+            person.setAliases(aliases.getOrDefault(person.getId(), new ArrayList<>()));
             person.setHolds(holds.getOrDefault(person.getId(), new ArrayList<>()));
             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
             TreeMap<LocalDate, String> dated = grades.get(person.getId());
@@ -70,19 +76,34 @@ public class People {
                 .stream().findFirst().orElse(null));
     }
 
-    /** The person on this sheet with this name (matched as names are kept unique: without the
-     *  spaces around it and in any case), or null when there is none. */
+    /** The person on this sheet with this name or alias (matched as names are kept unique: without
+     *  the spaces around it and in any case), or null when there is none. */
     public Person named(String sheetId, String name) {
-        return withPatrons(jdbc.query(COLUMNS + " WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", People::person,
-                sheetId, name).stream().findFirst().orElse(null));
+        return withPatrons(jdbc.query(COLUMNS + " WHERE sheet_id = ? AND (name_key = LOWER(TRIM(?)) OR id IN "
+                + "(SELECT person_id FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?))))",
+                People::person, sheetId, name, sheetId, name).stream().findFirst().orElse(null));
     }
 
-    /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
+    /** Whether another person on this sheet (not `exceptId`, which may be null) already has this
+     *  name, or anyone on the sheet has it as an alias. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+        return (n != null && n > 0) || aliasTaken(sheetId, name);
+    }
+
+    /** Whether anyone on this sheet already has this as an alias. */
+    private boolean aliasTaken(String sheetId, String alias) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?))",
+                Integer.class, sheetId, alias);
         return n != null && n > 0;
+    }
+
+    /** Whether this equals, as names are compared, any name or alias on this sheet. */
+    public boolean nameOrAliasTaken(String sheetId, String alias) {
+        return nameTaken(sheetId, alias, null);
     }
 
     /** Whether another person on this sheet (not `exceptId`, which may be null) already has this contact. */
@@ -171,6 +192,19 @@ public class People {
         person.getPatronIds().add(patron.getId());
     }
 
+    /** Give the person an alias (kept trimmed). Not an edit: the person's version is untouched. */
+    public void addAlias(Person person, String alias) {
+        String kept = alias.trim();
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",
+                person.getSheetId(), person.getId(), kept, kept);
+        person.setAliases(aliasesOf(person.getId()));
+    }
+
+    private List<String> aliasesOf(long personId) {
+        return new ArrayList<>(jdbc.queryForList(
+                "SELECT alias FROM person_alias WHERE person_id = ? ORDER BY alias_key, id", String.class, personId));
+    }
+
     /** Record the person's grade from its date, replacing the one they had from that date. */
     private void saveGrade(Person person, Person.DatedGrade dated) {
         Date from = dated.from() != null ? Date.valueOf(dated.from()) : null;
@@ -196,6 +230,7 @@ public class People {
             person.setHolds(new ArrayList<>(jdbc.query(
                     "SELECT from_date, to_date FROM person_hold WHERE person_id = ? ORDER BY id",
                     (rs, i) -> hold(rs), person.getId())));
+            person.setAliases(aliasesOf(person.getId()));
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
         }

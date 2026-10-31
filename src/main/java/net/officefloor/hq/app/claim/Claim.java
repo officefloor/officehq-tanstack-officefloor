@@ -90,10 +90,11 @@ public class Claim {
     /** The date the claim was last deferred until; null when it never was. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
-    /** Whether the claim is deferred now: OPEN, and the sheet's today (as it was when the claim was
-     *  read) is before its deferred-until date. A deferred claim counts in no total, is not overdue,
-     *  cannot be settled and is left unbound by a statement. */
-    public boolean isDeferred() { return deferred && status == ClaimStatus.OPEN; }
+    /** Whether the claim is deferred now: the sheet's today (as it was when the claim was read) is
+     *  before its deferred-until date (only an OPEN claim is deferred, and a voided one keeps showing
+     *  it). A deferred claim counts in no total, is not overdue, cannot be settled and is left
+     *  unbound by a statement. */
+    public boolean isDeferred() { return deferred; }
     public void setDeferred(boolean deferred) { this.deferred = deferred; }
     /** How many proofs the claim has: a claim whose due is above the sheet's proof threshold on its
      *  date cannot be settled or approved while it has none. */

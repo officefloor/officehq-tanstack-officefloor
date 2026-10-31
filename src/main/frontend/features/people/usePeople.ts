@@ -14,7 +14,9 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  the order they were named. `grade` is the grade in force on the sheet's today when they were read;
  *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). `terms` are
  *  the person's own terms in days (null: none), ahead of their grade's and the sheet's.
- *  `contact` is the person's contact, trimmed and lower-cased (null: none). */
+ *  `contact` is the person's contact, trimmed and lower-cased (null: none). `aliases` are the
+ *  person's aliases, sorted as names are compared; the quick-add bar and the paste box find a
+ *  person by an alias as well as by the name. */
 export type Person = {
   id: number;
   name: string;
@@ -31,6 +33,7 @@ export type Person = {
   patrons: number[];
   terms: number | null;
   contact: string | null;
+  aliases: string[];
 };
 
 /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */

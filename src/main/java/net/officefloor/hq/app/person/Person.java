@@ -36,6 +36,8 @@ public class Person {
     private LocalDate retiredFrom;
     private List<Hold> holds = new ArrayList<>();
     private List<Long> patronIds = new ArrayList<>();
+    /** The person's aliases, sorted as names are compared. */
+    private List<String> aliases = new ArrayList<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -126,6 +128,9 @@ public class Person {
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public List<Long> getPatronIds() { return patronIds; }
     public void setPatronIds(List<Long> patronIds) { this.patronIds = patronIds; }
+    /** The person's aliases, sorted as names are compared. */
+    public List<String> getAliases() { return aliases; }
+    public void setAliases(List<String> aliases) { this.aliases = aliases; }
 
     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
      *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, nor
