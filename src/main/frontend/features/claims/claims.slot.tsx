@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
+import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheet';
 import {
@@ -20,7 +21,7 @@ import {
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
- * with its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date; in the
+ * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total.
  */
@@ -29,6 +30,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
   const { data: rates = [] } = useRates(sheet);
+  const { data: periods = [] } = usePeriods(sheet);
   const today = useSheetToday(sheet);
   const pct = rateOn(rates, person.grade, today);
   const [editing, setEditing] = useState<number | null>(null);
@@ -152,6 +154,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
+              <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{showDue(claimDueCents(c, rateOn(rates, person.grade, c.date)))}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
