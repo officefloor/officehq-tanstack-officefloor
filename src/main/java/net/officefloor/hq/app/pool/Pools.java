@@ -41,7 +41,7 @@ public class Pools {
     /** The sheet's pools as {@link #list(String)}, with memberships' dates, holds and the pot judged on the date standing for
      *  the sheet's today (null: the sheet's today itself), as the as-of view shows them: a hold set after the date is left out. */
     public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
-        List<PoolResponse> pools = compute(sheetId, on, false);
+        List<PoolResponse> pools = compute(sheetId, on, false, on != null);
         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
         Map<String, Map<String, String>> frozen = frozenCuts(sheetId, day);
         Map<String, Map<String, String>> history = new LinkedHashMap<>();
@@ -143,6 +143,12 @@ public class Pools {
      *  retirements are as they stood at the end of the date: those added later are left out, a retirement is the latest
      *  recorded by then. */
     private List<PoolResponse> compute(String sheetId, java.time.LocalDate on, boolean then) {
+        return compute(sheetId, on, then, then);
+    }
+
+    /** As {@link #compute(String, java.time.LocalDate, boolean)}, with retirements as recorded by the end of the date when
+     *  retiredAsRecorded (the as-of view: a retirement recorded later is left out). */
+    private List<PoolResponse> compute(String sheetId, java.time.LocalDate on, boolean then, boolean retiredAsRecorded) {
         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
         String added = then ? " AND (added_on IS NULL OR added_on <= ?)" : "";
         Map<String, List<PoolResponse.Member>> members = new LinkedHashMap<>();
@@ -150,7 +156,7 @@ public class Pools {
                 String.class, then ? new Object[] {sheetId, day} : new Object[] {sheetId})) {
             members.put(name, new ArrayList<>());
         }
-        Map<Long, Boolean> retiredThen = then ? retiredOn(sheetId, day) : null;
+        Map<Long, Boolean> retiredThen = retiredAsRecorded ? retiredOn(sheetId, day) : null;
         jdbc.query("SELECT m.pool_name, m.person_id, p.name, m.share, p.retired_from, m.member_pool,"
                 + " (m.from_date IS NULL OR m.from_date <= COALESCE(CAST(? AS DATE), s.today))"
                 + " AND (m.to_date IS NULL OR m.to_date >= COALESCE(CAST(? AS DATE), s.today))"

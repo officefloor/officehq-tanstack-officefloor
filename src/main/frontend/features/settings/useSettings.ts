@@ -55,8 +55,8 @@ export function scoreBand(settings: Settings | undefined, score: string): string
 export const DEFAULT_FLOOR = '1.00';
 
 /** The actions the permission matrix covers; a blank entry keeps the standing rule: open, settle, void and close
- *  by clerk and steward, reassign and reopen by steward. */
-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+ *  by clerk and steward, reassign and reopen by steward, today by anyone but a viewer. */
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
 
 export const settingsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'settings', asOf] as const;
 

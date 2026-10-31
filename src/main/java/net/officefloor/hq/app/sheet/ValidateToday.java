@@ -12,6 +12,9 @@ public class ValidateToday {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, Settings settings)
             throws InvalidTodayException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
+        if (!settings.allows(sheetId, request.user(), "today")) {
+            throw InvalidTodayException.notPermitted();
+        }
         body.set(request); // who changes it, for the audit
         String raw = request.today() == null ? "" : request.today().trim();
         if (raw.isEmpty()) {

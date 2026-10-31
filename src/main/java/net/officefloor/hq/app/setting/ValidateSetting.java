@@ -103,7 +103,7 @@ public class ValidateSetting {
     /** An action's permission: perm-<action>, the roles that may take it. */
     public static final String PERM = "perm-";
 
-    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     /** A number of days: 0 or more, whole. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
