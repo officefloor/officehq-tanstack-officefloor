@@ -8,7 +8,8 @@ import { periodsKey } from '../periods/usePeriods';
 import { settingsKey } from '../settings/useSettings';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
-/** Shows the sheet's today and changes it. */
+/** Shows the sheet's today and changes it; shows whether the sheet is archived and archives it (a
+ *  steward only). Both share the sheet's error. */
 function SheetToday({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
@@ -29,12 +30,19 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
       ]);
     },
   });
+  const archive = useMutation({
+    mutationFn: () => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/archive`, { user }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(sheetKey(sheet), saved);
+    },
+  });
 
   return (
     <form
       data-testid="sheet-today-form"
       onSubmit={(e) => {
         e.preventDefault();
+        archive.reset();
         submitOnce(() => save.mutateAsync(date.trim()));
       }}
     >
@@ -48,15 +56,36 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
           onChange={(e) => {
             setDate(e.target.value);
             save.reset();
+            archive.reset();
           }}
         />
       </label>{' '}
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Save
       </button>
-      {save.isError && (
+      {' '}Archived: <strong data-testid="sheet-archived">{data ? (data.archived ? 'yes' : 'no') : ''}</strong>{' '}
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        disabled={archive.isPending}
+        onClick={() => {
+          save.reset();
+          archive.reset();
+          submitOnce(() => archive.mutateAsync());
+        }}
+      >
+        Archive
+      </button>
+      {(save.isError || archive.isError) && (
         <span data-testid="sheet-error" role="alert">
-          {' '}Could not set today: enter a date as yyyy-mm-dd.
+          {' '}
+          {archive.isError
+            ? data?.archived
+              ? 'Could not archive: the sheet is already archived.'
+              : 'Could not archive: only a steward can archive the sheet.'
+            : data?.archived
+              ? 'Could not set today: the sheet is archived.'
+              : 'Could not set today: enter a date as yyyy-mm-dd.'}
         </span>
       )}
     </form>

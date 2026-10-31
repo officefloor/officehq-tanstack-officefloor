@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -25,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
  *  {@code /api/sheets/<id>/}) by a user who is a viewer on that sheet is refused 400 before it
  *  reaches its pipeline, so it writes nothing and audits nothing. A bulk action still goes through,
  *  each selected item refused by the permission matrix (see {@link Settings#allows}), so its counts
- *  show none done. */
+ *  show none done. An archived sheet is guarded the same way for every user. */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ViewerGuard extends OncePerRequestFilter {
@@ -38,9 +39,11 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final Settings settings;
+    private final Sheets sheets;
 
-    public ViewerGuard(Settings settings) {
+    public ViewerGuard(Settings settings, Sheets sheets) {
         this.settings = settings;
+        this.sheets = sheets;
     }
 
     @Override
@@ -67,6 +70,12 @@ public class ViewerGuard extends OncePerRequestFilter {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             response.setContentType("text/plain;charset=UTF-8");
             response.getWriter().write("A viewer can change nothing");
+            return;
+        }
+        if (!BULK.contains(action) && sheets.archived(sheetId)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.setContentType("text/plain;charset=UTF-8");
+            response.getWriter().write("The sheet is archived: nothing on it can be changed");
             return;
         }
         chain.doFilter(new CachedBody(request, body), response);

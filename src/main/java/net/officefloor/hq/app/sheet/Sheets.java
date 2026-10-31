@@ -53,6 +53,17 @@ public class Sheets {
         return jdbc.queryForObject("SELECT given FROM period_number WHERE sheet_id = ? AND seq = ?", Long.class, sheetId, seq);
     }
 
+    /** Whether a steward has archived the sheet: then every change to it is refused. */
+    public boolean archived(String sheetId) {
+        today(sheetId);
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT archived FROM sheet WHERE id = ?", Boolean.class, sheetId));
+    }
+
+    public void archive(String sheetId) {
+        today(sheetId);
+        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", sheetId);
+    }
+
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }
