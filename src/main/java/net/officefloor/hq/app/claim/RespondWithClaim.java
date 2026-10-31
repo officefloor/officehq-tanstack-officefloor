@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 public class RespondWithClaim {
-    public void respond(@Val Claim claim, Figures figures, ObjectResponse<ClaimResponse> response) {
-        response.send(ClaimResponse.from(claim, figures));
+    public void respond(@Val Claim claim, Figures figures, ClaimLog log, ObjectResponse<ClaimResponse> response) {
+        response.send(ClaimResponse.from(claim, figures, log.of(claim)));
     }
 }

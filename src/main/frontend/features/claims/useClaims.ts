@@ -40,6 +40,9 @@ export type Claim = {
   /** The date the claim is due by (yyyy-mm-dd), fixed when it was added from the terms of its
    *  person's grade then; later changes to the terms or the claim's date leave it. */
   dueBy: string;
+  /** The claim's status log, oldest first: one line per status it has had, as
+   *  "<STATUS> by <user> on <date> due=<due>" (the sheet's today and the claim's due then). */
+  log: string[];
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

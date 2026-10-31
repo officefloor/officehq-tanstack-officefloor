@@ -7,7 +7,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Runs after the claim is saved, so a refused status change writes no audit line. */
 public class RecordClaimStatusChanged {
-    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, Audit audit) {
+    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, ClaimLog log, Audit audit) {
+        log.write(claim, change.user());
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         // A clerk's settle over the clerk limit leaves the claim PENDING: it settles nothing yet.
         boolean pending = change.action() == ClaimAction.SETTLE && claim.getStatus() == ClaimStatus.PENDING;

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.quickadd;
 
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimLog;
 import net.officefloor.hq.app.claim.ClaimValues;
 import net.officefloor.hq.app.claim.RecordClaimAdded;
 import net.officefloor.hq.app.person.Person;
@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
 public class RecordQuickAdd {
     public void record(@Val PersonRequest personRequest, @Val ClaimValues values, @Val Person person,
             @Val Claim claim, @Val QuickAddPerson found, @Val RollupBefore before, @Val Actor actor,
-            Rollup rollup, Audit audit) {
+            Rollup rollup, ClaimLog log, Audit audit) {
         String sheetId = before.sheetId();
         var since = before.snapshot();
         if (found.created()) {
@@ -27,7 +28,7 @@ public class RecordQuickAdd {
             rollup.record(sheetId, since, actor.user());
             since = rollup.snapshot(sheetId);
         }
-        new RecordClaimAdded().record(values, person, claim, audit);
+        new RecordClaimAdded().record(values, person, claim, log, audit);
         rollup.record(sheetId, since, actor.user());
     }
 }

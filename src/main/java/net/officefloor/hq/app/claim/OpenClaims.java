@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpen bulk, Claims claims, People people,
             ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
-            Audit audit, Out<BulkOpenResult> result) {
+            ClaimLog log, Audit audit, Out<BulkOpenResult> result) {
         ClaimStatusChange change = new ClaimStatusChange(ClaimAction.OPEN, bulk.user());
         ApplyClaimStatus apply = new ApplyClaimStatus();
         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
@@ -37,7 +37,7 @@ public class OpenClaims {
                     continue;
                 }
                 claims.save(claim);
-                record.record(change, claim, people, audit);
+                record.record(change, claim, people, log, audit);
                 rollup.record(sheetId, before, bulk.user());
                 opened++;
             }

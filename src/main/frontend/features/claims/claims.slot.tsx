@@ -363,6 +363,13 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   {refused.message}
                 </span>
               )}
+              <ol data-testid="claim-log">
+                {c.log.map((line, i) => (
+                  <li key={i} data-testid="claim-log-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
             </li>
           ))}
         </ul>
