@@ -20,5 +20,9 @@ public class RecordSettingChanged {
         if (change.latePct() != null) {
             audit.record(prefix + " key=late-pct value=" + change.latePct().toPlainString());
         }
+        if (change.setsPolicyDate()) {
+            audit.record(prefix + " key=policy-date value="
+                    + (change.policyDate() != null ? change.policyDate().toString() : ""));
+        }
     }
 }

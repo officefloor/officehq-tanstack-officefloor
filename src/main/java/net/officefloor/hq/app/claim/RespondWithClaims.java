@@ -5,8 +5,8 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class RespondWithClaims {
-    public void respond(@PathVariable("sheetId") String sheetId, Claims claims,
+    public void respond(@PathVariable("sheetId") String sheetId, Claims claims, Figures figures,
             ObjectResponse<List<ClaimResponse>> response) {
-        response.send(claims.onSheet(sheetId).stream().map(ClaimResponse::from).toList());
+        response.send(claims.onSheet(sheetId).stream().map(c -> ClaimResponse.from(c, figures)).toList());
     }
 }

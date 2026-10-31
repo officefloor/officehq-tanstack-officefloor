@@ -4,6 +4,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -43,6 +44,13 @@ public class Claims {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
                 Integer.class, sheetId, personId, number);
         return n != null && n > 0;
+    }
+
+    /** The date of the person's claim with this number, or null when there is none. */
+    public LocalDate dateOf(String sheetId, long personId, long number) {
+        return jdbc.query("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ?",
+                (rs, i) -> rs.getDate("claim_date").toLocalDate(), sheetId, personId, number)
+                .stream().findFirst().orElse(null);
     }
 
     /** Insert a new claim (assigning its id) or update an existing one. */

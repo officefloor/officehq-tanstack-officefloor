@@ -1,11 +1,13 @@
 package net.officefloor.hq.app.settings;
 
 import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms and its late percent. */
+/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms, its late percent and its policy date. */
 @Repository
 public class Settings {
 
@@ -81,6 +83,19 @@ public class Settings {
 
     public void setLatePct(String sheetId, BigDecimal pct) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, late_pct) KEY (sheet_id) VALUES (?, ?)", sheetId, pct);
+    }
+
+    /** The sheet's policy date as set: a claim dated before it rounds half up, one on or after it
+     *  half to even. Null when unset: then the policy date is the sheet's today. */
+    public LocalDate policyDate(String sheetId) {
+        List<Date> values = jdbc.query("SELECT policy_date FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getDate("policy_date"), sheetId);
+        return values.isEmpty() || values.get(0) == null ? null : values.get(0).toLocalDate();
+    }
+
+    public void setPolicyDate(String sheetId, LocalDate date) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, policy_date) KEY (sheet_id) VALUES (?, ?)",
+                sheetId, date != null ? Date.valueOf(date) : null);
     }
 
     /** One setting's stored value, null when the sheet has no row or the setting is unset. */

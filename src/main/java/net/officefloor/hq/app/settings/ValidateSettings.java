@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.settings;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
@@ -36,6 +38,15 @@ public class ValidateSettings {
         if (late != null && !late.isEmpty() && !PCT.matcher(late).matches()) {
             throw new InvalidSheetRequestException("The late percent must be a percent with up to two decimals, or blank");
         }
+        String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
+        LocalDate policyDate = null;
+        if (policy != null && !policy.isEmpty()) {
+            try {
+                policyDate = LocalDate.parse(policy);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSheetRequestException("The policy date must be a date (yyyy-mm-dd), or blank");
+            }
+        }
         String by = request == null ? null : request.user();
         actor.set(new Actor(by));
         change.set(new SettingsChange(sheetId, limit != null,
@@ -43,6 +54,6 @@ public class ValidateSettings {
                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
-                by));
+                policy != null, policyDate, by));
     }
 }

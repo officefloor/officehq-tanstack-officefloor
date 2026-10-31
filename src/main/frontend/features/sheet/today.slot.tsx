@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { claimsKey } from '../claims/useClaims';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
 /** Shows the sheet's today and changes it. */
@@ -14,7 +15,11 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
   const save = useMutation({
     mutationFn: (today: string) =>
       postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today, user }),
-    onSuccess: (saved) => queryClient.setQueryData(sheetKey(sheet), saved),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(sheetKey(sheet), saved);
+      // A blank policy date is the sheet's today: it decides how each claim's live figures round.
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
   });
 
   return (

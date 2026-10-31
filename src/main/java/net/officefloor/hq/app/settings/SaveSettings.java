@@ -8,5 +8,6 @@ public class SaveSettings {
         if (change.floor() != null) settings.setFloor(change.sheetId(), change.floor());
         if (change.terms() != null) settings.setTerms(change.sheetId(), change.terms());
         if (change.latePct() != null) settings.setLatePct(change.sheetId(), change.latePct());
+        if (change.setsPolicyDate()) settings.setPolicyDate(change.sheetId(), change.policyDate());
     }
 }

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { dueCents, hundredths } from '../rates/useRates';
+import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
 
 /** Where a claim is in its life: DRAFT → OPEN → SETTLED, and DRAFT or OPEN → VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
@@ -25,6 +25,10 @@ export type Claim = {
   statedDue: string | null;
   /** The number of the SETTLED claim of the same person a correction (a negative amount) corrects; null for any other claim. */
   corrects: number | null;
+  /** Whether the claim's live figures (its rate step and late charge) round half up, else half to
+   *  even: half up when it is dated before the sheet's policy date (a correction goes by the date of
+   *  the claim it corrects). */
+  halfUp: boolean;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -81,7 +85,7 @@ export function claimDueCents(claim: Claim, floor: string, pct: string | undefin
  *  it to, or else live at `pct`, at least the sheet's `floor` (null, n/a, when there is no rate). */
 function claimFigureCents(claim: Claim, floor: string, pct: string | undefined): bigint | null {
   if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
-  const due = dueCents(claim.amount, pct);
+  const due = dueCents(claim.amount, pct, claim.halfUp);
   if (due === null) return null;
   const least = hundredths(floor);
   return due < least && !isCorrection(claim) ? least : due;
@@ -96,7 +100,7 @@ function daysBetween(from: string, to: string): number {
 }
 
 /** The late charge on an overdue claim's `figure`, in cents: the late percent of it for every full
- *  30 days it is overdue, rounded half to even. Nothing while it is not overdue. Never bound by a
+ *  30 days it is overdue, rounded by the claim's rounding (`halfUp`). Nothing while it is not overdue. Never bound by a
  *  statement: it follows the sheet's today. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
   if (!overdue(claim, late.terms, late.today) || isCorrection(claim)) return 0n;
@@ -104,9 +108,7 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
   if (periods <= 0n) return 0n;
   // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
   const product = figure * hundredths(late.pct) * periods;
-  const whole = product / 10000n;
-  const rest = product % 10000n;
-  return rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+  return roundTenThousandths(product, claim.halfUp);
 }
 
 

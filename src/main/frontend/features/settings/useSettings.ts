@@ -7,8 +7,9 @@ import { useSheetToday } from '../sheet/useSheet';
 export type RoleEntry = { name: string; role: string };
 
 /** The sheet's settings as the server sends them: `clerkLimit` with two decimals, or null for no
- *  limit, `floor` with two decimals `terms` in days and `latePct` with two decimals. */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: RoleEntry[] };
+ *  limit, `floor` with two decimals `terms` in days, `latePct` with two decimals and `policyDate` as
+ *  set (yyyy-mm-dd), or null when blank: then the policy date is the sheet's today. */
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; roles: RoleEntry[] };
 
 /** The floor of a sheet that has not set one. */
 export const DEFAULT_FLOOR = '1.00';
@@ -58,6 +59,9 @@ export const LIMIT = /^(\d{1,10}(\.\d{1,2})?)?$/;
 
 /** A late percent the server accepts: a percent with up to two decimals, or blank for 0.00. */
 export const PERCENT = /^(\d{1,5}(\.\d{1,2})?)?$/;
+
+/** A policy date the server accepts: yyyy-mm-dd, or blank for the sheet's today. */
+export const POLICY_DATE = /^(\d{4}-\d{2}-\d{2})?$/;
 
 /** Terms the server accepts: a whole number of days, or blank for the default 14. */
 export const DAYS = /^(\d{1,4})?$/;
