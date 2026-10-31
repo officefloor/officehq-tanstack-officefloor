@@ -1,0 +1,124 @@
+diff --git a/src/main/frontend/features/claims/DuplicateClaims.tsx b/src/main/frontend/features/claims/DuplicateClaims.tsx
+new file mode 100644
+index 00000000..6a1b106b
+--- /dev/null
++++ b/src/main/frontend/features/claims/DuplicateClaims.tsx
+@@ -0,0 +1,40 @@
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// Shows the sheet's duplicate claims: for each person, date and amount with two or more claims (VOID and
++// DELETED left out), one line <name> <date> <amount> x<count>; people in list order, then by date, then by
++// amount. Each press re-reads the store; the old lines are gone until the new ones are in.
++export function DuplicateClaims() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const dups = useMutation({
++    mutationFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/duplicate-claims`),
++  });
++
++  return (
++    <section data-testid="dups">
++      <button
++        type="button"
++        data-testid="dups-show"
++        onClick={() => {
++          dups.reset();
++          dups.mutate();
++        }}
++      >
++        Show duplicate claims
++      </button>
++      {dups.isSuccess &&
++        dups.data.map((line, i) => (
++          <div key={i} data-testid="dup-line">
++            {line}
++          </div>
++        ))}
++      {dups.isError && (
++        <span data-testid="dups-error" role="alert">
++          {' '}
++          The duplicate claims could not be shown.
++        </span>
++      )}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 43745df0..0dc007af 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -16,6 +16,7 @@ import { SettingsPanel } from '../features/settings/SettingsPanel';
+ import { PeriodPanel } from '../features/periods/PeriodPanel';
+ import { PersonForm } from '../features/people/PersonForm';
+ import { PeopleList } from '../features/people/PeopleList';
++import { DuplicateClaims } from '../features/claims/DuplicateClaims';
+ import { SheetHeader } from '../features/header/SheetHeader';
+ import { StewardDashboard } from '../features/dashboard/StewardDashboard';
+ import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
+@@ -54,6 +55,7 @@ function Home() {
+           <PeriodPanel />
+           <PersonForm />
+           <PeopleList />
++          <DuplicateClaims />
+           <PoolPanel />
+           <CrewPanel />
+           <TreeSearch />
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LoadDuplicateClaims.java b/src/main/java/net/officefloor/hq/app/claim/LoadDuplicateClaims.java
+new file mode 100644
+index 00000000..7f3537b2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/LoadDuplicateClaims.java
+@@ -0,0 +1,43 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/**
++ * The sheet's duplicate claims: for each person, date and amount with two or more claims (VOID and DELETED left
++ * out), one line "<name> <date> <amount> x<count>"; people in list order, then by date, then by amount.
++ */
++public class LoadDuplicateClaims {
++    private record Key(LocalDate date, BigDecimal amount) {}
++
++    private static final Comparator<Key> ORDER = Comparator.comparing(Key::date).thenComparing(Key::amount);
++
++    public void service(@PathVariable("sheetId") String sheetId, People people, Claims claims,
++            ObjectResponse<List<String>> response) {
++        Map<Long, Map<Key, Integer>> byPerson = new java.util.HashMap<>();
++        for (Claim claim : claims.list(sheetId)) {
++            if (claim.getStatus() == ClaimStatus.VOID || claim.getStatus() == ClaimStatus.DELETED) continue;
++            Key key = new Key(claim.getDate(), claim.getAmount().setScale(2, RoundingMode.HALF_UP));
++            byPerson.computeIfAbsent(claim.getPersonId(), id -> new TreeMap<>(ORDER)).merge(key, 1, Integer::sum);
++        }
++        List<String> lines = new ArrayList<>();
++        for (Person person : people.list(sheetId)) {
++            Map<Key, Integer> counts = byPerson.get(person.getId());
++            if (counts == null) continue;
++            counts.forEach((key, count) -> {
++                if (count >= 2) lines.add(person.getName() + " " + key.date() + " " + key.amount().toPlainString() + " x" + count);
++            });
++        }
++        response.send(lines);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/duplicate-claims.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/duplicate-claims.GET.yml
+new file mode 100644
+index 00000000..982c30f5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/duplicate-claims.GET.yml
+@@ -0,0 +1,3 @@
++service:
++  class: net.officefloor.hq.app.claim.LoadDuplicateClaims
++  govern: [ readonly-transaction ]
