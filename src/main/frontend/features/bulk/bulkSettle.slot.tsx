@@ -5,9 +5,9 @@ import { claimsKey, lastBatch, useClaims } from '../claims/useClaims';
 import { useSelectedClaims } from './useSelectedClaims';
 
 /**
- * Settle the ticked claims together, by the signed-in user. Each that can be settled is settled
- * (or goes PENDING) in list order (people in list order, each person's newest claim first); each
- * that cannot is left as it is. Shows how many were settled and how many refused; the counts go
+ * Settle the ticked claims together, by the signed-in user, all or nothing: if any cannot be
+ * settled none is and all count as refused; otherwise each is settled (or goes PENDING) in list
+ * order (people in list order, each person's newest claim first). Shows how many were settled and how many refused; the counts go
  * while the next press runs. Beside the button, the number of the sheet's last batch: a press that
  * settled at least one claim.
  */
