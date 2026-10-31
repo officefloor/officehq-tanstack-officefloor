@@ -31,6 +31,7 @@ public class Claim {
     private String tagsUsed;
     private String voidReason;
     private String editedBy;
+    private Integer dueTerms;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -78,9 +79,13 @@ public class Claim {
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
     /** The date the claim is due by, fixed when it was added: its date then plus the terms of its
-     *  person's grade in force on that date. Later changes to the terms or the claim's date leave it. */
+     *  person's grade in force on that date. Later changes to the terms or the claim's date leave it;
+     *  a holiday added on or before it re-fixes it (unless SETTLED or VOID) from its date, with the same terms. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The terms (business days) the claim's due-by was fixed with; a holiday added re-fixes it with these. */
+    public Integer getDueTerms() { return dueTerms; }
+    public void setDueTerms(Integer dueTerms) { this.dueTerms = dueTerms; }
     /** The date the claim was last deferred until; null when it never was. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }

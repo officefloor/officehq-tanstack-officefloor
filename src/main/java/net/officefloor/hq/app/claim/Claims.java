@@ -4,6 +4,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, edited_by, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, edited_by, due_terms, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -84,6 +85,11 @@ public class Claims {
                 sheetId, personId, user, keptId);
     }
 
+    /** Fix the claim's due-by again, at the date it now has. */
+    public void redue(Claim claim) {
+        jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(claim.getDueBy()), claim.getId());
+    }
+
     /** Record the day the claim was last reminded. */
     public void remind(Claim claim) {
         jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ?", Date.valueOf(claim.getRemindedOn()), claim.getId());
@@ -101,7 +107,7 @@ public class Claims {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, number, opened_by, split_from, late_entry, ref, tags, tags_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, number, opened_by, split_from, late_entry, ref, tags, tags_used, due_terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -118,6 +124,7 @@ public class Claims {
             ps.setString(13, claim.getRef());
             ps.setString(14, claim.getTags());
             ps.setString(15, claim.getTagsUsed());
+            ps.setObject(16, claim.getDueTerms(), Types.INTEGER);
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -141,6 +148,8 @@ public class Claims {
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
+        int terms = rs.getInt("due_terms");
+        claim.setDueTerms(rs.wasNull() ? null : terms);
         Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
         Date until = rs.getDate("deferred_until");

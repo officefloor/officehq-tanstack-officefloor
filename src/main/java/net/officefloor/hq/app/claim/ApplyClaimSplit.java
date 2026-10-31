@@ -35,7 +35,8 @@ public class ApplyClaimSplit {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Claim into = new Claim(null, claim.getSheetId(), claim.getPersonId(), split.amount(), claim.getDate(),
                 claim.getNote(), ClaimStatus.OPEN, null, null, split.user());
-        into.setDueBy(DueBy.of(person, claim.getDate(), settings, holidays));
+        into.setDueTerms(DueBy.terms(person, claim.getDate(), settings));
+        into.setDueBy(holidays.businessDaysAfter(claim.getSheetId(), claim.getDate(), into.getDueTerms()));
         into.setLateEntry(closedPeriods.late(claim.getSheetId(), into.getDueBy()));
         into.setSplitFrom(claim.getNumber());
         into.setTags(claim.getTags());

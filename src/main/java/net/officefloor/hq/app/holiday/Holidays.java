@@ -51,6 +51,16 @@ public class Holidays {
         return day;
     }
 
+    /** How many days after `date`, up to and including `until`, are neither a Saturday, a Sunday nor
+     *  one of `holidays`: the terms `businessDaysAfter` turns back into `until`. */
+    public static int businessDaysBetween(LocalDate date, LocalDate until, Set<LocalDate> holidays) {
+        int days = 0;
+        for (LocalDate day = date.plusDays(1); !day.isAfter(until); day = day.plusDays(1)) {
+            if (isBusinessDay(day, holidays)) days++;
+        }
+        return days;
+    }
+
     private static boolean isBusinessDay(LocalDate day, Set<LocalDate> holidays) {
         DayOfWeek dow = day.getDayOfWeek();
         return dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !holidays.contains(day);

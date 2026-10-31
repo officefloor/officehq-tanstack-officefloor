@@ -24,7 +24,8 @@ public class BuildClaim {
     static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
             Claims claims, Settings settings, Holidays holidays) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.getSheetId());
-        LocalDate dueBy = DueBy.of(person, date, settings, holidays);
+        int terms = DueBy.terms(person, date, settings);
+        LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), date, terms);
         closedPeriods.refuse(person.getSheetId(), dueBy);
         person.refuseRetired(date);
         refuseUncorrected(values, person.getSheetId(), person.getId(), claims);
@@ -35,6 +36,7 @@ public class BuildClaim {
         built.setRef(values.ref());
         built.setTags(values.tags());
         built.setDueBy(dueBy);
+        built.setDueTerms(terms);
         built.setLateEntry(closedPeriods.late(person.getSheetId(), dueBy));
         return built;
     }

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { claimsKey } from '../claims/useClaims';
 import { holidaysKey, useHolidays, type Holiday } from './useHolidays';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -23,6 +24,8 @@ function HolidaysPanel({ user, sheet }: { user: string; sheet: string }) {
     onSuccess: async () => {
       setDate('');
       await queryClient.invalidateQueries({ queryKey: holidaysKey(sheet) });
+      // A new holiday re-fixes the due-by of the claims due by it or later.
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
   });
 
