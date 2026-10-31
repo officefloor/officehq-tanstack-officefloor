@@ -6,7 +6,7 @@ import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rat
 import { claimRate, rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { gradeOn, heldOn, retiredOn, usePeople, type Person } from './usePeople';
+import { gradeOn, retiredOn, usePeople, type Person } from './usePeople';
 
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
@@ -27,9 +27,9 @@ export function useSheetFigures(sheet: string) {
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
-    return person !== undefined && countsLive(c, (date) => heldOn(person, date) || retiredOn(person, today), today);
+    return person !== undefined && countsLive(c, retiredOn(person, today), today);
   });
-  // The claims that count toward claimed: a held claim still does (only its due leaves the totals).
+  // The claims that count toward claimed: a held claim does, as it does in every total.
   const claimedLive = claims.filter((c) => {
     const person = byId.get(c.personId);
     return person !== undefined && countsClaimed(c, retiredOn(person, today), today);

@@ -48,8 +48,8 @@ import { usePools } from '../pools/usePools';
 // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
 // claims; together the sum of their figures before the cap),
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
-// whether they are retired and from when, whether they have any hold, and their holds (a person's OPEN claims dated within a hold, unless bound by a
-// statement, keep their claimed but their dues leave their figures and the sheet's totals; their other claims still count), their overdue count and
+// whether they are retired and from when, whether they have any hold, and their holds (a hold
+// takes none of their claims out of any figure or total; it only gives them no cut in the pools), their overdue count and
 // aliases (sorted as names are compared, comma and space separated), whether they clash (their name or an alias is used by someone else on a sheet of the tree), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
 // sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the

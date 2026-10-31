@@ -26,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
  * n/a when their grade has no rate today and no claim keeps a figure; held to the sheet's cap), and binds each counting claim to
  * its due as shown now, its late charge and the floor included (a claim already bound keeps its bound figure); while bound
  * the claim shows and totals that figure, its late charge no longer following the sheet's today.
- * A claim that does not count (an unbound OPEN claim dated within one of its person's holds, or a deferred claim, included) is left unbound.
+ * A claim that does not count (a deferred claim, or an unbound OPEN claim of a retired person, included) is left unbound.
  * <p>
  * Taken as of a date (on or before the sheet's today, and not before the person was added), the same is worked from the
  * store as it stood at the end of that date (see {@link AsOf}), that date standing in for the sheet's today: the claims

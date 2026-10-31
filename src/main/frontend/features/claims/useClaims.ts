@@ -35,7 +35,7 @@ export type Claim = {
   log: string[];
   /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
   waived?: boolean;
-  /** Whether the claim is held: while OPEN or PENDING and unbound it counts in no live total, as a held person's claims. */
+  /** Whether the claim is held: it still counts in every total. */
   held?: boolean;
   /** The date the claim was last deferred until, "" if it was never deferred. */
   deferredUntil: string;
@@ -86,12 +86,11 @@ export const isDeferred = (c: { status?: string; deferredUntil?: string }, today
   c.status === 'OPEN' && !!c.deferredUntil && today !== undefined && today < c.deferredUntil;
 
 /** Whether a claim counts in the live totals: it counts, is not deferred on the sheet's today, and is not
- *  open, unbound and held or dated within one of its person's holds (`heldOn`). */
-export const countsLive = (c: Claim, heldOn: (date: string) => boolean, today: string | undefined) =>
-  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
+ *  open, unbound and its person retired (`retiredOn`). A hold does not take it out — it only matters to the pools' cuts. */
+export const countsLive = (c: Claim, retired: boolean, today: string | undefined) =>
+  counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && retired);
 
-/** Whether a claim counts toward claimed: as `countsLive`, except that a hold (the person's or the claim's) does not
- *  take it out — only its due leaves the totals while held. `retiredOn` tells whether its person is retired today. */
+/** Whether a claim counts toward claimed: as `countsLive` (a hold does not take it out). `retiredOn` tells whether its person is retired today. */
 export const countsClaimed = (c: Claim, retired: boolean, today: string | undefined) =>
   counts(c) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && retired);
 
@@ -107,10 +106,10 @@ export function statusAt(c: Claim, end: string): ClaimStatus | undefined {
 }
 
 /** Whether a claim counts in a period ending on `end`: by the status it had at the end of that day, and, as in the
- *  live totals, not deferred on the sheet's today and not open, unbound and held or dated within one of its person's holds. */
-export const countsAtEnd = (c: Claim, end: string, heldOn: (date: string) => boolean, today: string | undefined) => {
+ *  live totals, not deferred on the sheet's today and not open, unbound and its person retired. */
+export const countsAtEnd = (c: Claim, end: string, retired: boolean, today: string | undefined) => {
   const then = statusAt(c, end);
-  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && (!!c.held || heldOn(c.date)));
+  return then !== undefined && counts({ ...c, status: then }) && !isDeferred(c, today) && !(isOpen(c) && !isBound(c) && retired);
 };
 
 export const claimsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'claims', asOf] as const;

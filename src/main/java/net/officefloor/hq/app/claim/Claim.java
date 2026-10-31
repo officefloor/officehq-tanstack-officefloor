@@ -106,7 +106,7 @@ public class Claim {
     private boolean waived;
     public boolean isWaived() { return waived; }
     public void setWaived(boolean waived) { this.waived = waived; }
-    /** Whether the claim is held: while OPEN or PENDING and unbound it counts in no live total, as a held person's claims. */
+    /** Whether the claim is held: it still counts in every total. */
     private boolean held;
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }

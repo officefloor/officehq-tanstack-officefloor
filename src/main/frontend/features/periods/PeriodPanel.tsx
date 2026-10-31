@@ -10,7 +10,7 @@ import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 // The sheet's periods, each with its dates and due-total (the dues as shown now, late charges included, of the claims
-// whose date falls in it that counted by the status they had at the end of its last day, leaving out a held person's OPEN claims; a claim whose due is n/a adds nothing), and the form that adds one (a name not
+// whose date falls in it that counted by the status they had at the end of its last day, a held person's and a held claim still count; a claim whose due is n/a adds nothing), and the form that adds one (a name not
 // already on the sheet, a from-date on or before the to-date, not overlapping another period, and an optional cap: a whole number of at
 // least 1, the most OPEN or PENDING claims a person may have in it, blank for none). A
 // closed period shows the due-total fixed when it was closed, whatever the rates do later; a steward

@@ -1,5 +1,5 @@
 import { countsAtEnd, countsLive, statusAt, useClaims } from '../claims/useClaims';
-import { gradeOn, heldOn, retiredOn, usePeople } from '../people/usePeople';
+import { gradeOn, retiredOn, usePeople } from '../people/usePeople';
 import { claimDue, toCents } from '../rates/due';
 import { useGrace } from '../claims/useGrace';
 import { claimRate, useRates } from '../rates/useRates';
@@ -9,7 +9,7 @@ import { useOpenings } from './useOpenings';
 import { periodOf, usePeriods, type Period } from './usePeriods';
 
 /** A person's due-total for a period: the dues as shown now, late charges included, of their claims whose due-by
- *  (as fixed at creation) falls in it that counted at the end of its last day (see countsAtEnd), leaving out their unbound OPEN claims dated within one of their holds, or all of them once they are retired (a claim whose due is n/a
+ *  (as fixed at creation) falls in it that counted at the end of its last day (see countsAtEnd), leaving out their unbound OPEN claims once they are retired (a hold takes none out) (a claim whose due is n/a
  *  adds nothing); a closed or soft-closed period gives the figure fixed when it was closed (0.00 for a person added later). */
 export function usePersonPeriodDueTotal(sheet: string): (period: Period, personId: string) => bigint {
   const periods = usePeriods(sheet);
@@ -25,7 +25,7 @@ export function usePersonPeriodDueTotal(sheet: string): (period: Period, personI
     const person = personOf.get(personId);
     if (!person) return 0n;
     return claims
-      .filter((c) => c.personId === personId && countsAtEnd(c, period.to, (date) => heldOn(person, date) || retiredOn(person, late.today), late.today) && periodOf(periods, c.dueBy)?.name === period.name)
+      .filter((c) => c.personId === personId && countsAtEnd(c, period.to, retiredOn(person, late.today), late.today) && periodOf(periods, c.dueBy)?.name === period.name)
       .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
   };
 }
@@ -63,7 +63,7 @@ export function usePersonPeriodCarried(sheet: string): (period: Period, personId
         if (!from || from.to >= period.from) return false;
         const then = statusAt(c, period.to);
         return (then === 'OPEN' || then === 'PENDING')
-          && countsAtEnd(c, period.to, (date) => heldOn(person, date) || retiredOn(person, late.today), late.today);
+          && countsAtEnd(c, period.to, retiredOn(person, late.today), late.today);
       })
       .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
   };
@@ -90,9 +90,9 @@ export function useClassicPeriodDueTotal(sheet: string): (period: Period) => big
   return (period: Period) => {
     if (period.closed || period.softClosed) return toCents(period.closedTotal || '0.00');
     return people.reduce((sum, person) => {
-      const held = (date: string) => heldOn(person, date) || retiredOn(person, late.today);
+      const retired = retiredOn(person, late.today);
       return claims
-        .filter((c) => c.personId === person.id && countsLive(c, held, late.today) && periodOf(periods, c.dueBy)?.name === period.name)
+        .filter((c) => c.personId === person.id && countsLive(c, retired, late.today) && periodOf(periods, c.dueBy)?.name === period.name)
         .reduce((s, c) => s + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), sum);
     }, 0n);
   };

@@ -187,11 +187,10 @@ public class Person {
     public void setHolds(java.util.List<Hold> holds) { this.holds = holds; }
     /** Whether a hold of the person's covers the date. */
     public boolean heldOn(LocalDate date) { return holds.stream().anyMatch(h -> h.covers(date)); }
-    /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED, but not OPEN or PENDING
-     *  when held or dated within one of the person's holds, unless a statement binds it. */
+    /** Whether the claim counts in the live totals: OPEN, PENDING or SETTLED. A hold (the person's or the claim's)
+     *  does not take it out — a hold only matters to the pools' cuts. */
     public boolean countsLive(Claim claim) {
-        return claim.getStatus().counts()
-                && !(claim.getStatus().isOpen() && !claim.isBound() && (claim.isHeld() || heldOn(claim.getDate())));
+        return claim.getStatus().counts();
     }
     /** Whether the person's retirement date has been reached on the date (the sheet's today on or after it). */
     public boolean retiredOn(LocalDate today) {
@@ -203,19 +202,19 @@ public class Person {
         return countsLive(claim) && !claim.isDeferredOn(today)
                 && !(claim.getStatus().isOpen() && !claim.isBound() && retiredOn(today));
     }
-    /** Whether the claim counts toward claimed on the sheet's today: as {@link #countsLive(Claim, LocalDate)}, except that
-     *  a hold (the person's or the claim's) does not take it out — only its due leaves the totals while held. */
+    /** Whether the claim counts toward claimed on the sheet's today: as {@link #countsLive(Claim, LocalDate)}
+     *  (a hold does not take it out). */
     public boolean countsClaimed(Claim claim, LocalDate today) {
         return claim.getStatus().counts() && !claim.isDeferredOn(today)
                 && !(claim.getStatus().isOpen() && !claim.isBound() && retiredOn(today));
     }
     /** Whether the claim counts in a period ending on the date: by the status it had at the end of that day (see
      *  {@link Claim#statusAt}), and, as in the live totals on the sheet's today, not deferred and not open, unbound and
-     *  held, dated within one of the person's holds or once their retirement date is reached. */
+     *  once their retirement date is reached (a hold does not take it out). */
     public boolean countsAtEnd(Claim claim, LocalDate end, LocalDate today) {
         ClaimStatus then = claim.statusAt(end);
         return then != null && then.counts() && !claim.isDeferredOn(today)
-                && !(claim.getStatus().isOpen() && !claim.isBound() && (claim.isHeld() || heldOn(claim.getDate()) || retiredOn(today)));
+                && !(claim.getStatus().isOpen() && !claim.isBound() && retiredOn(today));
     }
     /** The ids of the people the person has named as patrons, in the order they were named. */
     public java.util.List<Long> getPatronIds() { return patronIds; }

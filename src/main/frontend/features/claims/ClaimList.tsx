@@ -40,8 +40,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 // A steward waives an OPEN or PENDING claim's late charge with the waive button: it bears no late charge from then on,
 // whatever its overdue state. Waiving by anyone else, a claim in any other status, or one already waived is refused with
 // the claim's error. Each claim shows waived (yes or no).
-// An OPEN or PENDING claim is held, and released, with the hold toggle: while held and unbound it counts in no live total, as a
-// held person's claims (a figure a statement bound it to stays in). A claim in any other status is refused with the claim's
+// An OPEN or PENDING claim is held, and released, with the hold toggle: a held claim still
+// counts in every total. A claim in any other status is refused with the claim's
 // error. Each claim shows held (yes or no).
 // An OPEN or PENDING claim is reminded with the remind button, once per sheet-today: it shows the sheet's today as its reminded
 // date (the last day a reminder was written, blank if never). A second reminder the same day, or a claim in any other status,
