@@ -25,7 +25,8 @@ public class ValidateSettings {
 
     /** The settings that are dated, by key. */
     private static final Set<String> DATED = Set.of(Settings.CLERK_LIMIT, Settings.FLOOR, Settings.TERMS,
-            Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"), Settings.LATE_PCT, Settings.CAP);
+            Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"), Settings.LATE_PCT, Settings.CAP,
+            Settings.PROOF_THRESHOLD);
 
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
@@ -83,6 +84,10 @@ public class ValidateSettings {
         if (cap != null && !cap.isEmpty() && !AMOUNT.matcher(cap).matches()) {
             throw new InvalidSheetRequestException("The cap must be an amount with up to two decimals, or blank");
         }
+        String threshold = request == null || request.proofThreshold() == null ? null : request.proofThreshold().trim();
+        if (threshold != null && !threshold.isEmpty() && !AMOUNT.matcher(threshold).matches()) {
+            throw new InvalidSheetRequestException("The proof threshold must be an amount with up to two decimals, or blank");
+        }
         Map<String, LocalDate> froms = new TreeMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> e : request.from().entrySet()) {
@@ -106,6 +111,7 @@ public class ValidateSettings {
                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
-                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms));
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms,
+                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2)));
     }
 }

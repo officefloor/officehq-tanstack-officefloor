@@ -12,8 +12,9 @@ export type RoleEntry = { name: string; role: string };
  *  (yyyy-mm-dd), or null when off, and `gradeTerms` the terms set per grade (a grade not in it uses the
  *  sheet's terms), and `cap` with two decimals, or null for no cap — each dated one as in force on the
  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
- *  terms, terms-<grade>, late-pct, cap), oldest from-date first. */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]> };
+ *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first; and `proofThreshold` with
+ *  two decimals, or null for none, as in force on the sheet's today. */
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };

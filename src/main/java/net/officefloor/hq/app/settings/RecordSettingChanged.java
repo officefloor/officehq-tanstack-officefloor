@@ -38,6 +38,11 @@ public class RecordSettingChanged {
             audit.record(prefix + " key=cap value=" + (change.cap() != null ? change.cap().toPlainString() : "")
                     + from(change, Settings.CAP));
         }
+        if (change.setsProofThreshold()) {
+            audit.record(prefix + " key=proof-threshold value="
+                    + (change.proofThreshold() != null ? change.proofThreshold().toPlainString() : "")
+                    + from(change, Settings.PROOF_THRESHOLD));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

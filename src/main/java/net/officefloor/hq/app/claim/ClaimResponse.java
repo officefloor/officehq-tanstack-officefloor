@@ -10,10 +10,10 @@ import java.util.List;
  *  and the figure it binds it to (two decimals; null when unbound or bound to n/a), and the number
  *  of the claim a correction corrects (null when it is not a correction), and whether its live
  *  figures round half up (else half to even), by the sheet's policy date, and the due-by fixed when it was added (yyyy-mm-dd), and its status log, oldest first (see {@link ClaimLog}),
- *  and whether it is deferred now and until when (yyyy-mm-dd; null while it is not deferred). */
+ *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count. */
 public record ClaimResponse(long id, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects, boolean halfUp, String dueBy, List<String> log,
-        boolean deferred, String deferredUntil) {
+        boolean deferred, String deferredUntil, int proofs) {
     public static ClaimResponse from(Claim claim, Figures figures, List<String> log) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),
@@ -21,6 +21,6 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 claim.isStated(), claim.getStatedDue() != null ? claim.getStatedDue().toPlainString() : null,
                 claim.getCorrects(), figures.rounding(claim) == RoundingMode.HALF_UP,
                 claim.getDueBy().toString(), log, claim.isDeferred(),
-                claim.isDeferred() ? claim.getDeferredUntil().toString() : null);
+                claim.getDeferredUntil() != null ? claim.getDeferredUntil().toString() : null, claim.getProofs());
     }
 }

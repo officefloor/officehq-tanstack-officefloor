@@ -18,6 +18,7 @@ public class SaveSettings {
         if (change.latePct() != null) setDated(settings, change, today, Settings.LATE_PCT, change.latePct());
         if (change.setsPolicyDate()) settings.setPolicyDate(sheetId, change.policyDate());
         if (change.setsCap()) setDated(settings, change, today, Settings.CAP, change.cap());
+        if (change.setsProofThreshold()) setDated(settings, change, today, Settings.PROOF_THRESHOLD, change.proofThreshold());
         if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(sheetId, change.periodNumberingFrom());
     }
 

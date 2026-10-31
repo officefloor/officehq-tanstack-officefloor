@@ -35,6 +35,8 @@ const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLE
 const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
+const NEEDS_PROOF = "A claim whose due is above the sheet's proof threshold cannot be settled or approved until it has a proof.";
+const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one dated in a closed period.';
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 
 const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
@@ -59,6 +61,9 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * number and date, is no longer bound by a statement, and is listed as its new person's newest claim.
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
+ * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
+ * nor one dated in a closed period); one whose due is above the sheet's proof threshold on its date
+ * cannot be settled or approved while it has none.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -130,6 +135,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
         id: c.id,
         message: !(e instanceof HttpError)
           ? STATUS_REFUSED
+          : e.body.includes('proof threshold')
+            ? NEEDS_PROOF
           : e.body.includes('clerk limit')
             ? OVER_LIMIT
             : e.body.includes('deferred')
@@ -158,6 +165,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => setDeferTo((d) => ({ ...d, [c.id]: '' })),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_DEFER }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A proof raises the claim's proofs count by one.
+  const addProof = useMutation({
+    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/proof`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_PROVE }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -317,6 +332,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+              <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+              <button
+                type="button"
+                data-testid="claim-proof"
+                disabled={addProof.isPending}
+                onClick={() => addProof.mutate({ id: c.id })}
+              >
+                Add proof
+              </button>{' '}
               {ACTIONS.map((action) => (
                 <span key={action}>
                   {action === 'reject' && (

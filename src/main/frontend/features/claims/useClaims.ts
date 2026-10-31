@@ -50,8 +50,11 @@ export type Claim = {
   /** Whether the claim is deferred now: OPEN, and the sheet's today is before its deferred-until
    *  date. A deferred claim counts in no total, is not overdue and cannot be settled. */
   deferred: boolean;
-  /** The date (yyyy-mm-dd) the claim is deferred until; null while it is not deferred. */
+  /** The date (yyyy-mm-dd) the claim was last deferred until (kept once that date is reached); null when it never was. */
   deferredUntil: string | null;
+  /** How many proofs the claim has: one whose due is above the sheet's proof threshold on its date
+   *  cannot be settled or approved while it has none. */
+  proofs: number;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

@@ -21,6 +21,7 @@ public class Claim {
     private LocalDate dueBy;
     private LocalDate deferredUntil;
     private boolean deferred;
+    private int proofs;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -79,6 +80,10 @@ public class Claim {
      *  cannot be settled and is left unbound by a statement. */
     public boolean isDeferred() { return deferred && status == ClaimStatus.OPEN; }
     public void setDeferred(boolean deferred) { this.deferred = deferred; }
+    /** How many proofs the claim has: a claim whose due is above the sheet's proof threshold on its
+     *  date cannot be settled or approved while it has none. */
+    public int getProofs() { return proofs; }
+    public void setProofs(int proofs) { this.proofs = proofs; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }
