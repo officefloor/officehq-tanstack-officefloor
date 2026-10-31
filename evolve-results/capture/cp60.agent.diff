@@ -1,0 +1,99 @@
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+index ab1d1e02..d59fab0a 100644
+--- a/src/main/frontend/features/claims/useSheetTotals.ts
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -1,5 +1,5 @@
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+-import { rateOn, totalDue, useRates } from '../rates/useRates';
++import { rateOn, trimmedTotal, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
+@@ -8,7 +8,8 @@ import { claimed, live, overdueFigures, personDueCents, useClaims } from './useC
+  * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
+  * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
+  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
+- * overdue, with their dues added up. One place, so every screen repeating a total shows the same figure.
++ * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
++ * lowest person's figure when three or more people have one. One place, so every screen repeating a total shows the same figure.
+  */
+ export function useSheetTotals(sheet: string) {
+   const { data: all = [] } = useClaims(sheet);
+@@ -27,8 +28,8 @@ export function useSheetTotals(sheet: string) {
+   );
+   return {
+     claimedTotal: claimed(claims),
+-    dueTotal: totalDue(dues),
++    dueTotal: trimmedTotal(dues),
+     overdueCount: over.reduce((n, o) => n + o.count, 0),
+-    overdueTotal: totalDue(over.map((o) => o.cents)),
++    overdueTotal: trimmedTotal(over.map((o) => o.cents)),
+   };
+ }
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 05ad7686..87010a05 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -78,3 +78,9 @@ export function showDue(cents: bigint | null): string {
+ export function totalDue(dues: Array<bigint | null>): string {
+   return format(dues.reduce<bigint>((sum, d) => (d === null ? sum : sum + d), 0n));
+ }
++
++/** The figures (n/a skipped) added up, leaving out the single highest and lowest when three or more. */
++export function trimmedTotal(dues: Array<bigint | null>): string {
++  const figures = dues.filter((d): d is bigint => d !== null).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  return totalDue(figures.length >= 3 ? figures.slice(1, -1) : figures);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index e9f15420..5f332508 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
+@@ -49,14 +50,15 @@ public class Rollup {
+     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
+      *  person's OPEN claims dated within a hold of theirs do not count, unless a statement binds them),
+      *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
+-     *  capped); the sheet's skips the n/a ones. */
++     *  capped); the sheet's skips the n/a ones, and its due and overdue totals leave out the single
++     *  highest and lowest person's figure when three or more have one. */
+     public Snapshot snapshot(String sheetId) {
+         LocalDate today = sheets.today(sheetId);
+         List<Claim> all = claims.onSheet(sheetId);
+         Map<Long, Snapshot.PersonFigures> figuresOf = new LinkedHashMap<>();
+         BigDecimal claimedTotal = ZERO;
+-        BigDecimal dueTotal = ZERO;
+-        BigDecimal overdueTotal = ZERO;
++        List<BigDecimal> dues = new ArrayList<>();
++        List<BigDecimal> overdues = new ArrayList<>();
+         for (Person person : people.onSheet(sheetId)) {
+             BigDecimal claimed = ZERO;
+             BigDecimal due = ZERO;
+@@ -78,10 +80,18 @@ public class Rollup {
+             due = settings.capped(sheetId, due);
+             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue));
+             claimedTotal = claimedTotal.add(claimed);
+-            if (due != null) dueTotal = dueTotal.add(due);
+-            overdueTotal = overdueTotal.add(overdue);
++            if (due != null) dues.add(due);
++            overdues.add(overdue);
+         }
+-        return new Snapshot(figuresOf, claimedTotal, dueTotal, overdueTotal);
++        return new Snapshot(figuresOf, claimedTotal, trimmed(dues), trimmed(overdues));
++    }
++
++    /** The figures added up, leaving out the single highest and lowest when there are three or more. */
++    private static BigDecimal trimmed(List<BigDecimal> figures) {
++        List<BigDecimal> sorted = new ArrayList<>(figures);
++        sorted.sort(BigDecimal::compareTo);
++        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
++        return sorted.stream().reduce(ZERO, BigDecimal::add);
+     }
+ 
+     /** Audit the figures that moved between `before` and the sheet now. */
