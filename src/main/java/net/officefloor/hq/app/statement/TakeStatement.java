@@ -35,7 +35,8 @@ import net.officefloor.plugin.variable.Val;
  */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, AsOf asOf, Sheets sheets,
-            People people, Settings settings, net.officefloor.hq.app.pool.Pools pools, Out<Statement> statement) throws InvalidPersonException {
+            People people, Settings settings, net.officefloor.hq.app.pool.Pools pools,
+            net.officefloor.hq.app.rollup.Rollup rollup, Out<Statement> statement) throws InvalidPersonException {
         String sheetId = person.getSheetId();
         LocalDate date = asOfDate(request, person, sheets.today(sheetId));
         AsOf.View view = date == null ? asOf.now(person) : asOf.at(person, date);
@@ -46,6 +47,8 @@ public class TakeStatement {
         int counted = 0;
         // The figure each counting claim is bound to, by id (a null figure: n/a).
         Map<Long, BigDecimal> bound = new HashMap<>();
+        // Taken now, the person's parts of claims shared with them count, and the parts of theirs others hold do not.
+        net.officefloor.hq.app.rollup.Rollup.SharedParts parts = date == null ? rollup.sharedParts(sheetId) : null;
         for (Claim claim : view.claims()) {
             if (!then.countsLive(claim, today)) {
                 continue;
@@ -68,6 +71,13 @@ public class TakeStatement {
             claim.setStated(bound.containsKey(claim.getId()));
             claim.setStatedDue(bound.get(claim.getId()));
             claims.bind(claim);
+        }
+        if (parts != null) {
+            if (parts.in().containsKey(person.getId())) {
+                anyFigure = true;
+                total = total.add(parts.in().get(person.getId()));
+            }
+            total = total.subtract(parts.out().getOrDefault(person.getId(), BigDecimal.ZERO));
         }
         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
         boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;

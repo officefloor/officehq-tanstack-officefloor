@@ -5,6 +5,7 @@ import { LocaleControl } from '../features/locale/LocaleControl';
 import { SheetPicker } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
 import { AsOfControl } from '../features/asof/AsOfControl';
+import { PreviewControl } from '../features/preview/PreviewControl';
 import { RatePanel } from '../features/rates/RatePanel';
 import { HolidayPanel } from '../features/holidays/HolidayPanel';
 import { GradePanel } from '../features/grades/GradePanel';
@@ -47,6 +48,7 @@ function Home() {
           <SheetToday />
           <ConsolidatedFigures />
           <AsOfControl />
+          <PreviewControl />
           <RatePanel />
           <GradePanel />
           <HolidayPanel />

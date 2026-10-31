@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useSettings } from '../settings/useSettings';
-import { sheetTodayKey, useSheetArchived, useSheetToday, type SheetToday as SheetTodayDto } from './useSheetToday';
+import { sheetTodayKey, useRealSheetToday, useSheetArchived, type SheetToday as SheetTodayDto } from './useSheetToday';
 
 // Shows the active sheet's today and changes it. A blank date resets it to the real date.
 // Also shows whether the sheet is archived, and archives it (a steward only), and its parent sheet (nothing when none),
@@ -12,7 +12,7 @@ import { sheetTodayKey, useSheetArchived, useSheetToday, type SheetToday as Shee
 export function SheetToday() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
-  const today = useSheetToday(sheet);
+  const today = useRealSheetToday(sheet);
   const archived = useSheetArchived(sheet);
   const settings = useSettings(sheet);
   const [date, setDate] = useState('');

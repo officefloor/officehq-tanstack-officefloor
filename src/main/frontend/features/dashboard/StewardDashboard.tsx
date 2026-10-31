@@ -2,7 +2,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useDescendants } from '../consolidated/useDescendants';
 import { useSheetFigures } from '../people/useSheetFigures';
 import { useSettings } from '../settings/useSettings';
-import { useSheetToday } from '../sheet/useSheetToday';
+import { useRealSheetToday } from '../sheet/useSheetToday';
 
 type Counts = { pending: number; review: number; overdue: number };
 
@@ -16,7 +16,7 @@ export function StewardDashboard() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const settings = useSettings(sheet);
-  const today = useSheetToday(sheet);
+  const today = useRealSheetToday(sheet);
   const descendants = useDescendants(sheet);
   const steward =
     settings !== undefined &&

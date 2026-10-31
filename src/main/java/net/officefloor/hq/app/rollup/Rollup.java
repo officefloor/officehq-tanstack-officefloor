@@ -69,29 +69,11 @@ public class Rollup {
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
         List<Person> listed = people.list(sheetId);
-        // Each holder's parts of the shared claims that count for their own person, and what those parts take from it.
         Map<Long, Person> byId = new LinkedHashMap<>();
         listed.forEach(person -> byId.put(person.getId(), person));
-        Map<Long, BigDecimal> partsIn = new LinkedHashMap<>();
-        Map<Long, BigDecimal> partsOut = new LinkedHashMap<>();
-        for (Claim claim : all) {
-            Person owner = byId.get(claim.getPersonId());
-            if (claim.getShares().isEmpty() || owner == null || !owner.countsClaimed(claim, today) || !owner.countsLive(claim, today)) {
-                continue;
-            }
-            BigDecimal figure = due(claim, owner, today, policyDate);
-            if (figure == null) {
-                continue;
-            }
-            for (ClaimShare share : claim.getShares()) {
-                if (!byId.containsKey(share.personId())) {
-                    continue;
-                }
-                BigDecimal part = share.partOf(figure);
-                partsIn.merge(share.personId(), part, BigDecimal::add);
-                partsOut.merge(owner.getId(), part, BigDecimal::add);
-            }
-        }
+        SharedParts parts = sharedParts(all, byId, today, policyDate);
+        Map<Long, BigDecimal> partsIn = parts.in();
+        Map<Long, BigDecimal> partsOut = parts.out();
         for (Person person : listed) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -144,6 +126,42 @@ public class Rollup {
                     score(settled, overdueCount)));
         }
         return new RollupFigures(byPerson, show(claimedTotal), show(trimmedSum(dues)), show(trimmedSum(overdues)));
+    }
+
+    /** Each holder's parts of the shared claims that count for their own person ({@code in}), and what those parts take
+     *  from that person ({@code out}), by person id. */
+    public record SharedParts(Map<Long, BigDecimal> in, Map<Long, BigDecimal> out) {
+    }
+
+    /** The sheet's shared parts now. */
+    public SharedParts sharedParts(String sheetId) {
+        Map<Long, Person> byId = new LinkedHashMap<>();
+        people.list(sheetId).forEach(person -> byId.put(person.getId(), person));
+        return sharedParts(claims.list(sheetId), byId, sheets.today(sheetId), settings.policyDate(sheetId));
+    }
+
+    private SharedParts sharedParts(List<Claim> all, Map<Long, Person> byId, LocalDate today, LocalDate policyDate) {
+        Map<Long, BigDecimal> partsIn = new LinkedHashMap<>();
+        Map<Long, BigDecimal> partsOut = new LinkedHashMap<>();
+        for (Claim claim : all) {
+            Person owner = byId.get(claim.getPersonId());
+            if (claim.getShares().isEmpty() || owner == null || !owner.countsClaimed(claim, today) || !owner.countsLive(claim, today)) {
+                continue;
+            }
+            BigDecimal figure = due(claim, owner, today, policyDate);
+            if (figure == null) {
+                continue;
+            }
+            for (ClaimShare share : claim.getShares()) {
+                if (!byId.containsKey(share.personId())) {
+                    continue;
+                }
+                BigDecimal part = share.partOf(figure);
+                partsIn.merge(share.personId(), part, BigDecimal::add);
+                partsOut.merge(owner.getId(), part, BigDecimal::add);
+            }
+        }
+        return new SharedParts(partsIn, partsOut);
     }
 
     /** A claim's due as the screen shows it now; null for n/a. */

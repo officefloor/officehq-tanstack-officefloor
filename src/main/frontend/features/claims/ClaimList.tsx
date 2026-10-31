@@ -7,7 +7,7 @@ import { claimsKey, deferredShown, tagList, type Claim } from './useClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
-import { useSheetToday } from '../sheet/useSheetToday';
+import { useRealSheetToday, useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 import { useGrace } from './useGrace';
 import { ClaimSelect } from './BulkOpen';
@@ -105,6 +105,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const period = periodOf(usePeriods(sheet), dueBy(c));
   const floor = useFloor(sheet);
   const today = useSheetToday(sheet);
+  const realToday = useRealSheetToday(sheet);
   const latePct = useLatePct(sheet);
   const grace = useGrace(sheet);
   const policy = usePolicy(sheet);
@@ -415,7 +416,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     (c.lockedBy ?? '') !== '' && c.lockedBy !== user ||
     (settings?.roles.some((r) => r.user === user && r.role === 'viewer') === true &&
       // a delegation covering the sheet's today makes the user a steward, as the server judges it
-      !(settings?.delegations ?? []).some((d) => d.user === user && today !== undefined && d.from <= today && today <= d.to));
+      !(settings?.delegations ?? []).some((d) => d.user === user && realToday !== undefined && d.from <= realToday && realToday <= d.to));
   const edit = () =>
     act(() => {
       if (knownRefused()) setEditRefused(true);
