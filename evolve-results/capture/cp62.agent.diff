@@ -1,0 +1,294 @@
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 938527b9..6975ba3b 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -8,7 +8,8 @@ import { periodsKey } from '../periods/usePeriods';
+ import { settingsKey } from '../settings/useSettings';
+ import { sheetKey, useSheet, type Sheet } from './useSheet';
+ 
+-/** Shows the sheet's today and changes it. */
++/** Shows the sheet's today and changes it; shows whether the sheet is archived and archives it (a
++ *  steward only). Both share the sheet's error. */
+ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSheet(sheet);
+@@ -29,12 +30,19 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+       ]);
+     },
+   });
++  const archive = useMutation({
++    mutationFn: () => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/archive`, { user }),
++    onSuccess: (saved) => {
++      queryClient.setQueryData(sheetKey(sheet), saved);
++    },
++  });
+ 
+   return (
+     <form
+       data-testid="sheet-today-form"
+       onSubmit={(e) => {
+         e.preventDefault();
++        archive.reset();
+         submitOnce(() => save.mutateAsync(date.trim()));
+       }}
+     >
+@@ -48,15 +56,36 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+           onChange={(e) => {
+             setDate(e.target.value);
+             save.reset();
++            archive.reset();
+           }}
+         />
+       </label>{' '}
+       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
+         Save
+       </button>
+-      {save.isError && (
++      {' '}Archived: <strong data-testid="sheet-archived">{data ? (data.archived ? 'yes' : 'no') : ''}</strong>{' '}
++      <button
++        type="button"
++        data-testid="sheet-archive"
++        disabled={archive.isPending}
++        onClick={() => {
++          save.reset();
++          archive.reset();
++          submitOnce(() => archive.mutateAsync());
++        }}
++      >
++        Archive
++      </button>
++      {(save.isError || archive.isError) && (
+         <span data-testid="sheet-error" role="alert">
+-          {' '}Could not set today: enter a date as yyyy-mm-dd.
++          {' '}
++          {archive.isError
++            ? data?.archived
++              ? 'Could not archive: the sheet is already archived.'
++              : 'Could not archive: only a steward can archive the sheet.'
++            : data?.archived
++              ? 'Could not set today: the sheet is archived.'
++              : 'Could not set today: enter a date as yyyy-mm-dd.'}
+         </span>
+       )}
+     </form>
+diff --git a/src/main/frontend/features/sheet/useSheet.ts b/src/main/frontend/features/sheet/useSheet.ts
+index a29012aa..36339094 100644
+--- a/src/main/frontend/features/sheet/useSheet.ts
++++ b/src/main/frontend/features/sheet/useSheet.ts
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-export type Sheet = { id: string; today: string };
++export type Sheet = { id: string; today: string; archived: boolean };
+ 
+ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 2638d253..85276368 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -257,8 +257,9 @@ public class Settings {
+ 
+     /** Whether the user's role may take `action` on the sheet: the roles set for it, else the standing
+      *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. A
+-     *  viewer may take none. */
++     *  viewer may take none, and no one may on an archived sheet. */
+     public boolean allows(String sheetId, String action, String user) {
++        if (sheets.archived(sheetId)) return false;
+         Role role = role(sheetId, user);
+         if (role == Role.VIEWER) return false;
+         String roles = permission(sheetId, action);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
+index 925a369b..22a01579 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
+@@ -13,6 +13,7 @@ import java.io.IOException;
+ import java.io.InputStreamReader;
+ import java.nio.charset.StandardCharsets;
+ import java.util.Set;
++import net.officefloor.hq.app.sheet.Sheets;
+ import org.springframework.core.Ordered;
+ import org.springframework.core.annotation.Order;
+ import org.springframework.stereotype.Component;
+@@ -25,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
+  *  {@code /api/sheets/<id>/}) by a user who is a viewer on that sheet is refused 400 before it
+  *  reaches its pipeline, so it writes nothing and audits nothing. A bulk action still goes through,
+  *  each selected item refused by the permission matrix (see {@link Settings#allows}), so its counts
+- *  show none done. */
++ *  show none done. An archived sheet is guarded the same way for every user. */
+ @Component
+ @Order(Ordered.HIGHEST_PRECEDENCE)
+ public class ViewerGuard extends OncePerRequestFilter {
+@@ -38,9 +39,11 @@ public class ViewerGuard extends OncePerRequestFilter {
+     private static final ObjectMapper JSON = new ObjectMapper();
+ 
+     private final Settings settings;
++    private final Sheets sheets;
+ 
+-    public ViewerGuard(Settings settings) {
++    public ViewerGuard(Settings settings, Sheets sheets) {
+         this.settings = settings;
++        this.sheets = sheets;
+     }
+ 
+     @Override
+@@ -69,6 +72,12 @@ public class ViewerGuard extends OncePerRequestFilter {
+             response.getWriter().write("A viewer can change nothing");
+             return;
+         }
++        if (!BULK.contains(action) && sheets.archived(sheetId)) {
++            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
++            response.setContentType("text/plain;charset=UTF-8");
++            response.getWriter().write("The sheet is archived: nothing on it can be changed");
++            return;
++        }
+         chain.doFilter(new CachedBody(request, body), response);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ArchiveRequest.java b/src/main/java/net/officefloor/hq/app/sheet/ArchiveRequest.java
+new file mode 100644
+index 00000000..b1f5a30a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ArchiveRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** Body of an archive: who archives the sheet. */
++public record ArchiveRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ArchiveSheet.java b/src/main/java/net/officefloor/hq/app/sheet/ArchiveSheet.java
+new file mode 100644
+index 00000000..706ab5cd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ArchiveSheet.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class ArchiveSheet {
++    public void archive(@PathVariable("sheetId") String sheetId, Sheets sheets) {
++        sheets.archive(sheetId);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RecordSheetArchived.java b/src/main/java/net/officefloor/hq/app/sheet/RecordSheetArchived.java
+new file mode 100644
+index 00000000..38281455
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RecordSheetArchived.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RecordSheetArchived {
++    public void record(@PathVariable("sheetId") String sheetId, @Val Actor actor, Audit audit) {
++        audit.record("SHEET_ARCHIVED sheet=" + sheetId + " by=" + actor.user());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 253a5a6e..ab66d52f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -6,6 +6,6 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class RespondWithSheet {
+     public void respond(@PathVariable("sheetId") String sheetId, Sheets sheets,
+             ObjectResponse<SheetResponse> response) {
+-        response.send(new SheetResponse(sheetId, sheets.today(sheetId).toString()));
++        response.send(new SheetResponse(sheetId, sheets.today(sheetId).toString(), sheets.archived(sheetId)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index df3e4742..08e61815 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet as the screen sees it; `today` is ISO yyyy-MM-dd. */
+-public record SheetResponse(String id, String today) {
++/** A sheet as the screen sees it; `today` is ISO yyyy-MM-dd; `archived` once a steward archived it. */
++public record SheetResponse(String id, String today, boolean archived) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+index bb67a5f7..7e56a5e0 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+@@ -53,6 +53,17 @@ public class Sheets {
+         return jdbc.queryForObject("SELECT given FROM period_number WHERE sheet_id = ? AND seq = ?", Long.class, sheetId, seq);
+     }
+ 
++    /** Whether a steward has archived the sheet: then every change to it is refused. */
++    public boolean archived(String sheetId) {
++        today(sheetId);
++        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT archived FROM sheet WHERE id = ?", Boolean.class, sheetId));
++    }
++
++    public void archive(String sheetId) {
++        today(sheetId);
++        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", sheetId);
++    }
++
+     public void setToday(String sheetId, LocalDate today) {
+         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateArchive.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateArchive.java
+new file mode 100644
+index 00000000..32a795e3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateArchive.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.settings.Role;
++import net.officefloor.hq.app.settings.Settings;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Only a steward may archive the sheet. */
++public class ValidateArchive {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ArchiveRequest request,
++            Settings settings, Out<Actor> actor) throws InvalidSheetRequestException {
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        if (user.isEmpty() || settings.role(sheetId, user) != Role.STEWARD) {
++            throw new InvalidSheetRequestException("Only a steward can archive the sheet");
++        }
++        actor.set(new Actor(user));
++    }
++}
+diff --git a/src/main/resources/db/migration/V41__sheet_archived.sql b/src/main/resources/db/migration/V41__sheet_archived.sql
+new file mode 100644
+index 00000000..35a6e2eb
+--- /dev/null
++++ b/src/main/resources/db/migration/V41__sheet_archived.sql
+@@ -0,0 +1,2 @@
++-- A sheet a steward has archived: everything on it stays visible and every change to it is refused.
++ALTER TABLE sheet ADD COLUMN archived BOOLEAN DEFAULT FALSE NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+new file mode 100644
+index 00000000..5988413e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+@@ -0,0 +1,16 @@
++# Archive the sheet. Only a steward may; an archived sheet is refused by ViewerGuard before this
++# runs. Audit only once the change is saved: a refused change writes no line.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateArchive
++  next: archive
++archive:
++  class: net.officefloor.hq.app.sheet.ArchiveSheet
++  govern: [ transaction ]
++  next: record
++record:
++  class: net.officefloor.hq.app.sheet.RecordSheetArchived
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
