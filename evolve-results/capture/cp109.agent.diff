@@ -1,0 +1,520 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 05c3941a..9754818a 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -151,7 +151,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {rates.map((r) => (
++          {rates.filter((r) => (r.level ?? 0) === 0).map((r) => (
+             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+               <td>{r.grade}</td>
+               <td data-testid="rate-from">{r.from ?? 'start'}</td>
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index e1f88fc3..a1a6d649 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -5,16 +5,31 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
+  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
+  *  date it applies through, or null when it has no end. */
+-export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
++export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
++
++/** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
++type InheritedRates = { level: number; sheet: string; rates: Rate[] };
+ 
+ export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
+ 
+-/** The sheet's rates, by grade then from-date (the one with none first), re-read whenever the sheet is loaded. */
++/** The sheet's own rates, by grade then from-date (the one with none first), each with `level` 0;
++ *  then the rates of its parent sheets, nearest first, up to three levels up, each with the level it
++ *  is from (1 for the parent). Re-read whenever the sheet is loaded. */
+ export function useRates(sheet: string) {
+   const [asOf] = useAsOf();
+   return useQuery({
+     queryKey: asOfKey(ratesKey(sheet), asOf),
+-    queryFn: () => getJson<Rate[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
++    queryFn: async () => {
++      const base = `/api/sheets/${encodeURIComponent(sheet)}`;
++      const [own, inherited] = await Promise.all([
++        getJson<Rate[]>(asOfPath(`${base}/rates`, asOf)),
++        getJson<InheritedRates[]>(asOfPath(`${base}/rates/inherited`, asOf)),
++      ]);
++      return [
++        ...own.map((r) => ({ ...r, level: 0 })),
++        ...inherited.flatMap((i) => i.rates.map((r) => ({ ...r, level: i.level }))),
++      ];
++    },
+     staleTime: 0,
+     gcTime: 0,
+   });
+@@ -24,10 +39,23 @@ export function useRates(sheet: string) {
+ export const PCT = /^\d{1,5}(\.\d{1,2})?$/;
+ 
+ /**
+- * The grade's rate in force on `date` (yyyy-mm-dd): the one whose from-date is the latest on or
+- * before it, a rate with no from-date applying from the beginning of time. Undefined when none does, or when that one's to-date is before `date`.
++ * The grade's rate in force on `date` (yyyy-mm-dd): the sheet's own (level 0) when it has one then,
++ * else its parent's then, and so on up the levels.
+  */
+ export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
++  const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
++  for (const level of levels) {
++    const pct = levelRateOn(rates.filter((r) => (r.level ?? 0) === level), grade, date);
++    if (pct !== undefined) return pct;
++  }
++  return undefined;
++}
++
++/**
++ * The grade's rate in force on `date` among `rates` (of one sheet): the one whose from-date is the latest on or
++ * before it, a rate with no from-date applying from the beginning of time. Undefined when none does, or when that one's to-date is before `date`.
++ */
++function levelRateOn(rates: Rate[], grade: string, date: string): string | undefined {
+   let found: Rate | undefined;
+   for (const r of rates) {
+     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 0096514f..1d97e0b5 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -5,10 +5,11 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimsKey } from '../claims/useClaims';
+ import { poolsKey } from '../pools/usePools';
++import { ratesKey } from '../rates/useRates';
+ import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+ 
+ /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
+-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
++type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
+ 
+ /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
+ type Froms = Record<string, string>;
+@@ -45,7 +46,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSettings(sheet);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
++  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+   const [froms, setFroms] = useState<Froms>({});
+   const [limitInvalid, setLimitInvalid] = useState(false);
+   const [name, setName] = useState('');
+@@ -58,11 +59,13 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const saveSettings = useMutation({
+     mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
+     onSuccess: (saved) => {
+-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
++      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+       setFroms({});
+       queryClient.setQueryData(settingsKey(sheet), saved);
+       // The pot decides each pool member's cut.
+       void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
++      // A grade with no rate of its own takes the parent sheet's.
++      void queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
+       // The policy date decides how each claim's live figures round.
+       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+     },
+@@ -153,6 +156,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           const graceDays = edit.graceDays?.trim() ?? null;
+           const entryDate = edit.entryDate?.trim() ?? null;
+           const pot = edit.pot?.trim() ?? null;
++          const parent = edit.parent?.trim() ?? null;
+           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
+           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
+           const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
+@@ -183,7 +187,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             return;
+           }
+           setLimitInvalid(false);
+-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, gradeTerms, gradeGrace, gradeProof, perms }, from }));
++          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, gradeTerms, gradeGrace, gradeProof, perms }, from }));
+         }}
+       >
+         {/* While a save is in flight the limit in force is not yet known: saving the same value again
+@@ -375,6 +379,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             }}
+           />
+         </label>{' '}
++        Parent sheet:{' '}
++        <strong data-testid="setting-parent-current">
++          {saveSettings.isPending ? '' : (data?.parent ?? '')}
++        </strong>{' '}
++        <label>
++          Set to{' '}
++          <input
++            data-testid="setting-parent"
++            placeholder="blank: none"
++            value={edit.parent ?? (data?.parent ?? '')}
++            onFocus={() => touch('parent', data?.parent ?? '')}
++            onChange={(e) => {
++              setEdit((was) => ({ ...was, parent: e.target.value }));
++              clearSettingsError();
++            }}
++          />
++        </label>{' '}
+         Cap:{' '}
+         <strong data-testid="setting-cap-current">
+           {saveSettings.isPending ? '' : (data?.cap ?? '')}
+@@ -499,7 +520,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           <span data-testid="settings-error" role="alert">
+             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
+             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
+-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof and note thresholds amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and the grace days a whole number of days (blank is off), and the entry date a date, yyyy-mm-dd (blank is off), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule).
++            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof and note thresholds amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and the grace days a whole number of days (blank is off), and the entry date a date, yyyy-mm-dd (blank is off), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule), and the parent sheet one that has been loaded, not this sheet nor one that has this sheet as an ancestor (blank is none).
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index cf3dc49d..49f64d39 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -16,12 +16,12 @@ export type RoleEntry = { name: string; role: string };
+  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
+  *  terms, terms-<grade>, grace-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold), oldest from-date first; and `proofThreshold` with
+  *  two decimals, or null for none, as in force on the sheet's today; and `perms`, the roles set for each
+- *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>); and `gradeProof`, the proof threshold set per grade with two decimals in force on the sheet's today (a grade not in it uses the sheet's; dated, under proof-threshold-<grade>); and `pot` with two decimals, or null for none: shared out among the members of each balanced pool (not dated). */
++ *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>); and `gradeProof`, the proof threshold set per grade with two decimals in force on the sheet's today (a grade not in it uses the sheet's; dated, under proof-threshold-<grade>); and `pot` with two decimals, or null for none: shared out among the members of each balanced pool (not dated); and `parent`, the parent sheet's id, or null for none: a grade with no rate in force on a date on this sheet takes the parent's then, up to three levels up (not dated). */
+ /** A delegation of the steward role: the user acts as a steward while the sheet's today is from
+  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
+ export type DelegationEntry = { name: string; from: string; to: string; by: string };
+ 
+-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null };
++export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null };
+ 
+ /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
+ export type DatedValue = { from: string; value: string | null };
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 6975ba3b..2fcc9d0b 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -5,14 +5,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimsKey } from '../claims/useClaims';
+ import { periodsKey } from '../periods/usePeriods';
+-import { settingsKey } from '../settings/useSettings';
++import { settingsKey, useSettings } from '../settings/useSettings';
+ import { sheetKey, useSheet, type Sheet } from './useSheet';
+ 
+-/** Shows the sheet's today and changes it; shows whether the sheet is archived and archives it (a
++/** Shows the sheet's today and changes it; shows its parent sheet (nothing when none); shows whether the sheet is archived and archives it (a
+  *  steward only). Both share the sheet's error. */
+ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSheet(sheet);
++  const { data: settings } = useSettings(sheet);
+   const [date, setDate] = useState('');
+   const submitOnce = useSubmitOnce();
+   const save = useMutation({
+@@ -63,6 +64,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
+         Save
+       </button>
++      {' '}Parent: <strong data-testid="sheet-parent">{settings?.parent ?? ''}</strong>{' '}
+       {' '}Archived: <strong data-testid="sheet-archived">{data ? (data.archived ? 'yes' : 'no') : ''}</strong>{' '}
+       <button
+         type="button"
+diff --git a/src/main/java/net/officefloor/hq/app/rate/InheritedRatesResponse.java b/src/main/java/net/officefloor/hq/app/rate/InheritedRatesResponse.java
+new file mode 100644
+index 00000000..558621ce
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/InheritedRatesResponse.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.List;
++
++/** The rates of a parent sheet as the screen sees them: `level` levels up (1 for the parent). */
++public record InheritedRatesResponse(int level, String sheet, List<RateResponse> rates) {
++    public static InheritedRatesResponse from(Rates.Inherited inherited) {
++        return new InheritedRatesResponse(inherited.level(), inherited.sheetId(),
++                inherited.rates().stream().map(RateResponse::from).toList());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index 5e842d4c..13d8d84d 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.rate;
+ import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -29,9 +30,47 @@ public class Rates {
+                 sheetId);
+     }
+ 
+-    /** The grade's rate in force on `date`: the one with the latest from-date on or before it, or
+-     *  null when there is none or that one's to-date is before `date`. */
++    /** How many levels of parent sheets a grade's rate is looked for in. */
++    public static final int PARENT_LEVELS = 3;
++
++    /** The grade's rate in force on `date`: the sheet's own (see {@link #ownPct}), else its parent's
++     *  then, else the parent's parent's, up to {@link #PARENT_LEVELS} levels up; null when none has one. */
+     public BigDecimal pct(String sheetId, String grade, LocalDate date) {
++        String sheet = sheetId;
++        for (int level = 0; sheet != null && level <= PARENT_LEVELS; level++) {
++            BigDecimal pct = ownPct(sheet, grade, date);
++            if (pct != null) return pct;
++            sheet = parent(sheet);
++        }
++        return null;
++    }
++
++    /** The sheet's parent sheet id, or null when it names none. */
++    public String parent(String sheetId) {
++        return jdbc.query("SELECT parent_id FROM sheet_setting WHERE sheet_id = ?",
++                (rs, i) -> rs.getString("parent_id"), sheetId)
++                .stream().filter(p -> p != null).findFirst().orElse(null);
++    }
++
++    /** The sheet's ancestors' rates, nearest first: each parent sheet up to {@link #PARENT_LEVELS}
++     *  levels up, with every rate set on it. */
++    public List<Inherited> inherited(String sheetId) {
++        List<Inherited> inherited = new ArrayList<>();
++        String sheet = parent(sheetId);
++        for (int level = 1; sheet != null && level <= PARENT_LEVELS; level++) {
++            inherited.add(new Inherited(level, sheet, onSheet(sheet)));
++            sheet = parent(sheet);
++        }
++        return inherited;
++    }
++
++    /** The rates of an ancestor sheet `level` levels up (1 for the parent). */
++    public record Inherited(int level, String sheetId, List<Rate> rates) {
++    }
++
++    /** The grade's rate in force on `date` set on the sheet itself: the one with the latest from-date
++     *  on or before it, or null when there is none or that one's to-date is before `date`. */
++    public BigDecimal ownPct(String sheetId, String grade, LocalDate date) {
+         return jdbc.query("SELECT pct, to_date FROM rate WHERE sheet_id = ? AND grade = ? AND from_key <= ?"
+                 + " ORDER BY from_key DESC LIMIT 1",
+                 (rs, i) -> {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java
+new file mode 100644
+index 00000000..51166ced
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.rate;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class RespondWithInheritedRates {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Rates rates, AsOf asOfSheet,
++            ObjectResponse<List<InheritedRatesResponse>> response) throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf,
++                () -> rates.inherited(sheetId).stream().map(InheritedRatesResponse::from).toList()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+index 2ae98b6d..96060ef2 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+@@ -66,6 +66,9 @@ public class RecordSettingChanged {
+         if (change.setsPot()) {
+             audit.record(prefix + " key=pot value=" + (change.pot() != null ? change.pot().toPlainString() : ""));
+         }
++        if (change.setsParent()) {
++            audit.record(prefix + " key=parent value=" + (change.parent() != null ? change.parent() : ""));
++        }
+     }
+ 
+     /** " from=<date>" when a from-date was given for the key, else nothing. */
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index 9ba9b85a..d0008ccd 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -26,6 +26,7 @@ public class SaveSettings {
+         if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(sheetId, change.periodNumberingFrom());
+         if (change.setsEntryDate()) settings.setEntryDate(sheetId, change.entryDate());
+         if (change.setsPot()) settings.setPot(sheetId, change.pot());
++        if (change.setsParent()) settings.setParent(sheetId, change.parent());
+         if (change.setsGraceDays()) settings.setGraceDays(sheetId, change.graceDays());
+         change.perms().forEach((action, roles) -> settings.setPermission(sheetId, action, roles));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index db5d83b1..7ae10430 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -239,6 +239,28 @@ public class Settings {
+         jdbc.update("MERGE INTO sheet_setting (sheet_id, pot) KEY (sheet_id) VALUES (?, ?)", sheetId, pot);
+     }
+ 
++    /** The sheet's parent sheet: a grade with no rate in force on a date on this sheet takes the
++     *  parent's then (see {@link net.officefloor.hq.app.rate.Rates#pct}). Null when unset (none). Not
++     *  dated: read from the live sheet, so an as-of view shows it too. */
++    public String parent(String sheetId) {
++        List<String> values = jdbc.query("SELECT parent_id FROM PUBLIC.sheet_setting WHERE sheet_id = ?",
++                (rs, i) -> rs.getString("parent_id"), sheetId);
++        return values.isEmpty() ? null : values.get(0);
++    }
++
++    public void setParent(String sheetId, String parent) {
++        jdbc.update("MERGE INTO sheet_setting (sheet_id, parent_id) KEY (sheet_id) VALUES (?, ?)", sheetId, parent);
++    }
++
++    /** Whether the sheet `ancestor` is the sheet `sheetId` or one of its parents, any number of levels up. */
++    public boolean isAncestor(String ancestor, String sheetId) {
++        java.util.Set<String> seen = new java.util.HashSet<>();
++        for (String sheet = sheetId; sheet != null && seen.add(sheet); sheet = parent(sheet)) {
++            if (sheet.equals(ancestor)) return true;
++        }
++        return false;
++    }
++
+     /** The sheet's entry date: while set, the default date of a new claim in place of the sheet's
+      *  today. Null when unset (off). */
+     public LocalDate entryDate(String sheetId) {
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+index 182a926e..75cd40d1 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+@@ -6,6 +6,6 @@ import java.util.Map;
+ 
+ /** A validated settings change on a sheet: whether the clerk limit is set and to what (null for no
+  *  limit), the floor, the terms and the late percent, each null when it is not being set, and
+- *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off), and the terms set per grade, by grade (a null value clears the grade's own terms, so it uses the sheet's), and whether the cap is set and to what (null for no cap), and the from-date given for a dated setting, by its key (clerk-limit, floor, terms, terms-<grade>, late-pct, cap; one not in it is from the sheet's today), and whether the proof threshold is set and to what (null for none), and the permissions set, by action (roles comma separated; null for blank), and whether the grace days are set and to what (null for off), and whether the note threshold is set and to what (null for none), and whether the entry date is set and to what (null for blank: off), and the grace days set per grade, by grade (a null value clears them: none), and the proof threshold set per grade, by grade (a null value clears it, so it uses the sheet's), and whether the pot is set and to what (null for none). */
+-public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, String by, boolean setsCap, BigDecimal cap, Map<String, LocalDate> froms, boolean setsProofThreshold, BigDecimal proofThreshold, Map<String, String> perms, boolean setsGraceDays, Integer graceDays, boolean setsNoteThreshold, BigDecimal noteThreshold, boolean setsEntryDate, LocalDate entryDate, Map<String, Integer> gradeGrace, Map<String, BigDecimal> gradeProof, boolean setsPot, BigDecimal pot) {
++ *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off), and the terms set per grade, by grade (a null value clears the grade's own terms, so it uses the sheet's), and whether the cap is set and to what (null for no cap), and the from-date given for a dated setting, by its key (clerk-limit, floor, terms, terms-<grade>, late-pct, cap; one not in it is from the sheet's today), and whether the proof threshold is set and to what (null for none), and the permissions set, by action (roles comma separated; null for blank), and whether the grace days are set and to what (null for off), and whether the note threshold is set and to what (null for none), and whether the entry date is set and to what (null for blank: off), and the grace days set per grade, by grade (a null value clears them: none), and the proof threshold set per grade, by grade (a null value clears it, so it uses the sheet's), and whether the pot is set and to what (null for none), and whether the parent sheet is set and to what (null for none). */
++public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, String by, boolean setsCap, BigDecimal cap, Map<String, LocalDate> froms, boolean setsProofThreshold, BigDecimal proofThreshold, Map<String, String> perms, boolean setsGraceDays, Integer graceDays, boolean setsNoteThreshold, BigDecimal noteThreshold, boolean setsEntryDate, LocalDate entryDate, Map<String, Integer> gradeGrace, Map<String, BigDecimal> gradeProof, boolean setsPot, BigDecimal pot, boolean setsParent, String parent) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index 6720379c..e99b9b04 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -4,6 +4,6 @@ import java.util.Map;
+ 
+ /** Body of a settings change: the settings being set, each left out (null) when it is not being
+  *  changed — the clerk limit (two decimals, blank for no limit), the floor (two decimals, blank for
+- *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00), the policy date (yyyy-mm-dd, blank for the sheet's today), the period numbering from (yyyy-mm-dd, blank for off), terms per grade (whole days by grade, blank for the sheet's terms) and the cap (two decimals, blank for no cap) — and who makes the change, and the from-date of a dated setting by its key (yyyy-mm-dd; left out or blank for the sheet's today), and the proof threshold (two decimals, blank for none), and the note threshold (two decimals, blank for none; dated), and the permission matrix: the roles that may take each action, by action (a comma separated list of clerk and steward, blank for the standing rule), and the grace days (whole days, blank for off; not dated), and the entry date (yyyy-mm-dd, blank for off; not dated), and the grace days per grade (whole days by grade, blank for none; dated under grace-<grade>), and the proof threshold per grade (two decimals by grade, blank for the sheet's; dated under proof-threshold-<grade>), and the pot (two decimals, blank for none; not dated). */
+-public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String user, String cap, Map<String, String> from, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold, String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProof, String pot) {
++ *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00), the policy date (yyyy-mm-dd, blank for the sheet's today), the period numbering from (yyyy-mm-dd, blank for off), terms per grade (whole days by grade, blank for the sheet's terms) and the cap (two decimals, blank for no cap) — and who makes the change, and the from-date of a dated setting by its key (yyyy-mm-dd; left out or blank for the sheet's today), and the proof threshold (two decimals, blank for none), and the note threshold (two decimals, blank for none; dated), and the permission matrix: the roles that may take each action, by action (a comma separated list of clerk and steward, blank for the standing rule), and the grace days (whole days, blank for off; not dated), and the entry date (yyyy-mm-dd, blank for off; not dated), and the grace days per grade (whole days by grade, blank for none; dated under grace-<grade>), and the proof threshold per grade (two decimals by grade, blank for the sheet's; dated under proof-threshold-<grade>), and the pot (two decimals, blank for none; not dated), and the parent sheet (a sheet id, blank for none; not dated). */
++public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String user, String cap, Map<String, String> from, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold, String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProof, String pot, String parent) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+index 055b676f..9d7de0ff 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+@@ -8,10 +8,10 @@ import java.util.Map;
+ /** The sheet's settings as the screen sees them, each dated one as in force on the sheet's today:
+  *  the clerk limit with two decimals (null for no limit), the floor with two decimals, the terms in days, the late percent with two decimals, the policy date as set (yyyy-mm-dd, null when blank), the period numbering from (yyyy-mm-dd, null when off), the terms set per grade, by grade (a grade not in it uses the sheet's terms), the cap with two decimals (null for no cap), and the roles given, by user name;
+  *  and every value recorded for the dated settings, by key, oldest from-date first; and the proof threshold
+- *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off); and the grace days set per grade, by grade (a grade not in it has none); and the proof threshold set per grade with two decimals, by grade (a grade not in it uses the sheet's); and the pot with two decimals (null for none). */
++ *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off); and the grace days set per grade, by grade (a grade not in it has none); and the proof threshold set per grade with two decimals, by grade (a grade not in it uses the sheet's); and the pot with two decimals (null for none); and the parent sheet id (null for none). */
+ public record SettingsResponse(String clerkLimit, String floor, int terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, Integer> gradeTerms, String cap, List<RoleResponse> roles,
+         Map<String, List<Settings.DatedValue>> dated, String proofThreshold, Map<String, String> perms, Integer graceDays,
+-        List<DelegationResponse> delegations, String noteThreshold, String entryDate, Map<String, Integer> gradeGrace, Map<String, String> gradeProof, String pot) {
++        List<DelegationResponse> delegations, String noteThreshold, String entryDate, Map<String, Integer> gradeGrace, Map<String, String> gradeProof, String pot, String parent) {
+     public static SettingsResponse of(String sheetId, LocalDate today, Settings settings) {
+         BigDecimal limit = settings.clerkLimit(sheetId);
+         LocalDate policyDate = settings.policyDate(sheetId);
+@@ -31,6 +31,6 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Strin
+                 settings.graceDays(sheetId), settings.delegations(sheetId),
+                 noteThreshold != null ? noteThreshold.toPlainString() : null,
+                 entryDate != null ? entryDate.toString() : null, settings.gradeGrace(sheetId), settings.gradeProof(sheetId),
+-                pot != null ? pot.toPlainString() : null);
++                pot != null ? pot.toPlainString() : null, settings.parent(sheetId));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 06e02280..82218c2c 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -13,6 +13,7 @@ import java.util.TreeMap;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -38,7 +39,7 @@ public class ValidateSettings {
+     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest request,
+-            Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
++            Settings settings, Sheets sheets, Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
+         String limit = request == null || request.clerkLimit() == null ? null : request.clerkLimit().trim();
+         if (limit != null && !limit.isEmpty() && !AMOUNT.matcher(limit).matches()) {
+             throw new InvalidSheetRequestException("The clerk limit must be an amount with up to two decimals, or blank");
+@@ -141,6 +142,18 @@ public class ValidateSettings {
+         if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
+             throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
+         }
++        String parent = request == null || request.parent() == null ? null : request.parent().trim();
++        if (parent != null && !parent.isEmpty()) {
++            if (parent.equals(sheetId)) {
++                throw new InvalidSheetRequestException("A sheet cannot be its own parent");
++            }
++            if (!sheets.exists(parent)) {
++                throw new InvalidSheetRequestException("The parent must be a sheet that has been loaded");
++            }
++            if (settings.isAncestor(sheetId, parent)) {
++                throw new InvalidSheetRequestException("The parent cannot be a sheet that has this sheet as an ancestor");
++            }
++        }
+         Map<String, String> perms = new LinkedHashMap<>();
+         if (request != null && request.perms() != null) {
+             for (Map.Entry<String, String> e : request.perms().entrySet()) {
+@@ -189,6 +202,7 @@ public class ValidateSettings {
+                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
+                 noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
+                 entry != null, entryDate, gradeGrace, gradeProof,
+-                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2)));
++                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
++                parent != null, parent == null || parent.isEmpty() ? null : parent));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+index 10b4cdd7..1a4b0c7f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+@@ -53,6 +53,11 @@ public class Sheets {
+         return jdbc.queryForObject("SELECT given FROM period_number WHERE sheet_id = ? AND seq = ?", Long.class, sheetId, seq);
+     }
+ 
++    /** Whether the sheet has been loaded (used) at least once. */
++    public boolean exists(String sheetId) {
++        return jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, sheetId) > 0;
++    }
++
+     /** Whether a steward has archived the sheet: then every change to it is refused. */
+     public boolean archived(String sheetId) {
+         today(sheetId);
+diff --git a/src/main/resources/db/migration/V65__sheet_parent.sql b/src/main/resources/db/migration/V65__sheet_parent.sql
+new file mode 100644
+index 00000000..64f8dc3a
+--- /dev/null
++++ b/src/main/resources/db/migration/V65__sheet_parent.sql
+@@ -0,0 +1,8 @@
++-- The sheet's parent sheet: a grade with no rate in force on a date on this sheet takes the
++-- parent's rate then, else its parent's, up to three levels up. Null when unset (none). Not dated.
++ALTER TABLE public.sheet_setting ADD COLUMN parent_id VARCHAR(200);
++ALTER TABLE asof.sheet_setting ADD COLUMN parent_id VARCHAR(200);
++ALTER TABLE asof_hist.sheet_setting ADD COLUMN parent_id VARCHAR(200);
++-- The history trigger keeps the column list it was created with: create it again to see the new one.
++DROP TRIGGER public.sheet_setting_history;
++CREATE TRIGGER sheet_setting_history AFTER INSERT, UPDATE, DELETE ON public.sheet_setting FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/inherited.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/inherited.GET.yml
+new file mode 100644
+index 00000000..679220b3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates/inherited.GET.yml
+@@ -0,0 +1,5 @@
++# The rates of the sheet's parent sheets, nearest first, up to three levels up: a grade with no rate
++# in force on a date on the sheet takes theirs. Seen as of a date (?asOf=); see sheet.AsOf.
++respond:
++  class: net.officefloor.hq.app.rate.RespondWithInheritedRates
++  govern: [ transaction ]
