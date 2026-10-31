@@ -1,0 +1,65 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 82620111..5fb3e3aa 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -2,35 +2,37 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+-import { live, personDueCents, useClaims } from '../claims/useClaims';
+-import { gradeOn, heldOnBy, peopleKey, usePeople, type Person } from '../people/usePeople';
+-import { rateOn, totalDue, useRates } from '../rates/useRates';
+-import { useCap, useFloor, useLate } from '../settings/useSettings';
++import { useClaims } from '../claims/useClaims';
++import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { hundredths, totalDue } from '../rates/useRates';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+ /**
+  * A person's patrons: the other people on the sheet they have named (names sorted, comma and space
+- * separated), and their backing, the patrons' due-totals added up (an n/a one is skipped; 0.00 with
+- * no patrons). One patron is named at a time; the server refuses the person themselves and someone
++ * separated), and their backing, the patrons' SETTLED claims dated within the 90 days up to and
++ * including the sheet's today added up, each at the due fixed when it was settled (0.00 with none). One patron is named at a time; the server refuses the person themselves and someone
+  * already their patron.
+  */
++/** The first day (yyyy-mm-dd) of the 90 days up to and including `today`. */
++function backingSince(today: string): string {
++  if (today === '') return '';
++  return new Date(Date.parse(`${today}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10);
++}
++
+ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const { data: people = [] } = usePeople(sheet);
+   const { data: all = [] } = useClaims(sheet);
+-  const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+-  const floor = useFloor(sheet);
+-  const late = useLate(sheet);
+-  const cap = useCap(sheet);
+   const [chosen, setChosen] = useState('');
+ 
+   const patrons = people.filter((p) => person.patrons.includes(p.id));
+   const names = patrons.map((p) => p.name).sort();
+-  const claims = live(all, heldOnBy(people));
+-  const backing = patrons.map((p) =>
+-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
+-  );
++  const since = backingSince(today);
++  const backing = all
++    .filter((c) => person.patrons.includes(c.personId) && c.status === 'SETTLED' && c.due !== null)
++    .filter((c) => c.date >= since && c.date <= today)
++    .reduce((sum, c) => sum + hundredths(c.due!), 0n);
+ 
+   const add = useMutation({
+     mutationFn: (patronId: number) =>
+@@ -42,7 +44,7 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
+   return (
+     <>
+       <td data-testid="person-patrons">{names.join(', ')}</td>
+-      <td data-testid="person-backing">{totalDue(backing)}</td>
++      <td data-testid="person-backing">{totalDue([backing])}</td>
+       <td>
+         <select
+           data-testid="person-patron-select"
