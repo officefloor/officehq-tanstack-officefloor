@@ -1,0 +1,431 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 15c61bbf..f98e85d0 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -6,14 +6,17 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import type { Person } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { rateOn, showDue, useRates } from '../rates/useRates';
+-import { useFloor } from '../settings/useSettings';
++import { useFloor, useTerms } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import {
+   AMOUNT,
+   claimDueCents,
+   claimed,
+   claimsKey,
++  dueBy,
+   live,
++  overdue,
++  overdueFigures,
+   personDueCents,
+   useClaims,
+   type Claim,
+@@ -29,6 +32,9 @@ const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, vo
+  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, at least the sheet's floor; in the
+  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
+  * count toward claimed and the due-total, and not the OPEN ones while the person is held.
++ * Each claim shows its due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and
++ * due by before the sheet's today); the person shows how many of the claims that count are overdue
++ * and their dues added up.
+  */
+ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+   const queryClient = useQueryClient();
+@@ -41,6 +47,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const today = useSheetToday(sheet);
+   const pct = rateOn(rates, person.grade, today);
+   const floor = useFloor(sheet);
++  const terms = useTerms(sheet);
++  const late = overdueFigures(liveClaims, terms, today, floor, (d) => rateOn(rates, person.grade, d));
+   const [editing, setEditing] = useState<number | null>(null);
+   const [amount, setAmount] = useState('');
+   const [date, setDate] = useState('');
+@@ -117,6 +125,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+     <>
+       <td data-testid="person-claimed">{claimed(liveClaims)}</td>
+       <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, person.grade, d)))}</td>
++      <td data-testid="person-overdue-count">{late.count}</td>
++      <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
+       <td>
+         <form
+           data-testid="claim-form"
+@@ -188,6 +198,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               <span data-testid="claim-status">{c.status}</span>{' '}
+               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
++              <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
++              <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+               {(['open', 'settle', 'void'] as const).map((action) => (
+                 <span key={action}>
+                   <button
+@@ -232,6 +244,8 @@ export const contributions = [
+       <>
+         <th>Claimed</th>
+         <th>Due</th>
++        <th>Overdue</th>
++        <th>Overdue due</th>
+         <th>Claims</th>
+       </>
+     ),
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index f56de32f..d2c8d1a3 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -1,14 +1,15 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { usePeople } from '../people/usePeople';
+ import { rateOn, totalDue, useRates } from '../rates/useRates';
+-import { useFloor } from '../settings/useSettings';
++import { useFloor, useTerms } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { claimed, live, personDueCents, useClaims } from './useClaims';
++import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
+ 
+ /**
+  * The sheet's claimed-total, everyone's counted (OPEN or SETTLED) claims added up
+  * (not a held person's OPEN ones), and its due-total, everyone's due-total
+- * added up (a person whose due-total is n/a is skipped).
++ * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
++ * overdue, with their dues added up.
+  */
+ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
+   const { data: all = [] } = useClaims(sheet);
+@@ -21,6 +22,10 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
+   const dues = people.map((p) =>
+     personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, p.grade, today), (d) => rateOn(rates, p.grade, d)),
+   );
++  const terms = useTerms(sheet);
++  const late = people.map((p) =>
++    overdueFigures(claims.filter((c) => c.personId === p.id), terms, today, floor, (d) => rateOn(rates, p.grade, d)),
++  );
+   return (
+     <>
+       <p>
+@@ -29,6 +34,10 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
+       <p>
+         Due in total: <strong data-testid="rollup-due-total">{totalDue(dues)}</strong>
+       </p>
++      <p>
++        Overdue: <strong data-testid="rollup-overdue-count">{late.reduce((n, o) => n + o.count, 0)}</strong>, due{' '}
++        <strong data-testid="rollup-overdue-total">{totalDue(late.map((o) => o.cents))}</strong>
++      </p>
+     </>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 1e5f7873..0899abf2 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -86,3 +86,23 @@ export function personDueCents(claims: Claim[], floor: string, pct: string | und
+   }
+   return pct === undefined && !any ? null : sum;
+ }
++
++/** A claim's due-by (yyyy-mm-dd): its date plus the sheet's `terms` in days. */
++export function dueBy(claim: Claim, terms: number): string {
++  const d = new Date(`${claim.date}T00:00:00Z`);
++  d.setUTCDate(d.getUTCDate() + terms);
++  return d.toISOString().slice(0, 10);
++}
++
++/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's `today`. */
++export function overdue(claim: Claim, terms: number, today: string): boolean {
++  return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
++}
++
++/** These claims' overdue ones: their count, and their dues added up in cents (n/a ones skipped).
++ *  `pctOn` is the rate in force on a claim's date. */
++export function overdueFigures(claims: Claim[], terms: number, today: string, floor: string, pctOn: (date: string) => string | undefined): { count: number; cents: bigint } {
++  const late = claims.filter((c) => overdue(c, terms, today));
++  const cents = late.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c.date)) ?? 0n), 0n);
++  return { count: late.length, cents };
++}
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 9c588c0d..d12ed8fd 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -3,14 +3,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+-import { LIMIT, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
++import { DAYS, LIMIT, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+ 
+ /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
+-type SettingsEdit = { clerkLimit: string | null; floor: string | null };
++type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null };
+ 
+ /**
+  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
+  * it; blank is no limit), its floor (a claim's live due is at least it; blank is the default, 1.00),
++ * its terms (a claim is due by its date plus this many days; blank is the default, 14),
+  * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
+  * whose fields were touched since the last one.
+  */
+@@ -18,7 +19,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSettings(sheet);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null });
++  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null });
+   const [limitInvalid, setLimitInvalid] = useState(false);
+   const [name, setName] = useState('');
+   const [role, setRole] = useState('');
+@@ -28,7 +29,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const saveSettings = useMutation({
+     mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
+     onSuccess: (saved) => {
+-      setEdit({ clerkLimit: null, floor: null });
++      setEdit({ clerkLimit: null, floor: null, terms: null });
+       queryClient.setQueryData(settingsKey(sheet), saved);
+     },
+   });
+@@ -63,14 +64,19 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           e.preventDefault();
+           const limit = edit.clerkLimit?.trim() ?? null;
+           const floor = edit.floor?.trim() ?? null;
+-          if ((limit !== null && !LIMIT.test(limit)) || (floor !== null && !LIMIT.test(floor))) {
++          const terms = edit.terms?.trim() ?? null;
++          if (
++            (limit !== null && !LIMIT.test(limit)) ||
++            (floor !== null && !LIMIT.test(floor)) ||
++            (terms !== null && !DAYS.test(terms))
++          ) {
+             // Refused here, before anything is sent: the store and the audit file are untouched.
+             saveSettings.reset();
+             setLimitInvalid(true);
+             return;
+           }
+           setLimitInvalid(false);
+-          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor }));
++          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms }));
+         }}
+       >
+         {/* While a save is in flight the limit in force is not yet known: saving the same value again
+@@ -109,13 +115,30 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             }}
+           />
+         </label>{' '}
++        Terms:{' '}
++        <strong data-testid="setting-terms-current">
++          {saveSettings.isPending ? '' : (data?.terms ?? '')}
++        </strong>{' '}
++        <label>
++          Set to{' '}
++          <input
++            data-testid="setting-terms"
++            placeholder="blank: 14 days"
++            value={edit.terms ?? String(data?.terms ?? '')}
++            onFocus={() => touch('terms', String(data?.terms ?? ''))}
++            onChange={(e) => {
++              setEdit((was) => ({ ...was, terms: e.target.value }));
++              clearSettingsError();
++            }}
++          />
++        </label>{' '}
+         <button type="submit" data-testid="settings-save" disabled={saveSettings.isPending}>
+           Save
+         </button>
+         {(limitInvalid || saveSettings.isError) && (
+           <span data-testid="settings-error" role="alert">
+             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
+-            limit, a blank floor is 1.00).
++            limit, a blank floor is 1.00), and the terms a whole number of days (blank is 14).
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index cf47d3bf..05bdf858 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -5,12 +5,15 @@ import { getJson } from '../../api/http';
+ export type RoleEntry = { name: string; role: string };
+ 
+ /** The sheet's settings as the server sends them: `clerkLimit` with two decimals, or null for no
+- *  limit, and `floor` with two decimals. */
+-export type Settings = { clerkLimit: string | null; floor: string; roles: RoleEntry[] };
++ *  limit, `floor` with two decimals and `terms` in days. */
++export type Settings = { clerkLimit: string | null; floor: string; terms: number; roles: RoleEntry[] };
+ 
+ /** The floor of a sheet that has not set one. */
+ export const DEFAULT_FLOOR = '1.00';
+ 
++/** The terms, in days, of a sheet that has not set them. */
++export const DEFAULT_TERMS = 14;
++
+ export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as const;
+ 
+ /** The sheet's settings, re-read whenever the sheet is loaded. */
+@@ -28,7 +31,15 @@ export function useFloor(sheet: string): string {
+   return useSettings(sheet).data?.floor ?? DEFAULT_FLOOR;
+ }
+ 
++/** The sheet's terms: a claim is due by its date plus this many days. */
++export function useTerms(sheet: string): number {
++  return useSettings(sheet).data?.terms ?? DEFAULT_TERMS;
++}
++
+ export const ROLES = ['clerk', 'steward'] as const;
+ 
+ /** A clerk limit the server accepts: an amount with up to two decimals, or blank for no limit. */
+ export const LIMIT = /^(\d{1,10}(\.\d{1,2})?)?$/;
++
++/** Terms the server accepts: a whole number of days, or blank for the default 14. */
++export const DAYS = /^(\d{1,4})?$/;
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+index e5874814..bdb32d1c 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+@@ -14,5 +14,8 @@ public class RecordSettingChanged {
+         if (change.floor() != null) {
+             audit.record(prefix + " key=floor value=" + change.floor().toPlainString());
+         }
++        if (change.terms() != null) {
++            audit.record(prefix + " key=terms value=" + change.terms());
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index c489c507..bd17af59 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -6,5 +6,6 @@ public class SaveSettings {
+     public void save(@Val SettingsChange change, Settings settings) {
+         if (change.setsClerkLimit()) settings.setClerkLimit(change.sheetId(), change.clerkLimit());
+         if (change.floor() != null) settings.setFloor(change.sheetId(), change.floor());
++        if (change.terms() != null) settings.setTerms(change.sheetId(), change.terms());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index b5ecdf80..7f487f45 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -5,13 +5,16 @@ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+-/** Each sheet's settings: the roles given to user names, its clerk limit and its floor. */
++/** Each sheet's settings: the roles given to user names, its clerk limit, its floor and its terms. */
+ @Repository
+ public class Settings {
+ 
+     /** The floor of a sheet that has not set one. */
+     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+ 
++    /** The terms, in days, of a sheet that has not set them. */
++    public static final int DEFAULT_TERMS = 14;
++
+     private final JdbcTemplate jdbc;
+ 
+     public Settings(JdbcTemplate jdbc) {
+@@ -56,6 +59,16 @@ public class Settings {
+         jdbc.update("MERGE INTO sheet_setting (sheet_id, floor) KEY (sheet_id) VALUES (?, ?)", sheetId, floor);
+     }
+ 
++    /** The sheet's terms: a claim is due by its date plus this many days. 14 unless set. */
++    public int terms(String sheetId) {
++        BigDecimal terms = column("terms", sheetId);
++        return terms != null ? terms.intValue() : DEFAULT_TERMS;
++    }
++
++    public void setTerms(String sheetId, int terms) {
++        jdbc.update("MERGE INTO sheet_setting (sheet_id, terms) KEY (sheet_id) VALUES (?, ?)", sheetId, terms);
++    }
++
+     /** One setting's stored value, null when the sheet has no row or the setting is unset. */
+     private BigDecimal column(String column, String sheetId) {
+         List<BigDecimal> values = jdbc.query("SELECT " + column + " FROM sheet_setting WHERE sheet_id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+index 631e7ee5..a9298fd9 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+@@ -3,6 +3,6 @@ package net.officefloor.hq.app.settings;
+ import java.math.BigDecimal;
+ 
+ /** A validated settings change on a sheet: whether the clerk limit is set and to what (null for no
+- *  limit), and the floor, null when it is not being set. */
+-public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, String by) {
++ *  limit), the floor and the terms, each null when it is not being set. */
++public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index ceea446c..3f934e6f 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.settings;
+ 
+ /** Body of a settings change: the settings being set, each left out (null) when it is not being
+  *  changed — the clerk limit (two decimals, blank for no limit), the floor (two decimals, blank for
+- *  the default 1.00) — and who makes the change. */
+-public record SettingsRequest(String clerkLimit, String floor, String user) {
++ *  the default 1.00), the terms (whole days, blank for the default 14) — and who makes the change. */
++public record SettingsRequest(String clerkLimit, String floor, String terms, String user) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+index 5ff8ed3f..d93f2af7 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+@@ -4,11 +4,11 @@ import java.math.BigDecimal;
+ import java.util.List;
+ 
+ /** The sheet's settings as the screen sees them: the clerk limit with two decimals (null for no
+- *  limit), the floor with two decimals and the roles given, by user name. */
+-public record SettingsResponse(String clerkLimit, String floor, List<RoleResponse> roles) {
++ *  limit), the floor with two decimals, the terms in days and the roles given, by user name. */
++public record SettingsResponse(String clerkLimit, String floor, int terms, List<RoleResponse> roles) {
+     public static SettingsResponse of(String sheetId, Settings settings) {
+         BigDecimal limit = settings.clerkLimit(sheetId);
+         return new SettingsResponse(limit != null ? limit.toPlainString() : null,
+-                settings.floor(sheetId).toPlainString(), settings.roles(sheetId));
++                settings.floor(sheetId).toPlainString(), settings.terms(sheetId), settings.roles(sheetId));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 3786c77d..d2d4aa30 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -12,6 +12,9 @@ public class ValidateSettings {
+     /** An amount: 0.00 or more, with up to two decimals. */
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+ 
++    /** Terms: a whole number of days, 0 or more. */
++    private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
++
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest request,
+             Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
+         String limit = request == null || request.clerkLimit() == null ? null : request.clerkLimit().trim();
+@@ -22,11 +25,16 @@ public class ValidateSettings {
+         if (floor != null && !floor.isEmpty() && !AMOUNT.matcher(floor).matches()) {
+             throw new InvalidSheetRequestException("The floor must be an amount with up to two decimals, or blank");
+         }
++        String terms = request == null || request.terms() == null ? null : request.terms().trim();
++        if (terms != null && !terms.isEmpty() && !DAYS.matcher(terms).matches()) {
++            throw new InvalidSheetRequestException("The terms must be a whole number of days, or blank");
++        }
+         String by = request == null ? null : request.user();
+         actor.set(new Actor(by));
+         change.set(new SettingsChange(sheetId, limit != null,
+                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
+                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
++                terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
+                 by));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V19__terms.sql b/src/main/resources/db/migration/V19__terms.sql
+new file mode 100644
+index 00000000..6609f1a7
+--- /dev/null
++++ b/src/main/resources/db/migration/V19__terms.sql
+@@ -0,0 +1,2 @@
++-- The sheet's terms, in days: a claim is due by its date plus them. Null (or no row) is the default, 14.
++ALTER TABLE sheet_setting ADD COLUMN terms INT;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+index 82a28d59..fa5b8ac8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+@@ -1,4 +1,4 @@
+-# Change the sheet's clerk limit and/or floor. Validate first so a bad value is a 400 and writes nothing.
++# Change the sheet's clerk limit, floor and/or terms. Validate first so a bad value is a 400 and writes nothing.
+ validate:
+   class: net.officefloor.hq.app.settings.ValidateSettings
+   next: snapshot
