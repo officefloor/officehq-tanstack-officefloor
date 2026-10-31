@@ -1,0 +1,254 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index f3063317..62931441 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson, putJson } from '../../api/http';
++import { HttpError, postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import type { Person } from '../people/usePeople';
+@@ -18,9 +18,12 @@ import {
+   type Claim,
+ } from './useClaims';
+ 
++const STATUS_REFUSED = "This claim's status cannot change that way (whoever opened a claim cannot settle it).";
++const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
++
+ /**
+  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
+- * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
++ * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
+  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date; in the
+  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
+  * count toward claimed and the due-total.
+@@ -38,8 +41,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const [date, setDate] = useState('');
+   const [note, setNote] = useState('');
+   const [invalid, setInvalid] = useState(false);
+-  // The claim whose last status change was refused: its row shows the error.
+-  const [refused, setRefused] = useState<number | null>(null);
++  // The claim whose last status change or edit was refused: its row shows the error.
++  const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+ 
+   const submitOnce = useSubmitOnce();
+@@ -54,13 +57,20 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+       close();
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+     },
++    // An edit of a claim no longer a DRAFT is refused on the claim itself; the editor stays open.
++    onError: async (e, c) => {
++      if (c.id !== null && e instanceof HttpError && e.status === 409 && e.body.includes('DRAFT')) {
++        setRefused({ id: c.id, message: NOT_DRAFT });
++        await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++      }
++    },
+   });
+ 
+   const changeStatus = useMutation({
+     mutationFn: (c: { id: number; action: 'open' | 'settle' | 'void' }) =>
+       postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user }),
+     onMutate: () => setRefused(null),
+-    onError: (_e, c) => setRefused(c.id),
++    onError: (_e, c) => setRefused({ id: c.id, message: STATUS_REFUSED }),
+     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
+ 
+@@ -68,6 +78,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const clearError = () => {
+     save.reset();
+     setInvalid(false);
++    setRefused(null);
+   };
+   const close = () => {
+     setEditing(null);
+@@ -77,7 +88,12 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   };
+   const open = (c: Claim) => {
+     clearError();
+-    setRefused(null);
++    // Only a DRAFT can be edited: to change an open claim, void it and add a new one.
++    if (c.status !== 'DRAFT') {
++      cancel();
++      setRefused({ id: c.id, message: NOT_DRAFT });
++      return;
++    }
+     setEditing(c.id);
+     setAmount(c.amount);
+     setDate(c.date);
+@@ -140,7 +156,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+             {editing === null ? 'Add claim' : 'Save claim'}
+           </button>
+-          {(invalid || save.isError) && (
++          {(invalid || (save.isError && refused === null)) && (
+             <span data-testid="claim-form-error" role="alert">
+               {' '}
+               {invalid
+@@ -184,10 +200,10 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+                   </button>
+                 </>
+               )}
+-              {refused === c.id && (
++              {refused?.id === c.id && (
+                 <span data-testid="claim-error" role="alert">
+                   {' '}
+-                  This claim's status cannot change that way (whoever opened a claim cannot settle it).
++                  {refused.message}
+                 </span>
+               )}
+             </li>
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 65fc5cfe..511b3190 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -13,7 +13,7 @@ export type Claim = {
+   date: string;
+   note: string;
+   status: ClaimStatus;
+-  /** Given when the claim is opened; null for a DRAFT or VOID claim. */
++  /** Given when the claim is opened (a voided claim keeps it); null for a DRAFT, or a claim voided while a DRAFT. */
+   number: number | null;
+   /** The due fixed when the claim was settled, two decimals; null when it has none, so its due is live. */
+   due: string | null;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 9b574ca0..93869a4b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -6,10 +6,13 @@ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Edits the claim, refusing when it is dated in a closed period, or would be moved into one. */
++/** Edits the claim, refusing when it is no longer a DRAFT, or is dated in a closed period, or would be moved into one. */
+ public class ApplyClaim {
+     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods)
+-            throws PeriodClosedException {
++            throws ClaimEditRefusedException, PeriodClosedException {
++        if (claim.getStatus() != ClaimStatus.DRAFT) {
++            throw new ClaimEditRefusedException(claim.getStatus());
++        }
+         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.getSheetId());
+         closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+         closedPeriods.refuse(claim.getSheetId(), date);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 1e0ba209..9611ad9e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -4,17 +4,16 @@ import net.officefloor.hq.app.period.ClosedPeriods;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.sheet.Sheets;
+-import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Moves the claim to the action's status, refusing a change its current status does not allow.
+- *  Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
++ *  Opening gives the claim the sheet's next number; a voided claim keeps it (and it is never reused).
+  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+  *  bound it to, else its person's grade's rate in force on the claim's date; with no rate it stays live. The user who opened a claim may not settle it.
+  *  A claim dated in a closed period cannot change status at all. */
+ public class ApplyClaimStatus {
+     public void apply(@Val ClaimStatusChange change, @Val Claim claim, Sheets sheets, People people,
+-            Figures figures, ClosedPeriods closedPeriods, Out<ClaimNumber> number)
++            Figures figures, ClosedPeriods closedPeriods)
+             throws ClaimStatusRefusedException, PeriodClosedException {
+         closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+         if (!change.action().allowedFrom(claim.getStatus())) {
+@@ -33,9 +32,5 @@ public class ApplyClaimStatus {
+             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
+             claim.setDue(claim.isStated() ? claim.getStatedDue() : figures.live(claim, grade));
+         }
+-        number.set(new ClaimNumber(claim.getNumber()));
+-        if (change.action() == ClaimAction.VOID) {
+-            claim.setNumber(null);
+-        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 26518e60..c8daee45 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -44,7 +44,7 @@ public class Claim {
+     public void setNote(String note) { this.note = note; }
+     public ClaimStatus getStatus() { return status; }
+     public void setStatus(ClaimStatus status) { this.status = status; }
+-    /** The claim's number on its sheet, given when it is opened; null for a DRAFT or VOID claim. */
++    /** The claim's number on its sheet, given when it is opened; null for a DRAFT, or a claim voided while a DRAFT. A voided claim keeps its number. */
+     public Long getNumber() { return number; }
+     public void setNumber(Long number) { this.number = number; }
+     /** The due fixed when the claim was settled; null when it has none (not settled, or settled with no rate). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimEditRefusedException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimEditRefusedException.java
+new file mode 100644
+index 00000000..0f1aeda3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimEditRefusedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++/** An edit of a claim that is no longer a DRAFT; answered 409. To change an open claim, void it and add a new one. */
++public class ClaimEditRefusedException extends Exception {
++    public ClaimEditRefusedException(ClaimStatus status) {
++        super("A " + status + " claim cannot be edited: only a DRAFT can");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+deleted file mode 100644
+index 1af46802..00000000
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
++++ /dev/null
+@@ -1,6 +0,0 @@
+-package net.officefloor.hq.app.claim;
+-
+-/** The number a claim had before its status changed (null when it had none): a voided claim's
+- *  audit line carries the number voiding cleared. */
+-public record ClaimNumber(Long value) {
+-}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimEditRefused.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimEditRefused.java
+new file mode 100644
+index 00000000..c88d2d47
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimEditRefused.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimEditRefused {
++    public void handle(@Parameter ClaimEditRefusedException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index cc4d2ba8..52c0aea1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -7,11 +7,11 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Runs after the claim is saved, so a refused status change writes no audit line. */
+ public class RecordClaimStatusChanged {
+-    public void record(@Val ClaimStatusChange change, @Val Claim claim, @Val ClaimNumber number, People people, Audit audit) {
++    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, Audit audit) {
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         audit.record(change.action().event() + " sheet=" + claim.getSheetId() + " by=" + change.user()
+                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
+-                + " date=" + claim.getDate() + (number.value() != null ? " number=" + number.value() : "")
++                + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
+                 + (change.action() == ClaimAction.SETTLE
+                         ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : ""));
+     }
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimEditRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimEditRefusedException.yml
+new file mode 100644
+index 00000000..3d754f92
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimEditRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimEditRefused
