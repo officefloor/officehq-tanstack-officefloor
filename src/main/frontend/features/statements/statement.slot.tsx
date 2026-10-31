@@ -8,7 +8,9 @@ import { useRowAction } from '../people/useRowAction';
 /**
  * A person's statements: the button to take one, which records their due-total now and binds each
  * of their counting claims to the figure it has now (the rest are unbound), how many have been
- * taken, and the last one's due-total and date (blank when none has been taken).
+ * taken, and the last one's due-total and date (blank when none has been taken). A steward can
+ * cancel the last statement: the claims it bound become live again, and the row shows the one
+ * before it (or nothing).
  */
 function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -21,7 +23,19 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
       ]),
   });
-  const actionTaken = useRowAction(sheet, person.id, take.reset);
+  const cancel = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unstate`, { user }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+      ]),
+  });
+  const actionTaken = useRowAction(sheet, person.id, () => {
+    take.reset();
+    cancel.reset();
+  });
   const taken = person.statementCount > 0;
   return (
     <>
@@ -31,14 +45,28 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
       <td>
         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => {
             actionTaken();
+            cancel.reset();
             take.mutate();
           }}>
           Statement
+        </button>
+        <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => {
+            actionTaken();
+            take.reset();
+            cancel.mutate();
+          }}>
+          Cancel statement
         </button>
         {take.isError && (
           <span data-testid="person-error" role="alert">
             {' '}
             Could not take this statement.
+          </span>
+        )}
+        {cancel.isError && (
+          <span data-testid="person-error" role="alert">
+            {' '}
+            Could not cancel the statement.
           </span>
         )}
       </td>

@@ -40,6 +40,12 @@ public class Claims {
                 Claims::claim, sheetId, personId);
     }
 
+    /** Unbind every claim of the person a statement binds: each shows its live figure again. */
+    public void unbind(String sheetId, long personId) {
+        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND person_id = ? AND stated",
+                sheetId, personId);
+    }
+
     /** Whether the person has a SETTLED claim with this number: one a correction may correct. */
     public boolean settled(String sheetId, long personId, String number) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",

@@ -119,6 +119,26 @@ public class People {
         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ?",
                 person.getStatementCount(), person.getStatedTotal(), Date.valueOf(person.getStatementDate()),
                 person.getId());
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date) VALUES (?, ?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), person.getStatementCount(), person.getStatedTotal(),
+                Date.valueOf(person.getStatementDate()));
+    }
+
+    /** Cancel the person's last statement: their count goes down by one and they show the one
+     *  before it (its due-total and date), or none. Not an edit: the person's version is untouched. */
+    public void cancelStatement(Person person) {
+        jdbc.update("DELETE FROM person_statement WHERE person_id = ? AND seq >= ?",
+                person.getId(), person.getStatementCount());
+        int count = person.getStatementCount() - 1;
+        List<Object[]> before = jdbc.query(
+                "SELECT stated_total, statement_date FROM person_statement WHERE person_id = ? AND seq = ?",
+                (rs, n) -> new Object[] { rs.getBigDecimal(1), rs.getDate(2) }, person.getId(), count);
+        person.setStatementCount(count);
+        person.setStatedTotal(before.isEmpty() ? null : (java.math.BigDecimal) before.get(0)[0]);
+        person.setStatementDate(before.isEmpty() ? null : ((Date) before.get(0)[1]).toLocalDate());
+        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ?",
+                count, person.getStatedTotal(),
+                person.getStatementDate() != null ? Date.valueOf(person.getStatementDate()) : null, person.getId());
     }
 
     /** Record the person's retirement date. Not an edit: the person's version is untouched. */
