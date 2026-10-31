@@ -1,0 +1,375 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index c289ae68..c41d2a47 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -13,6 +13,7 @@ import { useGrace } from './useGrace';
+ import { ClaimSelect } from './BulkOpen';
+ import { ClaimTimeline } from './ClaimTimeline';
+ import { isReviewLate } from './reviewLate';
++import { isPendingLate } from './pendingLate';
+ import { peopleKey, type Person } from '../people/usePeople';
+ 
+ // A person's claims, newest first, each with its amount, date, note, status, number, opened-by, period (the one whose dates contain its due-by as fixed at creation, blank for none), stated (yes when the
+@@ -442,6 +443,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+       <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today, grace }, policy))}</span>{' '}
+       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+       <span data-testid="claim-review-late">{isReviewLate(c, today, settings?.reviewSla) ? 'yes' : 'no'}</span>{' '}
++      <span data-testid="claim-pending-late">{isPendingLate(c, today, settings?.pendingSla) ? 'yes' : 'no'}</span>{' '}
+       <span data-testid="claim-overdue">{isOverdue(c, today, grace) ? 'yes' : 'no'}</span>{' '}
+       <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
+       <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
+diff --git a/src/main/frontend/features/claims/pendingLate.ts b/src/main/frontend/features/claims/pendingLate.ts
+new file mode 100644
+index 00000000..4c990105
+--- /dev/null
++++ b/src/main/frontend/features/claims/pendingLate.ts
+@@ -0,0 +1,17 @@
++import type { Claim } from './useClaims';
++
++/** A claim's pending day: the sheet's today when it last went to PENDING (its latest PENDING log line), "" if never. */
++export function pendingDay(c: Claim): string {
++  const line = [...(c.log ?? [])].reverse().find((l) => l.startsWith('PENDING by '));
++  return line?.match(/ on (\d{4}-\d{2}-\d{2}) /)?.[1] ?? '';
++}
++
++/** A claim is pending-late when it is PENDING, the sheet has a pending SLA ("" for none) and its pending day plus the
++ *  SLA days is before the sheet's today. */
++export function isPendingLate(c: Claim, today: string | undefined, sla: string | undefined): boolean {
++  const day = pendingDay(c);
++  if (c.status !== 'PENDING' || today === undefined || !sla || day === '') return false;
++  const d = new Date(`${day}T00:00:00Z`);
++  d.setUTCDate(d.getUTCDate() + Number(sla));
++  return d.toISOString().slice(0, 10) < today;
++}
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 1154ccb3..fa64244a 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -81,7 +81,7 @@ export function PeopleList() {
+   const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+   const watched = useWatches(sheet, user);
+-  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
++  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+@@ -416,7 +416,7 @@ export function PeopleList() {
+       </ul>
+       <SnapshotCompare people={people} totalOf={totalOf} />
+       <SheetCompare people={people} today={today} totalOf={totalOf} />
+-      <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} reviewLateCount={reviewLateCount} voidReasonCount={voidReasonCount} />
++      <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} reviewLateCount={reviewLateCount} pendingLateCount={pendingLateCount} voidReasonCount={voidReasonCount} />
+       </PersonSelection>
+     </ClaimSelection>
+   );
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index a767981a..d445248d 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -2,6 +2,7 @@ import { countsClaimed, countsLive, hasTag, isOpen, useClaims, useTags } from '.
+ import { isOverdue } from '../claims/overdue';
+ import { useGrace } from '../claims/useGrace';
+ import { isReviewLate } from '../claims/reviewLate';
++import { isPendingLate } from '../claims/pendingLate';
+ import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
+ import { claimRate, rateOn, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
+@@ -25,7 +26,9 @@ export function useSheetFigures(sheet: string) {
+   const policy = usePolicy(sheet);
+   const cap = useCap(sheet);
+   const pools = usePools(sheet);
+-  const reviewSla = useSettings(sheet)?.reviewSla;
++  const settings = useSettings(sheet);
++  const reviewSla = settings?.reviewSla;
++  const pendingSla = settings?.pendingSla;
+   const byId = new Map(people.map((p) => [p.id, p]));
+   const live = claims.filter((c) => {
+     const person = byId.get(c.personId);
+@@ -163,8 +166,10 @@ export function useSheetFigures(sheet: string) {
+   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
+   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
+   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
++  // Pending-late: PENDING claims whose pending day plus the sheet's pending SLA is before the sheet's today.
++  const pendingLateCount = sheetClaims.filter((c) => isPendingLate(c, today, pendingSla)).length;
+   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
+-  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
++  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+ }
+ 
+ // People's figures added up, leaving out the single highest and the single lowest when there are
+diff --git a/src/main/frontend/features/settings/SettingsPanel.tsx b/src/main/frontend/features/settings/SettingsPanel.tsx
+index 9508771e..b82b316a 100644
+--- a/src/main/frontend/features/settings/SettingsPanel.tsx
++++ b/src/main/frontend/features/settings/SettingsPanel.tsx
+@@ -149,6 +149,13 @@ export function SettingsPanel() {
+     unchoosePolicy();
+     maxOpenChosen.current = true;
+   };
++  // The pending SLA in days (not dated): a whole number, or saved blank (none).
++  const [pendingSla, setPendingSla] = useState('');
++  const pendingSlaChosen = useRef(false);
++  const focusPendingSla = () => {
++    unchoosePolicy();
++    pendingSlaChosen.current = true;
++  };
+   // Entering the default grade marks it as the one to save, as it is.
+   const focusDefaultGrade = () => {
+     unchoosePolicy();
+@@ -442,6 +449,10 @@ export function SettingsPanel() {
+         setMaxOpen('');
+         maxOpenChosen.current = false;
+       }
++      else if (body.key === 'pending-sla') {
++        setPendingSla('');
++        pendingSlaChosen.current = false;
++      }
+       else if (body.key === 'parent') {
+         setParent('');
+         parentChosen.current = false;
+@@ -531,13 +542,14 @@ export function SettingsPanel() {
+             const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
+             const scoreLogged = scoreLog.trim() !== '' || scoreLogChosen.current;
+             const maxed = maxOpen.trim() !== '' || maxOpenChosen.current;
++            const pendingSlaed = pendingSla.trim() !== '' || pendingSlaChosen.current;
+             const ownTerms = grades.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+             const ownGrace = grades.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
+             const ownProof = grades.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
+             const ownLimit = grades.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
+             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
+             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
+-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || maxed || permitted.length > 0) {
++                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || maxed || pendingSlaed || permitted.length > 0) {
+               const saves = [
+                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
+                 ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
+@@ -568,6 +580,7 @@ export function SettingsPanel() {
+                 ...(scoredHigh ? [{ key: 'score-high', value: scoreHigh.trim() }] : []),
+                 ...(scoreLogged ? [{ key: 'score-log', value: scoreLog.trim() }] : []),
+                 ...(maxed ? [{ key: 'max-open', value: maxOpen.trim() }] : []),
++                ...(pendingSlaed ? [{ key: 'pending-sla', value: pendingSla.trim() }] : []),
+                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
+               ];
+               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
+@@ -965,6 +978,18 @@ export function SettingsPanel() {
+             saveSetting.reset();
+           }}
+         />{' '}
++        Pending SLA (days): <span data-testid="setting-pending-sla-current">{settings?.pendingSla ?? ''}</span>{' '}
++        <input
++          data-testid="setting-pending-sla"
++          value={pendingSla}
++          placeholder="Pending SLA days (blank: none)"
++          onFocus={focusPendingSla}
++          onChange={(e) => {
++            setPendingSla(e.target.value);
++            pendingSlaChosen.current = true;
++            saveSetting.reset();
++          }}
++        />{' '}
+         Parent sheet: <span data-testid="setting-parent-current">{settings?.parent ?? ''}</span>{' '}
+         <input
+           data-testid="setting-parent"
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 9111e966..0bd05d5b 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -18,11 +18,11 @@ export type Role = { user: string; role: string };
+  *  and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule),
+  *  and every delegation of the steward role, in the order given, and the note threshold with two decimals ("" for none: above the one
+  *  in force on its date a claim cannot be opened with an empty note), and the fiscal year start month, 1 to 12 ("1" unless set), and the rounding mode in force
+- *  on the sheet's today (half-up or half-even; "" for none), and the review SLA in days ("" for none; not dated), and the proof kinds,
++ *  on the sheet's today (half-up or half-even; "" for none), and the review SLA in days ("" for none; not dated), and the pending SLA in days ("" for none; not dated), and the proof kinds,
+  *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved,
+  *  and the score thresholds, whole numbers ("" for blank; not dated): while both are set each person shows a band (see scoreBand),
+  *  and the score log ("on", or "" for off; not dated): while on, changing the sheet's today audits each person's score. */
+-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string };
++export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string };
+ 
+ /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
+  *  steward, and the audit lines of their changes end with for=<by>. */
+diff --git a/src/main/frontend/features/summary/SummaryPanel.tsx b/src/main/frontend/features/summary/SummaryPanel.tsx
+index 5b02305d..14334434 100644
+--- a/src/main/frontend/features/summary/SummaryPanel.tsx
++++ b/src/main/frontend/features/summary/SummaryPanel.tsx
+@@ -10,7 +10,7 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
+ // The sheet at a glance, worked from the same figures the lists show. Per grade: how many people
+ // are on it today (retired people left out), their due-totals added up (skipping n/a) and how many
+ // of them are active. Per period: its due-total, as the period list shows it, and its change from
+-// the period before it by start date (blank for the earliest). Per status: how many claims have it; and how many REVIEW claims are review-late.
++// the period before it by start date (blank for the earliest). Per status: how many claims have it; and how many REVIEW claims are review-late, and how many PENDING claims are pending-late.
+ // Per reason on the sheet's void list: how many VOID claims were voided with it. Beside it, the classic
+ // summary: per period, its due-total counting each claim by its status now (a closed period shows the figure
+ // fixed when it closed), and the sheet's due-total untrimmed: everyone's due-total added up.
+@@ -21,6 +21,7 @@ export function SummaryPanel({
+   isActive,
+   statusCount,
+   reviewLateCount,
++  pendingLateCount,
+   voidReasonCount,
+ }: {
+   people: Person[];
+@@ -29,6 +30,7 @@ export function SummaryPanel({
+   isActive: (person: Person) => boolean;
+   statusCount: (status: (typeof STATUSES)[number]) => number;
+   reviewLateCount: number;
++  pendingLateCount: number;
+   voidReasonCount: (reason: string) => number;
+ }) {
+   const [sheet] = useSearchParam('sheet', asString);
+@@ -106,6 +108,10 @@ export function SummaryPanel({
+             <td>REVIEW late</td>
+             <td data-testid="summary-review-late-count">{reviewLateCount}</td>
+           </tr>
++          <tr>
++            <td>PENDING late</td>
++            <td data-testid="summary-pending-late-count">{pendingLateCount}</td>
++          </tr>
+         </tbody>
+       </table>
+       <table>
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 88389293..4ba9e79c 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -495,7 +495,8 @@ public class AsOfView {
+                 plain.getOrDefault(Settings.ESCALATE, ""), plain.getOrDefault(Settings.REVIEW_SLA, ""),
+                 plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""),
+                 plain.getOrDefault(ValidateSetting.SCORE_MID, ""), plain.getOrDefault(ValidateSetting.SCORE_HIGH, ""),
+-                plain.getOrDefault(ValidateSetting.SCORE_LOG, ""), plain.getOrDefault(Settings.MAX_OPEN, ""));
++                plain.getOrDefault(ValidateSetting.SCORE_LOG, ""), plain.getOrDefault(Settings.MAX_OPEN, ""),
++                plain.getOrDefault(Settings.PENDING_SLA, ""));
+     }
+ 
+     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java b/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java
+index 59e68c19..2c609761 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SaveSetting.java
+@@ -64,6 +64,14 @@ public class SaveSetting {
+             response.send(settings.load(sheetId));
+             return;
+         }
++        if (ValidateSetting.PENDING_SLA.equals(setting.key())) {
++            settings.setPendingSla(sheetId, setting.value() == null ? null : setting.value().intValue());
++            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
++                    + " key=" + setting.key() + " value=" + (setting.value() == null ? "" : setting.value().toPlainString()));
++            rollup.recordChanges(sheetId, setting.user(), before);
++            response.send(settings.load(sheetId));
++            return;
++        }
+         if (ValidateSetting.MAX_OPEN.equals(setting.key())) {
+             settings.setMaxOpen(sheetId, setting.value() == null ? null : setting.value().intValue());
+             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index a0c192e4..91d1c390 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -286,6 +286,18 @@ public class Settings {
+         plainHistory(sheetId, REVIEW_SLA, days == null ? "" : String.valueOf(days));
+     }
+ 
++    /** The sheet's pending SLA in days; null when none. */
++    public Integer pendingSla(String sheetId) {
++        sheets.today(sheetId); // the sheet's row holds the pending SLA
++        return jdbc.queryForObject("SELECT pending_sla FROM sheet WHERE id = ?", Integer.class, sheetId);
++    }
++
++    public void setPendingSla(String sheetId, Integer days) {
++        sheets.today(sheetId);
++        jdbc.update("UPDATE sheet SET pending_sla = ? WHERE id = ?", days, sheetId);
++        plainHistory(sheetId, PENDING_SLA, days == null ? "" : String.valueOf(days));
++    }
++
+     /** The sheet's maximum of OPEN or PENDING claims per person; null when none. */
+     public Integer maxOpen(String sheetId) {
+         sheets.today(sheetId); // the sheet's row holds the maximum
+@@ -471,7 +483,7 @@ public class Settings {
+     }
+ 
+     /** The plain_setting_history keys of the undated settings (a permission's and a role's followed by the action or user). */
+-    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", MAX_OPEN = "max-open", PROOF_KINDS = "proof-kinds", DEFAULT_GRADE = "default-grade", PERM = "perm-", ROLE = "role-";
++    public static final String NUMBERING = "numbering", GRACE = "grace", ENTRY = "entry", POT = "pot", PARENT = "parent", FISCAL = "fiscal", ALERT = "alert", ESCALATE = "escalate", REVIEW_SLA = "review-sla", MAX_OPEN = "max-open", PENDING_SLA = "pending-sla", PROOF_KINDS = "proof-kinds", DEFAULT_GRADE = "default-grade", PERM = "perm-", ROLE = "role-";
+ 
+     /** Records an undated setting's value as set in its history, dated the sheet's today. */
+     private void plainHistory(String sheetId, String key, String value) {
+@@ -515,6 +527,7 @@ public class Settings {
+         Integer escalate = escalateAfter(sheetId);
+         Integer reviewSla = reviewSla(sheetId);
+         Integer maxOpen = maxOpen(sheetId);
++        Integer pendingSla = pendingSla(sheetId);
+         Integer scoreMid = scoreThreshold(sheetId, ValidateSetting.SCORE_MID);
+         Integer scoreHigh = scoreThreshold(sheetId, ValidateSetting.SCORE_HIGH);
+         LocalDate entry = entryDate(sheetId);
+@@ -552,6 +565,7 @@ public class Settings {
+                 escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
+                 String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""),
+                 scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh),
+-                scoreLog(sheetId) ? "on" : "", maxOpen == null ? "" : String.valueOf(maxOpen));
++                scoreLog(sheetId) ? "on" : "", maxOpen == null ? "" : String.valueOf(maxOpen),
++                pendingSla == null ? "" : String.valueOf(pendingSla));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index ab2b9616..35cc4318 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -4,7 +4,7 @@ import java.util.List;
+ 
+ /** The sheet's settings: the clerk limit at two decimals ("" for no limit), the floor at two decimals
+  *  the terms in days, the late percent at two decimals, the policy date ("" for blank), the period numbering from ("" for off) the roles set and each grade's own terms in days, by grade (a grade not in it uses the sheet's terms) and the cap at two decimals ("" for none) — each of those as in force on the sheet's today — and every
+- *  value recorded for those dated settings, by key, oldest from-date first, and the proof threshold in force on the sheet's today ("" for none), and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule), and the grace days ("" for off; not dated), and every delegation of the steward role, in the order given, and the note threshold in force on the sheet's today ("" for none), the entry date ("" for off) and the pot ("" for none; not dated), and the alert threshold ("" for off; not dated), and the escalation gap in days ("" for off; not dated), and the review SLA in days ("" for none; not dated), and the proof kinds, comma separated ("" for none; not dated)
++ *  value recorded for those dated settings, by key, oldest from-date first, and the proof threshold in force on the sheet's today ("" for none), and each action's permission, by action: the roles that may take it, comma separated ("" for the standing rule), and the grace days ("" for off; not dated), and every delegation of the steward role, in the order given, and the note threshold in force on the sheet's today ("" for none), the entry date ("" for off) and the pot ("" for none; not dated), and the alert threshold ("" for off; not dated), and the escalation gap in days ("" for off; not dated), and the review SLA in days ("" for none; not dated), and the proof kinds, comma separated ("" for none; not dated), and the pending SLA in days ("" for none; not dated)
+  *  and the parent sheet id ("" for none; not dated), and the default grade ("" for A; not dated), and the score thresholds, whole numbers ("" for blank; not dated), and the score log ("on", or "" for off; not dated). */
+-public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, List<RoleResponse> roles, java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, List<DatedValue>> dated, String proofThreshold, java.util.Map<String, String> perms, String graceDays, List<DelegationResponse> delegations, String noteThreshold, String entryDate, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh, String scoreLog, String maxOpen) {
++public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, List<RoleResponse> roles, java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, List<DatedValue>> dated, String proofThreshold, java.util.Map<String, String> perms, String graceDays, List<DelegationResponse> delegations, String noteThreshold, String entryDate, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 3c1c20f9..e2cb8cc2 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -65,6 +65,9 @@ public class ValidateSetting {
+     /** The sheet's maximum of OPEN or PENDING claims per person: not dated, a whole number, blank for none. */
+     public static final String MAX_OPEN = "max-open";
+ 
++    /** Not dated: a PENDING claim whose pending day plus this many days is before the sheet's today is pending-late; blank: none. */
++    public static final String PENDING_SLA = "pending-sla";
++
+     /** Not dated: a whole number; while it and the score-high are set, a person whose score is at or above it (and below the
+      *  score-high) shows the band MID, one below it LOW; blank: none. */
+     public static final String SCORE_MID = "score-mid";
+@@ -118,7 +121,7 @@ public class ValidateSetting {
+         String key = request.key() == null ? "" : request.key().trim();
+         List<String> codes = grades.codes(sheetId);
+         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
+-                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
++                && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !PENDING_SLA.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
+                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
+                 && !(key.startsWith(GRADE_CLERK_LIMIT) && codes.contains(key.substring(GRADE_CLERK_LIMIT.length())))
+                 && !(key.startsWith(GRADE_TERMS) && codes.contains(key.substring(GRADE_TERMS.length())))
+@@ -194,6 +197,17 @@ public class ValidateSetting {
+             body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
+             return;
+         }
++        if (PENDING_SLA.equals(key)) {
++            if (raw.isEmpty()) {
++                body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
++                return;
++            }
++            if (!DAYS.matcher(raw).matches()) {
++                throw new InvalidSettingException("The pending SLA must be a whole number of days, 0 or more, or blank for none");
++            }
++            body.set(new ValidSetting(key, new BigDecimal(Integer.parseInt(raw)), request.user(), null, null));
++            return;
++        }
+         if (MAX_OPEN.equals(key)) {
+             if (raw.isEmpty()) {
+                 body.set(new ValidSetting(key, null, request.user(), null, null)); // blank: none
+diff --git a/src/main/resources/db/migration/V117__pending_sla.sql b/src/main/resources/db/migration/V117__pending_sla.sql
+new file mode 100644
+index 00000000..86323b03
+--- /dev/null
++++ b/src/main/resources/db/migration/V117__pending_sla.sql
+@@ -0,0 +1,2 @@
++-- The sheet's pending SLA in days (not dated). Null: none.
++ALTER TABLE sheet ADD COLUMN pending_sla INT;
