@@ -60,11 +60,13 @@ public class Crews {
 
     /** Adds a crew with its lead to the sheet. */
     public void add(String sheetId, String name, long leadId) {
-        jdbc.update("INSERT INTO crew (sheet_id, name, lead_person_id) VALUES (?, ?, ?)", sheetId, name, leadId);
+        jdbc.update("INSERT INTO crew (sheet_id, name, lead_person_id, added_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, name, leadId, sheetId);
     }
 
     /** Adds the person to the crew. */
     public void addMember(String sheetId, String crew, long personId) {
-        jdbc.update("INSERT INTO crew_member (sheet_id, crew_name, person_id) VALUES (?, ?, ?)", sheetId, crew, personId);
+        jdbc.update("INSERT INTO crew_member (sheet_id, crew_name, person_id, added_on) VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, crew, personId, sheetId);
     }
 }

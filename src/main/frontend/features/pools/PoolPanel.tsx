@@ -23,7 +23,9 @@ import { poolsKey, usePools, type Pool } from './usePools';
 // and members in the order added, a pool member as pool:<name>, the cut as shown (empty when none). Every crew is also
 // a pool of its name, listed after the pools in the order added: the lead and the members at equal shares (100.00 split
 // as patrons' shares are, the remainder on the lead), given cuts like any pool. Its members come from the crew, so its
-// row has no form to add one; a pool cannot take a crew's name, nor a crew a pool's.
+// row has no form to add one; a pool cannot take a crew's name, nor a crew a pool's. For every period whose to-date is
+// on or before the sheet's today, each member also shows their cut as it stood at the end of that period (the pool,
+// its members, the pot and the holds as they were then), empty when there was none.
 export function PoolPanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -121,6 +123,11 @@ function PoolRow({ pool, pools, people, sheet, user }: { pool: Pool; pools: Pool
             <span data-testid="pool-member-name">{m.name}</span>{' '}
             <span data-testid="pool-share">{m.share}</span>{' '}
             cut <span data-testid="pool-cut">{m.cut}</span>
+            {Object.entries(m.periodCuts ?? {}).map(([period, cut]) => (
+              <span key={period}>
+                {' '}{period} <span data-testid={`pool-cut-${period}`}>{cut}</span>
+              </span>
+            ))}
             {m.retired && ' (retired)'}
             {!m.current && ' (not current)'}
           </li>

@@ -44,7 +44,7 @@ public class SheetCloner {
         copyRows("claim_template", "name, amount, note", "", from, to);
         copyRows("sheet_tag", "tag", "", from, to);
         copyRows("period", "name, from_date, to_date, added_on", "", from, to);
-        copyRows("pool", "name", " ORDER BY seq", from, to);
+        copyRows("pool", "name, added_on", " ORDER BY seq", from, to);
 
         Map<Long, Long> ids = new LinkedHashMap<>();
         for (Long id : jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY place, id", Long.class, from)) {
@@ -76,7 +76,7 @@ public class SheetCloner {
                 }
             }, from, person.getKey());
         }
-        jdbc.query("SELECT pool_name, person_id, member_pool, share, from_date, to_date FROM pool_member WHERE sheet_id = ? ORDER BY seq",
+        jdbc.query("SELECT pool_name, person_id, member_pool, share, from_date, to_date, added_on FROM pool_member WHERE sheet_id = ? ORDER BY seq",
                 rs -> {
                     long personId = rs.getLong(2);
                     Long person = rs.wasNull() ? null : ids.get(personId);
@@ -84,9 +84,9 @@ public class SheetCloner {
                     if (person == null && memberPool == null) {
                         return;
                     }
-                    jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, member_pool, share, from_date, to_date)"
-                            + " VALUES (?, ?, ?, ?, ?, ?, ?)", to, rs.getString(1), person, memberPool, rs.getBigDecimal(4),
-                            rs.getDate(5), rs.getDate(6));
+                    jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, member_pool, share, from_date, to_date,"
+                            + " added_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", to, rs.getString(1), person, memberPool,
+                            rs.getBigDecimal(4), rs.getDate(5), rs.getDate(6), rs.getDate(7));
                 }, from);
         return ids;
     }

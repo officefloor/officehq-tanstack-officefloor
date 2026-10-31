@@ -41,18 +41,61 @@ public class Pools {
     /** The sheet's pools as {@link #list(String)}, with memberships' dates, holds and the pot judged on the date standing for
      *  the sheet's today (null: the sheet's today itself), as the as-of view shows them. */
     public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
+        List<PoolResponse> pools = compute(sheetId, on, false);
         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
+        Map<String, Map<String, String>> history = new LinkedHashMap<>();
+        jdbc.query("SELECT p.name, p.to_date FROM period p JOIN sheet s ON s.id = p.sheet_id WHERE p.sheet_id = ?"
+                + " AND p.to_date <= COALESCE(CAST(? AS DATE), s.today) ORDER BY p.from_date, p.name", rs -> {
+                    Map<String, String> cuts = new HashMap<>();
+                    for (PoolResponse then : compute(sheetId, rs.getDate(2).toLocalDate(), true)) {
+                        for (PoolResponse.Member m : then.members()) {
+                            cuts.put(memberKey(then.name(), m), m.cut());
+                        }
+                    }
+                    history.put(rs.getString(1), cuts);
+                }, sheetId, day);
+        if (history.isEmpty()) {
+            return pools;
+        }
+        List<PoolResponse> withHistory = new ArrayList<>();
+        for (PoolResponse pool : pools) {
+            List<PoolResponse.Member> members = new ArrayList<>();
+            for (PoolResponse.Member m : pool.members()) {
+                Map<String, String> periodCuts = new LinkedHashMap<>();
+                history.forEach((period, cuts) -> periodCuts.put(period, cuts.getOrDefault(memberKey(pool.name(), m), "")));
+                members.add(new PoolResponse.Member(m.personId(), m.memberPool(), m.name(), m.share(), m.retired(),
+                        m.current(), m.cut(), periodCuts));
+            }
+            withHistory.add(new PoolResponse(pool.name(), pool.totalShare(), pool.balanced(), members, pool.crew()));
+        }
+        return withHistory;
+    }
+
+    /** The key a member is matched by across dates: its pool and the person's id or the member pool's name. */
+    private static String memberKey(String pool, PoolResponse.Member m) {
+        return pool + "\u0000" + (m.personId() != null ? "p" + m.personId() : "m" + m.memberPool());
+    }
+
+    /** The sheet's pools judged on the date (null: the sheet's today). With then, the pools, members, crews, holds and
+     *  retirements are as they stood at the end of the date: those added later are left out, a retirement is the latest
+     *  recorded by then. */
+    private List<PoolResponse> compute(String sheetId, java.time.LocalDate on, boolean then) {
+        java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
+        String added = then ? " AND (added_on IS NULL OR added_on <= ?)" : "";
         Map<String, List<PoolResponse.Member>> members = new LinkedHashMap<>();
-        for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY seq", String.class, sheetId)) {
+        for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ?" + added + " ORDER BY seq",
+                String.class, then ? new Object[] {sheetId, day} : new Object[] {sheetId})) {
             members.put(name, new ArrayList<>());
         }
+        Map<Long, Boolean> retiredThen = then ? retiredOn(sheetId, day) : null;
         jdbc.query("SELECT m.pool_name, m.person_id, p.name, m.share, p.retired_from, m.member_pool,"
                 + " (m.from_date IS NULL OR m.from_date <= COALESCE(CAST(? AS DATE), s.today))"
                 + " AND (m.to_date IS NULL OR m.to_date >= COALESCE(CAST(? AS DATE), s.today))"
                 + " FROM pool_member m"
                 + " LEFT JOIN person p ON p.id = m.person_id AND p.sheet_id = m.sheet_id"
                 + " JOIN sheet s ON s.id = m.sheet_id"
-                + " WHERE m.sheet_id = ? ORDER BY m.seq", rs -> {
+                + " WHERE m.sheet_id = ?" + (then ? " AND (m.added_on IS NULL OR m.added_on <= ?)" : "")
+                + " ORDER BY m.seq", rs -> {
                     List<PoolResponse.Member> list = members.get(rs.getString(1));
                     String sub = rs.getString(6);
                     String share = rs.getBigDecimal(4).setScale(2).toPlainString();
@@ -63,11 +106,13 @@ public class Pools {
                     if (sub != null) {
                         list.add(new PoolResponse.Member(null, sub, sub, share, false, current, ""));
                     } else if (rs.getString(3) != null) {
+                        boolean retired = retiredThen == null ? rs.getDate(5) != null
+                                : retiredThen.getOrDefault(rs.getLong(2), false);
                         list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3),
-                                share, rs.getDate(5) != null, current, ""));
+                                share, retired, current, ""));
                     }
-                }, day, day, sheetId);
-        Set<String> crews = crewPools(sheetId, members);
+                }, then ? new Object[] {day, day, sheetId, day} : new Object[] {day, day, sheetId});
+        Set<String> crews = crewPools(sheetId, members, then ? day : null, retiredThen);
         BigDecimal pot = day == null ? livePot(sheetId) : potOn(sheetId, day);
         Map<String, String> totals = new HashMap<>();
         Set<String> nested = new HashSet<>();
@@ -85,7 +130,9 @@ public class Pools {
         });
         Set<String> held = new HashSet<>(jdbc.queryForList("SELECT DISTINCT CAST(h.person_id AS VARCHAR) FROM person_hold h"
                 + " JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ? AND h.from_date <= COALESCE(CAST(? AS DATE), s.today)"
-                + " AND (h.to_date IS NULL OR h.to_date >= COALESCE(CAST(? AS DATE), s.today))", String.class, sheetId, day, day));
+                + " AND (h.to_date IS NULL OR h.to_date >= COALESCE(CAST(? AS DATE), s.today))"
+                + (then ? " AND (h.set_on IS NULL OR h.set_on <= ?)" : ""), String.class,
+                then ? new Object[] {sheetId, day, day, day} : new Object[] {sheetId, day, day}));
         Map<String, List<PoolResponse.Member>> shown = new HashMap<>(members);
         for (String name : members.keySet()) {
             if (!nested.contains(name)) {
@@ -101,29 +148,33 @@ public class Pools {
     /** Adds each of the sheet's crews, in the order added and after the pools, as a pool of its name: the lead and then
      *  the members (in the order added) at equal shares, 100.00 split as patrons' shares are (each rounded half to even to
      *  two decimals, the remainder on the lead), every membership current. Returns the crews' names. */
-    private Set<String> crewPools(String sheetId, Map<String, List<PoolResponse.Member>> members) {
+    private Set<String> crewPools(String sheetId, Map<String, List<PoolResponse.Member>> members, java.sql.Date addedBy,
+            Map<Long, Boolean> retiredThen) {
         Set<String> crews = new HashSet<>();
         Map<String, List<PoolResponse.Member>> people = new LinkedHashMap<>();
+        Object[] args = addedBy == null ? new Object[] {sheetId} : new Object[] {sheetId, addedBy};
         jdbc.query("SELECT c.name, c.lead_person_id, p.name, p.retired_from FROM crew c"
                 + " LEFT JOIN person p ON p.id = c.lead_person_id AND p.sheet_id = c.sheet_id"
-                + " WHERE c.sheet_id = ? ORDER BY c.seq", rs -> {
+                + " WHERE c.sheet_id = ?" + (addedBy == null ? "" : " AND (c.added_on IS NULL OR c.added_on <= ?)")
+                + " ORDER BY c.seq", rs -> {
                     List<PoolResponse.Member> list = new ArrayList<>();
                     // A lead no longer on the sheet (moved away) is left out: the crew's members share it all.
                     if (rs.getString(3) != null) {
                         list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3), "",
-                                rs.getDate(4) != null, true, ""));
+                                retired(rs.getLong(2), rs.getDate(4), retiredThen), true, ""));
                     }
                     people.put(rs.getString(1), list);
-                }, sheetId);
+                }, args);
         jdbc.query("SELECT m.crew_name, m.person_id, p.name, p.retired_from FROM crew_member m"
                 + " JOIN person p ON p.id = m.person_id AND p.sheet_id = m.sheet_id"
-                + " WHERE m.sheet_id = ? ORDER BY m.seq", rs -> {
+                + " WHERE m.sheet_id = ?" + (addedBy == null ? "" : " AND (m.added_on IS NULL OR m.added_on <= ?)")
+                + " ORDER BY m.seq", rs -> {
                     List<PoolResponse.Member> list = people.get(rs.getString(1));
                     if (list != null) {
                         list.add(new PoolResponse.Member(String.valueOf(rs.getLong(2)), null, rs.getString(3), "",
-                                rs.getDate(4) != null, true, ""));
+                                retired(rs.getLong(2), rs.getDate(4), retiredThen), true, ""));
                     }
-                }, sheetId);
+                }, args);
         people.forEach((name, list) -> {
             if (members.containsKey(name) || list.isEmpty()) {
                 return;
@@ -140,6 +191,21 @@ public class Pools {
             crews.add(name);
         });
         return crews;
+    }
+
+    /** Whether the person counts as retired: a retirement date set now, or (retiredThen given) as it stood then. */
+    private static boolean retired(long personId, java.sql.Date retiredFrom, Map<Long, Boolean> retiredThen) {
+        return retiredThen == null ? retiredFrom != null : retiredThen.getOrDefault(personId, false);
+    }
+
+    /** Whether each person had a retirement date set at the end of the date: the latest recorded by then. */
+    private Map<Long, Boolean> retiredOn(String sheetId, java.sql.Date day) {
+        Map<Long, Boolean> retired = new HashMap<>();
+        jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ?"
+                + " AND (set_on IS NULL OR set_on <= ?) ORDER BY seq",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> retired.put(rs.getLong(1), rs.getDate(2) != null),
+                sheetId, day);
+        return retired;
     }
 
     /** The sheet's pot now, at two decimals; null when none. */
@@ -220,7 +286,7 @@ public class Pools {
         for (int i = 0; i < members.size(); i++) {
             PoolResponse.Member m = members.get(i);
             withCuts.add(new PoolResponse.Member(m.personId(), m.memberPool(), m.name(), m.share(), m.retired(), m.current(),
-                    cuts[i] == null ? "" : cuts[i].toPlainString()));
+                    cuts[i] == null ? "" : cuts[i].toPlainString(), m.periodCuts()));
         }
         return withCuts;
     }
@@ -246,7 +312,8 @@ public class Pools {
 
     /** Adds a pool to the sheet. */
     public void add(String sheetId, String name) {
-        jdbc.update("INSERT INTO pool (sheet_id, name) VALUES (?, ?)", sheetId, name);
+        jdbc.update("INSERT INTO pool (sheet_id, name, added_on) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, name, sheetId);
     }
 
     /** The pool the pool is a member of, or null when it is a member of none. */
@@ -266,7 +333,8 @@ public class Pools {
      *  and to-dates of the membership. */
     public void addMember(String sheetId, String pool, Long personId, String memberPool, BigDecimal share,
             LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, member_pool, share, from_date, to_date)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, pool, personId, memberPool, share, from, to);
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_name, person_id, member_pool, share, from_date, to_date, added_on)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, pool, personId, memberPool,
+                share, from, to, sheetId);
     }
 }
