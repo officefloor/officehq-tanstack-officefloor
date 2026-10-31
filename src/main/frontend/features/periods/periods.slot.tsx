@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimDueCents, live, useClaims } from '../claims/useClaims';
-import { usePeople } from '../people/usePeople';
+import { gradeOn, usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
@@ -68,15 +68,15 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
     return null;
   };
 
-  const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+  const personOf = new Map(people.map((p) => [p.id, p]));
   const held = new Set(people.filter((p) => p.held).map((p) => p.id));
   const dueIn = (period: Period) =>
     period.closed && period.closedTotal !== null
       ? period.closedTotal
       : totalDue(
           live(all, (id) => held.has(id))
-            .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
-            .map((c) => claimDueCents(c, floor, rateOn(rates, gradeOf.get(c.personId)!, c.date), late)),
+            .filter((c) => periodOf([period], c.date) !== undefined && personOf.has(c.personId))
+            .map((c) => claimDueCents(c, floor, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), late)),
         );
 
   return (

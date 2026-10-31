@@ -59,13 +59,13 @@ public class Rollup {
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.counts(claim.getStatus())) continue;
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = figures.due(claim, person.getGrade());
+                BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;
                 }
             }
-            if (!any && rates.pct(sheetId, person.getGrade(), today) == null) due = null;
+            if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due));
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) dueTotal = dueTotal.add(due);

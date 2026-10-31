@@ -4,10 +4,12 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -16,7 +18,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held FROM person";
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held, "
+            + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     private final JdbcTemplate jdbc;
 
@@ -33,8 +36,16 @@ public class People {
                 (ResultSet rs) -> {
                     patrons.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getLong("patron_id"));
                 }, sheetId);
+        Map<Long, TreeMap<LocalDate, String>> grades = new HashMap<>();
+        jdbc.query("SELECT person_id, grade, from_date FROM person_grade WHERE sheet_id = ?",
+                (ResultSet rs) -> {
+                    grades.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
+                            .put(fromKey(rs.getDate("from_date")), rs.getString("grade"));
+                }, sheetId);
         for (Person person : people) {
             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
+            TreeMap<LocalDate, String> dated = grades.get(person.getId());
+            if (dated != null) person.setGrades(dated);
         }
         return people;
     }
@@ -72,10 +83,12 @@ public class People {
      *  version it was loaded at; false (nothing written) when someone has saved it since. */
     public boolean save(Person person) {
         if (person.getId() != null) {
-            int n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND version = ?",
-                    person.getName(), person.getGrade(), person.getId(), person.getVersion());
+            int n = jdbc.update("UPDATE person SET name = ?, version = version + 1 WHERE id = ? AND version = ?",
+                    person.getName(), person.getId(), person.getVersion());
             if (n == 0) return false;
             person.setVersion(person.getVersion() + 1);
+            Person.DatedGrade dated = person.getNewGrade();
+            if (dated != null) saveGrade(person, dated);
             return true;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -84,10 +97,12 @@ public class People {
                     "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
-            ps.setString(3, person.getGrade());
+            ps.setString(3, person.getFirstGrade());
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
+        // The first grade a person is given applies from the beginning of time.
+        saveGrade(person, new Person.DatedGrade(person.getFirstGrade(), null));
         return true;
     }
 
@@ -117,9 +132,28 @@ public class People {
         person.getPatronIds().add(patron.getId());
     }
 
-    /** The person (may be null) with their patrons' ids read in. */
+    /** Record the person's grade from its date, replacing the one they had from that date. */
+    private void saveGrade(Person person, Person.DatedGrade dated) {
+        Date from = dated.from() != null ? Date.valueOf(dated.from()) : null;
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ? AND from_date IS NOT DISTINCT FROM ?",
+                person.getId(), from);
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), dated.grade(), from);
+    }
+
+    private static LocalDate fromKey(Date from) {
+        return from != null ? from.toLocalDate() : LocalDate.MIN;
+    }
+
+    /** The person (may be null) with their patrons' ids and dated grades read in. */
     private Person withPatrons(Person person) {
         if (person != null) {
+            TreeMap<LocalDate, String> grades = new TreeMap<>();
+            jdbc.query("SELECT grade, from_date FROM person_grade WHERE person_id = ?",
+                    (ResultSet rs) -> {
+                        grades.put(fromKey(rs.getDate("from_date")), rs.getString("grade"));
+                    }, person.getId());
+            if (!grades.isEmpty()) person.setGrades(grades);
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
         }
@@ -136,6 +170,8 @@ public class People {
         Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired != null ? retired.toLocalDate() : null);
         person.setHeld(rs.getBoolean("held"));
+        Date today = rs.getDate("sheet_today");
+        person.setToday(today != null ? today.toLocalDate() : LocalDate.now());
         return person;
     }
 }

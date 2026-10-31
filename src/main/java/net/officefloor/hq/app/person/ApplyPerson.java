@@ -1,10 +1,14 @@
 package net.officefloor.hq.app.person;
 
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
+/** Changes the person's name and records the form's grade from its from-date (blank: the sheet's
+ *  today), keeping the grades already recorded — except that a save leaving the grade as the row
+ *  showed it (the one in force on the sheet's today), with the from-date blank, records none. */
 public class ApplyPerson {
-    public void apply(@Val PersonRequest request, @Val Person person, People people)
+    public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets)
             throws InvalidSheetRequestException, PersonConflictException {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(PersonResponse.from(person));
@@ -13,6 +17,10 @@ public class ApplyPerson {
             throw new InvalidSheetRequestException("The name is already in use on this sheet");
         }
         person.setName(request.name());
-        person.setGrade(request.grade());
+        var from = request.gradeFromDate();
+        var today = sheets.today(person.getSheetId());
+        person.setToday(today);
+        if (from == null && request.grade().equals(person.getGrade())) return;
+        person.recordGrade(request.grade(), from != null ? from : today);
     }
 }

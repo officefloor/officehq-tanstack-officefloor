@@ -8,11 +8,13 @@ import { getJson } from '../../api/http';
  *  `retired` is whether a retirement date is set (whatever the date), `retiredFrom` that date
  *  (yyyy-mm-dd, null when not retired). `held` is whether they are on hold: their OPEN claims then
  *  count in no live total. `patrons` are the ids of the people they have named as patrons, in
- *  the order they were named. */
+ *  the order they were named. `grade` is the grade in force on the sheet's today when they were read;
+ *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). */
 export type Person = {
   id: number;
   name: string;
   grade: string;
+  grades: { grade: string; from: string | null }[];
   version: number;
   statementCount: number;
   statedTotal: string | null;
@@ -35,4 +37,12 @@ export function usePeople(sheet: string) {
     staleTime: 0,
     gcTime: 0,
   });
+}
+
+/** The person's grade in force on `date` (yyyy-mm-dd): the one from the latest date on or before
+ *  it, the first one they were given applying from the beginning of time. */
+export function gradeOn(person: Person, date: string): string {
+  let found = person.grades[0]?.grade ?? person.grade;
+  for (const g of person.grades) if (g.from === null || g.from <= date) found = g.grade;
+  return found;
 }

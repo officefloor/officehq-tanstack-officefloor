@@ -30,7 +30,7 @@ public class ApplyClaimStatus {
         }
         BigDecimal due = null;
         if (change.action() == ClaimAction.SETTLE) {
-            String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
+            String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
             due = claim.isStated() ? claim.getStatedDue() : figures.live(claim, grade);
             if (due != null) due = due.add(figures.charge(claim, due));
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());

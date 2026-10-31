@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import net.officefloor.hq.app.claim.ClaimStatus;
 
 /** A person on a sheet. `id` is null until the person is first saved. */
@@ -11,7 +13,13 @@ public class Person {
     private Long id;
     private final String sheetId;
     private String name;
-    private String grade;
+    /** The person's grades by the date each is in force from; LocalDate.MIN for the first one,
+     *  which applies from the beginning of time. */
+    private TreeMap<LocalDate, String> grades = new TreeMap<>();
+    /** The sheet's today as it was when the person was read (null: the person is new). */
+    private LocalDate today;
+    /** A grade this save records, from its date (null: the save records none). */
+    private DatedGrade newGrade;
     private int version;
     private int statementCount;
     private BigDecimal statedTotal;
@@ -29,7 +37,7 @@ public class Person {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
-        this.grade = grade;
+        if (grade != null) this.grades.put(LocalDate.MIN, grade);
     }
 
     public Long getId() { return id; }
@@ -37,8 +45,26 @@ public class Person {
     public String getSheetId() { return sheetId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
-    public String getGrade() { return grade; }
-    public void setGrade(String grade) { this.grade = grade; }
+    /** The grade in force on the sheet's today. */
+    public String getGrade() { return today == null ? grades.lastEntry().getValue() : gradeOn(today); }
+    /** The grade in force on `date`: the one from the latest date on or before it, the first one
+     *  applying from the beginning of time. */
+    public String gradeOn(LocalDate date) {
+        Map.Entry<LocalDate, String> e = grades.floorEntry(date);
+        return e != null ? e.getValue() : grades.firstEntry().getValue();
+    }
+    /** The first grade the person was given. */
+    public String getFirstGrade() { return grades.firstEntry().getValue(); }
+    public TreeMap<LocalDate, String> getGrades() { return grades; }
+    public void setGrades(TreeMap<LocalDate, String> grades) { this.grades = grades; }
+    public void setToday(LocalDate today) { this.today = today; }
+    public DatedGrade getNewGrade() { return newGrade; }
+    /** Record `grade` from `from` with the next save, replacing any grade from that same date. */
+    public void recordGrade(String grade, LocalDate from) {
+        this.newGrade = new DatedGrade(grade, from);
+        LocalDate key = grades.isEmpty() ? LocalDate.MIN : from;
+        grades.put(key, grade);
+    }
     /** How many times the person has been saved since added. */
     public int getVersion() { return version; }
     public void setVersion(int version) { this.version = version; }
@@ -74,5 +100,9 @@ public class Person {
         if (retiredFrom != null && claimDate.isAfter(retiredFrom)) {
             throw new PersonRetiredException(name, retiredFrom);
         }
+    }
+
+    /** A grade in force from a date (null: from the beginning of time). */
+    public record DatedGrade(String grade, LocalDate from) {
     }
 }

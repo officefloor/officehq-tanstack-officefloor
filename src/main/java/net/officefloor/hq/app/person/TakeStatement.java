@@ -22,7 +22,7 @@ public class TakeStatement {
         int counted = 0;
         for (Claim claim : claims.ofPerson(person.getSheetId(), person.getId())) {
             if (person.counts(claim.getStatus())) {
-                BigDecimal bound = figures.figure(claim, person.getGrade());
+                BigDecimal bound = figures.figure(claim, person.gradeOn(claim.getDate()));
                 // The statement binds the figure; the late charge on top keeps following today.
                 BigDecimal figure = bound == null || claim.getDue() != null ? bound : bound.add(figures.charge(claim, bound));
                 claim.setStated(true);
@@ -39,7 +39,7 @@ public class TakeStatement {
             claims.save(claim);
         }
         var today = sheets.today(person.getSheetId());
-        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.getGrade(), today) == null ? null : total;
+        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.gradeOn(today), today) == null ? null : total;
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);

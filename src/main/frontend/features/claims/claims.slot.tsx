@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import type { Person } from '../people/usePeople';
+import { gradeOn, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
@@ -45,11 +45,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const { data: rates = [] } = useRates(sheet);
   const { data: periods = [] } = usePeriods(sheet);
   const today = useSheetToday(sheet);
-  const pct = rateOn(rates, person.grade, today);
+  const pct = rateOn(rates, gradeOn(person, today), today);
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);
   const terms = lateBy.terms;
-  const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, person.grade, d));
+  const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
@@ -125,7 +125,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(liveClaims)}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, person.grade, d), lateBy))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy))}</td>
       <td data-testid="person-overdue-count">{late.count}</td>
       <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
       <td>
@@ -194,7 +194,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{showDue(claimDueCents(c, floor, rateOn(rates, person.grade, c.date), lateBy))}</span>{' '}
+              <span data-testid="claim-due">{showDue(claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy))}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
