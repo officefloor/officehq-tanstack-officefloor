@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/compare/SheetCompare.tsx b/src/main/frontend/features/compare/SheetCompare.tsx
+new file mode 100644
+index 00000000..6493eebe
+--- /dev/null
++++ b/src/main/frontend/features/compare/SheetCompare.tsx
+@@ -0,0 +1,62 @@
++import { useIsFetching, useQuery } from '@tanstack/react-query';
++import { useState } from 'react';
++import { getJson } from '../../api/http';
++import { GRADES, gradeOn, type Person } from '../people/usePeople';
++import { useSheetFigures } from '../people/useSheetFigures';
++import { formatCents } from '../rates/due';
++
++type GradeDue = (g: (typeof GRADES)[number]) => bigint;
++
++// A grade's due-total as the summary shows it: the due-totals of the people on it today (retired people
++// left out, n/a skipped) added up.
++const gradeDueOf =
++  (people: Person[], today: string | undefined, totalOf: (p: Person) => bigint | null): GradeDue =>
++  (g) =>
++    people
++      .filter((p) => !p.retired && gradeOn(p, today) === g)
++      .reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
++
++// Compares this sheet with another: per grade, "<grade> <this sheet's summary due-total> <the other's>"
++// (0.00 where the other has no one on it). A sheet that does not exist gives no lines, and is not started
++// by asking. Lines are gone while a press is being worked out.
++export function SheetCompare({ people, today, totalOf }: { people: Person[]; today: string | undefined; totalOf: (p: Person) => bigint | null }) {
++  const [other, setOther] = useState('');
++  const [asked, setAsked] = useState<{ sheet: string; press: number } | null>(null);
++  const mine = gradeDueOf(people, today, totalOf);
++  return (
++    <div>
++      Compare with sheet <input data-testid="compare-sheet" value={other} onChange={(e) => setOther(e.target.value)} />{' '}
++      <button type="button" data-testid="compare" onClick={() => setAsked({ sheet: other.trim(), press: (asked?.press ?? 0) + 1 })}>
++        Compare
++      </button>
++      {asked !== null && asked.sheet !== '' && <Compared key={asked.press} other={asked.sheet} mine={mine} />}
++    </div>
++  );
++}
++
++function Compared({ other, mine }: { other: string; mine: GradeDue }) {
++  const { data } = useQuery({
++    queryKey: ['sheet-exists', other],
++    queryFn: () => getJson<{ exists: boolean }>(`/api/sheets/${encodeURIComponent(other)}/exists`),
++    staleTime: 0,
++    gcTime: 0,
++  });
++  if (data === undefined || !data.exists) return null;
++  return <OtherLines other={other} mine={mine} />;
++}
++
++function OtherLines({ other, mine }: { other: string; mine: GradeDue }) {
++  const { people, today, totalOf } = useSheetFigures(other);
++  const fetching = useIsFetching({ queryKey: ['sheet', other] });
++  if (fetching > 0 || today === undefined) return null;
++  const theirs = gradeDueOf(people, today, totalOf);
++  return (
++    <ul>
++      {GRADES.map((g) => (
++        <li key={g} data-testid="compare-line">
++          {g} {formatCents(mine(g))} {formatCents(theirs(g))}
++        </li>
++      ))}
++    </ul>
++  );
++}
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 08a7a865..7ad836e5 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -8,6 +8,7 @@ import { claimRate } from '../rates/useRates';
+ import { StatementButton } from '../statements/StatementButton';
+ import { UnstateButton } from '../statements/UnstateButton';
+ import { SummaryPanel } from '../summary/SummaryPanel';
++import { SheetCompare } from '../compare/SheetCompare';
+ import { AliasControl } from './AliasControl';
+ import { openedEditor } from './editorOpens';
+ import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
+@@ -421,6 +422,7 @@ export function PeopleList() {
+         ))}
+       </ul>
+       <SnapshotCompare people={people} totalOf={totalOf} />
++      <SheetCompare people={people} today={today} totalOf={totalOf} />
+       <SummaryPanel people={people} today={today} totalOf={totalOf} isActive={isActive} statusCount={statusCount} reviewLateCount={reviewLateCount} voidReasonCount={voidReasonCount} />
+       </PersonSelection>
+     </ClaimSelection>
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ExistsResponse.java b/src/main/java/net/officefloor/hq/app/sheet/ExistsResponse.java
+new file mode 100644
+index 00000000..4add06dc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ExistsResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** Whether a sheet exists. */
++public record ExistsResponse(boolean exists) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadExists.java b/src/main/java/net/officefloor/hq/app/sheet/LoadExists.java
+new file mode 100644
+index 00000000..f5ebfecf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadExists.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Whether the sheet exists (it has been loaded); asking does not start it. */
++public class LoadExists {
++    public void service(@PathVariable("sheetId") String sheetId, Sheets sheets,
++            ObjectResponse<ExistsResponse> response) {
++        response.send(new ExistsResponse(sheets.exists(sheetId)));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/exists.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/exists.GET.yml
+new file mode 100644
+index 00000000..897a178b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/exists.GET.yml
+@@ -0,0 +1,3 @@
++service:
++  class: net.officefloor.hq.app.sheet.LoadExists
++  govern: [ readonly-transaction ]
