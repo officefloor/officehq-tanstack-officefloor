@@ -29,6 +29,13 @@ public class ApplyClaimReassign {
         if (to.getId() == claim.getPersonId()) {
             throw new ClaimStatusRefusedException("The claim is already " + to.getName() + "'s: reassign it to another person");
         }
+        move(change, claim, to, people, closedPeriods);
+    }
+
+    /** The checks and the move once the claim's status and the user's role allow it: a claim due in a
+     *  closed period, or dated after its new person's retirement, stays where it is. */
+    static void move(ClaimReassignment change, Claim claim, Person to, People people, ClosedPeriods closedPeriods)
+            throws PersonRetiredException, PeriodClosedException {
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         to.refuseRetired(claim.getDate());
         Person from = people.find(claim.getSheetId(), claim.getPersonId());
