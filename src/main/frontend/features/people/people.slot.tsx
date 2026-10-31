@@ -4,6 +4,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { QuickAddBar } from './QuickAddBar';
 import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
@@ -130,6 +131,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
           </span>
         )}
       </form>
+      <QuickAddBar user={user} sheet={sheet} />
       <table data-testid="people-list">
         <thead>
           <tr>

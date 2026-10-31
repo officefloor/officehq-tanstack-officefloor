@@ -41,6 +41,13 @@ public class People {
                 .stream().findFirst().orElse(null);
     }
 
+    /** The person on this sheet with this name (matched as names are kept unique: without the
+     *  spaces around it and in any case), or null when there is none. */
+    public Person named(String sheetId, String name) {
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", People::person,
+                sheetId, name).stream().findFirst().orElse(null);
+    }
+
     /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
