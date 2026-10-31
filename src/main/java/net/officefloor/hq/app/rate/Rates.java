@@ -173,4 +173,25 @@ public class Rates {
                 + " VALUES (?, (SELECT today FROM sheet WHERE id = ?), ?, ?, ?, ?, ?)",
                 sheetId, sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), afterMark);
     }
+
+    /** Withdraw the newest version of the grade's rate from a date (null: from the beginning of time): the version
+     *  before it, when there is one, is the rate again; with none the rate is gone. False when there is no such rate. */
+    public boolean withdraw(String sheetId, String grade, LocalDate from) {
+        Date fromDate = from == null ? null : Date.valueOf(from);
+        String sameFrom = fromDate == null ? " AND from_date IS NULL" : " AND from_date = ?";
+        Object[] key = fromDate == null ? new Object[] { sheetId, grade } : new Object[] { sheetId, grade, fromDate };
+        if (jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ?" + sameFrom, key) == 0) {
+            return false;
+        }
+        Integer previous = jdbc.queryForObject("SELECT MAX(version) FROM rate_version WHERE sheet_id = ? AND grade = ?" + sameFrom,
+                Integer.class, key);
+        if (previous != null) {
+            Object[] versionKey = java.util.stream.Stream.concat(java.util.Arrays.stream(key), java.util.stream.Stream.of(previous)).toArray();
+            jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_mark)"
+                    + " SELECT sheet_id, grade, rate, from_date, to_date, version, after_mark FROM rate_version"
+                    + " WHERE sheet_id = ? AND grade = ?" + sameFrom + " AND version = ?", versionKey);
+            jdbc.update("DELETE FROM rate_version WHERE sheet_id = ? AND grade = ?" + sameFrom + " AND version = ?", versionKey);
+        }
+        return true;
+    }
 }

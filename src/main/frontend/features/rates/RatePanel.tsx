@@ -40,6 +40,14 @@ export function RatePanel() {
       queryClient.setQueryData(ratesKey(sheet), saved);
     },
   });
+  // A steward withdraws a rate's newest version: the one before it applies again, or with none the rate is gone.
+  const withdraw = useMutation({
+    mutationFn: (body: { grade: string; from: string }) =>
+      postJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates/withdraw`, { ...body, user }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(ratesKey(sheet), saved);
+    },
+  });
   return (
     <>
       <table data-testid="rates">
@@ -86,6 +94,7 @@ export function RatePanel() {
             <th>To</th>
             <th>Rate %</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -96,6 +105,21 @@ export function RatePanel() {
               <td data-testid="rate-to">{r.to}</td>
               <td data-testid="rate-pct">{r.rate}</td>
               <td data-testid="rate-version">{r.version}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  onClick={() =>
+                    submitOnce(() => {
+                      save.reset();
+                      withdraw.reset();
+                      return withdraw.mutateAsync({ grade: r.grade, from: r.from });
+                    })
+                  }
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -106,6 +130,7 @@ export function RatePanel() {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
+            withdraw.reset();
             return save.mutateAsync({ grade, rate: pct.trim(), from: from.trim(), to: to.trim() });
           });
         }}
@@ -116,6 +141,7 @@ export function RatePanel() {
           onChange={(e) => {
             setGrade(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         >
           {grades.map((g) => (
@@ -129,6 +155,7 @@ export function RatePanel() {
           onChange={(e) => {
             setPct(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         />{' '}
         <input
@@ -138,6 +165,7 @@ export function RatePanel() {
           onChange={(e) => {
             setFrom(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         />{' '}
         <input
@@ -147,9 +175,11 @@ export function RatePanel() {
           onChange={(e) => {
             setTo(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         />{' '}
         <button type="submit" data-testid="rate-form-submit">Set rate</button>
+        {withdraw.isError && <span data-testid="rate-form-error" role="alert"> Could not withdraw the rate: only a steward may withdraw one.</span>}
         {save.isError && <span data-testid="rate-form-error" role="alert"> Could not set the rate: it must be a percent of 0.00 or more with at most two decimals, from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.</span>}
       </form>
       <ImportRates />
