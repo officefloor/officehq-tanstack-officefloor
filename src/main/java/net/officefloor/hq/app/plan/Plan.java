@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A person's plan: the amount, from the start every N days (or monthly on a day of the month) up to the end; generated is
- *  how many claims it has made; pauses its pauses in the order they were taken; changes its amount changes, oldest first. Exactly one of every and day is set. */
+ *  how many claims it has made; target the descendant sheet it generates its claims on (null for its own sheet); pauses its pauses in the order they were taken; changes its amount changes, oldest first. Exactly one of every and day is set. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end,
-        int generated, List<Pause> pauses, List<Change> changes) {
+        String target, int generated, List<Pause> pauses, List<Change> changes) {
 
     /** A pause: from the day it was paused up to (not including) the day it was resumed, null while still paused. */
     public record Pause(LocalDate from, LocalDate to) {
@@ -28,11 +28,11 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
     }
 
     public Plan withPauses(List<Pause> pauses) {
-        return new Plan(id, sheetId, personId, amount, start, every, day, end, generated, pauses, changes);
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, target, generated, pauses, changes);
     }
 
     public Plan withChanges(List<Change> changes) {
-        return new Plan(id, sheetId, personId, amount, start, every, day, end, generated, pauses, changes);
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, target, generated, pauses, changes);
     }
 
     /** Whether a pause skips the date. */

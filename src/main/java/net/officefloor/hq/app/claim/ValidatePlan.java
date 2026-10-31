@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** A plan's amount must be one the claim form takes for a new claim, its interval a whole number of days of at least 1
  *  or (instead) its day of the month a whole number from 1 to 31,
- *  its end a date (its start a date, or blank for the sheet's today). */
+ *  its end a date (its start a date, or blank for the sheet's today), its sheet blank or one of the sheet's descendants. */
 public class ValidatePlan {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PlanRequest request, Out<ValidPlan> body,
-            Settings settings) throws InvalidPlanException, ViewerRefusedException {
+            Settings settings, net.officefloor.hq.app.sheet.Sheets sheets) throws InvalidPlanException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         java.math.BigDecimal amount;
         try {
@@ -43,7 +43,11 @@ public class ValidatePlan {
         if (start != null && end.isBefore(start)) {
             throw new InvalidPlanException("A plan's end cannot be before its start");
         }
-        body.set(new ValidPlan(amount, start, days, day, end, request.user()));
+        String target = request.sheet() == null || request.sheet().trim().isEmpty() ? null : request.sheet().trim();
+        if (target != null && !sheets.descendants(sheetId).contains(target)) {
+            throw new InvalidPlanException("A plan's sheet must be one of the sheet's descendants");
+        }
+        body.set(new ValidPlan(amount, start, days, day, end, target, request.user()));
     }
 
     private static LocalDate date(String raw, boolean blankAllowed) throws InvalidPlanException {

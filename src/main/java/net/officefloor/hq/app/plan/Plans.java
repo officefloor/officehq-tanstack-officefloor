@@ -15,12 +15,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Plans {
 
-    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date,"
+    private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, p.target_sheet,"
             + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
-            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of(), List.of());
+            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getString("target_sheet"), rs.getInt("generated"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -61,11 +61,11 @@ public class Plans {
         jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", planId, Date.valueOf(on), amount);
     }
 
-    public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end) {
+    public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end, String target) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date, target_sheet) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -74,6 +74,7 @@ public class Plans {
             ps.setObject(5, every, Types.INTEGER);
             ps.setObject(6, day, Types.INTEGER);
             ps.setDate(7, Date.valueOf(end));
+            ps.setString(8, target);
             return ps;
         }, keys);
         return find(keys.getKey().longValue());

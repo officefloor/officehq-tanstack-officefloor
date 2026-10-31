@@ -3,14 +3,14 @@ package net.officefloor.hq.app.plan;
 import java.time.LocalDate;
 import java.util.List;
 
-/** A plan as the screen shows it (amount with two decimals, dates as yyyy-mm-dd; every or day, the other null); nextDates are its
+/** A plan as the screen shows it (amount with two decimals, dates as yyyy-mm-dd; every or day, the other null; sheet the descendant sheet it generates on, null for this one); nextDates are its
  *  first five plan dates after the sheet's today and on or before the end (none while paused); paused whether it is paused now;
  *  changes its amount changes, oldest first, each "<date> amount=<amount>". */
-public record PlanResponse(String id, String personId, String amount, String start, Integer every, Integer day, String end, int generated,
+public record PlanResponse(String id, String personId, String amount, String start, Integer every, Integer day, String end, String sheet, int generated,
         List<String> nextDates, boolean paused, List<String> changes) {
     public static PlanResponse from(Plan p, LocalDate today) {
         return new PlanResponse(String.valueOf(p.id()), String.valueOf(p.personId()), p.amount().toPlainString(), p.start().toString(),
-                p.every(), p.day(), p.end().toString(), p.generated(), p.nextDates(today, 5).stream().map(LocalDate::toString).toList(), p.paused(),
+                p.every(), p.day(), p.end().toString(), p.target(), p.generated(), p.nextDates(today, 5).stream().map(LocalDate::toString).toList(), p.paused(),
                 p.changes().stream().map(c -> c.on() + " amount=" + c.amount().toPlainString()).toList());
     }
 }
