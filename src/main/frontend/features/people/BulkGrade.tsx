@@ -193,3 +193,83 @@ export function BulkRetire() {
     </p>
   );
 }
+
+// Holds the selected people together from a from-date (blank takes the sheet's today) to an optional to-date:
+// the server holds each, in list order, exactly as the row's hold would, with the same audit lines. Then shows
+// how many were held and clears the selection; pressing again removes the old count until the new one is in.
+// A refusal (a bad date, a to-date before the from-date) shows the error and changes nothing; a viewer's holds no one.
+export function BulkHold() {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+  const { selected, clear } = usePersonSelection();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
+  const apply = useMutation({
+    mutationFn: (personIds: string[]) =>
+      postJson<{ held: number }>(`/api/sheets/${encodeURIComponent(sheet)}/people/bulk-hold`, {
+        personIds,
+        from: from.trim(),
+        to: to.trim(),
+        user,
+      }),
+    onSuccess: () => {
+      clear();
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]);
+    },
+  });
+
+  return (
+    <p>
+      <input
+        type="date"
+        data-testid="bulk-hold-from"
+        title="Hold from (blank: the sheet's today)"
+        value={from}
+        onChange={(e) => {
+          setFrom(e.target.value);
+          apply.reset();
+        }}
+      />{' '}
+      <input
+        type="date"
+        data-testid="bulk-hold-to"
+        title="Hold to (blank: open-ended)"
+        value={to}
+        onChange={(e) => {
+          setTo(e.target.value);
+          apply.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="bulk-hold"
+        onClick={() => {
+          apply.reset();
+          const ids = [...selected];
+          once(() => apply.mutateAsync(ids));
+        }}
+      >
+        Hold selected
+      </button>
+      {apply.isSuccess && (
+        <>
+          {' '}
+          Held <span data-testid="bulk-held">{apply.data.held}</span>
+        </>
+      )}
+      {apply.isError && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          The selected people could not be held.
+        </span>
+      )}
+    </p>
+  );
+}

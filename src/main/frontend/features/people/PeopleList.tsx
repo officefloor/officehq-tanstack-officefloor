@@ -11,7 +11,7 @@ import { SummaryPanel } from '../summary/SummaryPanel';
 import { SheetCompare } from '../compare/SheetCompare';
 import { AliasControl } from './AliasControl';
 import { openedEditor } from './editorOpens';
-import { BulkGrade, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
+import { BulkGrade, BulkHold, BulkRetire, PersonSelect, PersonSelection } from './BulkGrade';
 import { FlagControl } from './FlagControl';
 import { ApproverControl } from './ApproverControl';
 import { HoldControl } from './HoldControl';
@@ -224,6 +224,7 @@ export function PeopleList() {
       <BulkVoidButton />
       <BulkGrade />
       <BulkRetire />
+      <BulkHold />
       <table data-testid="people">
         <thead>
           <tr>
