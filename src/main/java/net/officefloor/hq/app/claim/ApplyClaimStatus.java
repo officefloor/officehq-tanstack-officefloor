@@ -3,6 +3,8 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.settings.Role;
 import net.officefloor.hq.app.settings.Settings;
@@ -20,11 +22,16 @@ import net.officefloor.plugin.variable.Val;
  *  A claim whose due is above the sheet's proof threshold in force on its date cannot be settled or
  *  approved while it has no proofs (refused before the clerk limit is considered).
  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
+ *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
+ *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
  *  A claim dated in a closed period cannot change status at all. Opening, settling and voiding are
  *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}). */
 public class ApplyClaimStatus {
+    /** How many days after its settlement (the status log's SETTLED date) a steward may still void a claim. */
+    static final int SETTLED_VOID_DAYS = 7;
+
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, ClaimNumbers numbers, People people,
-            Figures figures, ClosedPeriods closedPeriods, Settings settings)
+            Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets)
             throws ClaimStatusRefusedException, PeriodClosedException {
         closedPeriods.refuse(claim.getSheetId(), claim.getDate());
         if (!change.action().allowedFrom(claim.getStatus())) {
@@ -34,6 +41,14 @@ public class ApplyClaimStatus {
                 : change.action() == ClaimAction.VOID ? "void" : null;
         if (perm != null && !settings.allows(claim.getSheetId(), perm, change.user())) {
             throw new ClaimStatusRefusedException("Your role may not " + perm + " a claim");
+        }
+        if (change.action() == ClaimAction.VOID && claim.getStatus() == ClaimStatus.SETTLED) {
+            LocalDate settled = log.settledOn(claim);
+            if (settings.role(claim.getSheetId(), change.user()) != Role.STEWARD || settled == null
+                    || sheets.today(claim.getSheetId()).isAfter(settled.plusDays(SETTLED_VOID_DAYS))) {
+                throw new ClaimStatusRefusedException("Only a steward can void a settled claim, and only within "
+                        + SETTLED_VOID_DAYS + " days of its settlement");
+            }
         }
         if (change.action() == ClaimAction.SETTLE && claim.isDeferred()) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until " + claim.getDeferredUntil());

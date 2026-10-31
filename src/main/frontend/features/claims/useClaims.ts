@@ -5,7 +5,7 @@ import type { FloorOn } from '../settings/useSettings';
 
 /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
- *  OPEN or PENDING → VOID. */
+ *  OPEN or PENDING → VOID; a steward may void a SETTLED claim within 7 days of its settlement. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** Every status, in life order — the order the summary and header list them in. */

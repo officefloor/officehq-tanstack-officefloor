@@ -39,6 +39,13 @@ public class ClaimLog {
                 Date.valueOf(sheets.today(claim.getSheetId())), due);
     }
 
+    /** The date of the claim's last SETTLED log line, null when it has none. */
+    public LocalDate settledOn(Claim claim) {
+        List<Date> dates = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ? ORDER BY id DESC",
+                Date.class, claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED.name());
+        return dates.isEmpty() ? null : dates.get(0).toLocalDate();
+    }
+
     /** The log lines of one claim. */
     public List<String> of(Claim claim) {
         return jdbc.query("SELECT status, by_user, on_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",

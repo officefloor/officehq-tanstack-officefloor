@@ -29,6 +29,7 @@ const STATUS_REFUSED = "This claim's status cannot change that way (whoever open
 const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
 const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the user who opened it.';
 const NOT_ALLOWED = "Your role may not do that: the sheet's permission matrix decides who opens, settles and voids claims.";
+const CANNOT_VOID_SETTLED = 'Only a steward can void a SETTLED claim, and only within 7 days of its settlement (never one dated in a closed period).';
 const NO_REASON = 'A rejection needs a reason.';
 const NOT_STEWARD_MOVE = "Your role may not reassign a claim (by default only a steward can).";
 const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
@@ -50,7 +51,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, plus its late charge, at least the sheet's floor; in the
- * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (its opener cannot settle
+ * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (a SETTLED one only by a steward within 7 days of its settlement; its opener cannot settle
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
@@ -143,6 +144,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
         id: c.id,
         message: !(e instanceof HttpError)
           ? STATUS_REFUSED
+          : e.body.includes('void a settled')
+            ? CANNOT_VOID_SETTLED
           : e.body.includes('proof threshold')
             ? NEEDS_PROOF
           : e.body.includes('clerk limit')

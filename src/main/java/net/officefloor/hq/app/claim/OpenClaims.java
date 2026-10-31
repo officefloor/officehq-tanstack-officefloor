@@ -10,6 +10,7 @@ import net.officefloor.hq.app.person.Watches;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Snapshot;
 import net.officefloor.hq.app.settings.Settings;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpen bulk, Claims claims, People people,
             ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
-            ClaimLog log, Watches watches, Audit audit, Out<BulkOpenResult> result) {
+            ClaimLog log, Sheets sheets, Watches watches, Audit audit, Out<BulkOpenResult> result) {
         ClaimStatusChange change = new ClaimStatusChange(ClaimAction.OPEN, bulk.user());
         ApplyClaimStatus apply = new ApplyClaimStatus();
         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
@@ -33,7 +34,7 @@ public class OpenClaims {
                 Claim claim = claims.find(sheetId, listed.getId());
                 Snapshot before = rollup.snapshot(sheetId);
                 try {
-                    apply.apply(change, claim, numbers, people, figures, closedPeriods, settings);
+                    apply.apply(change, claim, numbers, people, figures, closedPeriods, settings, log, sheets);
                 } catch (ClaimStatusRefusedException | PeriodClosedException e) {
                     continue;
                 }
