@@ -4,8 +4,12 @@ import { getJson } from '../../api/http';
 /** A role given to a user name: clerk (the default for any name) or steward. */
 export type RoleEntry = { name: string; role: string };
 
-/** The sheet's settings as the server sends them: `clerkLimit` with two decimals, or null for no limit. */
-export type Settings = { clerkLimit: string | null; roles: RoleEntry[] };
+/** The sheet's settings as the server sends them: `clerkLimit` with two decimals, or null for no
+ *  limit, and `floor` with two decimals. */
+export type Settings = { clerkLimit: string | null; floor: string; roles: RoleEntry[] };
+
+/** The floor of a sheet that has not set one. */
+export const DEFAULT_FLOOR = '1.00';
 
 export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as const;
 
@@ -17,6 +21,11 @@ export function useSettings(sheet: string) {
     staleTime: 0,
     gcTime: 0,
   });
+}
+
+/** The sheet's floor: a claim's live due is at least it. */
+export function useFloor(sheet: string): string {
+  return useSettings(sheet).data?.floor ?? DEFAULT_FLOOR;
 }
 
 export const ROLES = ['clerk', 'steward'] as const;

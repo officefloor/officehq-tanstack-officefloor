@@ -2,6 +2,7 @@ package net.officefloor.hq.app.settings;
 
 import java.math.BigDecimal;
 
-/** A validated settings change on a sheet: the clerk limit, null for no limit. */
-public record SettingsChange(String sheetId, BigDecimal clerkLimit, String by) {
+/** A validated settings change on a sheet: whether the clerk limit is set and to what (null for no
+ *  limit), and the floor, null when it is not being set. */
+public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, String by) {
 }

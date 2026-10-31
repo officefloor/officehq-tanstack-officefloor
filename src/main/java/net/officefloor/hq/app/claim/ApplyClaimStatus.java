@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
  *  Opening gives the claim the sheet's next number; a voided claim keeps it (and it is never reused).
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
- *  bound it to, else its person's grade's rate in force on the claim's date; with no rate it stays live. The user who opened a claim may not settle it.
+ *  bound it to, else its person's grade's rate in force on the claim's date, at least the sheet's floor; with no rate it stays live. The user who opened a claim may not settle it.
  *  A clerk may settle a claim only when that due is at or below the sheet's clerk limit (a due of n/a
  *  is within any limit); a steward settles anything.
  *  A claim dated in a closed period cannot change status at all. */

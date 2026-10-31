@@ -1,6 +1,7 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
+import { useFloor } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { claimed, live, personDueCents, useClaims } from './useClaims';
 
@@ -16,8 +17,9 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
   const claims = live(all, (id) => held.has(id));
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
+  const floor = useFloor(sheet);
   const dues = people.map((p) =>
-    personDueCents(claims.filter((c) => c.personId === p.id), rateOn(rates, p.grade, today), (d) => rateOn(rates, p.grade, d)),
+    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, p.grade, today), (d) => rateOn(rates, p.grade, d)),
   );
   return (
     <>

@@ -5,9 +5,12 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, and its clerk limit. */
+/** Each sheet's settings: the roles given to user names, its clerk limit and its floor. */
 @Repository
 public class Settings {
+
+    /** The floor of a sheet that has not set one. */
+    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
     private final JdbcTemplate jdbc;
 
@@ -36,12 +39,27 @@ public class Settings {
 
     /** The sheet's clerk limit, or null for no limit. */
     public BigDecimal clerkLimit(String sheetId) {
-        return jdbc.query("SELECT clerk_limit FROM sheet_setting WHERE sheet_id = ?",
-                (rs, i) -> rs.getBigDecimal("clerk_limit"), sheetId)
-                .stream().findFirst().orElse(null);
+        return column("clerk_limit", sheetId);
     }
 
     public void setClerkLimit(String sheetId, BigDecimal limit) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, clerk_limit) KEY (sheet_id) VALUES (?, ?)", sheetId, limit);
+    }
+
+    /** The sheet's floor: a claim's live due is at least it. 1.00 unless set. */
+    public BigDecimal floor(String sheetId) {
+        BigDecimal floor = column("floor", sheetId);
+        return floor != null ? floor : DEFAULT_FLOOR;
+    }
+
+    public void setFloor(String sheetId, BigDecimal floor) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, floor) KEY (sheet_id) VALUES (?, ?)", sheetId, floor);
+    }
+
+    /** One setting's stored value, null when the sheet has no row or the setting is unset. */
+    private BigDecimal column(String column, String sheetId) {
+        List<BigDecimal> values = jdbc.query("SELECT " + column + " FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getBigDecimal(column), sheetId);
+        return values.isEmpty() ? null : values.get(0);
     }
 }

@@ -6,6 +6,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimDueCents, live, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
+import { useFloor } from '../settings/useSettings';
 import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /**
@@ -20,6 +21,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
   const { data: rates = [] } = useRates(sheet);
+  const floor = useFloor(sheet);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -73,7 +75,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       : totalDue(
           live(all, (id) => held.has(id))
             .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
-            .map((c) => claimDueCents(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
+            .map((c) => claimDueCents(c, floor, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
         );
 
   return (

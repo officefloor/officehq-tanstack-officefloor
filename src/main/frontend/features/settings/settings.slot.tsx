@@ -5,15 +5,20 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { LIMIT, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
+/** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
+type SettingsEdit = { clerkLimit: string | null; floor: string | null };
+
 /**
  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
- * it; blank is no limit), and the roles given to user names (clerk, the default, or steward).
+ * it; blank is no limit), its floor (a claim's live due is at least it; blank is the default, 1.00),
+ * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
+ * whose fields were touched since the last one.
  */
 function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [limit, setLimit] = useState('');
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null });
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -21,9 +26,9 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
 
   const submitOnce = useSubmitOnce();
   const saveSettings = useMutation({
-    mutationFn: (clerkLimit: string) => postJson<Settings>(`${base}/settings`, { clerkLimit, user }),
+    mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
     onSuccess: (saved) => {
-      setLimit('');
+      setEdit({ clerkLimit: null, floor: null });
       queryClient.setQueryData(settingsKey(sheet), saved);
     },
   });
@@ -41,6 +46,9 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     saveSettings.reset();
     setLimitInvalid(false);
   };
+  // A field is set by the next save once it has been touched, starting from the value in force.
+  const touch = (key: keyof SettingsEdit, current: string) =>
+    setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
   const clearRoleError = () => {
     saveRole.reset();
     setRoleInvalid(false);
@@ -53,14 +61,16 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
         data-testid="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!LIMIT.test(limit.trim())) {
+          const limit = edit.clerkLimit?.trim() ?? null;
+          const floor = edit.floor?.trim() ?? null;
+          if ((limit !== null && !LIMIT.test(limit)) || (floor !== null && !LIMIT.test(floor))) {
             // Refused here, before anything is sent: the store and the audit file are untouched.
             saveSettings.reset();
             setLimitInvalid(true);
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync(limit.trim()));
+          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -74,9 +84,27 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           <input
             data-testid="setting-clerk-limit"
             placeholder="blank: no limit"
-            value={limit}
+            value={edit.clerkLimit ?? (data?.clerkLimit ?? '')}
+            onFocus={() => touch('clerkLimit', data?.clerkLimit ?? '')}
             onChange={(e) => {
-              setLimit(e.target.value);
+              setEdit((was) => ({ ...was, clerkLimit: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
+        Floor:{' '}
+        <strong data-testid="setting-floor-current">
+          {saveSettings.isPending ? '' : (data?.floor ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-floor"
+            placeholder="blank: 1.00"
+            value={edit.floor ?? (data?.floor ?? '')}
+            onFocus={() => touch('floor', data?.floor ?? '')}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, floor: e.target.value }));
               clearSettingsError();
             }}
           />
@@ -86,7 +114,8 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
         </button>
         {(limitInvalid || saveSettings.isError) && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit must be an amount with up to two decimals, or blank for no limit.
+            {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
+            limit, a blank floor is 1.00).
           </span>
         )}
       </form>

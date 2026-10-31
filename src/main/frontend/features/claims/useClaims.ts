@@ -58,24 +58,28 @@ export function claimed(claims: Claim[]): string {
 }
 
 /** What is due on one claim, in cents: the due fixed when it was settled, or else the figure its
- *  person's last statement bound it to, or else live at `pct` (null, n/a, when there is no rate). */
-export function claimDueCents(claim: Claim, pct: string | undefined): bigint | null {
+ *  person's last statement bound it to, or else live at `pct`, at least the sheet's `floor` (null,
+ *  n/a, when there is no rate). */
+export function claimDueCents(claim: Claim, floor: string, pct: string | undefined): bigint | null {
   if (claim.due !== null) return hundredths(claim.due);
   if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
-  return dueCents(claim.amount, pct);
+  const due = dueCents(claim.amount, pct);
+  if (due === null) return null;
+  const least = hundredths(floor);
+  return due < least ? least : due;
 }
 
 
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
- *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim's date)`, the rate in force on the claim's
+ *  a settled claim's fixed due, else the figure a statement bound it to, else live (at least `floor`) at `pctOn(claim's date)`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. */
-export function personDueCents(claims: Claim[], pct: string | undefined, pctOn?: (date: string) => string | undefined): bigint | null {
+export function personDueCents(claims: Claim[], floor: string, pct: string | undefined, pctOn?: (date: string) => string | undefined): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
-    const due = claimDueCents(c, pctOn ? pctOn(c.date) : pct);
+    const due = claimDueCents(c, floor, pctOn ? pctOn(c.date) : pct);
     if (due === null) continue;
     sum += due;
     any = true;
