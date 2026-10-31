@@ -19,6 +19,7 @@ import {
 } from './useClaims';
 
 const STATUS_REFUSED = "This claim's status cannot change that way (whoever opened a claim cannot settle it).";
+const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 
 /**
@@ -72,7 +73,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     mutationFn: (c: { id: number; action: 'open' | 'settle' | 'void' }) =>
       postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user }),
     onMutate: () => setRefused(null),
-    onError: (_e, c) => setRefused({ id: c.id, message: STATUS_REFUSED }),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('clerk limit') ? OVER_LIMIT : STATUS_REFUSED,
+      }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
