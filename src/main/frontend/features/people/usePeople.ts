@@ -33,6 +33,8 @@ export type Person = {
   /** The reason of a steward's flag while the sheet's today is on or before its until date; "" otherwise. While
    *  it shows, only a steward may open the person's claims. */
   flag?: string;
+  /** The user who may approve or reject the person's PENDING claims as a steward may; "" for none. */
+  approver?: string;
   /** The person's contact, trimmed and lower-cased; "" for none. */
   contact: string;
   /** The person's tags, lower-cased, sorted and comma separated ("a,b"); "" for none. */

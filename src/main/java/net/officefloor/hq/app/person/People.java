@@ -36,6 +36,7 @@ public class People {
         person.setArrivedOn(arrived == null ? null : arrived.toLocalDate());
         java.sql.Date flagUntil = rs.getDate("flag_until");
         person.setFlag(rs.getString("flag_reason"), flagUntil == null ? null : flagUntil.toLocalDate());
+        person.setApprover(rs.getString("approver"));
         return person;
     };
 
@@ -663,6 +664,14 @@ public class People {
         jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE sheet_id = ? AND id = ?",
                 reason, java.sql.Date.valueOf(until), person.getSheetId(), person.getId());
         person.setFlag(reason, until);
+    }
+
+    /** Sets the person's approver (null for none). The person's version is left as it is — setting the approver is
+     *  not an edit of the person form. */
+    public void setApprover(Person person, String approver) {
+        jdbc.update("UPDATE person SET approver = ? WHERE sheet_id = ? AND id = ?",
+                approver, person.getSheetId(), person.getId());
+        person.setApprover(approver);
     }
 
     /** Saves the person over the version it was loaded at, moving it on by one, with any grade the

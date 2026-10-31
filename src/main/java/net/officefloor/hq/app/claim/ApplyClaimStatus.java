@@ -81,12 +81,13 @@ public class ApplyClaimStatus {
                 throw new ClaimStatusRefusedException("Only a steward can review a REVIEW claim");
             }
         } else if (request.decision() != ValidClaimStatus.Decision.NONE) {
-            // Only a steward approves or rejects, and only a PENDING claim.
+            // Only a steward, or the person's approver, approves or rejects, and only a PENDING claim.
             if (claim.getStatus() != ClaimStatus.PENDING) {
                 throw new ClaimStatusRefusedException(claim.getStatus(), request.target());
             }
-            if (!steward) {
-                throw new ClaimStatusRefusedException("Only a steward can approve or reject a PENDING claim");
+            String approver = people.find(claim.getSheetId(), claim.getPersonId()).getApprover();
+            if (!steward && (approver == null || !approver.equals(request.user()))) {
+                throw new ClaimStatusRefusedException("Only a steward or the person's approver can approve or reject a PENDING claim");
             }
         } else if (!claim.getStatus().canBecome(request.target())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), request.target());

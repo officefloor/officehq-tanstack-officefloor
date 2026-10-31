@@ -266,6 +266,10 @@ public class Person {
         this.flagReason = reason;
         this.flagUntil = until;
     }
+    /** The user who may approve or reject the person's PENDING claims as a steward may; null for none. */
+    private String approver;
+    public String getApprover() { return approver; }
+    public void setApprover(String approver) { this.approver = approver; }
     /** Whether the person's flag is in force on a date: on or before its until date. */
     public boolean flaggedOn(LocalDate date) {
         return flagReason != null && flagUntil != null && date != null && !date.isAfter(flagUntil);
