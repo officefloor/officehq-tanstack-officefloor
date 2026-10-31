@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, origin_sheet, origin_name, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
@@ -404,6 +404,7 @@ public class People {
                 rs.getString("grade"), rs.getInt("version"));
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setOrigin(rs.getString("origin_sheet"), rs.getString("origin_name"));
         person.setStatementCount(rs.getInt("statement_count"));
         person.setStatedTotal(rs.getBigDecimal("stated_total"));
         Date date = rs.getDate("statement_date");

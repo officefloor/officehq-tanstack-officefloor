@@ -30,6 +30,9 @@ public class Person {
     private String contact;
     /** Whether this save changes the person's contact. */
     private boolean contactChanged;
+    /** The sheet the person was transferred from, and the name they had there (null: not transferred). */
+    private String originSheet;
+    private String originName;
     private int statementCount;
     private BigDecimal statedTotal;
     private LocalDate statementDate;
@@ -90,6 +93,11 @@ public class Person {
     /** The person's contact; null when they have none. */
     public String getContact() { return contact; }
     public void setContact(String contact) { this.contact = contact; }
+    /** The sheet the person was transferred from; null when they were not transferred here. */
+    public String getOriginSheet() { return originSheet; }
+    /** The name the person had on the sheet they were transferred from (null: not transferred). */
+    public String getOriginName() { return originName; }
+    public void setOrigin(String sheet, String name) { this.originSheet = sheet; this.originName = name; }
     public boolean isContactChanged() { return contactChanged; }
     /** Give the person this contact (null: none) with the next save, noting whether it changes. */
     public void changeContact(String contact) {

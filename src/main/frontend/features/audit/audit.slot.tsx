@@ -6,7 +6,8 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 /**
  * The audit viewer: the sheet's audit lines exactly as the audit file holds them, newest first.
  * A name in the filter lists only the lines about that person (name= or person= that name, case
- * and the spaces around it ignored). It reads the file; it is not a second record.
+ * and the spaces around it ignored); for a person transferred here, the lines about them on the sheet
+ * they came from follow, newest first. It reads the file; it is not a second record.
  */
 function AuditPanel({ sheet }: { user: string; sheet: string }) {
   const [filter, setFilter] = useState('');

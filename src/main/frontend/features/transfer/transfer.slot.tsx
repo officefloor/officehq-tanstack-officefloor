@@ -63,7 +63,14 @@ function PersonTransfer({ user, sheet, person }: { user: string; sheet: string; 
   );
 }
 
+/** The sheet a transferred person came from; nothing for anyone else. */
+function PersonOrigin({ person }: { user: string; sheet: string; person: Person }) {
+  return <td data-testid="person-origin">{person.origin ?? ''}</td>;
+}
+
 export const contributions = [
+  PersonColumns.fill({ order: 45.5, Component: () => <th>From</th> }),
+  PersonCells.fill({ order: 45.5, Component: PersonOrigin }),
   PersonColumns.fill({ order: 46, Component: () => <th>Transfer</th> }),
   PersonCells.fill({ order: 46, Component: PersonTransfer }),
 ];
