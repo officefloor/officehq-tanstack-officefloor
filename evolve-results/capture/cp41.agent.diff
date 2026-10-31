@@ -1,0 +1,169 @@
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index f0a5e58a..27f673a7 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -1,41 +1,20 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+-import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+-import { rateOn, totalDue, useRates } from '../rates/useRates';
+-import { useFloor, useLate } from '../settings/useSettings';
+-import { useSheetToday } from '../sheet/useSheet';
+-import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
++import { useSheetTotals } from './useSheetTotals';
+ 
+-/**
+- * The sheet's claimed-total, everyone's counted (OPEN or SETTLED) claims added up
+- * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
+- * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
+- * overdue, with their dues added up.
+- */
++/** The sheet's totals (see useSheetTotals). */
+ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
+-  const { data: all = [] } = useClaims(sheet);
+-  const { data: people = [] } = usePeople(sheet);
+-  const claims = live(all, heldOnBy(people));
+-  const { data: rates = [] } = useRates(sheet);
+-  const today = useSheetToday(sheet);
+-  const floor = useFloor(sheet);
+-  const late = useLate(sheet);
+-  const dues = people.map((p) =>
+-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
+-  );
+-  const over = people.map((p) =>
+-    overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
+-  );
++  const { claimedTotal, dueTotal, overdueCount, overdueTotal } = useSheetTotals(sheet);
+   return (
+     <>
+       <p>
+-        Claimed in total: <strong data-testid="rollup-claimed-total">{claimed(claims)}</strong>
++        Claimed in total: <strong data-testid="rollup-claimed-total">{claimedTotal}</strong>
+       </p>
+       <p>
+-        Due in total: <strong data-testid="rollup-due-total">{totalDue(dues)}</strong>
++        Due in total: <strong data-testid="rollup-due-total">{dueTotal}</strong>
+       </p>
+       <p>
+-        Overdue: <strong data-testid="rollup-overdue-count">{over.reduce((n, o) => n + o.count, 0)}</strong>, due{' '}
+-        <strong data-testid="rollup-overdue-total">{totalDue(over.map((o) => o.cents))}</strong>
++        Overdue: <strong data-testid="rollup-overdue-count">{overdueCount}</strong>, due{' '}
++        <strong data-testid="rollup-overdue-total">{overdueTotal}</strong>
+       </p>
+     </>
+   );
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index d4adf768..758c74cd 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -7,6 +7,9 @@ import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
+  *  OPEN or PENDING → VOID. */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ 
++/** Every status, in life order — the order the summary and header list them in. */
++export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
+ /** Whether a claim is still open: OPEN or PENDING. A PENDING claim is handled like an OPEN one: it
+  *  goes overdue, bears the late charge, and a hold takes it out of the totals. */
+ export function isOpen(claim: Claim): boolean {
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+new file mode 100644
+index 00000000..cef1444d
+--- /dev/null
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -0,0 +1,33 @@
++import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
++import { rateOn, totalDue, useRates } from '../rates/useRates';
++import { useFloor, useLate } from '../settings/useSettings';
++import { useSheetToday } from '../sheet/useSheet';
++import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
++
++/**
++ * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
++ * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
++ * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
++ * overdue, with their dues added up. One place, so every screen repeating a total shows the same figure.
++ */
++export function useSheetTotals(sheet: string) {
++  const { data: all = [] } = useClaims(sheet);
++  const { data: people = [] } = usePeople(sheet);
++  const claims = live(all, heldOnBy(people));
++  const { data: rates = [] } = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const floor = useFloor(sheet);
++  const late = useLate(sheet);
++  const dues = people.map((p) =>
++    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
++  );
++  const over = people.map((p) =>
++    overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
++  );
++  return {
++    claimedTotal: claimed(claims),
++    dueTotal: totalDue(dues),
++    overdueCount: over.reduce((n, o) => n + o.count, 0),
++    overdueTotal: totalDue(over.map((o) => o.cents)),
++  };
++}
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+new file mode 100644
+index 00000000..dd32cba2
+--- /dev/null
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -0,0 +1,38 @@
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { STATUSES, useClaims } from '../claims/useClaims';
++import { useSheetTotals } from '../claims/useSheetTotals';
++import { usePeople } from '../people/usePeople';
++
++/**
++ * The sheet's header, shown at all times: how many people are on the sheet (retired ones
++ * included), how many claims have each status (as the summary counts them), and the sheet's
++ * due-total and overdue-total (as the totals work them out).
++ */
++function SheetHeader({ sheet }: { user: string; sheet: string }) {
++  const { data: all = [] } = useClaims(sheet);
++  const { data: everyone = [] } = usePeople(sheet);
++  const { dueTotal, overdueTotal } = useSheetTotals(sheet);
++  return (
++    <header data-testid="sheet-header">
++      <span>
++        People: <strong data-testid="header-people-count">{everyone.length}</strong>
++      </span>
++      {STATUSES.map((s) => (
++        <span key={s}>
++          {' '}
++          {s}: <strong data-testid={`header-claims-${s}-count`}>{all.filter((c) => c.status === s).length}</strong>
++        </span>
++      ))}
++      <span>
++        {' '}
++        Due: <strong data-testid="header-due-total">{dueTotal}</strong>
++      </span>
++      <span>
++        {' '}
++        Overdue: <strong data-testid="header-overdue-total">{overdueTotal}</strong>
++      </span>
++    </header>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: -100, Component: SheetHeader });
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 46faaeb2..cf0379eb 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,13 +1,11 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+-import { live, personDueCents, useClaims } from '../claims/useClaims';
++import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
+ import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
+ import { periodDue, usePeriods } from '../periods/usePeriods';
+ import { rateOn, totalDue, useRates } from '../rates/useRates';
+ import { useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+-
+ /**
+  * The sheet in figures, each worked out as the list works it out. Per grade: how many people not
+  * retired are on it on the sheet's today, and their due-totals added up (n/a ones skipped). Per
