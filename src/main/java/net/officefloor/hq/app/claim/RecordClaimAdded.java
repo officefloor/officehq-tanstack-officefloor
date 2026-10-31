@@ -10,7 +10,8 @@ public class RecordClaimAdded {
         log.write(claim, values.user());
         audit.record("CLAIM_ADDED sheet=" + claim.getSheetId() + " by=" + values.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
-                + " date=" + claim.getDate() + (claim.getRef() != null ? " ref=" + claim.getRef() : ""));
+                + " date=" + claim.getDate() + (claim.getRef() != null ? " ref=" + claim.getRef() : "")
+                + (claim.getTags() != null ? " tags=" + claim.getTags() : ""));
         if (claim.isLateEntry()) {
             audit.record("LATE_ENTRY sheet=" + claim.getSheetId() + " by=" + values.user()
                     + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()

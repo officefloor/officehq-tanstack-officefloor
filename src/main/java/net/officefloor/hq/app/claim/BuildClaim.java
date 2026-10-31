@@ -33,6 +33,7 @@ public class BuildClaim {
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
         built.setRef(values.ref());
+        built.setTags(values.tags());
         built.setDueBy(dueBy);
         built.setLateEntry(closedPeriods.late(person.getSheetId(), dueBy));
         return built;

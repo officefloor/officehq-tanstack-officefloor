@@ -31,6 +31,7 @@ public class ApplyClaim {
         claim.setNote(values.note());
         claim.setCorrects(values.corrects());
         claim.setRef(values.ref());
+        claim.setTags(values.tags());
         claim.setLockedBy(null);
     }
 }

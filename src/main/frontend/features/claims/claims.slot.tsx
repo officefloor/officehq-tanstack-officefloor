@@ -134,6 +134,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
   const [ref, setRef] = useState('');
+  const [tags, setTags] = useState('');
   const [invalid, setInvalid] = useState(false);
   // The claim whose last status change or edit was refused: its row shows the error.
   const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
@@ -169,11 +170,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const locking = useRef<Promise<{ id: number; message: string } | null>>(Promise.resolve(null));
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: async (c: { id: number | null; amount: string; date: string; note: string; corrects: string; ref: string }) => {
+    mutationFn: async (c: { id: number | null; amount: string; date: string; note: string; corrects: string; ref: string; tags: string }) => {
       // An edit goes only once its editor's lock is taken; a refused lock is shown on the claim.
       const refusal = c.id !== null ? await locking.current : null;
       if (refusal !== null && refusal.id === c.id) throw new LockRefused(refusal);
-      const body = { amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref, user };
+      const body = { amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref, tags: c.tags, user };
       return c.id === null
         ? postJson<Claim>(`${base}/people/${person.id}/claims`, body)
         : putJson<Claim>(`${base}/claims/${c.id}`, body);
@@ -305,6 +306,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
         note: c.claim.note,
         corrects: c.claim.corrects ?? '',
         ref: c.claim.ref ?? '',
+        tags: c.claim.tags.join(','),
         user,
       }),
     onMutate: () => setRefused(null),
@@ -405,6 +407,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     setNote('');
     setCorrects('');
     setRef('');
+    setTags('');
   };
   const fill = (c: Claim) => {
     setAmount(c.amount);
@@ -412,6 +415,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     setNote(c.note);
     setCorrects(c.corrects === null ? '' : String(c.corrects));
     setRef(c.ref ?? '');
+    setTags(c.tags.join(', '));
   };
   // The form follows the editor this user's lock holds: filled when it opens (also on a re-load), cleared when it closes.
   useEffect(() => {
@@ -450,7 +454,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               return;
             }
             setInvalid(false);
-            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim() }));
+            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim(), tags }));
           }}
         >
           <input
@@ -503,6 +507,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               clearError();
             }}
           />{' '}
+          <input
+            data-testid="claim-form-tags"
+            aria-label="Tags, comma separated"
+            placeholder="tags"
+            value={tags}
+            onChange={(e) => {
+              setTags(e.target.value);
+              clearError();
+            }}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
@@ -552,6 +566,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
+              <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
               <button
                 type="button"
                 data-testid="claim-remind"

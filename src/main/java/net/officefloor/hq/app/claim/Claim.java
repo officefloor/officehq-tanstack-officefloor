@@ -27,6 +27,8 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private String ref;
+    private String tags;
+    private String tagsUsed;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -104,6 +106,16 @@ public class Claim {
     /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }
+    /** The claim's tags, lower-cased, sorted and comma separated; null when it has none. */
+    public String getTags() { return tags; }
+    /** Sets the claim's tags, adding them to the tags it has ever carried. */
+    public void setTags(String tags) {
+        this.tags = tags;
+        this.tagsUsed = ClaimRequest.union(tagsUsed, tags);
+    }
+    /** Every tag the claim has ever carried, in the same form as its tags; null when none. */
+    public String getTagsUsed() { return tagsUsed; }
+    public void setTagsUsed(String tagsUsed) { this.tagsUsed = tagsUsed; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

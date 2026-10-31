@@ -66,6 +66,10 @@ export type Claim = {
   remindedOn: string | null;
   /** The claim's external reference, unique on the sheet without regard to case; null when it has none. */
   ref: string | null;
+  /** The claim's tags, lower-cased and sorted; empty when it has none. */
+  tags: string[];
+  /** Every tag the claim has ever carried (its tags now among them). */
+  tagsUsed: string[];
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

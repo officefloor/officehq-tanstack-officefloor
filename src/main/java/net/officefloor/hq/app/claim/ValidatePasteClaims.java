@@ -43,7 +43,7 @@ public class ValidatePasteClaims {
             }
             ClaimValues values;
             try {
-                values = ClaimRequest.checked(new ClaimRequest(f[1], f.length > 2 ? f[2] : "", note, null, user, ref));
+                values = ClaimRequest.checked(new ClaimRequest(f[1], f.length > 2 ? f[2] : "", note, null, user, ref, null));
             } catch (InvalidSheetRequestException e) {
                 throw new InvalidSheetRequestException("Line " + n + ": " + e.getMessage());
             }
