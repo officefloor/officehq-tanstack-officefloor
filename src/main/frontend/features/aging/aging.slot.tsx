@@ -1,0 +1,54 @@
+import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+import { claimDueCents, isOpen, live, useClaims, type Claim } from '../claims/useClaims';
+import { gradeOn, heldOn, type Person } from '../people/usePeople';
+import { rateOn, showDue, useRates } from '../rates/useRates';
+import { useFloor, useLate } from '../settings/useSettings';
+import { useSheetToday } from '../sheet/useSheet';
+
+/** Whole days from a claim's date to the sheet's today; negative for a claim dated after today. */
+function ageOn(claim: Claim, today: string): number {
+  return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${claim.date}T00:00:00Z`)) / 86_400_000);
+}
+
+/** A person's due on their OPEN and PENDING claims that count (as in their due-total: not deferred,
+ *  not held unless a statement binds them), split by the claim's age on the sheet's today: 0 to 30
+ *  days (a claim dated after today too), 31 to 60, and 61 or more. Not capped. */
+function PersonAged({ sheet, person }: { user: string; sheet: string; person: Person }) {
+  const { data: all = [] } = useClaims(sheet);
+  const today = useSheetToday(sheet);
+  const { data: rates = [] } = useRates(sheet);
+  const floor = useFloor(sheet);
+  const lateBy = useLate(sheet);
+  const claims = live(
+    all.filter((c) => c.personId === person.id),
+    (_, date) => heldOn(person, date, today),
+  ).filter(isOpen);
+  const buckets = [0n, 0n, 0n];
+  for (const c of claims) {
+    const due = claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy);
+    if (due === null) continue;
+    const age = ageOn(c, today);
+    buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;
+  }
+  return (
+    <>
+      <td data-testid="person-aged-0-30">{showDue(buckets[0])}</td>
+      <td data-testid="person-aged-31-60">{showDue(buckets[1])}</td>
+      <td data-testid="person-aged-61">{showDue(buckets[2])}</td>
+    </>
+  );
+}
+
+export const contributions = [
+  PersonColumns.fill({
+    order: 11,
+    Component: () => (
+      <>
+        <th>Due 0–30 days</th>
+        <th>Due 31–60 days</th>
+        <th>Due 61+ days</th>
+      </>
+    ),
+  }),
+  PersonCells.fill({ order: 11, Component: PersonAged }),
+];
