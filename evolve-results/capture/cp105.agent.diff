@@ -1,0 +1,666 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+new file mode 100644
+index 00000000..52be2b28
+--- /dev/null
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -0,0 +1,194 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { usePeople, type Person } from '../people/usePeople';
++import { poolsKey, usePools, SHARE, type Pool } from './usePools';
++
++/**
++ * The sheet's pools and a form to add one by name (trimmed; a blank name, or one already a pool, is
++ * refused). Each pool's row adds a member: a person with a share percent, more than 0.00 and at most
++ * 100.00 with up to two decimals; a person already in the pool, or a bad share, is refused. A pool
++ * shows its total share and whether it is balanced (exactly 100.00); a retired member counts 0.00.
++ */
++function PoolsPanel({ user, sheet }: { user: string; sheet: string }) {
++  const queryClient = useQueryClient();
++  const { data: pools = [] } = usePools(sheet);
++  const { data: people = [] } = usePeople(sheet);
++  const [name, setName] = useState('');
++  const [invalid, setInvalid] = useState(false);
++
++  const submitOnce = useSubmitOnce();
++  const add = useMutation({
++    mutationFn: (n: string) => postJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pools`, { name: n, user }),
++    onSuccess: async () => {
++      setName('');
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
++    },
++  });
++
++  // An error goes as soon as its form is changed or submitted again.
++  const clearError = () => {
++    add.reset();
++    setInvalid(false);
++  };
++
++  return (
++    <section data-testid="pools-panel">
++      <h2>Pools</h2>
++      <form
++        data-testid="pool-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          const n = name.trim();
++          if (n === '' || pools.some((p) => p.name === n)) {
++            // Refused here, before anything is sent: the store and the audit file are untouched.
++            add.reset();
++            setInvalid(true);
++            return;
++          }
++          setInvalid(false);
++          submitOnce(() => add.mutateAsync(n));
++        }}
++      >
++        <input
++          data-testid="pool-form-name"
++          aria-label="Pool name"
++          placeholder="name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            clearError();
++          }}
++        />{' '}
++        <button type="submit" data-testid="pool-form-submit" disabled={add.isPending}>
++          Add pool
++        </button>
++        {(invalid || add.isError) && (
++          <span data-testid="pool-form-error" role="alert">
++            {' '}
++            {invalid ? 'Enter a name not already a pool.' : 'Could not add this pool.'}
++          </span>
++        )}
++      </form>
++      <table data-testid="pool-list">
++        <tbody>
++          {pools.map((p) => (
++            <PoolRow key={p.name} user={user} sheet={sheet} pool={p} people={people} />
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++/** A pool's row: its total share, balanced, its members with their shares, and a form to add one. */
++function PoolRow({ user, sheet, pool, people }: { user: string; sheet: string; pool: Pool; people: Person[] }) {
++  const queryClient = useQueryClient();
++  const [personId, setPersonId] = useState('');
++  const [share, setShare] = useState('');
++  const [invalid, setInvalid] = useState(false);
++
++  const submitOnce = useSubmitOnce();
++  const add = useMutation({
++    mutationFn: (m: { personId: number; share: string }) =>
++      postJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheet)}/pools/members`, { pool: pool.name, ...m, user }),
++    onSuccess: async () => {
++      setPersonId('');
++      setShare('');
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
++    },
++  });
++
++  const clearError = () => {
++    add.reset();
++    setInvalid(false);
++  };
++
++  return (
++    <tr data-testid={`pool-row-${pool.name}`}>
++      <td data-testid="pool-name">{pool.name}</td>
++      <td>
++        total <span data-testid="pool-total-share">{pool.totalShare}</span>
++      </td>
++      <td>
++        balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
++      </td>
++      <td>
++        <ul>
++          {pool.members.map((m) => (
++            <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
++              <span>{m.name}</span>{' '}
++              <span data-testid="pool-share">{m.share}</span>
++              {m.retired ? ' (retired)' : ''}
++            </li>
++          ))}
++        </ul>
++      </td>
++      <td>
++        <form
++          onSubmit={(e) => {
++            e.preventDefault();
++            const id = Number(personId);
++            const s = share.trim();
++            const n = Number(s);
++            if (
++              personId === '' ||
++              pool.members.some((m) => m.personId === id) ||
++              !SHARE.test(s) ||
++              !(n > 0 && n <= 100)
++            ) {
++              // Refused here, before anything is sent: the store and the audit file are untouched.
++              add.reset();
++              setInvalid(true);
++              return;
++            }
++            setInvalid(false);
++            submitOnce(() => add.mutateAsync({ personId: id, share: s }));
++          }}
++        >
++          <select
++            data-testid="pool-member-select"
++            aria-label="Member"
++            value={personId}
++            onChange={(e) => {
++              setPersonId(e.target.value);
++              clearError();
++            }}
++          >
++            <option value="">choose…</option>
++            {people.map((p) => (
++              <option key={p.id} value={String(p.id)}>
++                {p.name}
++              </option>
++            ))}
++          </select>{' '}
++          <input
++            data-testid="pool-member-share"
++            aria-label="Share percent"
++            placeholder="0.00"
++            value={share}
++            onChange={(e) => {
++              setShare(e.target.value);
++              clearError();
++            }}
++          />{' '}
++          <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
++            Add member
++          </button>
++          {(invalid || add.isError) && (
++            <span data-testid="pool-error" role="alert">
++              {' '}
++              {invalid
++                ? 'Choose a person not already in the pool, with a share more than 0.00 and at most 100.00.'
++                : 'Could not add this member.'}
++            </span>
++          )}
++        </form>
++      </td>
++    </tr>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 10, Component: PoolsPanel });
+diff --git a/src/main/frontend/features/pools/usePools.ts b/src/main/frontend/features/pools/usePools.ts
+new file mode 100644
+index 00000000..e391c9af
+--- /dev/null
++++ b/src/main/frontend/features/pools/usePools.ts
+@@ -0,0 +1,27 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++
++/** A pool's member as the server sends it: the person, their share (two decimals) and whether they
++ *  are retired (a retirement date set, whatever the date). */
++export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
++
++/** A pool as the server sends it: its name, its members in the order added, the total of their
++ *  shares (two decimals; a retired member's counts 0.00) and whether it is exactly 100.00. */
++export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
++
++/** A share percent: up to two decimals. */
++export const SHARE = /^\d{1,3}(\.\d{1,2})?$/;
++
++export const poolsKey = (sheet: string) => ['sheet', sheet, 'pools'] as const;
++
++/** The sheet's pools, in the order added, re-read whenever the sheet is loaded. */
++export function usePools(sheet: string) {
++  const [asOf] = useAsOf();
++  return useQuery({
++    queryKey: asOfKey(poolsKey(sheet), asOf),
++    queryFn: () => getJson<Pool[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, asOf)),
++    staleTime: 0,
++    gcTime: 0,
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pool.java b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+new file mode 100644
+index 00000000..ac898090
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.pool;
++
++/** A pool on a sheet, added by `by`. */
++public record Pool(String sheetId, String name, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+new file mode 100644
+index 00000000..1ab477db
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.pool;
++
++import java.math.BigDecimal;
++
++/** A person added to a pool with a share percent (two decimals), added by `by`. */
++public record PoolMember(String sheetId, String pool, long personId, String name, BigDecimal share, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMemberRequest.java b/src/main/java/net/officefloor/hq/app/pool/PoolMemberRequest.java
+new file mode 100644
+index 00000000..01f8152a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMemberRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.pool;
++
++/** Body of a member added to a pool: the pool's name, the person, the share percent and who adds it. */
++public record PoolMemberRequest(String pool, Long personId, String share, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
+new file mode 100644
+index 00000000..25591b2a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.pool;
++
++/** A pool's member as the screen sees it: the person, their share (two decimals) and whether retired. */
++public record PoolMemberResponse(long personId, String name, String share, boolean retired) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRequest.java b/src/main/java/net/officefloor/hq/app/pool/PoolRequest.java
+new file mode 100644
+index 00000000..afd4e70b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.pool;
++
++/** Body of a pool added to the sheet: its name and who adds it. */
++public record PoolRequest(String name, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+new file mode 100644
+index 00000000..28d9f1f5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.pool;
++
++import java.util.List;
++
++/** A pool as the screen sees it: its name, its members in the order added, the total of their shares
++ *  (two decimals; a retired member's counts 0.00) and whether that total is exactly 100.00. */
++public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+new file mode 100644
+index 00000000..03f6eb7f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -0,0 +1,82 @@
++package net.officefloor.hq.app.pool;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The pools of each sheet, in the order added, and each pool's members in the order added. */
++@Repository
++public class Pools {
++
++    private static final BigDecimal FULL = new BigDecimal("100.00");
++
++    private final JdbcTemplate jdbc;
++
++    public Pools(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Every pool on the sheet with its members, its total share and whether it is balanced. A retired
++     *  member (a retirement date set, whatever the date) counts 0.00 toward the total. */
++    public List<PoolResponse> onSheet(String sheetId) {
++        Map<String, List<PoolMemberResponse>> members = new LinkedHashMap<>();
++        Map<String, BigDecimal> totals = new LinkedHashMap<>();
++        jdbc.query("SELECT name FROM pool WHERE sheet_id = ? ORDER BY position", rs -> {
++            members.put(rs.getString(1), new ArrayList<>());
++            totals.put(rs.getString(1), BigDecimal.ZERO.setScale(2));
++        }, sheetId);
++        jdbc.query("SELECT m.pool, m.person_id, p.name, m.share, p.retired_from IS NOT NULL FROM pool_member m "
++                + "JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.position", rs -> {
++                    String pool = rs.getString(1);
++                    List<PoolMemberResponse> list = members.get(pool);
++                    if (list == null) return;
++                    BigDecimal share = rs.getBigDecimal(4).setScale(2);
++                    boolean retired = rs.getBoolean(5);
++                    list.add(new PoolMemberResponse(rs.getLong(2), rs.getString(3), share.toPlainString(), retired));
++                    if (!retired) totals.merge(pool, share, BigDecimal::add);
++                }, sheetId);
++        List<PoolResponse> pools = new ArrayList<>();
++        members.forEach((name, list) -> {
++            BigDecimal total = totals.get(name);
++            pools.add(new PoolResponse(name, list, total.toPlainString(), total.compareTo(FULL) == 0));
++        });
++        return pools;
++    }
++
++    /** Whether the sheet has a pool of that name. */
++    public boolean has(String sheetId, String name) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?",
++                Integer.class, sheetId, name);
++        return n != null && n > 0;
++    }
++
++    /** Whether the person is a member of the pool. */
++    public boolean hasMember(String sheetId, String pool, long personId) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM pool_member WHERE sheet_id = ? AND pool = ? AND person_id = ?",
++                Integer.class, sheetId, pool, personId);
++        return n != null && n > 0;
++    }
++
++    public void add(String sheetId, String name) {
++        jdbc.update("INSERT INTO pool (sheet_id, name, position) VALUES (?, ?, "
++                + "(SELECT COALESCE(MAX(position), 0) + 1 FROM pool WHERE sheet_id = ?))",
++                sheetId, name, sheetId);
++    }
++
++    public void addMember(String sheetId, String pool, long personId, BigDecimal share) {
++        jdbc.update("INSERT INTO pool_member (sheet_id, pool, person_id, share, position) VALUES (?, ?, ?, ?, "
++                + "(SELECT COALESCE(MAX(position), 0) + 1 FROM pool_member WHERE sheet_id = ?))",
++                sheetId, pool, personId, share, sheetId);
++    }
++
++    /** The name of the sheet's person with that id, or null when the sheet has none. */
++    public String personName(String sheetId, long personId) {
++        List<String> names = jdbc.query("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
++                (rs, i) -> rs.getString(1), sheetId, personId);
++        return names.isEmpty() ? null : names.get(0);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RecordPoolAdded.java b/src/main/java/net/officefloor/hq/app/pool/RecordPoolAdded.java
+new file mode 100644
+index 00000000..a80fe81a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/RecordPoolAdded.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.pool;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the pool is saved, so a refused one writes no audit line. */
++public class RecordPoolAdded {
++    public void record(@Val Pool pool, Audit audit) {
++        audit.record("POOL_ADDED sheet=" + pool.sheetId() + " by=" + pool.by() + " name=" + pool.name());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RecordPoolMemberAdded.java b/src/main/java/net/officefloor/hq/app/pool/RecordPoolMemberAdded.java
+new file mode 100644
+index 00000000..24e9f5d5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/RecordPoolMemberAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.pool;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the member is saved, so a refused one writes no audit line. */
++public class RecordPoolMemberAdded {
++    public void record(@Val PoolMember member, Audit audit) {
++        audit.record("POOL_MEMBER_ADDED sheet=" + member.sheetId() + " by=" + member.by() + " pool=" + member.pool()
++                + " name=" + member.name() + " share=" + member.share().toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+new file mode 100644
+index 00000000..dd691aa1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.pool;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class RespondWithPools {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Pools pools, AsOf asOfSheet,
++            ObjectResponse<List<PoolResponse>> response) throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf, () -> pools.onSheet(sheetId)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/SavePool.java b/src/main/java/net/officefloor/hq/app/pool/SavePool.java
+new file mode 100644
+index 00000000..16405ab1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/SavePool.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.pool;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SavePool {
++    public void save(@Val Pool pool, Pools pools) {
++        pools.add(pool.sheetId(), pool.name());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java b/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java
+new file mode 100644
+index 00000000..a8cf74ea
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.pool;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SavePoolMember {
++    public void save(@Val PoolMember member, Pools pools) {
++        pools.addMember(member.sheetId(), member.pool(), member.personId(), member.share());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java b/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
+new file mode 100644
+index 00000000..5ccfb6b0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.pool;
++
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a pool name that is blank, or already a pool on the sheet (its name trimmed). */
++public class ValidatePool {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolRequest request,
++            Pools pools, Out<Pool> pool) throws InvalidSheetRequestException {
++        String name = request == null || request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) {
++            throw new InvalidSheetRequestException("A pool's name cannot be blank");
++        }
++        if (name.length() > 200) {
++            throw new InvalidSheetRequestException("A pool's name is at most 200 characters");
++        }
++        if (pools.has(sheetId, name)) {
++            throw new InvalidSheetRequestException("Already a pool: " + name);
++        }
++        pool.set(new Pool(sheetId, name, request.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java b/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java
+new file mode 100644
+index 00000000..ce070f5f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/ValidatePoolMember.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.pool;
++
++import java.math.BigDecimal;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a member for a pool the sheet does not have, a person not on the sheet or already in the
++ *  pool, or a share that is not a percent with up to two decimals, more than 0.00 and at most 100.00. */
++public class ValidatePoolMember {
++
++    private static final Pattern SHARE = Pattern.compile("\\d{1,3}(\\.\\d{1,2})?");
++    private static final BigDecimal MAX = new BigDecimal("100.00");
++
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolMemberRequest request,
++            Pools pools, Out<PoolMember> member) throws InvalidSheetRequestException {
++        if (request == null || request.pool() == null || !pools.has(sheetId, request.pool())) {
++            throw new InvalidSheetRequestException("No such pool");
++        }
++        String name = request.personId() == null ? null : pools.personName(sheetId, request.personId());
++        if (name == null) {
++            throw new InvalidSheetRequestException("No such person");
++        }
++        String text = request.share() == null ? "" : request.share().trim();
++        if (!SHARE.matcher(text).matches()) {
++            throw new InvalidSheetRequestException("A share is a percent with up to two decimals");
++        }
++        BigDecimal share = new BigDecimal(text).setScale(2);
++        if (share.signum() <= 0 || share.compareTo(MAX) > 0) {
++            throw new InvalidSheetRequestException("A share is more than 0.00 and at most 100.00");
++        }
++        if (pools.hasMember(sheetId, request.pool(), request.personId())) {
++            throw new InvalidSheetRequestException(name + " is already in " + request.pool());
++        }
++        member.set(new PoolMember(sheetId, request.pool(), request.personId(), name, share, request.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+index df989278..f4590090 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -29,7 +29,8 @@ public class AsOf {
+     static final List<String> TABLES = List.of("CLAIM", "PERSON", "PERSON_GRADE", "PERSON_HOLD", "PERSON_PATRON",
+             "PERSON_WATCH", "PERSON_STATEMENT", "PERIOD", "PERIOD_PERSON_TOTAL", "PERIOD_NUMBER", "RATE",
+             "SHEET_SETTING", "SHEET_SETTING_DATED", "SHEET_ROLE", "SHEET_PERMISSION", "SHEET_DELEGATION",
+-            "CLAIM_LOG", "SHEET_GRADE_TERMS", "SHEET_HOLIDAY", "SHEET_VOID_REASON", "CLAIM_COMMENT", "PERSON_ALIAS");
++            "CLAIM_LOG", "SHEET_GRADE_TERMS", "SHEET_HOLIDAY", "SHEET_VOID_REASON", "CLAIM_COMMENT", "PERSON_ALIAS",
++            "POOL", "POOL_MEMBER");
+ 
+     private final JdbcTemplate jdbc;
+     private final TransactionTemplate transactions;
+diff --git a/src/main/resources/db/migration/V63__pool.sql b/src/main/resources/db/migration/V63__pool.sql
+new file mode 100644
+index 00000000..e8ac4b6d
+--- /dev/null
++++ b/src/main/resources/db/migration/V63__pool.sql
+@@ -0,0 +1,34 @@
++-- The sheet's pools, in the order added: a name (trimmed, at most once per sheet).
++CREATE TABLE pool (
++    sheet_id VARCHAR(200) NOT NULL,
++    name     VARCHAR(200) NOT NULL,
++    position BIGINT       NOT NULL,
++    PRIMARY KEY (sheet_id, name)
++);
++
++-- A pool's members, in the order added: a person of the sheet with a share percent (more than 0.00,
++-- at most 100.00). A person is in a pool at most once, and may be in several pools.
++CREATE TABLE pool_member (
++    sheet_id  VARCHAR(200)  NOT NULL,
++    pool      VARCHAR(200)  NOT NULL,
++    person_id BIGINT        NOT NULL REFERENCES person (id),
++    share     DECIMAL(5,2)  NOT NULL,
++    position  BIGINT        NOT NULL,
++    PRIMARY KEY (sheet_id, pool, person_id)
++);
++
++CREATE TABLE asof.pool AS SELECT * FROM public.pool WHERE FALSE;
++CREATE TABLE asof_hist.pool AS SELECT * FROM public.pool WHERE FALSE;
++ALTER TABLE asof_hist.pool ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.pool ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.pool ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX pool_hist_sheet ON asof_hist.pool (sheet_id, h_seq);
++CREATE TRIGGER pool_history AFTER INSERT, UPDATE, DELETE ON public.pool FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.pool_member AS SELECT * FROM public.pool_member WHERE FALSE;
++CREATE TABLE asof_hist.pool_member AS SELECT * FROM public.pool_member WHERE FALSE;
++ALTER TABLE asof_hist.pool_member ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.pool_member ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.pool_member ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX pool_member_hist_sheet ON asof_hist.pool_member (sheet_id, h_seq);
++CREATE TRIGGER pool_member_history AFTER INSERT, UPDATE, DELETE ON public.pool_member FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+new file mode 100644
+index 00000000..446718aa
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+@@ -0,0 +1,5 @@
++# The sheet's pools, in the order added, each with its members, total share and balanced.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
++respond:
++  class: net.officefloor.hq.app.pool.RespondWithPools
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.POST.yml
+new file mode 100644
+index 00000000..ff740bfb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.POST.yml
+@@ -0,0 +1,17 @@
++# Add a pool. Validate first so a blank or repeated name is a 400 and writes nothing.
++validate:
++  class: net.officefloor.hq.app.pool.ValidatePool
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.pool.SavePool
++  govern: [ transaction ]
++  next: record
++# Audit only once the pool is saved: a refused one writes no line.
++record:
++  class: net.officefloor.hq.app.pool.RecordPoolAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.pool.RespondWithPools
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/members.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/members.POST.yml
+new file mode 100644
+index 00000000..1e6a7af3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/members.POST.yml
+@@ -0,0 +1,18 @@
++# Add a member to a pool. Validate first so a person already in the pool, or a bad share, is a 400
++# and writes nothing.
++validate:
++  class: net.officefloor.hq.app.pool.ValidatePoolMember
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.pool.SavePoolMember
++  govern: [ transaction ]
++  next: record
++# Audit only once the member is saved: a refused one writes no line.
++record:
++  class: net.officefloor.hq.app.pool.RecordPoolMemberAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.pool.RespondWithPools
++  govern: [ transaction ]
