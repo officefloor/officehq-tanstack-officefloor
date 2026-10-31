@@ -23,6 +23,7 @@ import { SheetHeader } from '../features/header/SheetHeader';
 import { StewardDashboard } from '../features/dashboard/StewardDashboard';
 import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
 import { TreeSearch } from '../features/search/TreeSearch';
+import { TreeExport } from '../features/search/TreeExport';
 import { AuditViewer } from '../features/audit/AuditViewer';
 import { ActivityPanel } from '../features/audit/ActivityPanel';
 
@@ -63,6 +64,7 @@ function Home() {
           <PoolPanel />
           <CrewPanel />
           <TreeSearch />
+          <TreeExport />
           <AuditViewer />
           <ActivityPanel />
         </div>

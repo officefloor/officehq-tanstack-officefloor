@@ -10,7 +10,7 @@ import { shownName } from '../people/usePeople';
 export const treeKey = (sheet: string) => ['sheet', sheet, 'tree'] as const;
 
 /** The other sheets of the sheet's tree (its root and every descendant of the root), by sheet id. */
-function useTree(sheet: string): string[] | undefined {
+export function useTree(sheet: string): string[] | undefined {
   const { data } = useQuery({
     queryKey: treeKey(sheet),
     queryFn: () => getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheet)}/tree`),
