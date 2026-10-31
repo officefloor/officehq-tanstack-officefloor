@@ -8,7 +8,9 @@ public enum ClaimAction {
     APPROVE(ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
     REJECT(ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
     VOID(ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING,
-            ClaimStatus.SETTLED);
+            ClaimStatus.SETTLED),
+    DELETE(ClaimStatus.DELETED, "CLAIM_DELETED", ClaimStatus.DRAFT),
+    RESTORE(ClaimStatus.DRAFT, "CLAIM_RESTORED", ClaimStatus.DELETED);
 
     private final ClaimStatus to;
     private final String event;

@@ -54,6 +54,8 @@ const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount m
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
 const EMPTY_COMMENT = 'A comment cannot be empty.';
 const VIEWER = 'A viewer can change nothing.';
+const CANNOT_DELETE = 'Only a DRAFT claim can be deleted, and never one due by in a closed period.';
+const CANNOT_RESTORE = 'A deleted claim can be restored to DRAFT only on the sheet\'s today it was deleted.';
 const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
 
 /** Why the server refused to open a claim's editor. */
@@ -73,9 +75,9 @@ class LockRefused extends Error {
   }
 }
 
-const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
+const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void', 'delete', 'restore'] as const;
 type Action = (typeof ACTIONS)[number];
-const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void' };
+const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void', delete: 'Delete', restore: 'Restore' };
 
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
@@ -107,6 +109,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
  * OPEN claim with the same date and note, the next number, opened by the user, which shows the
  * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
+ * A DRAFT claim (not one due by in a closed period) can be deleted: it shows DELETED, counts nowhere and
+ * cannot be edited, opened or voided; on the sheet's today it was deleted it can be restored to DRAFT.
  * A claim can be commented: each comment shows on it, oldest first, as "<user> on <date>: <text>"
  * (the sheet's today when it was written); an empty comment is refused.
  */
@@ -223,7 +227,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onError: (e, c) =>
       setRefused({
         id: c.id,
-        message: !(e instanceof HttpError)
+        message: c.action === 'delete'
+          ? CANNOT_DELETE
+          : c.action === 'restore'
+            ? CANNOT_RESTORE
+          : !(e instanceof HttpError)
           ? STATUS_REFUSED
           : e.body.includes('void reason')
             ? NO_VOID_REASON

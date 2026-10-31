@@ -31,7 +31,9 @@ import net.officefloor.plugin.variable.Val;
  *  A claim due by in a closed period cannot change status at all. Opening, settling and voiding are
  *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}).
  *  While the sheet's list of void reasons is not empty, a void needs a reason from it, which the
- *  claim keeps. */
+ *  claim keeps.
+ *  A DRAFT claim can be deleted; a DELETED one restored to DRAFT only on the sheet's today it was
+ *  deleted (its status log's last DELETED date). */
 public class ApplyClaimStatus {
     /** How many days after its settlement (the status log's SETTLED date) a steward may still void a claim. */
     static final int SETTLED_VOID_DAYS = 7;
@@ -65,6 +67,12 @@ public class ApplyClaimStatus {
                     || sheets.today(claim.getSheetId()).isAfter(settled.plusDays(SETTLED_VOID_DAYS))) {
                 throw new ClaimStatusRefusedException("Only a steward can void a settled claim, and only within "
                         + SETTLED_VOID_DAYS + " days of its settlement");
+            }
+        }
+        if (change.action() == ClaimAction.RESTORE) {
+            LocalDate deleted = log.lastOn(claim, ClaimStatus.DELETED);
+            if (deleted == null || !deleted.equals(sheets.today(claim.getSheetId()))) {
+                throw new ClaimStatusRefusedException("A deleted claim can be restored only on the day it was deleted");
             }
         }
         String voidReason = null;

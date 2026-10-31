@@ -6,10 +6,12 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
- *  OPEN or PENDING → VOID; a steward may void a SETTLED claim within 7 days of its settlement. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ *  OPEN or PENDING → VOID; a steward may void a SETTLED claim within 7 days of its settlement.
+ *  A DRAFT can be DELETED (and restored to DRAFT on the same sheet's today); a DELETED claim counts
+ *  nowhere, not even in the status counts. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
-/** Every status, in life order — the order the summary and header list them in. */
+/** Every status that is counted, in life order — the order the summary and header list them in (not DELETED). */
 export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
 
 /** Whether a claim is still open: OPEN or PENDING. A PENDING claim is handled like an OPEN one: it

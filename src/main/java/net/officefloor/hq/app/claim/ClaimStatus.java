@@ -2,9 +2,10 @@ package net.officefloor.hq.app.claim;
 
 /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
- *  OPEN or PENDING → VOID; a steward may also void a SETTLED claim within 7 days of its settlement. */
+ *  OPEN or PENDING → VOID; a steward may also void a SETTLED claim within 7 days of its settlement.
+ *  A DRAFT can be DELETED, and restored to DRAFT on the same sheet's today; a DELETED claim counts nowhere. */
 public enum ClaimStatus {
-    DRAFT, OPEN, PENDING, SETTLED, VOID;
+    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
 
     /** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total. */
     public boolean counts() {
