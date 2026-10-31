@@ -23,29 +23,35 @@ public class Transfers {
     private final JdbcTemplate jdbc;
     private final Claims claims;
     private final ClaimNumbers numbers;
+    private final People people;
 
-    public Transfers(JdbcTemplate jdbc, Claims claims, ClaimNumbers numbers) {
+    public Transfers(JdbcTemplate jdbc, Claims claims, ClaimNumbers numbers, People people) {
         this.jdbc = jdbc;
         this.claims = claims;
         this.numbers = numbers;
+        this.people = people;
     }
 
     /** Transfer the person to sheet `to`, answering their id there. They arrive with every grade they
      *  were given (and its from-date), their terms, contact and aliases, and their claims (listed in
      *  the order they were) with their status, dates, notes, tags, frozen figures, logs and comments;
      *  each claim that had a number takes the other sheet's next one, in the order the claims were
-     *  opened (by the sheet's today when each was opened, then by the order they were added). Figures
-     *  a statement bound are lost, the statement count starts at 0, and references, locks and settle
-     *  batches are not carried. The person then leaves their sheet entirely: with their claims go
+     *  opened (by the sheet's today when each was opened, then by the order they were added). Each claim
+     *  keeps the figure a statement bound it to, and the person arrives with their statements (count,
+     *  last one and history); references, locks and settle batches are not carried. The person then leaves their sheet entirely: with their claims go
      *  their statements, holds, watches, patron links (either way), pool memberships and period totals.
      *  When `into` (a person on sheet `to`) is given, the person is merged into them instead, as a merge
-     *  does: their claims arrive as into's, listed after into's own (each renumbered as above, unbound);
+     *  does: their claims arrive as into's, listed after into's own (each renumbered as above, keeping its
+     *  bound figure); into's statement count becomes their own plus the person's (see
+     *  {@link People#takeStatements});
      *  their name and aliases become into's aliases; their grades, terms and contact are lost; and the
      *  answer is into's id. */
     public long transfer(Person person, String to, Person into) {
         // The person arrives knowing the sheet they came from and their name there (the audit follows them back).
         long fromId = person.getId();
         long toId = into != null ? mergeInto(person, into) : insertPerson(person, to);
+        Person receiving = into != null ? into : people.find(to, toId);
+        people.takeStatements(person, receiving);
 
         List<Claim> kept = new ArrayList<>(claims.ofPerson(person.getSheetId(), fromId));
         Collections.reverse(kept); // oldest listed first, so they keep their order
@@ -146,7 +152,7 @@ public class Transfers {
                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
                     + "proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, "
                     + "edited_by, due_terms, batch) SELECT ?, ?, amount, claim_date, note, status, ?, due, opened_by, "
-                    + "FALSE, NULL, corrects, due_by, deferred_until, proofs, split_from, NULL, late_entry, reminded_on, "
+                    + "stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, NULL, late_entry, reminded_on, "
                     + "NULL, tags, tags_used, void_reason, edited_by, due_terms, NULL FROM claim WHERE id = ?",
                     new String[] { "id" });
             ps.setString(1, to);

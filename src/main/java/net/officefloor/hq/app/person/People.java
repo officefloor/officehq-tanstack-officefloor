@@ -326,20 +326,22 @@ public class People {
     }
 
     /** Merge `from` into `into`: from's claims move to into (numbers and dates kept, listed after
-     *  into's own in the order they were added, each unbound from any statement); from's name and
+     *  into's own in the order they were added, each keeping the figure a statement bound it to);
+     *  into's statement count becomes their own plus from's (see {@link #takeStatements}); from's name and
      *  aliases become into's aliases; from's patrons are added to into's (not into themselves, no
      *  repeats) and anyone naming from as patron names into instead (no repeats); from's pool
      *  memberships move to into (shares added where into is already a member) and their closed
-     *  periods' totals are added to into's. From's statements, holds, watchers, grades and contact go
+     *  periods' totals are added to into's. From's holds, watchers, grades and contact go
      *  with them, and they leave the sheet. Not an edit of into: their version is untouched. */
     public void merge(Person from, Person into) {
         String sheetId = from.getSheetId();
         long fromId = from.getId();
         long intoId = into.getId();
         jdbc.query("SELECT id FROM claim WHERE person_id = ? ORDER BY listed", (ResultSet rs) -> {
-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+            jdbc.update("UPDATE claim SET person_id = ?, "
                     + "listed = NEXT VALUE FOR claim_listed WHERE id = ?", intoId, rs.getLong(1));
         }, fromId);
+        takeStatements(from, into);
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ?", intoId, fromId);
         String name = from.getName().trim();
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",
@@ -373,6 +375,26 @@ public class People {
             jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", fromId);
         }
         jdbc.update("DELETE FROM person WHERE id = ?", fromId);
+    }
+
+    /** `into` takes `from`'s statements: into's count becomes their own plus from's, and their last
+     *  statement stays their own (or, having none, becomes from's). In into's statement history from's
+     *  come first, before into's own, so cancelling into's last shows the one before it. Not an edit:
+     *  into's version is untouched. */
+    public void takeStatements(Person from, Person into) {
+        int fromCount = from.getStatementCount();
+        if (fromCount == 0) return;
+        jdbc.update("UPDATE person_statement SET seq = seq + ? WHERE person_id = ?", fromCount, into.getId());
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date) "
+                + "SELECT ?, ?, seq, stated_total, statement_date FROM person_statement WHERE person_id = ? ORDER BY seq",
+                into.getSheetId(), into.getId(), from.getId());
+        if (into.getStatementCount() == 0) {
+            jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ?",
+                    fromCount, from.getStatedTotal(),
+                    from.getStatementDate() != null ? Date.valueOf(from.getStatementDate()) : null, into.getId());
+        } else {
+            jdbc.update("UPDATE person SET statement_count = statement_count + ? WHERE id = ?", fromCount, into.getId());
+        }
     }
 
     private List<String> aliasesOf(long personId) {
