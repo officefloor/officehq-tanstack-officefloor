@@ -16,7 +16,9 @@ import { DATE, periodDue, periodsKey, usePeriods, type Period } from './usePerio
  * ones skipped — and one form to add a period: a name unique on
  * the sheet and a from and to date, inclusive, overlapping no other period. A period can be closed:
  * its due-total is then the one it had when it was closed, whatever rates do later. A steward can
- * reopen a closed period, making its due-total live again.
+ * reopen a closed period, making its due-total live again. A period can instead be soft-closed: its
+ * figures are fixed as by a close, but claims dated in it can still be changed; it can then be closed
+ * (fixing them afresh) or reopened.
  */
 function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -64,6 +66,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const close = useMutation({
     mutationFn: (name: string) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_e, name) => setRefused(name),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+
+  const softClose = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/soft-close`, { user }),
     onMutate: () => setRefused(null),
     onError: (_e, name) => setRefused(name),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
@@ -235,7 +245,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{dueIn(p)}</td>
-              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
               <td>
                 <button
                   type="button"
@@ -244,6 +254,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
                   onClick={() => close.mutate(p.name)}
                 >
                   Close
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-soft-close"
+                  disabled={softClose.isPending}
+                  onClick={() => softClose.mutate(p.name)}
+                >
+                  Soft close
                 </button>{' '}
                 <button
                   type="button"

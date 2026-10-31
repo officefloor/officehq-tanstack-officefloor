@@ -7,7 +7,8 @@ import type { FloorOn } from '../settings/useSettings';
 
 /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
- *  id; a person not in it, added since, has 0.00). */
+ *  id; a person not in it, added since, has 0.00), and whether it is only soft-closed: its figures
+ *  are fixed as by a close, but claims dated in it can still be changed. */
 export type Period = {
   name: string;
   from: string;
@@ -15,6 +16,7 @@ export type Period = {
   closed: boolean;
   closedTotal: string | null;
   closedPersonTotals: Record<string, string>;
+  soft: boolean;
 };
 
 export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as const;

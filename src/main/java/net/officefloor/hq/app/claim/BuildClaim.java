@@ -11,7 +11,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, refusing one dated in a closed period or after its person's retirement date,
+/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, a late entry when a soft-closed period contains its date, refusing one dated in a closed period or after its person's retirement date,
  *  and a correction that does not name a SETTLED claim of the same person. */
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
@@ -30,6 +30,7 @@ public class BuildClaim {
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
         built.setDueBy(dueBy(person, date, settings));
+        built.setLateEntry(closedPeriods.late(person.getSheetId(), date));
         return built;
     }
 

@@ -36,8 +36,13 @@ public class PeriodCloser {
         this.log = log;
     }
 
-    /** Close the open period; the period as it is once closed. */
+    /** Close the open or soft-closed period; the period as it is once closed. */
     public Period close(Period period) {
+        return close(period, false);
+    }
+
+    /** Close the period, or soft-close it when `soft`; the period as it is then. */
+    public Period close(Period period, boolean soft) {
         Map<Long, Person> personOf = people.onSheet(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::getId, p -> p));
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
@@ -52,7 +57,7 @@ public class PeriodCloser {
             if (figure != null) personTotals.merge(person.getId(), figure, BigDecimal::add);
         }
         BigDecimal total = personTotals.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
-        periods.close(period, total, personTotals);
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total);
+        periods.close(period, total, personTotals, soft);
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft);
     }
 }

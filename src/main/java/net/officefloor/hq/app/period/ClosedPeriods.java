@@ -18,4 +18,9 @@ public class ClosedPeriods {
         Period closed = periods.closedOn(sheetId, date);
         if (closed != null) throw new PeriodClosedException(closed, date);
     }
+
+    /** Whether a claim dated `date` added now is a late entry: a soft-closed period contains it. */
+    public boolean late(String sheetId, LocalDate date) {
+        return periods.softClosedOn(sheetId, date) != null;
+    }
 }

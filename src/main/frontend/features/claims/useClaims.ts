@@ -59,6 +59,8 @@ export type Claim = {
   splitFrom: string | null;
   /** The user whose open editor locks the claim for everyone else; null when no editor holds it. */
   lockedBy: string | null;
+  /** Whether the claim was added while its period was soft-closed. */
+  lateEntry: boolean;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

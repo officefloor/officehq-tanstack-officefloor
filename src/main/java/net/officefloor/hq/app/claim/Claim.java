@@ -24,6 +24,7 @@ public class Claim {
     private int proofs;
     private String splitFrom;
     private String lockedBy;
+    private boolean lateEntry;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -92,6 +93,9 @@ public class Claim {
     /** The user whose open editor locks the claim for everyone else; null when no editor holds it. */
     public String getLockedBy() { return lockedBy; }
     public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
+    /** Whether the claim was added while its period was soft-closed. */
+    public boolean isLateEntry() { return lateEntry; }
+    public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

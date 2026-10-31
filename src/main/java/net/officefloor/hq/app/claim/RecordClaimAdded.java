@@ -11,5 +11,10 @@ public class RecordClaimAdded {
         audit.record("CLAIM_ADDED sheet=" + claim.getSheetId() + " by=" + values.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
                 + " date=" + claim.getDate());
+        if (claim.isLateEntry()) {
+            audit.record("LATE_ENTRY sheet=" + claim.getSheetId() + " by=" + values.user()
+                    + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
+                    + " date=" + claim.getDate());
+        }
     }
 }
