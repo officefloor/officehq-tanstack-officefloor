@@ -10,7 +10,7 @@ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
-/** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is dated in a closed period, or would be moved into one,
+/** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is due by in a closed period (its due-by, fixed when it was added, stays as it is),
  *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person. */
 public class ApplyClaim {
     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods,
@@ -21,8 +21,7 @@ public class ApplyClaim {
             throw new ClaimEditRefusedException(claim.getStatus());
         }
         LocalDate date = values.date() != null ? values.date() : sheets.today(claim.getSheetId());
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
-        closedPeriods.refuse(claim.getSheetId(), date);
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         if (person != null) person.refuseRetired(date);
         BuildClaim.refuseUncorrected(values, claim.getSheetId(), claim.getPersonId(), claims);

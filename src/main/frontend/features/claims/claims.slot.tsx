@@ -29,23 +29,23 @@ const STATUS_REFUSED = "This claim's status cannot change that way (whoever open
 const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
 const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the user who opened it.';
 const NOT_ALLOWED = "Your role may not do that: the sheet's permission matrix decides who opens, settles and voids claims.";
-const CANNOT_VOID_SETTLED = 'Only a steward can void a SETTLED claim, and only within 7 days of its settlement (never one dated in a closed period).';
+const CANNOT_VOID_SETTLED = 'Only a steward can void a SETTLED claim, and only within 7 days of its settlement (never one due by in a closed period).';
 const NO_REASON = 'A rejection needs a reason.';
 const NOT_STEWARD_MOVE = "Your role may not reassign a claim (by default only a steward can).";
 const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
 const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
 const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
-const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never in or into a closed period, nor to a date after its person's retirement.";
+const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
 const NEEDS_PROOF = "A claim whose due is above the sheet's proof threshold cannot be settled or approved until it has a proof.";
 const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
-const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one dated in a closed period.';
-const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor dated in a closed period) can be split, by a user whose role may open a claim.";
+const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one due by in a closed period.';
+const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor due by in a closed period) can be split, by a user whose role may open a claim.";
 const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the claim's amount, with up to two decimals.";
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 const LOCKED = 'Another user is editing this claim: it is locked until they save or cancel their editor.';
-const CLOSED_EDIT = 'This claim is dated in a closed period: it cannot be edited.';
+const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
 const VIEWER = 'A viewer can change nothing.';
 const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
 
@@ -74,7 +74,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open (only a DRAFT outside a closed period can be edited; an open
  * editor locks its claim for every other user until it is saved or cancelled, or the sheet's today changes), and the claims, newest first, each
- * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, plus its late charge, at least the sheet's floor; in the
+ * with its period (the one whose dates contain its due-by, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, plus its late charge, at least the sheet's floor; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle, approve, reject (with a reason) or void it (a SETTLED one only by a steward within 7 days of its settlement; its opener cannot settle
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
@@ -87,12 +87,12 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * and their dues added up.
  * A steward can reassign a DRAFT, OPEN or PENDING claim to another person on the sheet: it keeps its
  * number and date, is no longer bound by a statement, and is listed as its new person's newest claim.
- * A steward can re-date an OPEN or PENDING claim (not in or into a closed period, nor after its person's
- * retirement): its due-by and any figure a statement bound stay; its period follows the new date.
+ * A steward can re-date an OPEN or PENDING claim (not one due by in a closed period, nor after its person's
+ * retirement): its due-by and any figure a statement bound stay, and so do its period and number.
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
- * nor one dated in a closed period); one whose due is above the sheet's proof threshold on its date
+ * nor one due by in a closed period); one whose due is above the sheet's proof threshold on its date
  * cannot be settled or approved while it has none.
  * One whose due is above the sheet's note threshold on its date cannot be opened, alone or in bulk,
  * while its note is empty.
@@ -283,14 +283,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
           : e instanceof HttpError && e.body.includes('retired')
             ? 'That person is retired before this claim\'s date.'
             : e instanceof HttpError && e.body.includes('closed')
-              ? 'This claim is dated in a closed period.'
+              ? 'This claim is due by in a closed period.'
               : CANNOT_MOVE,
       }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
   // The edit button: the server locks the claim for this user, or refuses (another user's lock, not a
-  // DRAFT, dated in a closed period, a viewer) on the claim itself, taking no lock.
+  // DRAFT, due by in a closed period, a viewer) on the claim itself, taking no lock.
   // The editor opens at once, as if locked; a refusal puts the claims back as they were.
   const lock = useMutation({
     mutationFn: (c: Claim) => postJson<Claim>(`${base}/claims/${c.id}/lock`, { user }),
@@ -456,7 +456,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               />{' '}
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
-              <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
+              <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{showDue(claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy))}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}

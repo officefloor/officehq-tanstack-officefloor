@@ -29,7 +29,7 @@ public class ApplyClaimReassign {
         if (to.getId() == claim.getPersonId()) {
             throw new ClaimStatusRefusedException("The claim is already " + to.getName() + "'s: reassign it to another person");
         }
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         to.refuseRetired(claim.getDate());
         Person from = people.find(claim.getSheetId(), claim.getPersonId());
         change.moved(from.getName(), to.getName());

@@ -11,7 +11,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, a late entry when a soft-closed period contains its date, refusing one dated in a closed period or after its person's retirement date,
+/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, a late entry when a soft-closed period contains its due-by, refusing one due by in a closed period or after its person's retirement date,
  *  and a correction that does not name a SETTLED claim of the same person. */
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
@@ -23,22 +23,16 @@ public class BuildClaim {
     static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
             Claims claims, Settings settings) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.getSheetId());
-        closedPeriods.refuse(person.getSheetId(), date);
+        LocalDate dueBy = DueBy.of(person, date, settings);
+        closedPeriods.refuse(person.getSheetId(), dueBy);
         person.refuseRetired(date);
         refuseUncorrected(values, person.getSheetId(), person.getId(), claims);
         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
-        built.setDueBy(dueBy(person, date, settings));
-        built.setLateEntry(closedPeriods.late(person.getSheetId(), date));
+        built.setDueBy(dueBy);
+        built.setLateEntry(closedPeriods.late(person.getSheetId(), dueBy));
         return built;
-    }
-
-    /** The due-by of a claim of `person` dated `date`: its date plus the person's own terms, else
-     *  the terms of their grade then, else the sheet's terms then. */
-    static LocalDate dueBy(Person person, LocalDate date, Settings settings) {
-        Integer own = person.getTerms();
-        return date.plusDays(own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date));
     }
 
     /** Refuses a correction whose number is not a SETTLED claim of the same person. */

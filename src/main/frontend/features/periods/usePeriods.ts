@@ -55,12 +55,12 @@ export function statusAt(claim: Claim, date: string): ClaimStatus | null {
   return status;
 }
 
-/** Whether a person's claim counts in a period's due-total: dated in it, and counted (OPEN, PENDING
+/** Whether a person's claim counts in a period's due-total: due by in it (its due-by as fixed when it was added), and counted (OPEN, PENDING
  *  or SETTLED) by the status it had at the end of the period's last day — not a deferred one, nor
  *  one open then and dated within the person's hold (or the person's once the sheet's today reaches
  *  their retirement date), unless a statement binds it. */
 function countsIn(period: Period, person: Person, claim: Claim, today: string): boolean {
-  if (claim.personId !== person.id || periodOf([period], claim.date) === undefined || claim.deferred) return false;
+  if (claim.personId !== person.id || periodOf([period], claim.dueBy) === undefined || claim.deferred) return false;
   const status = statusAt(claim, period.to);
   if (status !== 'OPEN' && status !== 'PENDING' && status !== 'SETTLED') return false;
   if (status === 'SETTLED' || !heldOn(person, claim.date, today)) return true;

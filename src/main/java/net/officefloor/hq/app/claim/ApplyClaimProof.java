@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyClaimProof {
     public void apply(@Val ClaimProof change, @Val Claim claim, ClosedPeriods closedPeriods)
             throws ClaimStatusRefusedException, PeriodClosedException {
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
             throw new ClaimStatusRefusedException("A proof cannot be added to a " + claim.getStatus() + " claim");
         }

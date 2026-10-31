@@ -6,11 +6,11 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
 /** Defers an OPEN claim until a date after the sheet's today (a deferred one may be deferred again).
- *  A claim not OPEN, a date not after today, or a claim dated in a closed period is refused. */
+ *  A claim not OPEN, a date not after today, or a claim due by in a closed period is refused. */
 public class ApplyClaimDefer {
     public void apply(@Val ClaimDefer change, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods)
             throws ClaimStatusRefusedException, PeriodClosedException {
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         if (claim.getStatus() != ClaimStatus.OPEN) {
             throw new ClaimStatusRefusedException("Only an OPEN claim can be deferred");
         }

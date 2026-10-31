@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
 /** The number a claim gets when it is opened. While the sheet's period numbering from is set and
- *  the sheet's today is on or after it, the claim is numbered within the period its date falls in
+ *  the sheet's today is on or after it, the claim is numbered within the period its due-by falls in
  *  (<period name>-<n>), or X-<n> when it falls in none; otherwise it takes the sheet's next number. */
 @Service
 public class ClaimNumbers {
@@ -32,7 +32,7 @@ public class ClaimNumbers {
         if (from == null || sheets.today(sheetId).isBefore(from)) {
             return String.valueOf(sheets.nextClaimNumber(sheetId));
         }
-        String seq = periods.onSheet(sheetId).stream().filter(p -> p.contains(claim.getDate()))
+        String seq = periods.onSheet(sheetId).stream().filter(p -> p.contains(claim.getDueBy()))
                 .map(Period::name).findFirst().orElse(NO_PERIOD);
         return seq + "-" + sheets.nextPeriodNumber(sheetId, seq);
     }

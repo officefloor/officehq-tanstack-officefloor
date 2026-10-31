@@ -14,7 +14,7 @@ import net.officefloor.hq.app.person.Person;
 import org.springframework.stereotype.Service;
 
 /** Closes a period, fixing its due-total as the screen shows it now: the figures (as shown now) of
- *  everyone's claims dated in it that were counted (OPEN, PENDING or SETTLED) by the status each had
+ *  everyone's claims due by in it (by the due-by fixed when each was added) that were counted (OPEN, PENDING or SETTLED) by the status each had
  *  at the end of the period's last day, as its status log records it — not deferred ones, nor
  *  ones open then and dated within their person's hold, unless stated — n/a ones skipped. Each
  *  person's due-total for it is fixed too, and the period's is their sum. Used by a close by hand
@@ -49,7 +49,7 @@ public class PeriodCloser {
         for (Long id : personOf.keySet()) personTotals.put(id, BigDecimal.ZERO.setScale(2));
         Map<Long, ClaimStatus> atEnd = log.statusesAt(period.sheetId(), period.to());
         for (Claim claim : claims.onSheet(period.sheetId())) {
-            if (!period.contains(claim.getDate())) continue;
+            if (!period.contains(claim.getDueBy())) continue;
             Person person = personOf.get(claim.getPersonId());
             if (person == null || !person.counts(claim,
                     atEnd.containsKey(claim.getId()) ? atEnd.get(claim.getId()) : claim.getStatus())) continue;

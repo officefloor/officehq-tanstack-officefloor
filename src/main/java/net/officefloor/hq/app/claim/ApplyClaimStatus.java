@@ -26,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
  *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
- *  A claim dated in a closed period cannot change status at all. Opening, settling and voiding are
+ *  A claim due by in a closed period cannot change status at all. Opening, settling and voiding are
  *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}). */
 public class ApplyClaimStatus {
     /** How many days after its settlement (the status log's SETTLED date) a steward may still void a claim. */
@@ -35,7 +35,7 @@ public class ApplyClaimStatus {
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, ClaimNumbers numbers, People people,
             Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets)
             throws ClaimStatusRefusedException, PeriodClosedException {
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         if (!change.action().allowedFrom(claim.getStatus())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
         }

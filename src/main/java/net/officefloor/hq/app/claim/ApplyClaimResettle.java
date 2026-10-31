@@ -7,7 +7,7 @@ import net.officefloor.hq.app.settings.Role;
 import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.plugin.variable.Val;
 
-/** Re-settles a SETTLED claim: only a steward may, and never one dated in a closed period. Its due is
+/** Re-settles a SETTLED claim: only a steward may, and never one due by in a closed period. Its due is
  *  fixed again at the figure it would have today as an OPEN claim bound by no statement: the rate of
  *  its person's grade in force on its date, plus its late charge today, at least the sheet's floor
  *  (n/a with no rate). It stays SETTLED, keeps its number and its binding. */
@@ -20,7 +20,7 @@ public class ApplyClaimResettle {
         if (claim.getStatus() != ClaimStatus.SETTLED) {
             throw new ClaimStatusRefusedException("Only a SETTLED claim can be re-settled");
         }
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         Claim open = new Claim(claim.getId(), claim.getSheetId(), claim.getPersonId(), claim.getAmount(),
                 claim.getDate(), claim.getNote(), ClaimStatus.OPEN, claim.getNumber(), null, claim.getOpenedBy());
         open.setCorrects(claim.getCorrects());

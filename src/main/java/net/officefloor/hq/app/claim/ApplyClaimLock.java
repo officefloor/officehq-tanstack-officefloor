@@ -5,7 +5,7 @@ import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.plugin.variable.Val;
 
 /** Opens the claim's editor for the user, locking the claim for everyone else; refused (taking no
- *  lock) when another user's editor locks it, it is no longer a DRAFT, or it is dated in a closed period. */
+ *  lock) when another user's editor locks it, it is no longer a DRAFT, or it is due by in a closed period. */
 public class ApplyClaimLock {
     public void apply(@Val ClaimLock lock, @Val Claim claim, ClosedPeriods closedPeriods)
             throws ClaimLockedException, ClaimEditRefusedException, PeriodClosedException {
@@ -13,7 +13,7 @@ public class ApplyClaimLock {
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw new ClaimEditRefusedException(claim.getStatus());
         }
-        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+        closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         claim.setLockedBy(lock.user());
     }
 
