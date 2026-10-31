@@ -30,7 +30,8 @@ public class Pools {
     }
 
     /** Every pool on the sheet with its members, its total share and whether it is balanced. A retired
-     *  member (a retirement date set, whatever the date) counts 0.00 toward the total; a member whose
+     *  member (a retirement date set, whatever the date) counts their share as given toward the total
+     *  (but has no part of the cuts, see {@link #cuts}); a member whose
      *  from- and to-dates do not include the sheet's today is left out (no share toward the total, no
      *  cut). A member may be
      *  another pool. A pool that is a member of none has the sheet's pot; a pool that is a member of
@@ -68,7 +69,7 @@ public class Pools {
                             memberPool, from == null ? null : from.toLocalDate().toString(),
                             to == null ? null : to.toLocalDate().toString(), current));
                     if (memberPool != null) parents.put(memberPool, pool);
-                    if (!retired && current) totals.merge(pool, share, BigDecimal::add);
+                    if (current) totals.merge(pool, share, BigDecimal::add);
                 }, sheetId);
         // Each pool's pot, from the pools that are a member of none down through their member pools.
         // The people with a hold in force on the sheet's today: they get no cut.
@@ -103,13 +104,25 @@ public class Pools {
         }
     }
 
-    /** The members with their cuts of the pot. A retired member, or a person with a hold in force on
-     *  the sheet's today, has no cut (0.00); each other member's is the pot times their share divided by
+    /** The members with their cuts of the pot. A retired member is left out of the cuts and a person
+     *  with a hold in force on the sheet's today has none: each shows 0.00, their share spread over the
+     *  others in proportion to those others' shares. When every member in their dates is retired, no
+     *  member has a cut at all (null); each other member's is the pot times their share divided by
      *  the shares of the members with a cut added up, rounded half to even to two decimals. The
      *  remainder, the pot less the cuts, goes to the member with a cut with the largest share, the
      *  earliest added on a tie, so the cuts total the pot (when no member has a cut, each is 0.00). A
      *  member out of their dates is left out: no cut at all (null). */
     private static List<PoolMemberResponse> cuts(List<PoolMemberResponse> members, BigDecimal pot, Set<Long> held) {
+        boolean allRetired = members.stream().anyMatch(PoolMemberResponse::current)
+                && members.stream().filter(PoolMemberResponse::current).allMatch(PoolMemberResponse::retired);
+        if (allRetired) {
+            List<PoolMemberResponse> none = new ArrayList<>(members.size());
+            for (PoolMemberResponse m : members) {
+                none.add(new PoolMemberResponse(m.personId(), m.name(), m.share(), m.retired(), null, m.pool(),
+                        m.from(), m.to(), m.current()));
+            }
+            return none;
+        }
         BigDecimal[] cuts = new BigDecimal[members.size()];
         boolean[] cut = new boolean[members.size()];
         BigDecimal shares = BigDecimal.ZERO;

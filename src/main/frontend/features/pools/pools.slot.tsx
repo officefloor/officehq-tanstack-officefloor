@@ -10,7 +10,8 @@ import { poolsKey, usePools, SHARE, type Pool } from './usePools';
  * The sheet's pools and a form to add one by name (trimmed; a blank name, or one already a pool, is
  * refused). Each pool's row adds a member: a person with a share percent, more than 0.00 and at most
  * 100.00 with up to two decimals; a person already in the pool, or a bad share, is refused. A pool
- * shows its total share and whether it is balanced (exactly 100.00); a retired member counts 0.00.
+ * shows its total share and whether it is balanced (exactly 100.00); a retired member's share counts
+ * as given, but it is spread over the other members' cuts (none when every member is retired).
  * A member may be another pool, chosen as pool:<name>: a pool is a member of at most one pool, cannot
  * contain itself through any chain, and a chain of pools is at most three deep (the server refuses).
  * Each member of a balanced pool shows their cut of the pool's pot; unbalanced, or no pot, none. A pool

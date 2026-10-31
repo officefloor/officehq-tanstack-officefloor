@@ -23,7 +23,7 @@ export type PoolMember = {
 };
 
 /** A pool as the server sends it: its name, its members in the order added, the total of their
- *  shares (two decimals; a retired member's counts 0.00) and whether it is exactly 100.00. */
+ *  shares (two decimals; a retired member's counts as given) and whether it is exactly 100.00. */
 export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
 
 /** A share percent: up to two decimals. */
