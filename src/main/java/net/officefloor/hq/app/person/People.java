@@ -362,6 +362,8 @@ public class People {
         names.add(from.getName());
         names.addAll(jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
                 String.class, sheetId, fromId));
+        jdbc.update("INSERT INTO person_alias_merged SELECT * FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                sheetId, fromId);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         for (String name : names) {
             addAlias(into, name);
@@ -408,6 +410,10 @@ public class People {
         // What is dropped with them.
         // Statements.
         takeStatements(from, into);
+        for (String table : DROPPED_WITH_MERGE) {
+            jdbc.update("INSERT INTO " + table + "_merged SELECT * FROM " + table + " WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                    sheetId, fromId);
+        }
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
@@ -418,6 +424,98 @@ public class People {
         jdbc.update("INSERT INTO person_merged SELECT p.*, (SELECT today FROM sheet WHERE id = ?) FROM person p WHERE p.sheet_id = ? AND p.id = ?",
                 sheetId, sheetId, fromId);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, fromId);
+    }
+
+    /** What a merge drops with the merged person and keeps (in {@code <table>_merged}) so an undo brings it back. */
+    private static final List<String> DROPPED_WITH_MERGE = List.of("person_hold", "person_retirement", "person_snapshot",
+            "person_watch", "person_statement", "person_grade", "person_terms");
+
+    /** Records that the user, on the sheet's today, merges the person into the other: which of their claims move
+     *  and where each was listed, so the merge can be undone. Call before the claims move. */
+    public void recordMerge(Person from, Person into, String user) {
+        String sheetId = from.getSheetId();
+        long aliasSeq = jdbc.queryForObject("SELECT COALESCE(MAX(seq), 0) FROM person_alias", Long.class);
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement("INSERT INTO person_merge (sheet_id, from_id, into_id, merged_by, merged_on, alias_seq)"
+                    + " VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)", new String[] { "SEQ" });
+            ps.setString(1, sheetId);
+            ps.setLong(2, from.getId());
+            ps.setLong(3, into.getId());
+            ps.setString(4, user);
+            ps.setString(5, sheetId);
+            ps.setLong(6, aliasSeq);
+            return ps;
+        }, keys);
+        jdbc.update("INSERT INTO person_merge_claim (merge_seq, claim_id, listed_seq) SELECT ?, id, listed_seq FROM claim"
+                + " WHERE sheet_id = ? AND person_id = ?", keys.getKey().longValue(), sheetId, from.getId());
+    }
+
+    /** The last merge into the person not yet undone; null when none. */
+    public Merge lastMergeInto(Person into) {
+        List<Merge> found = jdbc.query("SELECT seq, from_id, merged_by, merged_on, alias_seq FROM person_merge"
+                + " WHERE sheet_id = ? AND into_id = ? AND NOT undone ORDER BY seq DESC LIMIT 1",
+                (rs, i) -> new Merge(rs.getLong("seq"), rs.getLong("from_id"), rs.getString("merged_by"),
+                        rs.getDate("merged_on") == null ? null : rs.getDate("merged_on").toLocalDate(), rs.getLong("alias_seq")),
+                into.getSheetId(), into.getId());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** A merge of one person into another: who made it and on which of the sheet's todays. */
+    public record Merge(long seq, long fromId, String mergedBy, LocalDate mergedOn, long aliasSeq) {
+    }
+
+    /** Undoes the merge into the person: the merged person is back, at the end of the list, as they stood when merged
+     *  with what the merge dropped with them; the claims that came from them (still the other's) are theirs again,
+     *  listed where they were; their name and own aliases leave the other's. Patron, pool, crew, period and statement
+     *  changes stay. Returns the person restored. */
+    public Person undoMerge(Person into, Merge merge) {
+        String sheetId = into.getSheetId();
+        long fromId = merge.fromId();
+        long place = jdbc.queryForObject("SELECT COALESCE(MAX(COALESCE(place, id)), 0) + 1 FROM person WHERE sheet_id = ?",
+                Long.class, sheetId);
+        String columns = String.join(", ", columns("person"));
+        jdbc.update("INSERT INTO person (" + columns + ") SELECT " + columns + " FROM person_merged WHERE sheet_id = ? AND id = ?"
+                + " ORDER BY merged_on DESC LIMIT 1", sheetId, fromId);
+        jdbc.update("DELETE FROM person_merged WHERE sheet_id = ? AND id = ?", sheetId, fromId);
+        jdbc.update("UPDATE person SET place = ? WHERE sheet_id = ? AND id = ?", place, sheetId, fromId);
+        Person from = find(sheetId, fromId);
+        // Their name and own aliases leave the other's.
+        List<String> names = new java.util.ArrayList<>();
+        names.add(from.getName());
+        names.addAll(jdbc.queryForList("SELECT alias FROM person_alias_merged WHERE sheet_id = ? AND person_id = ? ORDER BY seq",
+                String.class, sheetId, fromId));
+        for (String name : names) {
+            jdbc.update("DELETE FROM person_alias WHERE seq = (SELECT MIN(seq) FROM person_alias WHERE sheet_id = ? AND person_id = ?"
+                    + " AND seq > ? AND alias = ?)", sheetId, into.getId(), merge.aliasSeq(), name);
+        }
+        List<String> restored = new java.util.ArrayList<>(DROPPED_WITH_MERGE);
+        restored.add("person_alias");
+        for (String table : restored) {
+            String kept = String.join(", ", columns(table).stream().filter(c -> !c.equalsIgnoreCase("seq")).toList());
+            jdbc.update("INSERT INTO " + table + " (" + kept + ") SELECT " + kept + " FROM " + table + "_merged"
+                    + " WHERE sheet_id = ? AND person_id = ? ORDER BY seq", sheetId, fromId);
+            jdbc.update("DELETE FROM " + table + "_merged WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        }
+        jdbc.update("UPDATE person_merge SET undone = TRUE WHERE seq = ?", merge.seq());
+        return find(sheetId, fromId);
+    }
+
+    /** A claim a merge moved, with where it was listed before it. */
+    public record MergedClaim(long claimId, Long listedSeq) {
+    }
+
+    /** The claims a merge moved that are still the other's. */
+    public List<MergedClaim> mergedClaims(Person into, Merge merge) {
+        return jdbc.query("SELECT m.claim_id, m.listed_seq FROM person_merge_claim m JOIN claim c ON c.id = m.claim_id"
+                + " WHERE m.merge_seq = ? AND c.sheet_id = ? AND c.person_id = ? ORDER BY m.claim_id",
+                (rs, i) -> new MergedClaim(rs.getLong(1), rs.getObject(2, Long.class)), merge.seq(), into.getSheetId(), into.getId());
+    }
+
+    /** The table's column names, in order. */
+    private List<String> columns(String table) {
+        return jdbc.queryForList("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC'"
+                + " AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION", String.class, table.toUpperCase(java.util.Locale.ROOT));
     }
 
     /** Adds the person to another sheet as they stand: their name, terms, contact, every grade they were given (with

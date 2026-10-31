@@ -265,6 +265,14 @@ public class Claims {
         history(claim.getSheetId(), claim.getId());
     }
 
+    /** Moves the claim back to the person a merge took it from, listed where it was before the merge, its number,
+     *  status and the figure a statement bound it to as they are now. */
+    public void unmerge(String sheetId, long claimId, long personId, Long listedSeq) {
+        jdbc.update("UPDATE claim SET person_id = ?, listed_seq = ? WHERE sheet_id = ? AND id = ?", personId, listedSeq,
+                sheetId, claimId);
+        history(sheetId, claimId);
+    }
+
     /** Copies the claim to the person on another sheet, listed as their newest claim: its status, dates, note, tags,
      *  settled figure, log, comments and the figure a statement bound it to kept; unnumbered, without its reference, lock or
      *  settle batch. Its tags are remembered as used on the other sheet. Returns the copy's id. */

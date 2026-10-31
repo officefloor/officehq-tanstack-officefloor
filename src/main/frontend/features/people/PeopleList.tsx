@@ -27,6 +27,7 @@ import { QuickAdd } from './QuickAdd';
 import { RetireControl, UnretireButton } from './RetireControl';
 import { TransferControl } from './TransferControl';
 import { TransferUndoControl } from './TransferUndoControl';
+import { MergeUndoControl } from './MergeUndoControl';
 import { WatchControl } from './WatchControl';
 import { useWatches } from './useWatches';
 import { downloadCsv } from './csv';
@@ -344,6 +345,7 @@ export function PeopleList() {
                   <PatronControl personId={p.id} people={people} />{' '}
                   <AliasControl personId={p.id} />{' '}
                   <MergeControl personId={p.id} people={people} />{' '}
+                  <MergeUndoControl personId={p.id} />{' '}
                   <TransferControl personId={p.id} />{' '}
                   <TransferUndoControl personId={p.id} />{' '}
                   <WatchControl personId={p.id} watched={watched.includes(p.id)} />

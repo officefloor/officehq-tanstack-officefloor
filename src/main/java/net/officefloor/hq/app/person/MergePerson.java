@@ -39,6 +39,7 @@ public class MergePerson {
         if (person.getRetiredFrom() != null || into.getRetiredFrom() != null) {
             throw new InvalidPersonException("A retired person cannot be merged");
         }
+        people.recordMerge(person, into, request.user());
         java.util.List<Claim> moved = new java.util.ArrayList<>(claims.ofPerson(sheetId, person.getId()));
         moved.sort(java.util.Comparator.comparingLong(Claim::getId));
         for (Claim claim : moved) {
