@@ -69,6 +69,8 @@ import { scoreBand, useSettings } from '../settings/useSettings';
 // number, date, amount, due, status and period as the claim's row shows them. The export periods button downloads the
 // period figures as CSV: person, period, figure (the period's due-total) and carried as the row shows them, one line per
 // person and period, people in list order (retired too) and periods in the order added. Each person's export statement button downloads, as CSV, their claims bound by their last statement, oldest first: number, date, amount, the bound figure as the claim shows it, and status.
+// Each person's export button downloads their row as CSV: cell,value then one line per cell (name, grade, claimed,
+// due-total, statement-count, overdue-total, hold, retired, aliases, score) with the value as the row shows it.
 // Claims ticked
 // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
@@ -338,6 +340,27 @@ export function PeopleList() {
                     }
                   >
                     Export statement
+                  </button>{' '}
+                  <button
+                    type="button"
+                    data-testid="person-export"
+                    onClick={() =>
+                      downloadCsv(`person-${p.id}.csv`, [
+                        ['cell', 'value'],
+                        ['person-name', shownName(p, today)],
+                        ['person-grade', gradeOn(p, today)],
+                        ['person-claimed', sumAmounts(claimedLive.filter((c) => c.personId === p.id))],
+                        ['person-due-total', showDue(totalOf(p))],
+                        ['person-statement-count', String(p.statementCount)],
+                        ['person-overdue-total', overdueTotal(overdueOf(p.id))],
+                        ['person-hold', p.held ? 'yes' : 'no'],
+                        ['person-retired', p.retired ? 'yes' : 'no'],
+                        ['person-aliases', p.aliases.join(', ')],
+                        ['person-score', String(scoreOf(p))],
+                      ])
+                    }
+                  >
+                    Export
                   </button>{' '}
                   <RetireControl personId={p.id} />{' '}
                   <UnretireButton personId={p.id} />{' '}
