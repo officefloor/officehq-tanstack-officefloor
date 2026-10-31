@@ -1,0 +1,118 @@
+diff --git a/src/main/frontend/features/search/TreeExport.tsx b/src/main/frontend/features/search/TreeExport.tsx
+new file mode 100644
+index 00000000..c22adba4
+--- /dev/null
++++ b/src/main/frontend/features/search/TreeExport.tsx
+@@ -0,0 +1,79 @@
++import { useEffect, useRef, useState } from 'react';
++import { useIsFetching, useQueryClient } from '@tanstack/react-query';
++import { LiveReads } from '../asof/useAsOf';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useSheetFigures } from '../people/useSheetFigures';
++import { gradeOn } from '../people/usePeople';
++import { showDue } from '../rates/due';
++import { downloadCsv } from '../people/csv';
++import { useTree } from './TreeSearch';
++
++// Downloads the people of the sheet's whole tree as CSV: sheet, name, grade in force on that
++// sheet's today and due-total as their row shows it. The sheet's people come first in list order
++// (retired too), then the other sheets' by sheet id. Each press re-reads every sheet, live figures
++// also while the screen is shown as of a date.
++export function TreeExport() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const [run, setRun] = useState<number | null>(null);
++  const queryClient = useQueryClient();
++
++  const start = async () => {
++    setRun(null);
++    await queryClient.invalidateQueries({ queryKey: ['sheet'] });
++    queryClient.removeQueries({ queryKey: ['sheet'], type: 'inactive' });
++    setRun((was) => (was ?? 0) + 1);
++  };
++
++  return (
++    <>
++      <button type="button" data-testid="export-tree" onClick={() => void start()}>
++        Export tree
++      </button>
++      {run !== null && (
++        <LiveReads.Provider value={true}>
++          <Collect key={run} sheet={sheet} onDone={() => setRun(null)} />
++        </LiveReads.Provider>
++      )}
++    </>
++  );
++}
++
++function Collect({ sheet, onDone }: { sheet: string; onDone: () => void }) {
++  const tree = useTree(sheet);
++  if (tree === undefined) return null;
++  return <Add sheets={[sheet, ...tree]} rows={[]} onDone={onDone} />;
++}
++
++type Props = { sheets: string[]; rows: string[][]; onDone: () => void };
++
++// One sheet's hooks per component, so the number of sheets can change.
++function Add({ sheets, rows, onDone }: Props) {
++  if (sheets.length === 0) return <Download rows={rows} onDone={onDone} />;
++  return <AddSheet key={sheets[0]} sheets={sheets} rows={rows} onDone={onDone} />;
++}
++
++function AddSheet({ sheets, rows, onDone }: Props) {
++  const sheet = sheets[0];
++  const { people, totalOf, today } = useSheetFigures(sheet);
++  const queryClient = useQueryClient();
++  const fetching = useIsFetching({ queryKey: ['sheet', sheet] });
++  const loaded = queryClient
++    .getQueryCache()
++    .findAll({ queryKey: ['sheet', sheet] })
++    .every((q) => q.state.status !== 'pending');
++  if (fetching > 0 || !loaded) return null;
++  const own = people.map((p) => [sheet, p.name, gradeOn(p, today), showDue(totalOf(p))]);
++  return <Add sheets={sheets.slice(1)} rows={[...rows, ...own]} onDone={onDone} />;
++}
++
++function Download({ rows, onDone }: { rows: string[][]; onDone: () => void }) {
++  const done = useRef(false);
++  useEffect(() => {
++    if (done.current) return;
++    done.current = true;
++    downloadCsv('tree.csv', [['sheet', 'name', 'grade', 'due-total'], ...rows]);
++    onDone();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, []);
++  return null;
++}
+diff --git a/src/main/frontend/features/search/TreeSearch.tsx b/src/main/frontend/features/search/TreeSearch.tsx
+index 595f80a7..de29130c 100644
+--- a/src/main/frontend/features/search/TreeSearch.tsx
++++ b/src/main/frontend/features/search/TreeSearch.tsx
+@@ -10,7 +10,7 @@ import { shownName } from '../people/usePeople';
+ export const treeKey = (sheet: string) => ['sheet', sheet, 'tree'] as const;
+ 
+ /** The other sheets of the sheet's tree (its root and every descendant of the root), by sheet id. */
+-function useTree(sheet: string): string[] | undefined {
++export function useTree(sheet: string): string[] | undefined {
+   const { data } = useQuery({
+     queryKey: treeKey(sheet),
+     queryFn: () => getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheet)}/tree`),
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index b71da7a8..71d7940a 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -23,6 +23,7 @@ import { SheetHeader } from '../features/header/SheetHeader';
+ import { StewardDashboard } from '../features/dashboard/StewardDashboard';
+ import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
+ import { TreeSearch } from '../features/search/TreeSearch';
++import { TreeExport } from '../features/search/TreeExport';
+ import { AuditViewer } from '../features/audit/AuditViewer';
+ import { ActivityPanel } from '../features/audit/ActivityPanel';
+ 
+@@ -63,6 +64,7 @@ function Home() {
+           <PoolPanel />
+           <CrewPanel />
+           <TreeSearch />
++          <TreeExport />
+           <AuditViewer />
+           <ActivityPanel />
+         </div>
