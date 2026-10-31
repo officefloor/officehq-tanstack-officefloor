@@ -39,7 +39,7 @@ public class Pools {
     }
 
     /** The sheet's pools as {@link #list(String)}, with memberships' dates, holds and the pot judged on the date standing for
-     *  the sheet's today (null: the sheet's today itself), as the as-of view shows them. */
+     *  the sheet's today (null: the sheet's today itself), as the as-of view shows them: a hold set after the date is left out. */
     public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
         List<PoolResponse> pools = compute(sheetId, on, false);
         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
@@ -180,8 +180,8 @@ public class Pools {
         Set<String> held = new HashSet<>(jdbc.queryForList("SELECT DISTINCT CAST(h.person_id AS VARCHAR) FROM person_hold h"
                 + " JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ? AND h.from_date <= COALESCE(CAST(? AS DATE), s.today)"
                 + " AND (h.to_date IS NULL OR h.to_date >= COALESCE(CAST(? AS DATE), s.today))"
-                + (then ? " AND (h.set_on IS NULL OR h.set_on <= ?)" : ""), String.class,
-                then ? new Object[] {sheetId, day, day, day} : new Object[] {sheetId, day, day}));
+                + (day != null ? " AND (h.set_on IS NULL OR h.set_on <= ?)" : ""), String.class,
+                day != null ? new Object[] {sheetId, day, day, day} : new Object[] {sheetId, day, day}));
         Map<String, List<PoolResponse.Member>> shown = new HashMap<>(members);
         for (String name : members.keySet()) {
             if (!nested.contains(name)) {
