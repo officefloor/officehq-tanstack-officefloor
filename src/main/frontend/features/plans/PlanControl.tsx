@@ -73,7 +73,9 @@ export function PlanControl({ personId }: { personId: string }) {
 }
 
 // One plan's line. Pause skips the plan's dates from the sheet's today until it is resumed; pausing a paused plan or resuming a
-// running one is refused, shown as the plan error on the line.
+// running one is refused, shown as the plan error on the line. The amount entry changes the plan's amount from the sheet's today
+// (the claims it generates from then on take it, those already made keep theirs); a bad amount is refused the same way. The
+// plan's amount changes are listed under it, oldest first.
 function PlanRow({ plan: p }: { plan: Plan }) {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -85,7 +87,19 @@ function PlanRow({ plan: p }: { plan: Plan }) {
       postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${encodeURIComponent(p.id)}/${action}`, { user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheet) }),
   });
-  const taken = usePersonAction(p.personId, () => toggle.reset());
+  const [amount, setAmount] = useState('');
+  const change = useMutation({
+    mutationFn: (value: string) =>
+      postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${encodeURIComponent(p.id)}/amount`, { amount: value, user }),
+    onSuccess: () => {
+      setAmount('');
+      return queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+    },
+  });
+  const taken = usePersonAction(p.personId, () => {
+    toggle.reset();
+    change.reset();
+  });
   const act = (action: 'pause' | 'resume') => {
     taken();
     once(() => toggle.mutateAsync(action));
@@ -113,6 +127,26 @@ function PlanRow({ plan: p }: { plan: Plan }) {
       </button>{' '}
       <button type="button" data-testid="plan-resume" onClick={() => act('resume')}>
         Resume
+      </button>{' '}
+      <input
+        data-testid="plan-amount"
+        value={amount}
+        placeholder="New amount"
+        inputMode="decimal"
+        onChange={(e) => {
+          setAmount(e.target.value);
+          change.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="plan-amount-save"
+        onClick={() => {
+          taken();
+          once(() => change.mutateAsync(amount.trim()));
+        }}
+      >
+        Change amount
       </button>
       {toggle.isError && (
         <span data-testid="plan-error" role="alert">
@@ -120,6 +154,19 @@ function PlanRow({ plan: p }: { plan: Plan }) {
           The plan could not be {toggle.variables === 'pause' ? 'paused: it is already paused' : 'resumed: it is not paused'}.
         </span>
       )}
+      {change.isError && (
+        <span data-testid="plan-error" role="alert">
+          {' '}
+          The plan's amount could not be changed: it must be 0.00 or more with at most two decimals.
+        </span>
+      )}
+      <ul>
+        {p.changes.map((c, i) => (
+          <li key={i} data-testid="plan-change-line">
+            {c}
+          </li>
+        ))}
+      </ul>
     </li>
   );
 }

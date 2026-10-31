@@ -20,7 +20,7 @@ public class Plans {
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
-            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of());
+            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -30,15 +30,17 @@ public class Plans {
 
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream().map(this::withPauses).toList();
+        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream().map(this::withHistory).toList();
     }
 
     public Plan find(long id) {
-        return jdbc.query(SELECT + " WHERE p.id = ?", ROW, id).stream().findFirst().map(this::withPauses).orElse(null);
+        return jdbc.query(SELECT + " WHERE p.id = ?", ROW, id).stream().findFirst().map(this::withHistory).orElse(null);
     }
 
-    private Plan withPauses(Plan plan) {
-        return plan.withPauses(jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY id",
+    private Plan withHistory(Plan plan) {
+        return plan.withChanges(jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new Plan.Change(rs.getDate("changed_on").toLocalDate(), rs.getBigDecimal("amount").setScale(2)), plan.id()))
+                .withPauses(jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY id",
                 (rs, n) -> new Plan.Pause(rs.getDate("paused_on").toLocalDate(),
                         rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()), plan.id()));
     }
@@ -51,6 +53,12 @@ public class Plans {
     /** Resumes the plan's open pause on the day. */
     public void resume(long planId, LocalDate on) {
         jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(on), planId);
+    }
+
+    /** Changes the plan's amount on the day, for the claims it generates from then on, keeping the change. */
+    public void changeAmount(long planId, LocalDate on, java.math.BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", planId, Date.valueOf(on), amount);
     }
 
     public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end) {
