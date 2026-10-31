@@ -1,0 +1,587 @@
+diff --git a/pom.xml b/pom.xml
+index a5ff43e6..a065e03a 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -64,7 +64,7 @@
+     <dependency>
+       <groupId>com.h2database</groupId>
+       <artifactId>h2</artifactId>
+-      <scope>runtime</scope>
++      <!-- Compile scope: the change history is kept by an H2 trigger (sheet.History). -->
+     </dependency>
+     <dependency>
+       <groupId>org.flywaydb</groupId>
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 8ab3f806..4660b3a2 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -1,3 +1,4 @@
++import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+@@ -8,15 +9,19 @@ import { useRowAction } from '../people/useRowAction';
+ /**
+  * A person's statements: the button to take one, which records their due-total now and binds each
+  * of their counting claims to the figure it has now (the rest are unbound), how many have been
+- * taken, and the last one's due-total and date (blank when none has been taken). A steward can
++ * taken, and the last one's due-total and date (blank when none has been taken). A date beside the
++ * button takes it as of that date (on or before the sheet's today): the claims that counted at the
++ * end of it are bound to their figures as they stood then, and the statement is dated it. A steward can
+  * cancel the last statement: the claims it bound become live again, and the row shows the one
+  * before it (or nothing).
+  */
+ function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+   const queryClient = useQueryClient();
++  const [asOf, setAsOf] = useState('');
+   const take = useMutation({
+-    mutationFn: () =>
+-      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user }),
++    mutationFn: (date: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user, asOf: date }),
++    onSuccess: () => setAsOf(''),
+     onSettled: () =>
+       Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+@@ -43,10 +48,20 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
+       <td data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</td>
+       <td data-testid="person-statement-date">{taken ? (person.statementDate ?? '') : ''}</td>
+       <td>
++        <input
++          type="text"
++          placeholder="as of yyyy-mm-dd"
++          data-testid="person-statement-asof"
++          value={asOf}
++          onChange={(e) => {
++            setAsOf(e.target.value);
++            take.reset();
++          }}
++        />{' '}
+         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => {
+             actionTaken();
+             cancel.reset();
+-            take.mutate();
++            take.mutate(asOf);
+           }}>
+           Statement
+         </button>
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordStatement.java b/src/main/java/net/officefloor/hq/app/person/RecordStatement.java
+index bd767086..df8d74cb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RecordStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/RecordStatement.java
+@@ -9,6 +9,7 @@ public class RecordStatement {
+         audit.record("STATEMENT sheet=" + person.getSheetId() + " by=" + statement.user()
+                 + " name=" + person.getName()
+                 + " due-total=" + (statement.dueTotal() != null ? statement.dueTotal().toPlainString() : "n/a")
+-                + " claims=" + statement.claims());
++                + " claims=" + statement.claims()
++                + (statement.asOf() != null ? " asof=" + statement.asOf() : ""));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Statement.java b/src/main/java/net/officefloor/hq/app/person/Statement.java
+index 5ed1c6c3..226ffdf6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Statement.java
++++ b/src/main/java/net/officefloor/hq/app/person/Statement.java
+@@ -1,8 +1,13 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ 
+ /** A statement taken for a person: their due-total then (null when n/a) and how many of their
+- *  claims counted, by whom. */
+-public record Statement(BigDecimal dueTotal, int claims, String user) {
++ *  claims counted, by whom, and the date it was taken as of (null: taken now). */
++public record Statement(BigDecimal dueTotal, int claims, String user, LocalDate asOf) {
++
++    public Statement(BigDecimal dueTotal, int claims, String user) {
++        this(dueTotal, claims, user, null);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/StatementRequest.java b/src/main/java/net/officefloor/hq/app/person/StatementRequest.java
+index a75a4f15..f3d1933d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/StatementRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/StatementRequest.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** Body of a statement: who takes it. */
+-public record StatementRequest(String user) {
++/** Body of a statement: who takes it, and the date it is taken as of (yyyy-mm-dd; null or blank:
++ *  now). Cancelling a statement takes no date. */
++public record StatementRequest(String user, String asOf) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index 212ce351..a053e011 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -1,51 +1,96 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.HashMap;
++import java.util.Map;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.claim.Figures;
+ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.settings.Settings;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
+  *  with any late charges, each at least the floor (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
+- *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its rate figure now, without its late charge or the floor; every other one is unbound. */
++ *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its rate figure now, without its late charge or the floor; every other one is unbound.
++ *  Taken as of a date (on or before the sheet's today), all of it is worked out on the sheet as it
++ *  stood at the end of that date (see {@link AsOf}): the claims that counted then are bound to their
++ *  figures then, and the statement is dated that date. Refused: a date after the sheet's today, or
++ *  one the person was not yet on the sheet. */
+ public class TakeStatement {
+     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
+-            Rates rates, Sheets sheets, Settings settings, People people, Out<Statement> statement) {
+-        Person locked = people.lock(person.getSheetId(), person.getId());
++            Rates rates, Sheets sheets, Settings settings, People people, AsOf asOf, Out<Statement> statement)
++            throws InvalidSheetRequestException {
++        LocalDate date = asOfDate(request);
++        String sheetId = person.getSheetId();
++        if (date != null && date.isAfter(sheets.today(sheetId))) {
++            throw new InvalidSheetRequestException("A statement cannot be taken as of a date after the sheet's today");
++        }
++        Person locked = people.lock(sheetId, person.getId());
+         person.setStatementCount(locked.getStatementCount());
++        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings)
++                : asOf.at(sheetId, date, () -> {
++                    Person then = people.find(sheetId, person.getId());
++                    return then == null ? null : work(then, claims, figures, rates, sheets, settings);
++                });
++        if (taken == null) {
++            throw new InvalidSheetRequestException("This person was not on the sheet on " + date);
++        }
++        for (Claim claim : claims.ofPerson(sheetId, person.getId())) {
++            boolean bound = taken.bound().containsKey(claim.getId());
++            claim.setStated(bound);
++            claim.setStatedDue(bound ? taken.bound().get(claim.getId()) : null);
++            claims.save(claim);
++        }
++        person.setStatementCount(person.getStatementCount() + 1);
++        person.setStatedTotal(taken.dueTotal());
++        person.setStatementDate(taken.date());
++        people.saveStatement(person);
++        statement.set(new Statement(taken.dueTotal(), taken.bound().size(), request.user(), date));
++    }
++
++    /** The statement of the person as the sheet stands (live, or as of a date): the figure each
++     *  counting claim is bound to, by id, and their due-total, dated the sheet's today. */
++    private static Taken work(Person person, Claims claims, Figures figures, Rates rates, Sheets sheets,
++            Settings settings) {
++        String sheetId = person.getSheetId();
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean any = false;
+-        int counted = 0;
+-        for (Claim claim : claims.ofPerson(person.getSheetId(), person.getId())) {
++        Map<Long, BigDecimal> bound = new HashMap<>();
++        for (Claim claim : claims.ofPerson(sheetId, person.getId())) {
+             if (person.counts(claim)) {
+-                BigDecimal bound = figures.figure(claim, person.gradeOn(claim.getDate()));
+                 // The statement binds the rate figure; the late charge and floor on top keep following today.
++                bound.put(claim.getId(), figures.figure(claim, person.gradeOn(claim.getDate())));
+                 BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
+-                claim.setStated(true);
+-                claim.setStatedDue(bound);
+-                counted++;
+                 if (figure != null) {
+                     total = total.add(figure);
+                     any = true;
+                 }
+-            } else {
+-                claim.setStated(false);
+-                claim.setStatedDue(null);
+             }
+-            claims.save(claim);
+         }
+-        var today = sheets.today(person.getSheetId());
+-        BigDecimal dueTotal = !any && rates.pct(person.getSheetId(), person.gradeOn(today), today) == null ? null
+-                : settings.capped(person.getSheetId(), total);
+-        person.setStatementCount(person.getStatementCount() + 1);
+-        person.setStatedTotal(dueTotal);
+-        person.setStatementDate(today);
+-        people.saveStatement(person);
+-        statement.set(new Statement(dueTotal, counted, request.user()));
++        LocalDate today = sheets.today(sheetId);
++        BigDecimal dueTotal = !any && rates.pct(sheetId, person.gradeOn(today), today) == null ? null
++                : settings.capped(sheetId, total);
++        return new Taken(bound, dueTotal, today);
++    }
++
++    /** The date the statement is taken as of; null when none was given. */
++    private static LocalDate asOfDate(StatementRequest request) throws InvalidSheetRequestException {
++        String text = request.asOf();
++        if (text == null || text.isBlank()) return null;
++        try {
++            return LocalDate.parse(text.trim());
++        } catch (DateTimeParseException e) {
++            throw new InvalidSheetRequestException("Not a date: " + text);
++        }
++    }
++
++    private record Taken(Map<Long, BigDecimal> bound, BigDecimal dueTotal, LocalDate date) {
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java
+index f10652d2..9553e883 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java
+@@ -7,6 +7,6 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateStatement {
+     public void validate(@RequestBody StatementRequest request, Out<StatementRequest> body, Out<Actor> actor) {
+         actor.set(new Actor(request != null ? request.user() : null));
+-        body.set(request != null ? request : new StatementRequest(null));
++        body.set(request != null ? request : new StatementRequest(null, null));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+new file mode 100644
+index 00000000..146eb37b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -0,0 +1,98 @@
++package net.officefloor.hq.app.sheet;
++
++import java.sql.Connection;
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.function.Supplier;
++import org.springframework.jdbc.core.ConnectionCallback;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
++
++/** A sheet as it stood at the end of a date: every change made while the sheet's today was on or
++ *  before that date counts, every later change does not, and that date stands in for the sheet's
++ *  today. The sheet's rows are rebuilt from the change history (see {@link History}) into the asof
++ *  schema, and the work runs against it in place of the live tables, so every rule reads the sheet
++ *  as it was. The work must only read: what it writes is thrown away. */
++@Service
++public class AsOf {
++
++    /** The tables of a sheet's data (keyed by sheet_id) kept in asof_hist and rebuilt into asof. */
++    static final List<String> TABLES = List.of("CLAIM", "PERSON", "PERSON_GRADE", "PERSON_HOLD", "PERSON_PATRON",
++            "PERSON_WATCH", "PERSON_STATEMENT", "PERIOD", "PERIOD_PERSON_TOTAL", "PERIOD_NUMBER", "RATE",
++            "SHEET_SETTING", "SHEET_SETTING_DATED", "SHEET_ROLE", "SHEET_PERMISSION", "SHEET_DELEGATION",
++            "CLAIM_LOG", "SHEET_GRADE_TERMS");
++
++    private final JdbcTemplate jdbc;
++    private final TransactionTemplate transactions;
++    private final Map<String, List<String>> columns = new HashMap<>();
++
++    public AsOf(JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
++        this.jdbc = jdbc;
++        this.transactions = new TransactionTemplate(transactionManager);
++    }
++
++    /** Run `work` against the sheet as it stood at the end of `date`. It runs in a transaction of its
++     *  own, on one connection, which is rolled back: the rebuilt rows are never kept. */
++    public <T> T at(String sheetId, LocalDate date, Supplier<T> work) {
++        return transactions.execute(status -> {
++            status.setRollbackOnly();
++            // One rebuild of the sheet at a time.
++            jdbc.query("SELECT id FROM PUBLIC.sheet WHERE id = ? FOR UPDATE", (RowCallbackHandler) rs -> {}, sheetId);
++            rebuild(sheetId, date);
++            schema("ASOF");
++            try {
++                return work.get();
++            } finally {
++                schema("PUBLIC");
++            }
++        });
++    }
++
++    private void rebuild(String sheetId, LocalDate date) {
++        jdbc.update("DELETE FROM ASOF.sheet WHERE id = ?", sheetId);
++        jdbc.update("INSERT INTO ASOF.sheet SELECT * FROM PUBLIC.sheet WHERE id = ?", sheetId);
++        jdbc.update("UPDATE ASOF.sheet SET today = ? WHERE id = ?", Date.valueOf(date), sheetId);
++        for (String table : TABLES) {
++            List<String> cols = columns(table);
++            String names = '"' + String.join("\", \"", cols) + '"';
++            // The rows as they stood: each change made by then removes or adds one, in the order made.
++            Map<List<Object>, Integer> rows = new LinkedHashMap<>();
++            jdbc.query("SELECT " + names + ", H_OP FROM ASOF_HIST.\"" + table + "\" WHERE sheet_id = ? "
++                    + "AND (H_MADE_ON IS NULL OR H_MADE_ON <= ?) ORDER BY H_SEQ", (RowCallbackHandler) rs -> {
++                        List<Object> row = new ArrayList<>(cols.size());
++                        for (int i = 1; i <= cols.size(); i++) row.add(rs.getObject(i));
++                        rows.merge(row, "I".equals(rs.getString(cols.size() + 1)) ? 1 : -1, Integer::sum);
++                    }, sheetId, Date.valueOf(date));
++            jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheetId);
++            String insert = "INSERT INTO ASOF.\"" + table + "\" (" + names + ") VALUES ("
++                    + "?, ".repeat(cols.size() - 1) + "?)";
++            List<Object[]> batch = new ArrayList<>();
++            rows.forEach((row, n) -> {
++                for (int i = 0; i < n; i++) batch.add(row.toArray());
++            });
++            if (!batch.isEmpty()) jdbc.batchUpdate(insert, batch);
++        }
++    }
++
++    private List<String> columns(String table) {
++        synchronized (columns) {
++            return columns.computeIfAbsent(table, t -> jdbc.queryForList("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
++                    + "WHERE TABLE_SCHEMA = 'ASOF' AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION", String.class, t));
++        }
++    }
++
++    private void schema(String schema) {
++        jdbc.execute((ConnectionCallback<Void>) (Connection c) -> {
++            c.setSchema(schema);
++            return null;
++        });
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/History.java b/src/main/java/net/officefloor/hq/app/sheet/History.java
+new file mode 100644
+index 00000000..ca6a0bd1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/History.java
+@@ -0,0 +1,66 @@
++package net.officefloor.hq.app.sheet;
++
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++import org.h2.api.Trigger;
++
++/** The H2 trigger that keeps a table's change history in asof_hist: each change to a row writes the
++ *  row it removed ('D') and the row it added ('I'), with the sheet's today when it was made. An
++ *  update that changes nothing writes nothing. See {@link AsOf}. */
++public class History implements Trigger {
++
++    private int sheetColumn;
++    private String insert;
++
++    @Override
++    public void init(Connection conn, String schemaName, String triggerName, String tableName, boolean before, int type)
++            throws SQLException {
++        List<String> columns = columns(conn, schemaName, tableName);
++        sheetColumn = columns.indexOf("SHEET_ID");
++        StringBuilder names = new StringBuilder();
++        StringBuilder marks = new StringBuilder();
++        for (String column : columns) {
++            names.append('"').append(column).append("\", ");
++            marks.append("?, ");
++        }
++        insert = "INSERT INTO ASOF_HIST.\"" + tableName + "\" (" + names + "H_SEQ, H_MADE_ON, H_OP) VALUES ("
++                + marks + "NEXT VALUE FOR ASOF_HIST.CHANGE_SEQ, "
++                + "(SELECT today FROM PUBLIC.sheet WHERE id = ?), ?)";
++    }
++
++    @Override
++    public void fire(Connection conn, Object[] oldRow, Object[] newRow) throws SQLException {
++        if (oldRow != null && newRow != null && Arrays.equals(oldRow, newRow)) return;
++        if (oldRow != null) write(conn, oldRow, "D");
++        if (newRow != null) write(conn, newRow, "I");
++    }
++
++    private void write(Connection conn, Object[] row, String op) throws SQLException {
++        try (PreparedStatement ps = conn.prepareStatement(insert)) {
++            int i = 1;
++            for (Object value : row) ps.setObject(i++, value);
++            ps.setObject(i++, row[sheetColumn]);
++            ps.setString(i, op);
++            ps.executeUpdate();
++        }
++    }
++
++    /** The table's column names, in order. */
++    static List<String> columns(Connection conn, String schema, String table) throws SQLException {
++        List<String> columns = new ArrayList<>();
++        try (PreparedStatement ps = conn.prepareStatement("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
++                + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION")) {
++            ps.setString(1, schema);
++            ps.setString(2, table);
++            try (ResultSet rs = ps.executeQuery()) {
++                while (rs.next()) columns.add(rs.getString(1));
++            }
++        }
++        return columns;
++    }
++}
+diff --git a/src/main/resources/db/migration/V46__as_of.sql b/src/main/resources/db/migration/V46__as_of.sql
+new file mode 100644
+index 00000000..1f3a91d7
+--- /dev/null
++++ b/src/main/resources/db/migration/V46__as_of.sql
+@@ -0,0 +1,158 @@
++-- A sheet as it stood at the end of a date: every change made while the sheet's today was on or
++-- before it counts, every later one does not (see sheet.AsOf).
++--
++-- asof_hist.<table> keeps every row each change to <table> removed ('D') or added ('I'), with the
++-- sheet's today when it was made (an update removes the old row and adds the new one). It is
++-- written by the trigger sheet.History on each table of a sheet's data.
++--
++-- asof.<table> has the same columns as <table>: a sheet's rows as of a date are rebuilt into it, and
++-- the app's own reads run against it in place of the live tables. A later migration that changes one
++-- of these tables must change its asof and asof_hist copies the same way.
++CREATE SCHEMA asof;
++CREATE SCHEMA asof_hist;
++CREATE SEQUENCE asof_hist.change_seq;
++CREATE TABLE asof.sheet AS SELECT * FROM public.sheet WHERE FALSE;
++
++CREATE TABLE asof.claim AS SELECT * FROM public.claim WHERE FALSE;
++CREATE TABLE asof_hist.claim AS SELECT * FROM public.claim WHERE FALSE;
++ALTER TABLE asof_hist.claim ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.claim ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.claim ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX claim_hist_sheet ON asof_hist.claim (sheet_id, h_seq);
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON public.claim FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.person AS SELECT * FROM public.person WHERE FALSE;
++CREATE TABLE asof_hist.person AS SELECT * FROM public.person WHERE FALSE;
++ALTER TABLE asof_hist.person ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.person ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.person ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX person_hist_sheet ON asof_hist.person (sheet_id, h_seq);
++CREATE TRIGGER person_history AFTER INSERT, UPDATE, DELETE ON public.person FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.person_grade AS SELECT * FROM public.person_grade WHERE FALSE;
++CREATE TABLE asof_hist.person_grade AS SELECT * FROM public.person_grade WHERE FALSE;
++ALTER TABLE asof_hist.person_grade ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.person_grade ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.person_grade ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX person_grade_hist_sheet ON asof_hist.person_grade (sheet_id, h_seq);
++CREATE TRIGGER person_grade_history AFTER INSERT, UPDATE, DELETE ON public.person_grade FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.person_hold AS SELECT * FROM public.person_hold WHERE FALSE;
++CREATE TABLE asof_hist.person_hold AS SELECT * FROM public.person_hold WHERE FALSE;
++ALTER TABLE asof_hist.person_hold ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.person_hold ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.person_hold ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX person_hold_hist_sheet ON asof_hist.person_hold (sheet_id, h_seq);
++CREATE TRIGGER person_hold_history AFTER INSERT, UPDATE, DELETE ON public.person_hold FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.person_patron AS SELECT * FROM public.person_patron WHERE FALSE;
++CREATE TABLE asof_hist.person_patron AS SELECT * FROM public.person_patron WHERE FALSE;
++ALTER TABLE asof_hist.person_patron ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.person_patron ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.person_patron ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX person_patron_hist_sheet ON asof_hist.person_patron (sheet_id, h_seq);
++CREATE TRIGGER person_patron_history AFTER INSERT, UPDATE, DELETE ON public.person_patron FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.person_watch AS SELECT * FROM public.person_watch WHERE FALSE;
++CREATE TABLE asof_hist.person_watch AS SELECT * FROM public.person_watch WHERE FALSE;
++ALTER TABLE asof_hist.person_watch ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.person_watch ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.person_watch ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX person_watch_hist_sheet ON asof_hist.person_watch (sheet_id, h_seq);
++CREATE TRIGGER person_watch_history AFTER INSERT, UPDATE, DELETE ON public.person_watch FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.person_statement AS SELECT * FROM public.person_statement WHERE FALSE;
++CREATE TABLE asof_hist.person_statement AS SELECT * FROM public.person_statement WHERE FALSE;
++ALTER TABLE asof_hist.person_statement ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.person_statement ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.person_statement ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX person_statement_hist_sheet ON asof_hist.person_statement (sheet_id, h_seq);
++CREATE TRIGGER person_statement_history AFTER INSERT, UPDATE, DELETE ON public.person_statement FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.period AS SELECT * FROM public.period WHERE FALSE;
++CREATE TABLE asof_hist.period AS SELECT * FROM public.period WHERE FALSE;
++ALTER TABLE asof_hist.period ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.period ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.period ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX period_hist_sheet ON asof_hist.period (sheet_id, h_seq);
++CREATE TRIGGER period_history AFTER INSERT, UPDATE, DELETE ON public.period FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.period_person_total AS SELECT * FROM public.period_person_total WHERE FALSE;
++CREATE TABLE asof_hist.period_person_total AS SELECT * FROM public.period_person_total WHERE FALSE;
++ALTER TABLE asof_hist.period_person_total ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.period_person_total ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.period_person_total ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX period_person_total_hist_sheet ON asof_hist.period_person_total (sheet_id, h_seq);
++CREATE TRIGGER period_person_total_history AFTER INSERT, UPDATE, DELETE ON public.period_person_total FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.period_number AS SELECT * FROM public.period_number WHERE FALSE;
++CREATE TABLE asof_hist.period_number AS SELECT * FROM public.period_number WHERE FALSE;
++ALTER TABLE asof_hist.period_number ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.period_number ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.period_number ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX period_number_hist_sheet ON asof_hist.period_number (sheet_id, h_seq);
++CREATE TRIGGER period_number_history AFTER INSERT, UPDATE, DELETE ON public.period_number FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.rate AS SELECT * FROM public.rate WHERE FALSE;
++CREATE TABLE asof_hist.rate AS SELECT * FROM public.rate WHERE FALSE;
++ALTER TABLE asof_hist.rate ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.rate ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.rate ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX rate_hist_sheet ON asof_hist.rate (sheet_id, h_seq);
++CREATE TRIGGER rate_history AFTER INSERT, UPDATE, DELETE ON public.rate FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.sheet_setting AS SELECT * FROM public.sheet_setting WHERE FALSE;
++CREATE TABLE asof_hist.sheet_setting AS SELECT * FROM public.sheet_setting WHERE FALSE;
++ALTER TABLE asof_hist.sheet_setting ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.sheet_setting ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.sheet_setting ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX sheet_setting_hist_sheet ON asof_hist.sheet_setting (sheet_id, h_seq);
++CREATE TRIGGER sheet_setting_history AFTER INSERT, UPDATE, DELETE ON public.sheet_setting FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.sheet_setting_dated AS SELECT * FROM public.sheet_setting_dated WHERE FALSE;
++CREATE TABLE asof_hist.sheet_setting_dated AS SELECT * FROM public.sheet_setting_dated WHERE FALSE;
++ALTER TABLE asof_hist.sheet_setting_dated ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.sheet_setting_dated ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.sheet_setting_dated ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX sheet_setting_dated_hist_sheet ON asof_hist.sheet_setting_dated (sheet_id, h_seq);
++CREATE TRIGGER sheet_setting_dated_history AFTER INSERT, UPDATE, DELETE ON public.sheet_setting_dated FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.sheet_role AS SELECT * FROM public.sheet_role WHERE FALSE;
++CREATE TABLE asof_hist.sheet_role AS SELECT * FROM public.sheet_role WHERE FALSE;
++ALTER TABLE asof_hist.sheet_role ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.sheet_role ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.sheet_role ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX sheet_role_hist_sheet ON asof_hist.sheet_role (sheet_id, h_seq);
++CREATE TRIGGER sheet_role_history AFTER INSERT, UPDATE, DELETE ON public.sheet_role FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.sheet_permission AS SELECT * FROM public.sheet_permission WHERE FALSE;
++CREATE TABLE asof_hist.sheet_permission AS SELECT * FROM public.sheet_permission WHERE FALSE;
++ALTER TABLE asof_hist.sheet_permission ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.sheet_permission ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.sheet_permission ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX sheet_permission_hist_sheet ON asof_hist.sheet_permission (sheet_id, h_seq);
++CREATE TRIGGER sheet_permission_history AFTER INSERT, UPDATE, DELETE ON public.sheet_permission FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.sheet_delegation AS SELECT * FROM public.sheet_delegation WHERE FALSE;
++CREATE TABLE asof_hist.sheet_delegation AS SELECT * FROM public.sheet_delegation WHERE FALSE;
++ALTER TABLE asof_hist.sheet_delegation ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.sheet_delegation ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.sheet_delegation ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX sheet_delegation_hist_sheet ON asof_hist.sheet_delegation (sheet_id, h_seq);
++CREATE TRIGGER sheet_delegation_history AFTER INSERT, UPDATE, DELETE ON public.sheet_delegation FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.claim_log AS SELECT * FROM public.claim_log WHERE FALSE;
++CREATE TABLE asof_hist.claim_log AS SELECT * FROM public.claim_log WHERE FALSE;
++ALTER TABLE asof_hist.claim_log ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.claim_log ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.claim_log ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX claim_log_hist_sheet ON asof_hist.claim_log (sheet_id, h_seq);
++CREATE TRIGGER claim_log_history AFTER INSERT, UPDATE, DELETE ON public.claim_log FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++CREATE TABLE asof.sheet_grade_terms AS SELECT * FROM public.sheet_grade_terms WHERE FALSE;
++CREATE TABLE asof_hist.sheet_grade_terms AS SELECT * FROM public.sheet_grade_terms WHERE FALSE;
++ALTER TABLE asof_hist.sheet_grade_terms ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.sheet_grade_terms ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.sheet_grade_terms ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX sheet_grade_terms_hist_sheet ON asof_hist.sheet_grade_terms (sheet_id, h_seq);
++CREATE TRIGGER sheet_grade_terms_history AFTER INSERT, UPDATE, DELETE ON public.sheet_grade_terms FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
