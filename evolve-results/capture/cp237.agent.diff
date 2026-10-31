@@ -1,0 +1,95 @@
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 0bd05d5b..51909e29 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -55,8 +55,8 @@ export function scoreBand(settings: Settings | undefined, score: string): string
+ export const DEFAULT_FLOOR = '1.00';
+ 
+ /** The actions the permission matrix covers; a blank entry keeps the standing rule: open, settle, void and close
+- *  by clerk and steward, reassign and reopen by steward. */
+-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++ *  by clerk and steward, reassign and reopen by steward, today by anyone but a viewer. */
++export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ 
+ export const settingsKey = (sheet: string, asOf = '') => ['sheet', sheet, 'settings', asOf] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 118933c9..c9984d64 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -41,7 +41,7 @@ public class Pools {
+     /** The sheet's pools as {@link #list(String)}, with memberships' dates, holds and the pot judged on the date standing for
+      *  the sheet's today (null: the sheet's today itself), as the as-of view shows them: a hold set after the date is left out. */
+     public List<PoolResponse> list(String sheetId, java.time.LocalDate on) {
+-        List<PoolResponse> pools = compute(sheetId, on, false);
++        List<PoolResponse> pools = compute(sheetId, on, false, on != null);
+         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
+         Map<String, Map<String, String>> frozen = frozenCuts(sheetId, day);
+         Map<String, Map<String, String>> history = new LinkedHashMap<>();
+@@ -143,6 +143,12 @@ public class Pools {
+      *  retirements are as they stood at the end of the date: those added later are left out, a retirement is the latest
+      *  recorded by then. */
+     private List<PoolResponse> compute(String sheetId, java.time.LocalDate on, boolean then) {
++        return compute(sheetId, on, then, then);
++    }
++
++    /** As {@link #compute(String, java.time.LocalDate, boolean)}, with retirements as recorded by the end of the date when
++     *  retiredAsRecorded (the as-of view: a retirement recorded later is left out). */
++    private List<PoolResponse> compute(String sheetId, java.time.LocalDate on, boolean then, boolean retiredAsRecorded) {
+         java.sql.Date day = on == null ? null : java.sql.Date.valueOf(on);
+         String added = then ? " AND (added_on IS NULL OR added_on <= ?)" : "";
+         Map<String, List<PoolResponse.Member>> members = new LinkedHashMap<>();
+@@ -150,7 +156,7 @@ public class Pools {
+                 String.class, then ? new Object[] {sheetId, day} : new Object[] {sheetId})) {
+             members.put(name, new ArrayList<>());
+         }
+-        Map<Long, Boolean> retiredThen = then ? retiredOn(sheetId, day) : null;
++        Map<Long, Boolean> retiredThen = retiredAsRecorded ? retiredOn(sheetId, day) : null;
+         jdbc.query("SELECT m.pool_name, m.person_id, p.name, m.share, p.retired_from, m.member_pool,"
+                 + " (m.from_date IS NULL OR m.from_date <= COALESCE(CAST(? AS DATE), s.today))"
+                 + " AND (m.to_date IS NULL OR m.to_date >= COALESCE(CAST(? AS DATE), s.today))"
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index e2cb8cc2..10ce4265 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -103,7 +103,7 @@ public class ValidateSetting {
+     /** An action's permission: perm-<action>, the roles that may take it. */
+     public static final String PERM = "perm-";
+ 
+-    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     /** A number of days: 0 or more, whole. */
+     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java b/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java
+index 627c054c..723e1cf2 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java
+@@ -5,4 +5,13 @@ public class InvalidTodayException extends Exception {
+     public InvalidTodayException(String value) {
+         super("Not a date (YYYY-MM-DD): " + value);
+     }
++
++    private InvalidTodayException(String message, boolean plain) {
++        super(message);
++    }
++
++    /** A change of today by a role the today permission does not allow. */
++    public static InvalidTodayException notPermitted() {
++        return new InvalidTodayException("Your role may not change the sheet's today", true);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index af658448..ff838705 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -12,6 +12,9 @@ public class ValidateToday {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, Settings settings)
+             throws InvalidTodayException, ViewerRefusedException {
+         settings.refuseViewer(sheetId, request.user());
++        if (!settings.allows(sheetId, request.user(), "today")) {
++            throw InvalidTodayException.notPermitted();
++        }
+         body.set(request); // who changes it, for the audit
+         String raw = request.today() == null ? "" : request.today().trim();
+         if (raw.isEmpty()) {
