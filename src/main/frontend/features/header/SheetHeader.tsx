@@ -3,13 +3,15 @@ import { formatCents, showDue } from '../rates/due';
 import { crewDueCents, useCrews } from '../crews/useCrews';
 import { useClaims } from '../claims/useClaims';
 import { STATUSES, useSheetFigures } from '../people/useSheetFigures';
+import { useWatches } from '../people/useWatches';
 
 // The sheet's counters, always on show: its people (retired included), its claims per status (as
 // the summary counts them) and its due-total and overdue-total (as the sheet's totals show them).
 // Then the signed-in user's own figures: the due-total and overdue-total of the person on the sheet
 // with the user's name or alias (case and outer spaces ignored); nothing when there is no such person.
 // And the user's crew total: the due-totals of the crews that person leads, added up; nothing when
-// they lead none. And the count of REVIEW claims assigned to the user for review.
+// they lead none. And the count of REVIEW claims assigned to the user for review. And the user's
+// watched total: the due-totals of the people they watch, added up (n/a skipped; 0.00 for no one).
 export function SheetHeader() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
@@ -20,6 +22,14 @@ export function SheetHeader() {
   const key = (name: string) => name.trim().toLowerCase();
   const me = user === '' ? undefined : people.find((p) => [p.name, ...p.aliases].some((n) => key(n) === key(user)));
   const led = me ? crews.filter((c) => c.leadId === me.id) : [];
+  const watched = useWatches(sheet, user);
+  const watchedTotal = formatCents(
+    watched.reduce((sum, id) => {
+      const person = byId.get(id);
+      const due = person === undefined ? null : totalOf(person);
+      return due === null ? sum : sum + due;
+    }, 0n),
+  );
   const crewTotal = led.length === 0 ? '' : formatCents(led.reduce((sum, c) => sum + crewDueCents(c, byId, totalOf), 0n));
   return (
     <header data-testid="header">
@@ -36,6 +46,7 @@ export function SheetHeader() {
       {', '}overdue <span data-testid="my-overdue-total">{me ? overdueTotal(overdue.filter((c) => c.personId === me.id)) : ''}</span>
       {', '}crew due <span data-testid="my-crew-due-total">{crewTotal}</span>
       {', '}reviews <span data-testid="my-reviews-count">{myReviews}</span>
+      {', '}watched due <span data-testid="watched-due-total">{watchedTotal}</span>
     </header>
   );
 }
