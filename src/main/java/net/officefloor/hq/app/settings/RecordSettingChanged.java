@@ -63,6 +63,9 @@ public class RecordSettingChanged {
             audit.record(prefix + " key=entry-date value="
                     + (change.entryDate() != null ? change.entryDate().toString() : ""));
         }
+        if (change.setsPot()) {
+            audit.record(prefix + " key=pot value=" + (change.pot() != null ? change.pot().toPlainString() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

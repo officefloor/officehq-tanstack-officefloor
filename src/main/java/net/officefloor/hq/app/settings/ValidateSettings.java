@@ -133,6 +133,10 @@ public class ValidateSettings {
         if (noteThreshold != null && !noteThreshold.isEmpty() && !AMOUNT.matcher(noteThreshold).matches()) {
             throw new InvalidSheetRequestException("The note threshold must be an amount with up to two decimals, or blank");
         }
+        String pot = request == null || request.pot() == null ? null : request.pot().trim();
+        if (pot != null && !pot.isEmpty() && !AMOUNT.matcher(pot).matches()) {
+            throw new InvalidSheetRequestException("The pot must be an amount with up to two decimals, or blank");
+        }
         String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
             throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
@@ -184,6 +188,7 @@ public class ValidateSettings {
                 threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
                 noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
-                entry != null, entryDate, gradeGrace, gradeProof));
+                entry != null, entryDate, gradeGrace, gradeProof,
+                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2)));
     }
 }

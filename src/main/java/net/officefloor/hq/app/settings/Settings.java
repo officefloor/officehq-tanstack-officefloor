@@ -228,6 +228,17 @@ public class Settings {
                 sheetId, date != null ? Date.valueOf(date) : null);
     }
 
+    /** The sheet's pot: shared out among the members of each balanced pool. Null when unset (none). */
+    public BigDecimal pot(String sheetId) {
+        List<BigDecimal> values = jdbc.query("SELECT pot FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getBigDecimal("pot"), sheetId);
+        return values.isEmpty() || values.get(0) == null ? null : values.get(0).setScale(2);
+    }
+
+    public void setPot(String sheetId, BigDecimal pot) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, pot) KEY (sheet_id) VALUES (?, ?)", sheetId, pot);
+    }
+
     /** The sheet's entry date: while set, the default date of a new claim in place of the sheet's
      *  today. Null when unset (off). */
     public LocalDate entryDate(String sheetId) {

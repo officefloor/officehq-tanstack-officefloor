@@ -11,6 +11,7 @@ import { poolsKey, usePools, SHARE, type Pool } from './usePools';
  * refused). Each pool's row adds a member: a person with a share percent, more than 0.00 and at most
  * 100.00 with up to two decimals; a person already in the pool, or a bad share, is refused. A pool
  * shows its total share and whether it is balanced (exactly 100.00); a retired member counts 0.00.
+ * Each member of a balanced pool shows their cut of the sheet's pot; unbalanced, or no pot, none.
  */
 function PoolsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -120,7 +121,8 @@ function PoolRow({ user, sheet, pool, people }: { user: string; sheet: string; p
           {pool.members.map((m) => (
             <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
               <span>{m.name}</span>{' '}
-              <span data-testid="pool-share">{m.share}</span>
+              <span data-testid="pool-share">{m.share}</span>{' '}
+              <span data-testid="pool-cut">{m.cut ?? ''}</span>
               {m.retired ? ' (retired)' : ''}
             </li>
           ))}
