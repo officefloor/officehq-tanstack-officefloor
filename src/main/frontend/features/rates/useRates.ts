@@ -78,3 +78,9 @@ export function showDue(cents: bigint | null): string {
 export function totalDue(dues: Array<bigint | null>): string {
   return format(dues.reduce<bigint>((sum, d) => (d === null ? sum : sum + d), 0n));
 }
+
+/** The figures (n/a skipped) added up, leaving out the single highest and lowest when three or more. */
+export function trimmedTotal(dues: Array<bigint | null>): string {
+  const figures = dues.filter((d): d is bigint => d !== null).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return totalDue(figures.length >= 3 ? figures.slice(1, -1) : figures);
+}

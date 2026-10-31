@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,14 +50,15 @@ public class Rollup {
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
      *  person's OPEN claims dated within a hold of theirs do not count, unless a statement binds them),
      *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
-     *  capped); the sheet's skips the n/a ones. */
+     *  capped); the sheet's skips the n/a ones, and its due and overdue totals leave out the single
+     *  highest and lowest person's figure when three or more have one. */
     public Snapshot snapshot(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.onSheet(sheetId);
         Map<Long, Snapshot.PersonFigures> figuresOf = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
-        BigDecimal dueTotal = ZERO;
-        BigDecimal overdueTotal = ZERO;
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person person : people.onSheet(sheetId)) {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
@@ -78,10 +80,18 @@ public class Rollup {
             due = settings.capped(sheetId, due);
             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue));
             claimedTotal = claimedTotal.add(claimed);
-            if (due != null) dueTotal = dueTotal.add(due);
-            overdueTotal = overdueTotal.add(overdue);
+            if (due != null) dues.add(due);
+            overdues.add(overdue);
         }
-        return new Snapshot(figuresOf, claimedTotal, dueTotal, overdueTotal);
+        return new Snapshot(figuresOf, claimedTotal, trimmed(dues), trimmed(overdues));
+    }
+
+    /** The figures added up, leaving out the single highest and lowest when there are three or more. */
+    private static BigDecimal trimmed(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = new ArrayList<>(figures);
+        sorted.sort(BigDecimal::compareTo);
+        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
+        return sorted.stream().reduce(ZERO, BigDecimal::add);
     }
 
     /** Audit the figures that moved between `before` and the sheet now. */

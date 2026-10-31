@@ -1,5 +1,5 @@
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
-import { rateOn, totalDue, useRates } from '../rates/useRates';
+import { rateOn, trimmedTotal, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { claimed, live, overdueFigures, personDueCents, useClaims } from './useClaims';
@@ -8,7 +8,8 @@ import { claimed, live, overdueFigures, personDueCents, useClaims } from './useC
  * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
  * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
- * overdue, with their dues added up. One place, so every screen repeating a total shows the same figure.
+ * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
+ * lowest person's figure when three or more people have one. One place, so every screen repeating a total shows the same figure.
  */
 export function useSheetTotals(sheet: string) {
   const { data: all = [] } = useClaims(sheet);
@@ -27,8 +28,8 @@ export function useSheetTotals(sheet: string) {
   );
   return {
     claimedTotal: claimed(claims),
-    dueTotal: totalDue(dues),
+    dueTotal: trimmedTotal(dues),
     overdueCount: over.reduce((n, o) => n + o.count, 0),
-    overdueTotal: totalDue(over.map((o) => o.cents)),
+    overdueTotal: trimmedTotal(over.map((o) => o.cents)),
   };
 }
