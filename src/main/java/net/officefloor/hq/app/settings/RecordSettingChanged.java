@@ -45,6 +45,9 @@ public class RecordSettingChanged {
         }
         change.perms().forEach((action, roles) ->
                 audit.record(prefix + " key=" + Settings.permKey(action) + " value=" + (roles != null ? roles : "")));
+        if (change.setsGraceDays()) {
+            audit.record(prefix + " key=grace-days value=" + (change.graceDays() != null ? change.graceDays() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

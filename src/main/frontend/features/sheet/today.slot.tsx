@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
+import { periodsKey } from '../periods/usePeriods';
 import { settingsKey } from '../settings/useSettings';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
@@ -23,6 +24,8 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: settingsKey(sheet) }),
+        // A today past a period's grace days closes it.
+        queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
       ]);
     },
   });

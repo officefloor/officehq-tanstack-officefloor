@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
 import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; gradeTerms: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; graceDays: string | null; gradeTerms: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -25,7 +25,8 @@ type Froms = Record<string, string>;
  * the one on its date cannot be settled or approved without a proof; blank is none),
  * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
- * steward, reassign and reopen by steward; not dated),
+ * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
+ * period whose to-date plus them is before the new today is closed; blank is off; not dated),
  * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
  * each grade's), the late percent, the cap and the proof threshold are dated: a save records each from its from-date (blank
@@ -35,7 +36,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, gradeTerms: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, graceDays: null, gradeTerms: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -46,7 +47,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, gradeTerms: {}, perms: {} });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, graceDays: null, gradeTerms: {}, perms: {} });
       setFroms({});
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
@@ -107,6 +108,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const periodNumberingFrom = edit.periodNumberingFrom?.trim() ?? null;
           const cap = edit.cap?.trim() ?? null;
           const proofThreshold = edit.proofThreshold?.trim() ?? null;
+          const graceDays = edit.graceDays?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           const perms = Object.fromEntries(Object.entries(edit.perms).map(([a, v]) => [a, v.trim()]));
           const from = Object.fromEntries(Object.entries(froms).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''));
@@ -120,6 +122,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom)) ||
             (cap !== null && !LIMIT.test(cap)) ||
             (proofThreshold !== null && !LIMIT.test(proofThreshold)) ||
+            (graceDays !== null && !DAYS.test(graceDays)) ||
             Object.values(perms).some((v) => !PERM_ROLES.test(v)) ||
             Object.values(from).some((v) => !FROM_DATE.test(v))
           ) {
@@ -129,7 +132,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, gradeTerms, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, graceDays, gradeTerms, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -299,6 +302,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           />
         </label>{' '}
         {fromField('proof-threshold')}{' '}
+        Grace days:{' '}
+        <strong data-testid="setting-grace-days-current">
+          {saveSettings.isPending ? '' : String(data?.graceDays ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-grace-days"
+            placeholder="blank: off"
+            value={edit.graceDays ?? String(data?.graceDays ?? '')}
+            onFocus={() => touch('graceDays', String(data?.graceDays ?? ''))}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, graceDays: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
         {PERM_ACTIONS.map((a) => {
           const set = data?.perms?.[a] ?? '';
           return (
@@ -328,7 +348,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof threshold amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule).
+            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof threshold amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and the grace days a whole number of days (blank is off), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule).
           </span>
         )}
       </form>

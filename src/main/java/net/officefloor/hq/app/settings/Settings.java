@@ -174,6 +174,18 @@ public class Settings {
                 sheetId, date != null ? Date.valueOf(date) : null);
     }
 
+    /** The sheet's grace days: when its today is changed, every open period whose to-date plus them
+     *  is before the new today is closed. Null when unset (off). Not dated. */
+    public Integer graceDays(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT grace_days FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("grace_days", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setGraceDays(String sheetId, Integer days) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, grace_days) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
+    }
+
     /** The sheet's cap in force on its today: a person's due-total is at most it. Null for no cap. */
     public BigDecimal cap(String sheetId) {
         return valueOn(sheetId, CAP, sheets.today(sheetId), null);

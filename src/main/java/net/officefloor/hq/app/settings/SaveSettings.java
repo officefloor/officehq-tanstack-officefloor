@@ -20,6 +20,7 @@ public class SaveSettings {
         if (change.setsCap()) setDated(settings, change, today, Settings.CAP, change.cap());
         if (change.setsProofThreshold()) setDated(settings, change, today, Settings.PROOF_THRESHOLD, change.proofThreshold());
         if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(sheetId, change.periodNumberingFrom());
+        if (change.setsGraceDays()) settings.setGraceDays(sheetId, change.graceDays());
         change.perms().forEach((action, roles) -> settings.setPermission(sheetId, action, roles));
     }
 

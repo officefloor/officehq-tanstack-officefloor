@@ -92,6 +92,10 @@ public class ValidateSettings {
         if (threshold != null && !threshold.isEmpty() && !AMOUNT.matcher(threshold).matches()) {
             throw new InvalidSheetRequestException("The proof threshold must be an amount with up to two decimals, or blank");
         }
+        String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
+        if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
+            throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request != null && request.perms() != null) {
             for (Map.Entry<String, String> e : request.perms().entrySet()) {
@@ -136,6 +140,7 @@ public class ValidateSettings {
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms,
-                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms));
+                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms,
+                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace)));
     }
 }
