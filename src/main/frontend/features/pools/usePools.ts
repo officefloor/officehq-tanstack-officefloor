@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+import { hundredths } from '../rates/useRates';
 
 /** A pool's member as the server sends it: the person (or, for a member that is another pool, null
  *  and that pool's name in `pool`), their share (two decimals) and whether they are retired (a
@@ -34,4 +35,13 @@ export function usePools(sheet: string) {
     staleTime: 0,
     gcTime: 0,
   });
+}
+
+/** The cuts of the person members of `pools` (just `personId`'s when given) added up, in cents; a
+ *  pool member that is another pool, or a member with no cut, adds nothing. */
+export function cutTotalCents(pools: Pool[], personId?: number): bigint {
+  return pools
+    .flatMap((p) => p.members)
+    .filter((m) => m.personId !== null && m.cut !== null && (personId === undefined || m.personId === personId))
+    .reduce((sum, m) => sum + hundredths(m.cut as string), 0n);
 }
