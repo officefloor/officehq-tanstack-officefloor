@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 
 /** The number a claim gets when it is opened. While the sheet's period numbering from is set and
  *  the sheet's today is on or after it, the claim is numbered within the period its due-by falls in
- *  (<period name>-<n>), or X-<n> when it falls in none; otherwise it takes the sheet's next number. */
+ *  (<period name>-<n>), or X-<n> when it falls in none; otherwise it takes the next number within
+ *  the fiscal year its due-by falls in (FY<yyyy>-<n>, counting from 1 each fiscal year, the sequence
+ *  shared across the sheet's tree). */
 @Service
 public class ClaimNumbers {
 
@@ -30,10 +32,16 @@ public class ClaimNumbers {
         String sheetId = claim.getSheetId();
         LocalDate from = settings.periodNumberingFrom(sheetId);
         if (from == null || sheets.today(sheetId).isBefore(from)) {
-            return String.valueOf(sheets.nextClaimNumber(sheetId));
+            int fy = fiscalYear(claim.getDueBy(), settings.fiscalStartMonth(sheetId));
+            return "FY" + fy + "-" + sheets.nextFiscalNumber(sheetId, fy);
         }
         String seq = periods.onSheet(sheetId).stream().filter(p -> p.contains(claim.getDueBy()))
                 .map(Period::name).findFirst().orElse(NO_PERIOD);
         return seq + "-" + sheets.nextPeriodNumber(sheetId, seq);
+    }
+
+    /** The fiscal year (the yyyy of FY<yyyy>, the calendar year its first day falls in) a date is in. */
+    static int fiscalYear(LocalDate date, int startMonth) {
+        return date.getMonthValue() >= startMonth ? date.getYear() : date.getYear() - 1;
     }
 }

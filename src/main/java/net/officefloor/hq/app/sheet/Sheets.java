@@ -49,6 +49,28 @@ public class Sheets {
         return last + 1;
     }
 
+    /**
+     * The sheet's next number within a fiscal year (the yyyy of FY<yyyy>): the next after the last
+     * given in that fiscal year anywhere in the sheet's tree (see {@link #treeOf}), so the sheets of a
+     * tree share one sequence per fiscal year; 1 for its first. Locks the tree's rows as
+     * {@link #nextClaimNumber} does, so a number is never given twice.
+     */
+    public long nextFiscalNumber(String sheetId, int fy) {
+        today(sheetId);
+        java.util.List<String> tree = new java.util.ArrayList<>(treeOf(sheetId));
+        java.util.Collections.sort(tree);
+        long last = 0;
+        for (String sheet : tree) {
+            jdbc.update("UPDATE sheet SET claim_numbers = claim_numbers WHERE id = ?", sheet);
+            Long given = jdbc.queryForList("SELECT given FROM fiscal_number WHERE sheet_id = ? AND fy = ?", Long.class,
+                    sheet, fy).stream().findFirst().orElse(0L);
+            last = Math.max(last, given == null ? 0 : given);
+        }
+        jdbc.update("MERGE INTO fiscal_number (sheet_id, fy, given) KEY (sheet_id, fy) VALUES (?, ?, ?)",
+                sheetId, fy, last + 1);
+        return last + 1;
+    }
+
     /** The sheets of the sheet's tree, the sheet among them: its root (the top of its parent chain)
      *  and every sheet below the root (its children, their children, and so on). Not dated: read
      *  from the live sheets. */
