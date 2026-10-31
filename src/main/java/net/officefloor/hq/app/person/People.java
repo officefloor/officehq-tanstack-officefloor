@@ -4,7 +4,10 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -22,30 +25,39 @@ public class People {
     }
 
     public List<Person> onSheet(String sheetId) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id",
+        List<Person> people = jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id",
                 People::person,
                 sheetId);
+        Map<Long, List<Long>> patrons = new HashMap<>();
+        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY id",
+                (ResultSet rs) -> {
+                    patrons.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getLong("patron_id"));
+                }, sheetId);
+        for (Person person : people) {
+            person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
+        }
+        return people;
     }
 
     /** The person with this id on this sheet, or null when there is none. */
     public Person find(String sheetId, long id) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ?",
+        return withPatrons(jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ?",
                 People::person,
-                sheetId, id).stream().findFirst().orElse(null);
+                sheetId, id).stream().findFirst().orElse(null));
     }
 
     /** The person with this id on this sheet, read afresh and locked for the rest of the
      *  transaction, so two statements for one person at once happen one after the other. */
     public Person lock(String sheetId, long id) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ? FOR UPDATE", People::person, sheetId, id)
-                .stream().findFirst().orElse(null);
+        return withPatrons(jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ? FOR UPDATE", People::person, sheetId, id)
+                .stream().findFirst().orElse(null));
     }
 
     /** The person on this sheet with this name (matched as names are kept unique: without the
      *  spaces around it and in any case), or null when there is none. */
     public Person named(String sheetId, String name) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", People::person,
-                sheetId, name).stream().findFirst().orElse(null);
+        return withPatrons(jdbc.query(COLUMNS + " WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", People::person,
+                sheetId, name).stream().findFirst().orElse(null));
     }
 
     /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
@@ -96,6 +108,22 @@ public class People {
     /** Record whether the person is on hold. Not an edit: the person's version is untouched. */
     public void saveHold(Person person) {
         jdbc.update("UPDATE person SET held = ? WHERE id = ?", person.isHeld(), person.getId());
+    }
+
+    /** Name `patron` as one of the person's patrons. Not an edit: the person's version is untouched. */
+    public void addPatron(Person person, Person patron) {
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
+                person.getSheetId(), person.getId(), patron.getId());
+        person.getPatronIds().add(patron.getId());
+    }
+
+    /** The person (may be null) with their patrons' ids read in. */
+    private Person withPatrons(Person person) {
+        if (person != null) {
+            person.setPatronIds(new ArrayList<>(jdbc.queryForList(
+                    "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
+        }
+        return person;
     }
 
     private static Person person(ResultSet rs, int i) throws SQLException {

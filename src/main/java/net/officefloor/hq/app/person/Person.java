@@ -2,6 +2,8 @@ package net.officefloor.hq.app.person;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.claim.ClaimStatus;
 
 /** A person on a sheet. `id` is null until the person is first saved. */
@@ -16,6 +18,7 @@ public class Person {
     private LocalDate statementDate;
     private LocalDate retiredFrom;
     private boolean held;
+    private List<Long> patronIds = new ArrayList<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -56,6 +59,9 @@ public class Person {
     /** Whether the person is on hold: their OPEN claims then count in no live total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
+    /** The ids of the people the person has named as patrons, in the order they were named. */
+    public List<Long> getPatronIds() { return patronIds; }
+    public void setPatronIds(List<Long> patronIds) { this.patronIds = patronIds; }
 
     /** Whether a claim of the person's in this status counts in the live totals: OPEN and SETTLED
      *  ones do, but not an OPEN one while the person is held. */

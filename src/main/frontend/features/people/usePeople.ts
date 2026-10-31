@@ -7,7 +7,8 @@ import { getJson } from '../../api/http';
  *  none was taken) and `statementDate` its date (yyyy-mm-dd, null when none was taken).
  *  `retired` is whether a retirement date is set (whatever the date), `retiredFrom` that date
  *  (yyyy-mm-dd, null when not retired). `held` is whether they are on hold: their OPEN claims then
- *  count in no live total. */
+ *  count in no live total. `patrons` are the ids of the people they have named as patrons, in
+ *  the order they were named. */
 export type Person = {
   id: number;
   name: string;
@@ -19,6 +20,7 @@ export type Person = {
   retired: boolean;
   retiredFrom: string | null;
   held: boolean;
+  patrons: number[];
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;
