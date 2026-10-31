@@ -16,13 +16,29 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyClaimStatus {
     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, Claims claims,
-            Out<ClaimNumber> number) throws ClaimStatusRefusedException {
+            net.officefloor.hq.app.asof.AsOfView asOfView, Out<ClaimNumber> number) throws ClaimStatusRefusedException {
+        Claim then = null;
+        if (request.on() != null) {
+            // Settled as of a date: on or before the sheet's today, and only a claim that was on the sheet by its end.
+            if (request.on().isAfter(sheets.today(claim.getSheetId()))) {
+                throw new ClaimStatusRefusedException("A claim cannot be settled as of a date after the sheet's today");
+            }
+            then = asOfView.claim(claim.getSheetId(), claim.getId(), request.on());
+            if (then == null) {
+                throw new ClaimStatusRefusedException("The claim was not on the sheet by " + request.on());
+            }
+        }
         if (request.target() == ClaimStatus.OPEN && (request.decision() == ValidClaimStatus.Decision.NONE
                 && claim.getStatus().canBecome(ClaimStatus.OPEN)
                 || request.decision() == ValidClaimStatus.Decision.REVIEW && claim.getStatus() == ClaimStatus.REVIEW)) {
             refuseOverCap(claim, periods, claims.list(claim.getSheetId()));
         }
-        number.set(change(request, claim, sheets, people, rates, periods, settings, numbering, log));
+        ClaimNumber changed = change(request, claim, sheets, people, rates, periods, settings, numbering, log);
+        if (then != null && claim.getStatus() == ClaimStatus.SETTLED) {
+            // The frozen figure is the claim's due as it stood at the end of the date, as the as-of view works it out.
+            claim.setSettledDue(asOfView.due(then, request.on()));
+        }
+        number.set(changed);
     }
 
     /** Applies a status change to the claim by the rules of a single change, returning its number;

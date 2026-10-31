@@ -16,7 +16,19 @@ public class ValidateClaimStatus {
         String reason = request.reason() == null ? "" : request.reason().trim();
         ValidClaimStatus valid = switch (action) {
             case "open" -> new ValidClaimStatus(ClaimStatus.OPEN, request.user(), ValidClaimStatus.Decision.NONE, null);
-            case "settle" -> new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.NONE, null);
+            case "settle" -> {
+                // Settled as of a date when one is given; blank settles as of the sheet's today.
+                String on = request.on() == null ? "" : request.on().trim();
+                java.time.LocalDate asOf = null;
+                if (!on.isEmpty()) {
+                    try {
+                        asOf = java.time.LocalDate.parse(on);
+                    } catch (java.time.format.DateTimeParseException bad) {
+                        throw new InvalidClaimException("Not a date to settle as of: " + on);
+                    }
+                }
+                yield new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.NONE, null, asOf);
+            }
             case "void" -> {
                 // While the sheet has void reasons, a void needs one chosen from them; without any, none is kept.
                 if (voidReasons.list(sheetId).isEmpty()) {

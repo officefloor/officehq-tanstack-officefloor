@@ -28,6 +28,9 @@ import { peopleKey, type Person } from '../people/usePeople';
 // reassign permission allows) moves a DRAFT, OPEN or
 // PENDING claim to another person on the sheet with the reassign button (it is listed first under them, live again until
 // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
+// A claim is settled as of a date with the settle date beside the settle button (blank: the sheet's today): its frozen figure is
+// its due as it stood at the end of that day, as the as-of view works it out; a date after today, or a claim not on the sheet
+// by then, is refused with the claim's error.
 // A steward re-settles a SETTLED claim (outside any closed period) with the re-settle button: its due is frozen again at the
 // figure it would have today as an open claim bound by no statement, and its log gains a SETTLED line; else it is refused with the claim's error.
 // An OPEN claim is deferred to a date after the sheet's today with the defer date and button (a claim that is not OPEN, a date
@@ -102,19 +105,21 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const settings = useSettings(sheet);
 
   const status = useMutation({
-    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review'; reason?: string }) =>
+    mutationFn: ({ action, reason, on }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review'; reason?: string; on?: string }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/status`,
-        { action, user, reason },
+        { action, user, reason, on },
       ),
     onSuccess: (_, { action }) => {
       if (action === 'reject') setReason('');
+      if (action === 'settle') setSettleOn('');
       if (action === 'void') setVoidReason('');
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
   });
 
   const [reason, setReason] = useState('');
+  const [settleOn, setSettleOn] = useState('');
   const [voidReason, setVoidReason] = useState('');
   const voidReasons = useVoidReasons(sheet);
   const [toPersonId, setToPersonId] = useState('');
@@ -486,7 +491,14 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate({ action: 'open' }))}>
         Open
       </button>{' '}
-      <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate({ action: 'settle' }))}>
+      <input
+        type="date"
+        data-testid="claim-settle-date"
+        value={settleOn}
+        title="Settle as of (blank: today)"
+        onChange={(e) => act(() => setSettleOn(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate({ action: 'settle', on: settleOn }))}>
         Settle
       </button>{' '}
       <button type="button" data-testid="claim-resettle" onClick={() => act(() => resettle.mutate())}>

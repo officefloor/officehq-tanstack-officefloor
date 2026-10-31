@@ -192,11 +192,32 @@ public class AsOfView {
 
     /** The claims on the sheet by the end of the date, each as it stood then (its log as written by then), newest first. */
     public List<ClaimResponse> claims(String sheetId, LocalDate date) {
-        Date end = Date.valueOf(date);
-        Map<Long, Claim> latest = new HashMap<>();
         Map<Long, Claim> now = new LinkedHashMap<>();
         // Those transferred away since still stood on the sheet.
         claims.listWithTransferredAfter(sheetId, date).forEach(claim -> now.put(claim.getId(), claim));
+        Map<Long, Claim> latest = then(sheetId, date, now);
+        List<ClaimResponse> shown = new ArrayList<>();
+        for (Claim current : now.values()) {
+            Claim then = latest.get(current.getId());
+            if (then == null) continue;
+            then.setCorrectedDate(claims.correctedDate(sheetId, then.getPersonId(), then.getCorrects()));
+            List<String> log = new ArrayList<>();
+            for (String line : current.getLog()) {
+                java.util.regex.Matcher on = LOG_DATE.matcher(line);
+                if (!on.find() || !LocalDate.parse(on.group(1)).isAfter(date)) log.add(line);
+            }
+            then.setLog(log);
+            then.setComments(current.getComments().stream().filter(comment -> !comment.date().isAfter(date)).toList());
+            shown.add(ClaimResponse.from(then));
+        }
+        return shown;
+    }
+
+    /** The claims as they stood at the end of the date, by id, built from their history (see V45) over the claims as they
+     *  are now; a claim with no history by then is left out. */
+    private Map<Long, Claim> then(String sheetId, LocalDate date, Map<Long, Claim> now) {
+        Date end = Date.valueOf(date);
+        Map<Long, Claim> latest = new HashMap<>();
         jdbc.query("SELECT * FROM claim_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
             Claim current = now.get(rs.getLong("claim_id"));
             if (current == null) return;
@@ -229,21 +250,91 @@ public class AsOfView {
             if (then.getStatus() == ClaimStatus.VOID) then.setVoidReason(current.getVoidReason());
             latest.put(then.getId(), then);
         }, sheetId, end);
-        List<ClaimResponse> shown = new ArrayList<>();
-        for (Claim current : now.values()) {
-            Claim then = latest.get(current.getId());
-            if (then == null) continue;
-            then.setCorrectedDate(claims.correctedDate(sheetId, then.getPersonId(), then.getCorrects()));
-            List<String> log = new ArrayList<>();
-            for (String line : current.getLog()) {
-                java.util.regex.Matcher on = LOG_DATE.matcher(line);
-                if (!on.find() || !LocalDate.parse(on.group(1)).isAfter(date)) log.add(line);
+        return latest;
+    }
+
+    /** The claim as it stood at the end of the date; null when it was not on the sheet by then. */
+    public Claim claim(String sheetId, long claimId, LocalDate date) {
+        Map<Long, Claim> now = new LinkedHashMap<>();
+        claims.listWithTransferredAfter(sheetId, date).stream().filter(claim -> claim.getId() == claimId)
+                .forEach(claim -> now.put(claim.getId(), claim));
+        Claim then = then(sheetId, date, now).get(claimId);
+        if (then != null) then.setCorrectedDate(claims.correctedDate(sheetId, then.getPersonId(), then.getCorrects()));
+        return then;
+    }
+
+    /** A claim's due as shown at the end of the date, the claim as it stood then (see {@link #claim}): fixed (settled or
+     *  bound), else its amount at the rate in force on its date for its person's grade then, with its late charge as of the
+     *  date and raised to the floor, each by the rates and settings as they stood then; null for n/a. */
+    public BigDecimal due(Claim then, LocalDate date) {
+        String sheetId = then.getSheetId();
+        String grade = gradeOn(sheetId, then.getPersonId(), then.getDate(), date);
+        java.math.RoundingMode rounding = net.officefloor.hq.app.claim.Rounding.of(then, policyDate(sheetId, date),
+                on -> net.officefloor.hq.app.claim.Rounding.mode(dated(sheetId, ValidateSetting.ROUNDING, on, date)));
+        BigDecimal fixed = ClaimResponse.fixedDue(then);
+        BigDecimal figure = fixed != null || then.isBound() ? fixed
+                : Rates.due(then.getAmount(), rate(sheetId, grade, then.getDate(), then.getRateMark(), date), rounding);
+        BigDecimal floor = dated(sheetId, ValidateSetting.FLOOR, then.getDate(), date);
+        BigDecimal grace = grade == null ? null : dated(sheetId, ValidateSetting.GRADE_GRACE + grade, then.getDate(), date);
+        return net.officefloor.hq.app.claim.LateCharge.due(then, figure, floor == null ? Settings.START_FLOOR : floor,
+                on -> {
+                    BigDecimal pct = dated(sheetId, ValidateSetting.LATE_PCT, on, date);
+                    return pct == null ? Settings.START_LATE_PCT : pct;
+                }, date, rounding, grace == null ? 0 : grace.intValue());
+    }
+
+    /** A person's grade in force on a day, by their grades as recorded by the end of the date. */
+    private String gradeOn(String sheetId, long personId, LocalDate on, LocalDate date) {
+        TreeMap<LocalDate, String> grades = new TreeMap<>();
+        jdbc.query("SELECT from_date, grade FROM grade_history WHERE sheet_id = ? AND person_id = ?" + UP_TO + " ORDER BY seq",
+                (RowCallbackHandler) rs -> {
+                    LocalDate from = local(rs.getDate(1));
+                    grades.put(from == null ? Person.BEGINNING : from, rs.getString(2));
+                }, sheetId, personId, Date.valueOf(date));
+        if (grades.isEmpty()) return people.find(sheetId, personId).gradeOn(on);
+        Map.Entry<LocalDate, String> found = grades.floorEntry(on);
+        return found == null ? grades.firstEntry().getValue() : found.getValue();
+    }
+
+    /** A dated setting's value in force on a day, as recorded by the end of the date; null when none (or cleared). */
+    private BigDecimal dated(String sheetId, String key, LocalDate on, LocalDate date) {
+        List<BigDecimal> found = jdbc.query("SELECT setting_value FROM setting_history WHERE sheet_id = ? AND setting_key = ?"
+                + " AND from_date <= ?" + UP_TO + " ORDER BY from_date DESC, seq DESC LIMIT 1", (rs, i) -> rs.getBigDecimal(1),
+                sheetId, key, Date.valueOf(on), Date.valueOf(date));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The policy date as last set by the end of the date; when blank, the date itself (standing for the sheet's today). */
+    private LocalDate policyDate(String sheetId, LocalDate date) {
+        List<LocalDate> policies = new ArrayList<>();
+        jdbc.query("SELECT policy_date FROM policy_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
+                (RowCallbackHandler) rs -> policies.add(local(rs.getDate(1))), sheetId, Date.valueOf(date));
+        LocalDate policy = policies.isEmpty() ? null : policies.get(policies.size() - 1);
+        return policy == null ? date : policy;
+    }
+
+    /** The rate for a grade in force on a day for a claim with a mark, by the rates as set by the end of the date on the
+     *  sheet, else on its ancestors then (as {@link Rates#find(String, String, LocalDate, long)} does live). */
+    private BigDecimal rate(String sheetId, String grade, LocalDate on, long claimMark, LocalDate date) {
+        if (grade == null) return null;
+        List<String> asked = new ArrayList<>(List.of(sheetId));
+        asked.addAll(ancestors(sheetId, date));
+        for (String at : asked) {
+            List<Object[]> found = jdbc.query("SELECT rate, to_date, after_mark FROM rate_history WHERE sheet_id = ?"
+                    + " AND TRIM(grade) = ? AND (from_date IS NULL OR from_date <= ?)" + UP_TO
+                    + " ORDER BY from_date DESC NULLS LAST, seq DESC",
+                    (rs, i) -> new Object[] { rs.getBigDecimal(1), rs.getDate(2), rs.getLong(3) },
+                    at, grade.trim(), Date.valueOf(on), Date.valueOf(date));
+            for (Object[] row : found) {
+                if (Rates.applies((Long) row[2], claimMark)) {
+                    Date to = (Date) row[1];
+                    BigDecimal rate = to != null && to.toLocalDate().isBefore(on) ? null : (BigDecimal) row[0];
+                    if (rate != null) return rate;
+                    break;
+                }
             }
-            then.setLog(log);
-            then.setComments(current.getComments().stream().filter(comment -> !comment.date().isAfter(date)).toList());
-            shown.add(ClaimResponse.from(then));
         }
-        return shown;
+        return null;
     }
 
     private static final java.util.regex.Pattern LOG_DATE = java.util.regex.Pattern.compile(" on (\\d{4}-\\d{2}-\\d{2}) due=[^ ]*$");

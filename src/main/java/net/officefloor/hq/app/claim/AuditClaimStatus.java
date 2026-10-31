@@ -44,6 +44,7 @@ public class AuditClaimStatus {
         }
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+            if (request.on() != null) line += " on=" + request.on();
         }
         if (request.decision() == ValidClaimStatus.Decision.REJECT) {
             line += " reason=" + request.reason();
