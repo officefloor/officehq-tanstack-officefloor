@@ -22,7 +22,8 @@ import org.springframework.stereotype.Service;
  * The figures the screen shows — each person's claimed and due-total, the sheet's claimed-total and
  * due-total, and each one's overdue-total and the sheet's — worked out as the screen does, so a change can audit the ones it moved: one ROLLUP
  * line per person whose figures changed (a new person counts as changed), then a TOTALS line when
- * the sheet's totals changed.
+ * the sheet's totals changed, then, with an alert threshold set, an ALERT line per person (in list
+ * order) whose due-total went from at or below it (or none) to above it.
  */
 @Service
 public class Rollup {
@@ -112,6 +113,19 @@ public class Rollup {
             audit.record("TOTALS" + prefix + " claimed-total=" + show(after.claimedTotal())
                     + " due-total=" + show(after.dueTotal()) + " overdue-total=" + show(after.overdueTotal()));
         }
+        BigDecimal threshold = settings.alertThreshold(sheetId);
+        if (threshold == null) return;
+        after.people().forEach((id, now) -> {
+            Snapshot.PersonFigures was = before.people().get(id);
+            if (above(now.dueTotal(), threshold) && (was == null || !above(was.dueTotal(), threshold))) {
+                audit.record("ALERT" + prefix + " name=" + now.name() + " due-total=" + show(now.dueTotal()));
+            }
+        });
+    }
+
+    /** Whether a due-total is above the threshold; n/a never is. */
+    private static boolean above(BigDecimal dueTotal, BigDecimal threshold) {
+        return dueTotal != null && dueTotal.compareTo(threshold) > 0;
     }
 
     private static boolean same(BigDecimal a, BigDecimal b) {

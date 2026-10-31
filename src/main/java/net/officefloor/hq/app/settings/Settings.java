@@ -242,6 +242,17 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, pot) KEY (sheet_id) VALUES (?, ?)", sheetId, pot);
     }
 
+    /** The sheet's alert threshold: a person whose due-total crosses above it is alerted. Null when unset (off). */
+    public BigDecimal alertThreshold(String sheetId) {
+        List<BigDecimal> values = jdbc.query("SELECT alert_threshold FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getBigDecimal("alert_threshold"), sheetId);
+        return values.isEmpty() || values.get(0) == null ? null : values.get(0).setScale(2);
+    }
+
+    public void setAlertThreshold(String sheetId, BigDecimal threshold) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, alert_threshold) KEY (sheet_id) VALUES (?, ?)", sheetId, threshold);
+    }
+
     /** The sheet's parent sheet: a grade with no rate in force on a date on this sheet takes the
      *  parent's then (see {@link net.officefloor.hq.app.rate.Rates#pct}). Null when unset (none). Not
      *  dated: read from the live sheet, so an as-of view shows it too. */

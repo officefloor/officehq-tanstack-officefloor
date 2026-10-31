@@ -9,7 +9,7 @@ import { ratesKey } from '../rates/useRates';
 import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -43,11 +43,27 @@ type Froms = Record<string, string>;
  * each grade's), the grace days of each grade, the late percent, the cap, the proof threshold (the sheet's and each grade's) and the note threshold are dated: a save records each from its from-date (blank
  * is the sheet's today), and each shows the value in force on the sheet's today.
  */
+/** The edit with each field the save sent (as it sent it) untouched again. */
+function untouchSent(was: SettingsEdit, sent: SettingsEdit): SettingsEdit {
+  const scalar = (v: string | null, s: string | null) => (v === null || v.trim() === s ? null : v);
+  const map = (v: Record<string, string>, s: Record<string, string>) =>
+    Object.fromEntries(Object.entries(v).filter(([k, x]) => x.trim() !== s[k]));
+  const next = { ...was };
+  for (const key of Object.keys(was) as (keyof SettingsEdit)[]) {
+    if (key === 'gradeTerms' || key === 'gradeGrace' || key === 'gradeProof' || key === 'perms') {
+      next[key] = map(was[key], sent[key]);
+    } else {
+      next[key] = scalar(was[key], sent[key]);
+    }
+  }
+  return next;
+}
+
 function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -59,9 +75,10 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const submitOnce = useSubmitOnce();
   const saveSettings = useMutation({
     mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
-    onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
-      setFroms({});
+    onSuccess: (saved, sent) => {
+      // A field changed again while the save was in flight stays touched for the next save.
+      setEdit((was) => untouchSent(was, sent.e));
+      setFroms((was) => Object.fromEntries(Object.entries(was).filter(([k, v]) => v.trim() !== '' && v.trim() !== sent.from[k])));
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The pot decides each pool member's cut.
       void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
@@ -159,6 +176,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const pot = edit.pot?.trim() ?? null;
           const parent = edit.parent?.trim() ?? null;
           const fiscalStartMonth = edit.fiscalStartMonth?.trim() ?? null;
+          const alertThreshold = edit.alertThreshold?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
           const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
@@ -180,6 +198,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (graceDays !== null && !DAYS.test(graceDays)) ||
             (entryDate !== null && !POLICY_DATE.test(entryDate)) ||
             (pot !== null && !LIMIT.test(pot)) ||
+            (alertThreshold !== null && !LIMIT.test(alertThreshold)) ||
             (fiscalStartMonth !== null && !MONTH.test(fiscalStartMonth)) ||
             Object.values(perms).some((v) => !PERM_ROLES.test(v)) ||
             Object.values(from).some((v) => !FROM_DATE.test(v))
@@ -190,7 +209,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, gradeTerms, gradeGrace, gradeProof, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, gradeTerms, gradeGrace, gradeProof, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -378,6 +397,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             onFocus={() => touch('pot', data?.pot ?? '')}
             onChange={(e) => {
               setEdit((was) => ({ ...was, pot: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
+        Alert threshold:{' '}
+        <strong data-testid="setting-alert-threshold-current">
+          {saveSettings.isPending ? '' : (data?.alertThreshold ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-alert-threshold"
+            placeholder="blank: off"
+            value={edit.alertThreshold ?? (data?.alertThreshold ?? '')}
+            onFocus={() => touch('alertThreshold', data?.alertThreshold ?? '')}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, alertThreshold: e.target.value }));
               clearSettingsError();
             }}
           />

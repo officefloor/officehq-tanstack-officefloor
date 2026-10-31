@@ -72,6 +72,10 @@ public class RecordSettingChanged {
         if (change.fiscalStartMonth() != null) {
             audit.record(prefix + " key=fiscal-start-month value=" + change.fiscalStartMonth());
         }
+        if (change.setsAlertThreshold()) {
+            audit.record(prefix + " key=alert-threshold value="
+                    + (change.alertThreshold() != null ? change.alertThreshold().toPlainString() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */
