@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The claims of each sheet, newest first. */
+/** The claims of each sheet, newest first: by when each was added, or last reassigned to another person. */
 @Repository
 public class Claims {
 
@@ -23,7 +23,7 @@ public class Claims {
     }
 
     public List<Claim> onSheet(String sheetId) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id DESC", Claims::claim, sheetId);
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY listed DESC", Claims::claim, sheetId);
     }
 
     /** The claim with this id on this sheet, or null when there is none. Locks the claim's row for
@@ -35,7 +35,7 @@ public class Claims {
 
     /** The person's claims, newest first, each locked for the rest of the transaction. */
     public List<Claim> ofPerson(String sheetId, long personId) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC FOR UPDATE",
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC FOR UPDATE",
                 Claims::claim, sheetId, personId);
     }
 
@@ -51,6 +51,12 @@ public class Claims {
         return jdbc.query("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ?",
                 (rs, i) -> rs.getDate("claim_date").toLocalDate(), sheetId, personId, number)
                 .stream().findFirst().orElse(null);
+    }
+
+    /** Move the claim to its (new) person: unbound from any statement, and listed as that person's newest claim. */
+    public void reassign(Claim claim) {
+        jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed WHERE id = ?",
+                claim.getPersonId(), claim.getId());
     }
 
     /** Insert a new claim (assigning its id) or update an existing one. */

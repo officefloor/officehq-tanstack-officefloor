@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { gradeOn, type Person } from '../people/usePeople';
+import { gradeOn, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
@@ -28,6 +28,9 @@ const STATUS_REFUSED = "This claim's status cannot change that way (whoever open
 const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
 const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the user who opened it.';
 const NO_REASON = 'A rejection needs a reason.';
+const NOT_STEWARD_MOVE = 'Only a steward can reassign a claim.';
+const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
+const NO_TARGET = 'Choose another person to reassign this claim to.';
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 
 const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
@@ -48,6 +51,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * Each claim shows its due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and
  * due by before the sheet's today); the person shows how many of the claims that count are overdue
  * and their dues added up.
+ * A steward can reassign a DRAFT, OPEN or PENDING claim to another person on the sheet: it keeps its
+ * number and date, is no longer bound by a statement, and is listed as its new person's newest claim.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -55,6 +60,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const claims = all.filter((c) => c.personId === person.id);
   // While the person is held, their OPEN and PENDING claims count toward neither claimed nor the due-total.
   const liveClaims = live(claims, () => person.held);
+  const { data: everyone = [] } = usePeople(sheet);
+  const others = everyone.filter((p) => p.id !== person.id);
   const { data: rates = [] } = useRates(sheet);
   const { data: periods = [] } = usePeriods(sheet);
   const today = useSheetToday(sheet);
@@ -75,6 +82,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [selected, setSelected] = useSelectedClaims();
   // The reason typed for rejecting each pending claim, by claim id.
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  // The person chosen to reassign each claim to, by claim id.
+  const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   const submitOnce = useSubmitOnce();
@@ -117,6 +126,25 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               : e.body.includes('reason')
                 ? NO_REASON
                 : STATUS_REFUSED,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  const reassign = useMutation({
+    mutationFn: (c: { id: number; toPersonId: number }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/reassign`, { toPersonId: c.toPersonId, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setMoveTo((m) => ({ ...m, [c.id]: '' })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('steward')
+          ? NOT_STEWARD_MOVE
+          : e instanceof HttpError && e.body.includes('retired')
+            ? 'That person is retired before this claim\'s date.'
+            : e instanceof HttpError && e.body.includes('closed')
+              ? 'This claim is dated in a closed period.'
+              : CANNOT_MOVE,
       }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
@@ -288,6 +316,38 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   </button>{' '}
                 </span>
               ))}
+              <select
+                data-testid="claim-reassign-to"
+                aria-label="Reassign to"
+                value={moveTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setMoveTo({ ...moveTo, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              >
+                <option value="">reassign to…</option>
+                {others.map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>{' '}
+              <button
+                type="button"
+                data-testid="claim-reassign"
+                disabled={reassign.isPending}
+                onClick={() => {
+                  const to = moveTo[c.id] ?? '';
+                  if (to === '') {
+                    // Refused here, before anything is sent: the store is untouched.
+                    setRefused({ id: c.id, message: NO_TARGET });
+                    return;
+                  }
+                  reassign.mutate({ id: c.id, toPersonId: Number(to) });
+                }}
+              >
+                Reassign
+              </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>

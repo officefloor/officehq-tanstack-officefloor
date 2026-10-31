@@ -7,7 +7,7 @@ import java.time.LocalDate;
 public class Claim {
     private Long id;
     private final String sheetId;
-    private final long personId;
+    private long personId;
     private BigDecimal amount;
     private LocalDate date;
     private String note;
@@ -37,6 +37,7 @@ public class Claim {
     public void setId(Long id) { this.id = id; }
     public String getSheetId() { return sheetId; }
     public long getPersonId() { return personId; }
+    public void setPersonId(long personId) { this.personId = personId; }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public LocalDate getDate() { return date; }
