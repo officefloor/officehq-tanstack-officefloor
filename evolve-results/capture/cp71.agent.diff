@@ -1,0 +1,254 @@
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 39e141da..8ab3f806 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -8,7 +8,9 @@ import { useRowAction } from '../people/useRowAction';
+ /**
+  * A person's statements: the button to take one, which records their due-total now and binds each
+  * of their counting claims to the figure it has now (the rest are unbound), how many have been
+- * taken, and the last one's due-total and date (blank when none has been taken).
++ * taken, and the last one's due-total and date (blank when none has been taken). A steward can
++ * cancel the last statement: the claims it bound become live again, and the row shows the one
++ * before it (or nothing).
+  */
+ function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+   const queryClient = useQueryClient();
+@@ -21,7 +23,19 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+       ]),
+   });
+-  const actionTaken = useRowAction(sheet, person.id, take.reset);
++  const cancel = useMutation({
++    mutationFn: () =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unstate`, { user }),
++    onSettled: () =>
++      Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++      ]),
++  });
++  const actionTaken = useRowAction(sheet, person.id, () => {
++    take.reset();
++    cancel.reset();
++  });
+   const taken = person.statementCount > 0;
+   return (
+     <>
+@@ -31,16 +45,30 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
+       <td>
+         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => {
+             actionTaken();
++            cancel.reset();
+             take.mutate();
+           }}>
+           Statement
+         </button>
++        <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => {
++            actionTaken();
++            take.reset();
++            cancel.mutate();
++          }}>
++          Cancel statement
++        </button>
+         {take.isError && (
+           <span data-testid="person-error" role="alert">
+             {' '}
+             Could not take this statement.
+           </span>
+         )}
++        {cancel.isError && (
++          <span data-testid="person-error" role="alert">
++            {' '}
++            Could not cancel the statement.
++          </span>
++        )}
+       </td>
+     </>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 21bc7cfb..61b7fb77 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -40,6 +40,12 @@ public class Claims {
+                 Claims::claim, sheetId, personId);
+     }
+ 
++    /** Unbind every claim of the person a statement binds: each shows its live figure again. */
++    public void unbind(String sheetId, long personId) {
++        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND person_id = ? AND stated",
++                sheetId, personId);
++    }
++
+     /** Whether the person has a SETTLED claim with this number: one a correction may correct. */
+     public boolean settled(String sheetId, long personId, String number) {
+         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index 9e15514e..07e3b82c 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -9,8 +9,8 @@ import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Runs once the sheet's new today is set: while the sheet has grace days, every open or soft-closed period whose
+- *  to-date plus them is before the new today is closed, in order of their to-dates, exactly as a
++/** Runs once the sheet's new today is set: while the sheet has grace days, every open period (not a soft-closed
++ *  one: its figures stay as fixed) whose to-date plus them is before the new today is closed, in order of their to-dates, exactly as a
+  *  close by hand would, each writing its PERIOD_CLOSED line ending auto=yes. */
+ public class AutoClosePeriods {
+     public void close(@PathVariable("sheetId") String sheetId, @Val LocalDate today, @Val Actor actor,
+@@ -18,7 +18,7 @@ public class AutoClosePeriods {
+         Integer grace = settings.graceDays(sheetId);
+         if (grace == null) return;
+         List<Period> due = periods.onSheet(sheetId).stream()
+-                .filter(p -> !p.hardClosed() && p.to().plusDays(grace).isBefore(today))
++                .filter(p -> !p.closed() && p.to().plusDays(grace).isBefore(today))
+                 .sorted(Comparator.comparing(Period::to))
+                 .toList();
+         for (Period open : due) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/CancelStatement.java b/src/main/java/net/officefloor/hq/app/person/CancelStatement.java
+new file mode 100644
+index 00000000..fdb86ed8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CancelStatement.java
+@@ -0,0 +1,35 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.settings.Role;
++import net.officefloor.hq.app.settings.Settings;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** A steward cancels the person's last statement. The claims it bound (those bound now: each
++ *  statement rebinds or unbinds every claim of the person) become live again — a figure an earlier
++ *  statement bound is not restored. The count goes down by one and the person shows the statement
++ *  before it, or none. Refused: anyone but a steward, a person with no statement. Read afresh and
++ *  locked, so it happens one after another with a statement taken at once. */
++public class CancelStatement {
++    public void cancel(@PathVariable("sheetId") String sheetId, @PathVariable("personId") long personId,
++            @Val StatementRequest request, People people, Claims claims, Settings settings,
++            Out<Person> personOut, Out<Statement> statement)
++            throws PersonNotFoundException, InvalidSheetRequestException {
++        if (settings.role(sheetId, request.user()) != Role.STEWARD) {
++            throw new InvalidSheetRequestException("Only a steward can cancel a statement");
++        }
++        Person person = people.lock(sheetId, personId);
++        if (person == null) throw new PersonNotFoundException(personId);
++        if (person.getStatementCount() <= 0) {
++            throw new InvalidSheetRequestException("This person has no statement to cancel");
++        }
++        Statement cancelled = new Statement(person.getStatedTotal(), 0, request.user());
++        claims.unbind(sheetId, personId);
++        people.cancelStatement(person);
++        personOut.set(person);
++        statement.set(cancelled);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 3c626027..9a7b682f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -119,6 +119,26 @@ public class People {
+         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ?",
+                 person.getStatementCount(), person.getStatedTotal(), Date.valueOf(person.getStatementDate()),
+                 person.getId());
++        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date) VALUES (?, ?, ?, ?, ?)",
++                person.getSheetId(), person.getId(), person.getStatementCount(), person.getStatedTotal(),
++                Date.valueOf(person.getStatementDate()));
++    }
++
++    /** Cancel the person's last statement: their count goes down by one and they show the one
++     *  before it (its due-total and date), or none. Not an edit: the person's version is untouched. */
++    public void cancelStatement(Person person) {
++        jdbc.update("DELETE FROM person_statement WHERE person_id = ? AND seq >= ?",
++                person.getId(), person.getStatementCount());
++        int count = person.getStatementCount() - 1;
++        List<Object[]> before = jdbc.query(
++                "SELECT stated_total, statement_date FROM person_statement WHERE person_id = ? AND seq = ?",
++                (rs, n) -> new Object[] { rs.getBigDecimal(1), rs.getDate(2) }, person.getId(), count);
++        person.setStatementCount(count);
++        person.setStatedTotal(before.isEmpty() ? null : (java.math.BigDecimal) before.get(0)[0]);
++        person.setStatementDate(before.isEmpty() ? null : ((Date) before.get(0)[1]).toLocalDate());
++        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ?",
++                count, person.getStatedTotal(),
++                person.getStatementDate() != null ? Date.valueOf(person.getStatementDate()) : null, person.getId());
+     }
+ 
+     /** Record the person's retirement date. Not an edit: the person's version is untouched. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordStatementCancelled.java b/src/main/java/net/officefloor/hq/app/person/RecordStatementCancelled.java
+new file mode 100644
+index 00000000..67fc920f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordStatementCancelled.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the statement is cancelled: the cancelled statement's due-total. */
++public class RecordStatementCancelled {
++    public void record(@Val Statement statement, @Val Person person, Audit audit) {
++        audit.record("STATEMENT_CANCELLED sheet=" + person.getSheetId() + " by=" + statement.user()
++                + " name=" + person.getName()
++                + " due-total=" + (statement.dueTotal() != null ? statement.dueTotal().toPlainString() : "n/a"));
++    }
++}
+diff --git a/src/main/resources/db/migration/V45__statement_history.sql b/src/main/resources/db/migration/V45__statement_history.sql
+new file mode 100644
+index 00000000..332a0b71
+--- /dev/null
++++ b/src/main/resources/db/migration/V45__statement_history.sql
+@@ -0,0 +1,16 @@
++-- Every statement taken for a person, numbered from 1 in the order taken (`seq`), with its
++-- due-total (null when n/a) and date: so cancelling the last one can show the one before it.
++-- The person's statement_count, stated_total and statement_date stay the last one's.
++CREATE TABLE person_statement (
++    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id    VARCHAR(200) NOT NULL,
++    person_id   BIGINT       NOT NULL REFERENCES person (id),
++    seq         INT          NOT NULL,
++    stated_total DECIMAL(14,2),
++    statement_date DATE      NOT NULL
++);
++CREATE INDEX person_statement_person ON person_statement (person_id, seq);
++-- A statement taken before this was kept is known only as the last one.
++INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date)
++    SELECT sheet_id, id, statement_count, stated_total, statement_date FROM person
++    WHERE statement_count > 0 AND statement_date IS NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unstate.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unstate.POST.yml
+new file mode 100644
+index 00000000..2be92d88
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unstate.POST.yml
+@@ -0,0 +1,27 @@
++# Cancel a person's last statement (a steward only): the claims it bound become live again, and the
++# person shows the statement before it, or none.
++validate:
++  class: net.officefloor.hq.app.person.ValidateStatement
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: cancel
++cancel:
++  class: net.officefloor.hq.app.person.CancelStatement
++  govern: [ transaction ]
++  next: record
++# Audit only once the statement is cancelled.
++record:
++  class: net.officefloor.hq.app.person.RecordStatementCancelled
++  govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
