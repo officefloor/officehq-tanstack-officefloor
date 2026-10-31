@@ -1,0 +1,426 @@
+diff --git a/src/main/frontend/features/watch/watch.slot.tsx b/src/main/frontend/features/watch/watch.slot.tsx
+new file mode 100644
+index 00000000..2dc68e7d
+--- /dev/null
++++ b/src/main/frontend/features/watch/watch.slot.tsx
+@@ -0,0 +1,75 @@
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson, postJson } from '../../api/http';
++import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
++import type { Person } from '../people/usePeople';
++import { useRowAction } from '../people/useRowAction';
++
++const watchesKey = (sheet: string, user: string) => ['sheet', sheet, 'watches', user] as const;
++
++/** The ids of the people on the sheet the signed-in user watches, re-read whenever the sheet is loaded. */
++function useWatches(sheet: string, user: string) {
++  return useQuery({
++    queryKey: watchesKey(sheet, user),
++    queryFn: () =>
++      getJson<number[]>(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`),
++    staleTime: 0,
++    gcTime: 0,
++  });
++}
++
++/**
++ * Whether the signed-in user watches the person, and the button to start or stop. Watches are per
++ * user: each sees only their own. Settling, approving or re-settling a watched person's claim
++ * notifies everyone watching them.
++ */
++function PersonWatch({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const watches = useWatches(sheet, user);
++  const watch = useMutation({
++    mutationFn: () =>
++      postJson<{ personId: number; watched: boolean }>(
++        `/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/watch`,
++        { user },
++      ),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: watchesKey(sheet, user) }),
++  });
++  const actionTaken = useRowAction(sheet, person.id, watch.reset);
++  const watched = watches.data?.includes(person.id) ?? false;
++  return (
++    <>
++      <td data-testid="person-watched">{watches.data ? (watched ? 'yes' : 'no') : ''}</td>
++      <td>
++        <button
++          type="button"
++          data-testid="person-watch"
++          disabled={watch.isPending}
++          onClick={() => {
++            actionTaken();
++            watch.mutate();
++          }}
++        >
++          {watched ? 'Unwatch' : 'Watch'}
++        </button>
++        {watch.isError && (
++          <span data-testid="person-error" role="alert">
++            {' '}
++            Could not change the watch.
++          </span>
++        )}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonColumns.fill({
++    order: 37,
++    Component: () => (
++      <>
++        <th>Watched</th>
++        <th />
++      </>
++    ),
++  }),
++  PersonCells.fill({ order: 37, Component: PersonWatch }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index 2a7652e4..7ef07bab 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -6,6 +6,7 @@ import net.officefloor.hq.app.period.ClosedPeriods;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.Snapshot;
+ import net.officefloor.hq.app.settings.Settings;
+@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class OpenClaims {
+     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpen bulk, Claims claims, People people,
+             ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
+-            ClaimLog log, Audit audit, Out<BulkOpenResult> result) {
++            ClaimLog log, Watches watches, Audit audit, Out<BulkOpenResult> result) {
+         ClaimStatusChange change = new ClaimStatusChange(ClaimAction.OPEN, bulk.user());
+         ApplyClaimStatus apply = new ApplyClaimStatus();
+         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
+@@ -37,7 +38,7 @@ public class OpenClaims {
+                     continue;
+                 }
+                 claims.save(claim);
+-                record.record(change, claim, people, log, audit);
++                record.record(change, claim, people, log, watches, audit);
+                 rollup.record(sheetId, before, bulk.user());
+                 opened++;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
+index b6a201b4..81f78fb4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
+@@ -4,17 +4,19 @@ import java.math.BigDecimal;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Runs after the claim is saved, so a refused re-settle writes no log or audit line. */
+ public class RecordClaimResettled {
+-    public void record(@Val ClaimResettle change, @Val Claim claim, People people, ClaimLog log, Audit audit) {
++    public void record(@Val ClaimResettle change, @Val Claim claim, People people, ClaimLog log, Watches watches, Audit audit) {
+         log.write(claim, change.user());
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         audit.record("CLAIM_RESETTLED sheet=" + claim.getSheetId() + " by=" + change.user()
+                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
+                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
+                 + " old=" + figure(change.old()) + " new=" + figure(claim.getDue()));
++        watches.notify(claim, person, change.user(), audit);
+     }
+ 
+     private static String figure(BigDecimal due) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index 4d68dc78..194c50b7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -3,11 +3,12 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Runs after the claim is saved, so a refused status change writes no audit line. */
+ public class RecordClaimStatusChanged {
+-    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, ClaimLog log, Audit audit) {
++    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, ClaimLog log, Watches watches, Audit audit) {
+         log.write(claim, change.user());
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         // A clerk's settle over the clerk limit leaves the claim PENDING: it settles nothing yet.
+@@ -18,5 +19,7 @@ public class RecordClaimStatusChanged {
+                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
+                 + (fixesDue ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")
+                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : ""));
++        // A watched person's claim settled or approved: a line per watching user, after the claim's own.
++        if (fixesDue) watches.notify(claim, person, change.user(), audit);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index b785f412..abd77cba 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -6,6 +6,7 @@ import net.officefloor.hq.app.period.ClosedPeriods;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.Watches;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.Snapshot;
+ import net.officefloor.hq.app.settings.Settings;
+@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class SettleClaims {
+     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettle bulk, Claims claims, People people,
+             ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
+-            ClaimLog log, Audit audit, Out<BulkSettleResult> result) {
++            ClaimLog log, Watches watches, Audit audit, Out<BulkSettleResult> result) {
+         ClaimStatusChange change = new ClaimStatusChange(ClaimAction.SETTLE, bulk.user());
+         ApplyClaimStatus apply = new ApplyClaimStatus();
+         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
+@@ -37,7 +38,7 @@ public class SettleClaims {
+                     continue;
+                 }
+                 claims.save(claim);
+-                record.record(change, claim, people, log, audit);
++                record.record(change, claim, people, log, watches, audit);
+                 rollup.record(sheetId, before, bulk.user());
+                 settled++;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordWatchToggled.java b/src/main/java/net/officefloor/hq/app/person/RecordWatchToggled.java
+new file mode 100644
+index 00000000..8a87a149
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordWatchToggled.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the watch is saved, so a refused one writes no audit line. */
++public class RecordWatchToggled {
++    public void record(@Val WatchChange change, @Val Person person, Audit audit) {
++        audit.record((change.watching() ? "PERSON_WATCHED" : "PERSON_UNWATCHED") + " sheet=" + person.getSheetId()
++                + " by=" + change.user() + " name=" + person.getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithWatch.java b/src/main/java/net/officefloor/hq/app/person/RespondWithWatch.java
+new file mode 100644
+index 00000000..b6e7a79c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithWatch.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithWatch {
++    public void respond(@Val WatchChange change, @Val Person person, ObjectResponse<WatchResponse> response) {
++        response.send(new WatchResponse(person.getId(), change.watching()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java b/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
+new file mode 100644
+index 00000000..774fca51
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class RespondWithWatches {
++    public void respond(@PathVariable("sheetId") String sheetId, @RequestParam(value = "user", required = false) String user,
++            Watches watches, ObjectResponse<List<Long>> response) {
++        response.send(user == null || user.isBlank() ? List.of() : watches.watchedBy(sheetId, user.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ToggleWatch.java b/src/main/java/net/officefloor/hq/app/person/ToggleWatch.java
+new file mode 100644
+index 00000000..cd5b0fbd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ToggleWatch.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Starts the user watching the person, or stops them when they already were. */
++public class ToggleWatch {
++    public void toggle(@Val WatchRequest request, @Val Person person, Watches watches, Out<WatchChange> change) {
++        boolean was = watches.watches(person.getSheetId(), person.getId(), request.user());
++        if (was) watches.unwatch(person.getSheetId(), person.getId(), request.user());
++        else watches.watch(person.getSheetId(), person.getId(), request.user());
++        change.set(new WatchChange(request.user(), !was));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateWatch.java b/src/main/java/net/officefloor/hq/app/person/ValidateWatch.java
+new file mode 100644
+index 00000000..c8a59ced
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateWatch.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateWatch {
++    public void validate(@RequestBody WatchRequest request, Out<WatchRequest> body) throws InvalidSheetRequestException {
++        if (request == null || request.user() == null || request.user().isBlank())
++            throw new InvalidSheetRequestException("A watch needs the signed-in user");
++        body.set(new WatchRequest(request.user().trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchChange.java b/src/main/java/net/officefloor/hq/app/person/WatchChange.java
+new file mode 100644
+index 00000000..c0f3c75e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchChange.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A watch toggle by this user; `watching` is whether they watch the person once it is applied. */
++public record WatchChange(String user, boolean watching) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchRequest.java b/src/main/java/net/officefloor/hq/app/person/WatchRequest.java
+new file mode 100644
+index 00000000..ba619855
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a watch toggle: who starts or stops watching the person. */
++public record WatchRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchResponse.java b/src/main/java/net/officefloor/hq/app/person/WatchResponse.java
+new file mode 100644
+index 00000000..04d2035e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Whether the user now watches the person. */
++public record WatchResponse(long personId, boolean watched) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Watches.java b/src/main/java/net/officefloor/hq/app/person/Watches.java
+new file mode 100644
+index 00000000..06d0783b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Watches.java
+@@ -0,0 +1,52 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Who watches whom on each sheet, per user, in the order they started watching. */
++@Repository
++public class Watches {
++
++    private final JdbcTemplate jdbc;
++
++    public Watches(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The ids of the people on this sheet this user watches. */
++    public List<Long> watchedBy(String sheetId, String user) {
++        return jdbc.query("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ? ORDER BY id",
++                (rs, i) -> rs.getLong("person_id"), sheetId, user);
++    }
++
++    /** The users watching this person, in the order they started watching. */
++    public List<String> watchers(String sheetId, long personId) {
++        return jdbc.query("SELECT user_name FROM person_watch WHERE sheet_id = ? AND person_id = ? ORDER BY id",
++                (rs, i) -> rs.getString("user_name"), sheetId, personId);
++    }
++
++    public boolean watches(String sheetId, long personId, String user) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?",
++                Integer.class, sheetId, personId, user);
++        return n != null && n > 0;
++    }
++
++    public void watch(String sheetId, long personId, String user) {
++        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, personId, user);
++    }
++
++    public void unwatch(String sheetId, long personId, String user) {
++        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?", sheetId, personId, user);
++    }
++
++    /** One NOTIFY line per user watching the claim's person, in the order they started watching. */
++    public void notify(Claim claim, Person person, String by, Audit audit) {
++        for (String watcher : watchers(claim.getSheetId(), person.getId())) {
++            audit.record("NOTIFY sheet=" + claim.getSheetId() + " by=" + by + " user=" + watcher
++                    + " person=" + person.getName() + " number=" + (claim.getNumber() != null ? claim.getNumber() : "n/a"));
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V39__person_watch.sql b/src/main/resources/db/migration/V39__person_watch.sql
+new file mode 100644
+index 00000000..d822fd6a
+--- /dev/null
++++ b/src/main/resources/db/migration/V39__person_watch.sql
+@@ -0,0 +1,9 @@
++-- A user watching a person, kept per sheet; one row per watching user, in the order they started
++-- watching (a user who stops and starts again goes to the end).
++CREATE TABLE person_watch (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL,
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    user_name VARCHAR(200) NOT NULL
++);
++CREATE INDEX person_watch_sheet ON person_watch (sheet_id, person_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+new file mode 100644
+index 00000000..5db7f0f4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+@@ -0,0 +1,20 @@
++# Start or stop the signed-in user watching a person. Per user: each sees only their own watches.
++validate:
++  class: net.officefloor.hq.app.person.ValidateWatch
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: toggle
++toggle:
++  class: net.officefloor.hq.app.person.ToggleWatch
++  govern: [ transaction ]
++  next: record
++# Audit only once the watch is saved.
++record:
++  class: net.officefloor.hq.app.person.RecordWatchToggled
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithWatch
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml
+new file mode 100644
+index 00000000..44b2afa8
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml
+@@ -0,0 +1,4 @@
++# The ids of the people on the sheet the given user (?user=) watches.
++respond:
++  class: net.officefloor.hq.app.person.RespondWithWatches
++  govern: [ readonly-transaction ]
