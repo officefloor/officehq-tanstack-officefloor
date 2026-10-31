@@ -42,13 +42,14 @@ import { useGrace } from '../claims/useGrace';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { usePools } from '../pools/usePools';
 import { useCrews } from '../crews/useCrews';
-import { useSettings } from '../settings/useSettings';
+import { scoreBand, useSettings } from '../settings/useSettings';
 
 // Every person on the sheet in the order they were added, with their name shown as "<name> (<grade in force today>)", grade (the one in force on the sheet's today), claimed (the
 // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
 // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
 // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
-// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number),
+// their score (settled-total over 100, minus 5 per overdue counting claim, rounded half to even to a whole number) and its band
+// (HIGH, MID or LOW by the sheet's score thresholds; blank while either is),
 // their settled-total and open-total (the dues of their counting SETTLED claims, and of their counting OPEN and PENDING
 // claims; together the sum of their figures before the cap),
 // the dues of their counting OPEN and PENDING claims by age on today (0 to 30 days, 31 to 60, 61 or more; dated after today is 0 to 30),
@@ -231,6 +232,7 @@ export function PeopleList() {
             {shown('excess') && <th>Excess</th>}
             <th>Settled</th>
             <th>Score</th>
+            <th>Band</th>
             <th>Open</th>
             <th>Active</th>
             <th>Aged 0-30</th>
@@ -283,6 +285,7 @@ export function PeopleList() {
                 {shown('excess') && <td data-testid="person-excess">{formatCents(excessOf(p))}</td>}
                 <td data-testid="person-settled-total">{formatCents(settledTotalOf(p))}</td>
                 <td data-testid="person-score">{scoreOf(p)}</td>
+                <td data-testid="person-band">{scoreBand(settings, scoreOf(p))}</td>
                 <td data-testid="person-open-total">{formatCents(openTotalOf(p))}</td>
                 <td data-testid="person-active">{isActive(p) ? 'yes' : 'no'}</td>
                 <td data-testid="person-aged-0-30">{formatCents(aged[0])}</td>

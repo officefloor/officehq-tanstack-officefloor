@@ -120,6 +120,20 @@ export function SettingsPanel() {
   // The default grade (not dated); likewise may be saved blank (A).
   const [defaultGrade, setDefaultGrade] = useState('');
   const defaultGradeChosen = useRef(false);
+  // The score thresholds (not dated); likewise each may be saved blank (none).
+  const [scoreMid, setScoreMid] = useState('');
+  const scoreMidChosen = useRef(false);
+  const [scoreHigh, setScoreHigh] = useState('');
+  const scoreHighChosen = useRef(false);
+  // Entering a score threshold marks it as the one to save, as it is.
+  const focusScoreMid = () => {
+    unchoosePolicy();
+    scoreMidChosen.current = true;
+  };
+  const focusScoreHigh = () => {
+    unchoosePolicy();
+    scoreHighChosen.current = true;
+  };
   // Entering the default grade marks it as the one to save, as it is.
   const focusDefaultGrade = () => {
     unchoosePolicy();
@@ -220,6 +234,8 @@ export function SettingsPanel() {
     if (parent.trim() === '') parentChosen.current = false;
     if (proofKinds.trim() === '') proofKindsChosen.current = false;
     if (defaultGrade.trim() === '') defaultGradeChosen.current = false;
+    if (scoreMid.trim() === '') scoreMidChosen.current = false;
+    if (scoreHigh.trim() === '') scoreHighChosen.current = false;
     if (rounding.trim() === '') roundingChosen.current = false;
     if (reviewThreshold.trim() === '') reviewChosen.current = false;
     unchooseGradeGrace();
@@ -394,6 +410,14 @@ export function SettingsPanel() {
         setDefaultGrade('');
         defaultGradeChosen.current = false;
       }
+      else if (body.key === 'score-mid') {
+        setScoreMid('');
+        scoreMidChosen.current = false;
+      }
+      else if (body.key === 'score-high') {
+        setScoreHigh('');
+        scoreHighChosen.current = false;
+      }
       else if (body.key === 'parent') {
         setParent('');
         parentChosen.current = false;
@@ -479,13 +503,15 @@ export function SettingsPanel() {
             const parented = parent.trim() !== '' || parentChosen.current;
             const kinded = proofKinds.trim() !== '' || proofKindsChosen.current;
             const defaulted = defaultGrade.trim() !== '' || defaultGradeChosen.current;
+            const scoredMid = scoreMid.trim() !== '' || scoreMidChosen.current;
+            const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
@@ -512,6 +538,8 @@ export function SettingsPanel() {
                 ...(parented ? [{ key: 'parent', value: parent.trim() }] : []),
                 ...(kinded ? [{ key: 'proof-kinds', value: proofKinds.trim() }] : []),
                 ...(defaulted ? [{ key: 'default-grade', value: defaultGrade.trim() }] : []),
+                ...(scoredMid ? [{ key: 'score-mid', value: scoreMid.trim() }] : []),
+                ...(scoredHigh ? [{ key: 'score-high', value: scoreHigh.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -858,6 +886,30 @@ export function SettingsPanel() {
           onChange={(e) => {
             setDefaultGrade(e.target.value);
             defaultGradeChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Score mid: <span data-testid="setting-score-mid-current">{settings?.scoreMid ?? ''}</span>{' '}
+        <input
+          data-testid="setting-score-mid"
+          value={scoreMid}
+          placeholder="Score mid threshold, whole number (blank: none)"
+          onFocus={focusScoreMid}
+          onChange={(e) => {
+            setScoreMid(e.target.value);
+            scoreMidChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Score high: <span data-testid="setting-score-high-current">{settings?.scoreHigh ?? ''}</span>{' '}
+        <input
+          data-testid="setting-score-high"
+          value={scoreHigh}
+          placeholder="Score high threshold, whole number (blank: none)"
+          onFocus={focusScoreHigh}
+          onChange={(e) => {
+            setScoreHigh(e.target.value);
+            scoreHighChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}

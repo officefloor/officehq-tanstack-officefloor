@@ -274,6 +274,22 @@ public class Settings {
         plainHistory(sheetId, REVIEW_SLA, days == null ? "" : String.valueOf(days));
     }
 
+    /** The sheet's score threshold (score-mid or score-high); null when blank. */
+    public Integer scoreThreshold(String sheetId, String key) {
+        sheets.today(sheetId); // the sheet's row holds the score thresholds
+        return jdbc.queryForObject("SELECT " + scoreColumn(key) + " FROM sheet WHERE id = ?", Integer.class, sheetId);
+    }
+
+    public void setScoreThreshold(String sheetId, String key, Integer value) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET " + scoreColumn(key) + " = ? WHERE id = ?", value, sheetId);
+        plainHistory(sheetId, key, value == null ? "" : String.valueOf(value));
+    }
+
+    private static String scoreColumn(String key) {
+        return ValidateSetting.SCORE_HIGH.equals(key) ? "score_high" : "score_mid";
+    }
+
     /** The sheet's proof kinds, in the order set; empty when none. */
     public List<String> proofKinds(String sheetId) {
         sheets.today(sheetId); // the sheet's row holds the proof kinds
@@ -462,6 +478,8 @@ public class Settings {
         Integer grace = graceDays(sheetId);
         Integer escalate = escalateAfter(sheetId);
         Integer reviewSla = reviewSla(sheetId);
+        Integer scoreMid = scoreThreshold(sheetId, ValidateSetting.SCORE_MID);
+        Integer scoreHigh = scoreThreshold(sheetId, ValidateSetting.SCORE_HIGH);
         LocalDate entry = entryDate(sheetId);
         BigDecimal pot = pot(sheetId);
         BigDecimal alert = alertThreshold(sheetId);
@@ -495,6 +513,7 @@ public class Settings {
                 alert == null ? "" : alert.toPlainString(), rounding == null ? "" : net.officefloor.hq.app.claim.Rounding.name(rounding.value()),
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
                 escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
-                String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""));
+                String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""),
+                scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh));
     }
 }

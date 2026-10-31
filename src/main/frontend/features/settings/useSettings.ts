@@ -19,8 +19,9 @@ export type Role = { user: string; role: string };
  *  and every delegation of the steward role, in the order given, and the note threshold with two decimals ("" for none: above the one
  *  in force on its date a claim cannot be opened with an empty note), and the fiscal year start month, 1 to 12 ("1" unless set), and the rounding mode in force
  *  on the sheet's today (half-up or half-even; "" for none), and the review SLA in days ("" for none; not dated), and the proof kinds,
- *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string };
+ *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved,
+ *  and the score thresholds, whole numbers ("" for blank; not dated): while both are set each person shows a band (see scoreBand). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string };
 
 /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
  *  steward, and the audit lines of their changes end with for=<by>. */
@@ -37,6 +38,16 @@ export function inForce(settings: Settings | undefined, key: string, date: strin
   const before = (settings?.dated?.[key] ?? []).filter((d) => d.from <= date);
   const found = before[before.length - 1];
   return found === undefined || found.value === '' ? start : found.value;
+}
+
+/** A person's band for their score: HIGH at or above the score-high, MID at or above the score-mid, else LOW;
+ *  "" while either threshold is blank. */
+export function scoreBand(settings: Settings | undefined, score: string): string {
+  const mid = settings?.scoreMid ?? '';
+  const high = settings?.scoreHigh ?? '';
+  if (mid === '' || high === '') return '';
+  const value = Number(score);
+  return value >= Number(high) ? 'HIGH' : value >= Number(mid) ? 'MID' : 'LOW';
 }
 
 /** The floor a sheet starts with, used until its settings have loaded. */
