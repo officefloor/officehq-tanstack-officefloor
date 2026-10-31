@@ -1,0 +1,493 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 3aba447d..eb82cd2b 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,9 +1,16 @@
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
++export class HttpError extends Error {
++  constructor(message: string, readonly status: number, readonly body: string) {
++    super(message);
++  }
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const res = await fetch(path, init);
+   if (!res.ok) {
+-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
++    const body = await res.text().catch(() => '');
++    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status, body);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index d677fb3e..e4be9e22 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1,6 +1,7 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import type { Person } from '../people/usePeople';
+ import { rateOn, showDue, useRates } from '../rates/useRates';
+@@ -20,7 +21,7 @@ import {
+  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
+  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
+  * with its due (fixed once it is settled, else at the rate in force on the claim's date; in the
+- * due-total a live one is at the rate in force on the sheet's today), its status, who opened it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
++ * due-total too), its status, who opened it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
+  * count toward claimed and the due-total.
+  */
+ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+@@ -39,6 +40,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const [refused, setRefused] = useState<number | null>(null);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+ 
++  const submitOnce = useSubmitOnce();
+   const save = useMutation({
+     mutationFn: (c: { id: number | null; amount: string; date: string; note: string }) => {
+       const body = { amount: c.amount, date: c.date, note: c.note, user };
+@@ -87,7 +89,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   return (
+     <>
+       <td data-testid="person-claimed">{claimed(counted(claims))}</td>
+-      <td data-testid="person-due-total">{showDue(personDueCents(claims, pct))}</td>
++      <td data-testid="person-due-total">{showDue(personDueCents(claims, pct, (d) => rateOn(rates, person.grade, d)))}</td>
+       <td>
+         <form
+           data-testid="claim-form"
+@@ -100,7 +102,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               return;
+             }
+             setInvalid(false);
+-            save.mutate({ id: editing, amount: amount.trim(), date: date.trim(), note });
++            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note }));
+           }}
+         >
+           <input
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index 8c109cdb..d27a724a 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -15,7 +15,7 @@ function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
+   const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const dues = people.map((p) =>
+-    personDueCents(claims.filter((c) => c.personId === p.id), rateOn(rates, p.grade, today)),
++    personDueCents(claims.filter((c) => c.personId === p.id), rateOn(rates, p.grade, today), (d) => rateOn(rates, p.grade, d)),
+   );
+   return (
+     <>
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index e27b3999..38bbdab8 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -55,14 +55,15 @@ export function claimDueCents(claim: Claim, pct: string | undefined): bigint | n
+ 
+ 
+ /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
+- *  a settled claim's fixed due, else live at `pct`, the rate in force on the sheet's today. 0 with
++ *  a settled claim's fixed due, else live at `pctOn(claim's date)`, the rate in force on the claim's
++ *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
+  *  nothing that counts. Null (n/a) when there is no rate today, unless some settled claim keeps a
+  *  figure: then it is the sum of the figures there are. */
+-export function personDueCents(claims: Claim[], pct: string | undefined): bigint | null {
++export function personDueCents(claims: Claim[], pct: string | undefined, pctOn?: (date: string) => string | undefined): bigint | null {
+   let sum = 0n;
+   let any = false;
+   for (const c of counted(claims)) {
+-    const due = claimDueCents(c, pct);
++    const due = claimDueCents(c, pctOn ? pctOn(c.date) : pct);
+     if (due === null) continue;
+     sum += due;
+     any = true;
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 6665d8de..35712851 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -1,6 +1,7 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson, putJson } from '../../api/http';
++import { HttpError, postJson, putJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
+@@ -10,16 +11,30 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data: people = [] } = usePeople(sheet);
+   const [editing, setEditing] = useState<number | null>(null);
++  // The version of the person the editor loaded: a save is refused if someone saved since.
++  const [version, setVersion] = useState(0);
+   const [name, setName] = useState('');
+   const [grade, setGrade] = useState<string>('A');
+   const [blank, setBlank] = useState(false);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}/people`;
+ 
++  const submitOnce = useSubmitOnce();
+   const save = useMutation({
+-    mutationFn: (p: { id: number | null; name: string; grade: string }) =>
++    mutationFn: (p: { id: number | null; name: string; grade: string; version: number }) =>
+       p.id === null
+         ? postJson<Person>(base, { name: p.name, grade: p.grade, user })
+-        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, user }),
++        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, version: p.version, user }),
++    onError: async (e) => {
++      // Someone else saved this person since the editor loaded it: the form shows what is stored
++      // now (and that version), and the list is re-read so a fresh editor loads it too.
++      if (e instanceof HttpError && e.status === 409 && e.body) {
++        const current = JSON.parse(e.body) as Person;
++        setName(current.name);
++        setGrade(current.grade);
++        setVersion(current.version);
++        await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++      }
++    },
+     onSuccess: async () => {
+       setEditing(null);
+       setName('');
+@@ -37,6 +52,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+   const open = (p: Person) => {
+     clearError();
+     setEditing(p.id);
++    setVersion(p.version);
+     setName(p.name);
+     setGrade(p.grade);
+   };
+@@ -61,7 +77,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+             return;
+           }
+           setBlank(false);
+-          save.mutate({ id: editing, name, grade });
++          submitOnce(() => save.mutateAsync({ id: editing, name, grade, version }));
+         }}
+       >
+         <label>
+@@ -106,7 +122,11 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+         {(blank || save.isError) && (
+           <span data-testid="person-form-error" role="alert">
+             {' '}
+-            {blank ? 'A name is required.' : 'Could not save this person.'}
++            {blank
++              ? 'A name is required.'
++              : save.error instanceof HttpError && save.error.status === 409
++                ? 'Someone else saved this person since you opened it; the form now shows what is stored.'
++                : 'Could not save this person.'}
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 95ea42ed..4cc5925e 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -1,7 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-export type Person = { id: number; name: string; grade: string };
++/** `version` counts the person's saves; an edit sends the version it loaded, so a save made by
++ *  someone else in the meantime refuses it. */
++export type Person = { id: number; name: string; grade: string; version: number };
+ 
+ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index b658b284..c6ecc3ee 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -1,6 +1,7 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../sheet/useSheet';
+@@ -19,6 +20,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
+   const [from, setFrom] = useState('');
+   const [invalid, setInvalid] = useState(false);
+ 
++  const submitOnce = useSubmitOnce();
+   const save = useMutation({
+     mutationFn: (r: { grade: string; pct: string; from: string }) =>
+       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
+@@ -49,7 +51,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
+             return;
+           }
+           setInvalid(false);
+-          save.mutate({ grade, pct: pct.trim(), from: from.trim() });
++          submitOnce(() => save.mutateAsync({ grade, pct: pct.trim(), from: from.trim() }));
+         }}
+       >
+         <label>
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 53c89266..b132a823 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -1,6 +1,7 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { sheetKey, useSheet, type Sheet } from './useSheet';
+ 
+@@ -9,6 +10,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSheet(sheet);
+   const [date, setDate] = useState('');
++  const submitOnce = useSubmitOnce();
+   const save = useMutation({
+     mutationFn: (today: string) =>
+       postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today, user }),
+@@ -20,7 +22,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+       data-testid="sheet-today-form"
+       onSubmit={(e) => {
+         e.preventDefault();
+-        save.mutate(date.trim());
++        submitOnce(() => save.mutateAsync(date.trim()));
+       }}
+     >
+       Today: <strong data-testid="sheet-today">{data?.today ?? ''}</strong>{' '}
+diff --git a/src/main/frontend/query/useSubmitOnce.ts b/src/main/frontend/query/useSubmitOnce.ts
+new file mode 100644
+index 00000000..b06c8db9
+--- /dev/null
++++ b/src/main/frontend/query/useSubmitOnce.ts
+@@ -0,0 +1,22 @@
++import { useRef } from 'react';
++
++/**
++ * Guards a form's submit so a second submit before the first has answered is dropped: a double
++ * click stores one record, not two. A `disabled={isPending}` button alone is not enough, as the
++ * mutation's pending state reaches the button only after a re-render, while the latch is set at
++ * once. Pass the mutation's `mutateAsync` call; its failure still shows through the mutation.
++ */
++export function useSubmitOnce() {
++  const busy = useRef(false);
++  return (run: () => Promise<unknown>) => {
++    if (busy.current) return;
++    busy.current = true;
++    run()
++      .catch(() => {
++        /* shown through the mutation's error state */
++      })
++      .finally(() => {
++        busy.current = false;
++      });
++  };
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 3d27354b..9310887e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -5,7 +5,10 @@ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, People people)
+-            throws InvalidSheetRequestException {
++            throws InvalidSheetRequestException, PersonConflictException {
++        if (request.version() != null && request.version() != person.getVersion()) {
++            throw new PersonConflictException(PersonResponse.from(person));
++        }
+         if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
+             throw new InvalidSheetRequestException("The name is already in use on this sheet");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandlePersonConflict.java b/src/main/java/net/officefloor/hq/app/person/HandlePersonConflict.java
+new file mode 100644
+index 00000000..25c371c9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandlePersonConflict.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandlePersonConflict {
++    public void handle(@Parameter PersonConflictException ex,
++            ObjectResponse<ResponseEntity<PersonResponse>> response) {
++        response.send(new ResponseEntity<>(ex.getCurrent(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index edb1c158..3d5972f1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -17,17 +17,17 @@ public class People {
+     }
+ 
+     public List<Person> onSheet(String sheetId) {
+-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
++        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
+                 (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+-                        rs.getString("grade")),
++                        rs.getString("grade"), rs.getInt("version")),
+                 sheetId);
+     }
+ 
+     /** The person with this id on this sheet, or null when there is none. */
+     public Person find(String sheetId, long id) {
+-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?",
++        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
+                 (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+-                        rs.getString("grade")),
++                        rs.getString("grade"), rs.getInt("version")),
+                 sheetId, id).stream().findFirst().orElse(null);
+     }
+ 
+@@ -39,12 +39,15 @@ public class People {
+         return n != null && n > 0;
+     }
+ 
+-    /** Insert a new person (assigning its id) or update an existing one. */
+-    public void save(Person person) {
++    /** Insert a new person (assigning its id) or update an existing one, if it is still at the
++     *  version it was loaded at; false (nothing written) when someone has saved it since. */
++    public boolean save(Person person) {
+         if (person.getId() != null) {
+-            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ?",
+-                    person.getName(), person.getGrade(), person.getId());
+-            return;
++            int n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND version = ?",
++                    person.getName(), person.getGrade(), person.getId(), person.getVersion());
++            if (n == 0) return false;
++            person.setVersion(person.getVersion() + 1);
++            return true;
+         }
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+@@ -56,5 +59,6 @@ public class People {
+             return ps;
+         }, keys);
+         person.setId(keys.getKey().longValue());
++        return true;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 60e2086d..0de9313b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -6,8 +6,14 @@ public class Person {
+     private final String sheetId;
+     private String name;
+     private String grade;
++    private int version;
+ 
+     public Person(Long id, String sheetId, String name, String grade) {
++        this(id, sheetId, name, grade, 0);
++    }
++
++    public Person(Long id, String sheetId, String name, String grade, int version) {
++        this.version = version;
+         this.id = id;
+         this.sheetId = sheetId;
+         this.name = name;
+@@ -21,4 +27,7 @@ public class Person {
+     public void setName(String name) { this.name = name; }
+     public String getGrade() { return grade; }
+     public void setGrade(String grade) { this.grade = grade; }
++    /** How many times the person has been saved since added. */
++    public int getVersion() { return version; }
++    public void setVersion(int version) { this.version = version; }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonConflictException.java b/src/main/java/net/officefloor/hq/app/person/PersonConflictException.java
+new file mode 100644
+index 00000000..80cb50a3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonConflictException.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++/** An edit made against a version of the person someone else has saved over since; answered 409
++ *  with the person as stored now, so the form can show the current values. */
++public class PersonConflictException extends Exception {
++    private final PersonResponse current;
++
++    public PersonConflictException(PersonResponse current) {
++        super("This person was saved by someone else since the editor loaded it");
++        this.current = current;
++    }
++
++    public PersonResponse getCurrent() { return current; }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index a86e4a68..79eabf38 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** Body of a person add or edit: the name, the grade (A, B or C) and who makes the change. */
+-public record PersonRequest(String name, String grade, String user) {
++/** Body of a person add or edit: the name, the grade (A, B or C), who makes the change and, for an
++ *  edit, the version of the person the editor loaded (null: no check). */
++public record PersonRequest(String name, String grade, String user, Integer version) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 6b1197f5..a81f26e9 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -1,8 +1,8 @@
+ package net.officefloor.hq.app.person;
+ 
+ /** A person as the screen sees it. */
+-public record PersonResponse(long id, String name, String grade) {
++public record PersonResponse(long id, String name, String grade, int version) {
+     public static PersonResponse from(Person person) {
+-        return new PersonResponse(person.getId(), person.getName(), person.getGrade());
++        return new PersonResponse(person.getId(), person.getName(), person.getGrade(), person.getVersion());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index 0f2e063c..7e460b06 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -3,7 +3,11 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class SavePerson {
+-    public void save(@Val Person person, People people) {
+-        people.save(person);
++    public void save(@Val Person person, People people) throws PersonConflictException {
++        // Saved over by someone else between this request's load and its save: refused as a conflict.
++        if (!people.save(person)) {
++            Person current = people.find(person.getSheetId(), person.getId());
++            throw new PersonConflictException(PersonResponse.from(current != null ? current : person));
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index d7d04e38..b97c699a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -17,6 +17,6 @@ public class ValidatePerson {
+             throw new InvalidSheetRequestException("The grade must be A, B or C");
+         }
+         // Names are kept without the spaces around them.
+-        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user()));
++        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version()));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V11__person_version.sql b/src/main/resources/db/migration/V11__person_version.sql
+new file mode 100644
+index 00000000..6910a360
+--- /dev/null
++++ b/src/main/resources/db/migration/V11__person_version.sql
+@@ -0,0 +1,3 @@
++-- How many times a person has been saved since added. An edit names the version it loaded and is
++-- refused when the person has been saved since (someone else's edit in the meantime).
++ALTER TABLE person ADD COLUMN version INT NOT NULL DEFAULT 0;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonConflictException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonConflictException.yml
+new file mode 100644
+index 00000000..0fbec973
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonConflictException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandlePersonConflict
