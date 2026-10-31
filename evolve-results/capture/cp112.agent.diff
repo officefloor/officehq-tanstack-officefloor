@@ -1,0 +1,282 @@
+diff --git a/src/main/frontend/features/aliases/aliases.slot.tsx b/src/main/frontend/features/aliases/aliases.slot.tsx
+index 42d4d483..524d1979 100644
+--- a/src/main/frontend/features/aliases/aliases.slot.tsx
++++ b/src/main/frontend/features/aliases/aliases.slot.tsx
+@@ -7,8 +7,9 @@ import { useRowAction } from '../people/useRowAction';
+ 
+ /**
+  * A person's aliases (sorted as names are compared, comma and space separated), and the entry and
+- * button to add one. Aliases share the names' uniqueness: the server refuses a blank alias and one
+- * equal, as names are compared, to any name or alias on the sheet.
++ * button to add one, and whether the person clashes with the sheet's tree. Aliases share the names'
++ * uniqueness: the server refuses a blank alias and one equal, as names are compared, to any name or
++ * alias on the sheet or on another sheet of its tree (its ancestors and descendants).
+  */
+ function PersonAliases({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+   const queryClient = useQueryClient();
+@@ -22,6 +23,7 @@ function PersonAliases({ user, sheet, person }: { user: string; sheet: string; p
+   const actionTaken = useRowAction(sheet, person.id, add.reset);
+   return (
+     <>
++      <td data-testid="person-clashing">{person.clashing ? 'yes' : 'no'}</td>
+       <td data-testid="person-aliases">{person.aliases.join(', ')}</td>
+       <td>
+         <input
+@@ -49,7 +51,7 @@ function PersonAliases({ user, sheet, person }: { user: string; sheet: string; p
+         {add.isError && (
+           <span data-testid="person-error" role="alert">
+             {' '}
+-            Could not add this alias (not blank, and not a name or alias already on the sheet).
++            Could not add this alias (not blank, and not a name or alias already on the sheet or its tree).
+           </span>
+         )}
+       </td>
+@@ -62,6 +64,7 @@ export const contributions = [
+     order: 5,
+     Component: () => (
+       <>
++        <th>Clashing</th>
+         <th>Aliases</th>
+         <th />
+       </>
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 9283e066..faa04b61 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -16,7 +16,9 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+  *  the person's own terms in days (null: none), ahead of their grade's and the sheet's.
+  *  `contact` is the person's contact, trimmed and lower-cased (null: none). `aliases` are the
+  *  person's aliases, sorted as names are compared; the quick-add bar and the paste box find a
+- *  person by an alias as well as by the name. */
++ *  person by an alias as well as by the name. `clashing` is whether their name or an alias is used
++ *  on another sheet of the sheet's tree (its ancestors and descendants); such a person's edits are
++ *  refused until one renames them to a name that does not clash. */
+ export type Person = {
+   id: number;
+   name: string;
+@@ -34,6 +36,7 @@ export type Person = {
+   terms: number | null;
+   contact: string | null;
+   aliases: string[];
++  clashing: boolean;
+ };
+ 
+ /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddAlias.java b/src/main/java/net/officefloor/hq/app/person/AddAlias.java
+index 937f1d7e..a9128bba 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddAlias.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddAlias.java
+@@ -15,7 +15,7 @@ public class AddAlias {
+         Person person = people.lock(sheetId, personId);
+         if (person == null) throw new PersonNotFoundException(personId);
+         String alias = request.alias().trim();
+-        if (people.nameOrAliasTaken(sheetId, alias)) {
++        if (people.nameUsedInTree(sheetId, alias, null)) {
+             throw new InvalidSheetRequestException("The alias is already in use on this sheet");
+         }
+         people.addAlias(person, alias);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index c1fd3d86..4cbcb285 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -14,8 +14,14 @@ public class ApplyPerson {
+         if (request.version() != null && request.version() != person.getVersion()) {
+             throw new PersonConflictException(PersonResponse.from(person));
+         }
+-        if (people.nameTaken(person.getSheetId(), request.name(), person.getId())) {
+-            throw new InvalidSheetRequestException("The name is already in use on this sheet");
++        if (people.nameUsedInTree(person.getSheetId(), request.name(), person.getId())) {
++            throw new InvalidSheetRequestException("The name is already in use on this sheet or its tree");
++        }
++        // A person whose alias clashes with its tree cannot be edited until no alias clashes.
++        Person renamed = new Person(person.getId(), person.getSheetId(), request.name(), person.getGrade());
++        renamed.setAliases(person.getAliases());
++        if (people.clashing(renamed)) {
++            throw new InvalidSheetRequestException("An alias of this person is in use on another sheet of its tree");
+         }
+         if (request.contactKey() != null
+                 && people.contactTaken(person.getSheetId(), request.contactKey(), person.getId())) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+index 25144631..36347aaf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class BuildPerson {
+     public void build(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
+             People people, Out<Person> person) throws InvalidSheetRequestException {
+-        if (people.nameTaken(sheetId, request.name(), null)) {
++        if (people.nameUsedInTree(sheetId, request.name(), null)) {
+             throw new InvalidSheetRequestException("The name is already in use on this sheet");
+         }
+         if (request.contactKey() != null && people.contactTaken(sheetId, request.contactKey(), null)) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 97a260e3..2a3c8135 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -52,12 +52,14 @@ public class People {
+                 (ResultSet rs) -> {
+                     aliases.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getString("alias"));
+                 }, sheetId);
++        java.util.Set<String> used = people.isEmpty() ? java.util.Set.of() : usedInTree(sheetId);
+         for (Person person : people) {
+             person.setAliases(aliases.getOrDefault(person.getId(), new ArrayList<>()));
+             person.setHolds(holds.getOrDefault(person.getId(), new ArrayList<>()));
+             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
+             TreeMap<LocalDate, String> dated = grades.get(person.getId());
+             if (dated != null) person.setGrades(dated);
++            person.setClashing(clashing(person, used));
+         }
+         return people;
+     }
+@@ -93,6 +95,66 @@ public class People {
+         return (n != null && n > 0) || aliasTaken(sheetId, name);
+     }
+ 
++    /** Whether this is taken on the sheet (see {@link #nameTaken}) or, as names are compared, used as a
++     *  name or alias on any other sheet of its tree (see {@link #treeOf}). */
++    public boolean nameUsedInTree(String sheetId, String name, Long exceptId) {
++        return nameTaken(sheetId, name, exceptId) || usedInTree(sheetId).contains(name.trim().toLowerCase(java.util.Locale.ROOT));
++    }
++
++    /** Whether the person's name or any of their aliases is used on another sheet of their tree. */
++    public boolean clashing(Person person) {
++        return clashing(person, usedInTree(person.getSheetId()));
++    }
++
++    private static boolean clashing(Person person, java.util.Set<String> used) {
++        if (used.isEmpty()) return false;
++        if (used.contains(person.getName().trim().toLowerCase(java.util.Locale.ROOT))) return true;
++        return person.getAliases().stream().anyMatch(a -> used.contains(a.trim().toLowerCase(java.util.Locale.ROOT)));
++    }
++
++    /** Every name and alias (in the form they are compared in) used on the other sheets of the sheet's tree. */
++    private java.util.Set<String> usedInTree(String sheetId) {
++        java.util.Set<String> used = new java.util.HashSet<>();
++        for (String other : treeOf(sheetId)) {
++            used.addAll(jdbc.queryForList("SELECT name_key FROM PUBLIC.person WHERE sheet_id = ?", String.class, other));
++            used.addAll(jdbc.queryForList("SELECT alias_key FROM PUBLIC.person_alias WHERE sheet_id = ?", String.class, other));
++        }
++        return used;
++    }
++
++    /** The other sheets of the sheet's tree, among the sheets that exist: its ancestors (its parent, the
++     *  parent's parent, and so on) and its descendants (the sheets naming it as parent, their children,
++     *  and so on). Not dated: read from the live sheets. */
++    public java.util.Set<String> treeOf(String sheetId) {
++        java.util.Set<String> tree = new java.util.LinkedHashSet<>();
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        for (String sheet = parentOf(sheetId); sheet != null && seen.add(sheet); sheet = parentOf(sheet)) {
++            tree.add(sheet);
++        }
++        java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
++        java.util.Set<String> visited = new java.util.HashSet<>(List.of(sheetId));
++        while (!todo.isEmpty()) {
++            for (String child : jdbc.queryForList("SELECT sheet_id FROM PUBLIC.sheet_setting WHERE parent_id = ?",
++                    String.class, todo.poll())) {
++                if (visited.add(child)) {
++                    todo.add(child);
++                    tree.add(child);
++                }
++            }
++        }
++        tree.remove(sheetId);
++        tree.removeIf(sheet -> {
++            Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM PUBLIC.sheet WHERE id = ?", Integer.class, sheet);
++            return n == null || n == 0;
++        });
++        return tree;
++    }
++
++    private String parentOf(String sheetId) {
++        return jdbc.queryForList("SELECT parent_id FROM PUBLIC.sheet_setting WHERE sheet_id = ?", String.class, sheetId)
++                .stream().filter(p -> p != null && !p.isBlank()).findFirst().orElse(null);
++    }
++
+     /** Whether anyone on this sheet already has this as an alias. */
+     private boolean aliasTaken(String sheetId, String alias) {
+         Integer n = jdbc.queryForObject(
+@@ -282,6 +344,7 @@ public class People {
+             person.setAliases(aliasesOf(person.getId()));
+             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
+                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
++            person.setClashing(clashing(person));
+         }
+         return person;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index b2e3569f..e770b75c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -38,6 +38,8 @@ public class Person {
+     private List<Long> patronIds = new ArrayList<>();
+     /** The person's aliases, sorted as names are compared. */
+     private List<String> aliases = new ArrayList<>();
++    /** Whether the person's name or an alias is used on another sheet of their sheet's tree. */
++    private boolean clashing;
+ 
+     public Person(Long id, String sheetId, String name, String grade) {
+         this(id, sheetId, name, grade, 0);
+@@ -131,6 +133,8 @@ public class Person {
+     /** The person's aliases, sorted as names are compared. */
+     public List<String> getAliases() { return aliases; }
+     public void setAliases(List<String> aliases) { this.aliases = aliases; }
++    public boolean isClashing() { return clashing; }
++    public void setClashing(boolean clashing) { this.clashing = clashing; }
+ 
+     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
+      *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, nor
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 2102fbae..33bbdbf4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -9,11 +9,12 @@ import java.util.List;
+  *  and whether they have any hold and each hold's dates, and the ids of the people they have named as patrons. `grade` is
+  *  the grade in force on the sheet's today; `grades` every grade recorded, by from-date (null: from
+  *  the beginning of time, first); `terms` the person's own terms (null: none); `contact` their
+- *  contact (null: none); `aliases` their aliases, sorted as names are compared. */
++ *  contact (null: none); `aliases` their aliases, sorted as names are compared; `clashing` whether
++ *  their name or an alias is used on another sheet of their sheet's tree. */
+ public record PersonResponse(long id, String name, String grade, int version, int statementCount,
+         String statedTotal, String statementDate, boolean retired, String retiredFrom,
+         boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms,
+-        String contact, List<String> aliases) {
++        String contact, List<String> aliases, boolean clashing) {
+ 
+     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
+     public record HoldDates(String from, String to) {
+@@ -36,6 +37,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
+                 person.getGrades().entrySet().stream()
+                         .map(e -> new GradeFrom(e.getValue(), e.getKey().equals(LocalDate.MIN) ? null : e.getKey().toString()))
+                         .toList(),
+-                person.getTerms(), person.getContact(), List.copyOf(person.getAliases()));
++                person.getTerms(), person.getContact(), List.copyOf(person.getAliases()),
++                person.isClashing());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java
+index a11707b7..c5a20935 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java
+@@ -3,15 +3,20 @@ package net.officefloor.hq.app.quickadd;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** The person by that name on the sheet, or a new (not yet saved) one when there is none. */
++/** The person by that name on the sheet, or a new (not yet saved) one when there is none. Refused:
++ *  a new person whose name is used on another sheet of the sheet's tree. */
+ public class FindQuickAddPerson {
+     public void find(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people,
+-            Out<Person> person, Out<QuickAddPerson> found) {
++            Out<Person> person, Out<QuickAddPerson> found) throws InvalidSheetRequestException {
+         Person existing = people.named(sheetId, request.name());
++        if (existing == null && people.nameUsedInTree(sheetId, request.name(), null)) {
++            throw new InvalidSheetRequestException("The name is already in use on this sheet's tree");
++        }
+         found.set(new QuickAddPerson(existing == null));
+         person.set(existing != null ? existing : new Person(null, sheetId, request.name(), request.grade()));
+     }
