@@ -47,6 +47,7 @@ const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 const LOCKED = 'Another user is editing this claim: it is locked until they save or cancel their editor.';
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
+const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.';
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
 const VIEWER = 'A viewer can change nothing.';
 const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
@@ -147,6 +148,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   // The amount typed for splitting each claim, by claim id.
   const [splitOff, setSplitOff] = useState<Record<number, string>>({});
+  // The amount typed in each claim's row for its inline edit, by claim id.
+  const [inlineAmount, setInlineAmount] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   // Put a claim the server answered with into the sheet's claims, so its lock shows at once.
@@ -288,6 +291,42 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
       setRefused({
         id: c.id,
         message: e instanceof HttpError && (e.status === 400 || e.body.includes('less than')) ? BAD_SPLIT : CANNOT_SPLIT,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A DRAFT claim's amount changed in its row: the claim form's edit, with the claim's other values as they are.
+  const editAmount = useMutation({
+    mutationFn: (c: { claim: Claim; amount: string }) =>
+      putJson<Claim>(`${base}/claims/${c.claim.id}`, {
+        amount: c.amount,
+        date: c.claim.date,
+        note: c.claim.note,
+        corrects: c.claim.corrects ?? '',
+        user,
+      }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setInlineAmount((a) => ({ ...a, [c.claim.id]: '' })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.claim.id,
+        message: !(e instanceof HttpError)
+          ? 'Could not save this claim.'
+          : e.body.includes('locked')
+            ? LOCKED
+            : e.body.includes('viewer')
+              ? VIEWER
+              : e.body.includes('archived')
+                ? ARCHIVED
+                : e.body.includes('closed')
+                  ? CLOSED_EDIT
+                  : e.body.includes('DRAFT')
+                    ? NOT_DRAFT
+                    : e.body.includes('retired')
+                      ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
+                      : e.status === 400 || e.body.includes('correction')
+                        ? BAD_AMOUNT
+                        : 'Could not save this claim.',
       }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
@@ -457,7 +496,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             <span data-testid="claim-form-error" role="alert">
               {' '}
               {invalid
-                ? 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.'
+                ? BAD_AMOUNT
                 : save.error instanceof HttpError && save.error.status === 409 && save.error.body.includes('retired')
                   ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
                   : save.error instanceof HttpError && save.error.body.includes('correction')
@@ -646,6 +685,33 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 }}
               >
                 Reassign
+              </button>{' '}
+              <input
+                data-testid="claim-inline-amount"
+                aria-label="New amount"
+                placeholder="0.00"
+                value={inlineAmount[c.id] ?? ''}
+                onChange={(e) => {
+                  setInlineAmount({ ...inlineAmount, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-inline-save"
+                disabled={editAmount.isPending}
+                onClick={() => {
+                  const amount = (inlineAmount[c.id] ?? '').trim();
+                  // The claim form's rule: a negative amount is a correction, naming the claim it corrects.
+                  if (!AMOUNT.test(amount) || (amount.startsWith('-') && !CLAIM_NUMBER.test(c.corrects ?? ''))) {
+                    // Refused here, before anything is sent: the store is untouched.
+                    setRefused({ id: c.id, message: BAD_AMOUNT });
+                    return;
+                  }
+                  editAmount.mutate({ claim: c, amount });
+                }}
+              >
+                Save amount
               </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => openEditor(c)}>
                 Edit
