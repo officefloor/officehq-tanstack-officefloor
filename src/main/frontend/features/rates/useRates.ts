@@ -35,12 +35,15 @@ export function rateOn(rates: Rate[], grade: string, date: string): string | und
 
 /** "12.34" as a whole number of hundredths (1234n), exactly. */
 export function hundredths(value: string): bigint {
-  const [whole, frac = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
+  const negative = value.startsWith('-');
+  const [whole, frac = ''] = (negative ? value.slice(1) : value).split('.');
+  const cents = BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -cents : cents;
 }
 
 function format(cents: bigint): string {
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
+  const abs = cents < 0n ? -cents : cents;
+  return `${cents < 0n ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
 /**
@@ -51,10 +54,13 @@ function format(cents: bigint): string {
 export function dueCents(amount: string, pct: string | undefined): bigint | null {
   if (pct === undefined) return null;
   // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
+  // Rounded on its size, so a negative amount (a correction) rounds like a positive one.
   const product = hundredths(amount) * hundredths(pct);
-  const whole = product / 10000n;
-  const rest = product % 10000n;
-  return rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+  const abs = product < 0n ? -product : product;
+  const whole = abs / 10000n;
+  const rest = abs % 10000n;
+  const rounded = rest > 5000n || (rest === 5000n && whole % 2n === 1n) ? whole + 1n : whole;
+  return product < 0n ? -rounded : rounded;
 }
 
 /** A due in cents as shown: two decimals, or n/a when there is no rate. */

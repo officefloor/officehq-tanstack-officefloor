@@ -7,16 +7,27 @@ import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 
 /** Body of a claim add or edit, as typed: the amount, the date (blank for the sheet's today),
- *  the note and who makes the change. */
-public record ClaimRequest(String amount, String date, String note, String user) {
-    /** 0.00 or more, with up to two decimals. */
-    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ *  the note, the number of the claim it corrects (blank for none) and who makes the change. */
+public record ClaimRequest(String amount, String date, String note, String corrects, String user) {
+    /** Up to two decimals; negative only for a correction. */
+    private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
+    private static final Pattern NUMBER = Pattern.compile("\\d+");
 
-    /** The request's values as the claim rules accept them, or refused. */
+    /** The request's values as the claim rules accept them, or refused. A negative amount is a
+     *  correction and must name the number of the claim it corrects; any other claim corrects none. */
     public static ClaimValues checked(ClaimRequest request) throws InvalidSheetRequestException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         if (!AMOUNT.matcher(amount).matches()) {
-            throw new InvalidSheetRequestException("The amount must be 0.00 or more, with up to two decimals");
+            throw new InvalidSheetRequestException("The amount must be a number with up to two decimals");
+        }
+        BigDecimal value = new BigDecimal(amount).setScale(2);
+        String rawCorrects = request.corrects() == null ? "" : request.corrects().trim();
+        Long corrects = null;
+        if (value.signum() < 0) {
+            if (!NUMBER.matcher(rawCorrects).matches()) {
+                throw new InvalidSheetRequestException("A negative amount must name the number of the settled claim it corrects");
+            }
+            corrects = Long.valueOf(rawCorrects);
         }
         String rawDate = request.date() == null ? "" : request.date().trim();
         LocalDate date = null;
@@ -28,6 +39,6 @@ public record ClaimRequest(String amount, String date, String note, String user)
             }
         }
         String note = request.note() == null ? "" : request.note();
-        return new ClaimValues(new BigDecimal(amount).setScale(2), date, note, request.user());
+        return new ClaimValues(value, date, note, corrects, request.user());
     }
 }

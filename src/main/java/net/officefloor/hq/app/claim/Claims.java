@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due FROM claim";
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -38,18 +38,25 @@ public class Claims {
                 Claims::claim, sheetId, personId);
     }
 
+    /** Whether the person has a SETTLED claim with this number: one a correction may correct. */
+    public boolean settled(String sheetId, long personId, long number) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
+                Integer.class, sheetId, personId, number);
+        return n != null && n > 0;
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ? WHERE id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ? WHERE id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                    claim.getNumber(), claim.getDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getId());
+                    claim.getNumber(), claim.getDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getCorrects(), claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -57,6 +64,7 @@ public class Claims {
             ps.setDate(4, Date.valueOf(claim.getDate()));
             ps.setString(5, claim.getNote());
             ps.setString(6, claim.getStatus().name());
+            ps.setObject(7, claim.getCorrects());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -69,6 +77,7 @@ public class Claims {
                 rs.getBigDecimal("due"), rs.getString("opened_by"));
         claim.setStated(rs.getBoolean("stated"));
         claim.setStatedDue(rs.getBigDecimal("stated_due"));
+        claim.setCorrects(rs.getObject("corrects", Long.class));
         return claim;
     }
 }

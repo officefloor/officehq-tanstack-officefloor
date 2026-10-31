@@ -23,6 +23,8 @@ export type Claim = {
   stated: boolean;
   /** The figure the last statement bound the claim to, two decimals; null when unbound or bound to n/a. */
   statedDue: string | null;
+  /** The number of the SETTLED claim of the same person a correction (a negative amount) corrects; null for any other claim. */
+  corrects: number | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -37,8 +39,16 @@ export function useClaims(sheet: string) {
   });
 }
 
-/** An amount the server accepts: 0.00 or more, with up to two decimals. */
-export const AMOUNT = /^\d+(\.\d{1,2})?$/;
+/** An amount the server accepts: up to two decimals; negative only for a correction. */
+export const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+
+/** A correction's `corrects`: the number of the claim it corrects. */
+export const CLAIM_NUMBER = /^\d+$/;
+
+/** Whether a claim is a correction: its amount is negative. Its due has no floor and no late charge. */
+export function isCorrection(claim: Claim): boolean {
+  return claim.amount.startsWith('-');
+}
 
 /** The claims that count toward claimed, due-total and every total: OPEN and SETTLED ones. */
 export function counted(claims: Claim[]): Claim[] {
@@ -74,7 +84,7 @@ function claimFigureCents(claim: Claim, floor: string, pct: string | undefined):
   const due = dueCents(claim.amount, pct);
   if (due === null) return null;
   const least = hundredths(floor);
-  return due < least ? least : due;
+  return due < least && !isCorrection(claim) ? least : due;
 }
 
 /** What makes an overdue claim's due grow: the sheet's `terms`, its `today` and its late percent `pct`. */
@@ -89,7 +99,7 @@ function daysBetween(from: string, to: string): number {
  *  30 days it is overdue, rounded half to even. Nothing while it is not overdue. Never bound by a
  *  statement: it follows the sheet's today. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
-  if (!overdue(claim, late.terms, late.today)) return 0n;
+  if (!overdue(claim, late.terms, late.today) || isCorrection(claim)) return 0n;
   const periods = BigInt(Math.floor(daysBetween(dueBy(claim, late.terms), late.today) / 30));
   if (periods <= 0n) return 0n;
   // cents * hundredths-of-a-percent is in ten-thousandths of a cent.

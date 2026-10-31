@@ -17,6 +17,7 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
+    private Long corrects;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Long number, BigDecimal due, String openedBy) {
@@ -59,4 +60,9 @@ public class Claim {
     /** The figure the last statement bound the claim to; null when unbound, or bound to n/a. */
     public BigDecimal getStatedDue() { return statedDue; }
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
+    /** The number of the SETTLED claim of the same person this correction corrects; null when it is not a correction. */
+    public Long getCorrects() { return corrects; }
+    public void setCorrects(Long corrects) { this.corrects = corrects; }
+    /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
+    public boolean isCorrection() { return amount.signum() < 0; }
 }

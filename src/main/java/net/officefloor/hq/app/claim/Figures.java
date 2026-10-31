@@ -43,11 +43,11 @@ public class Figures {
 
     /** The late charge on a figure of the claim: nothing unless the claim is OPEN and its due-by (its
      *  date plus the sheet's terms) is before the sheet's today; then the sheet's late percent of the
-     *  figure for every full 30 days it is overdue, rounded half to even to two decimals. Never bound
+     *  figure for every full 30 days it is overdue (a correction has none), rounded half to even to two decimals. Never bound
      *  by a statement: it follows the sheet's today. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.getStatus() != ClaimStatus.OPEN) return none;
+        if (figure == null || claim.getStatus() != ClaimStatus.OPEN || claim.isCorrection()) return none;
         String sheetId = claim.getSheetId();
         LocalDate dueBy = claim.getDate().plusDays(settings.terms(sheetId));
         long periods = ChronoUnit.DAYS.between(dueBy, sheets.today(sheetId)) / 30;
@@ -58,11 +58,11 @@ public class Figures {
 
     /** The claim's due at its person's grade's rate in force on the claim's date: amount times the
      *  rate divided by 100, rounded half to even to two decimals, raised to the sheet's floor when it
-     *  is below it; null when there is no rate. */
+     *  is below it (a correction has no floor); null when there is no rate. */
     public BigDecimal live(Claim claim, String grade) {
         BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
         if (pct == null) return null;
         BigDecimal due = claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_EVEN);
-        return due.max(settings.floor(claim.getSheetId()));
+        return claim.isCorrection() ? due : due.max(settings.floor(claim.getSheetId()));
     }
 }

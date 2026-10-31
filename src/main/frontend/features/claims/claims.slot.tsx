@@ -10,6 +10,7 @@ import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import {
   AMOUNT,
+  CLAIM_NUMBER,
   claimDueCents,
   claimed,
   claimsKey,
@@ -32,6 +33,8 @@ const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, vo
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date, at least the sheet's floor; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total, and not the OPEN ones while the person is held.
+ * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
+ * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
  * Each claim shows its due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and
  * due by before the sheet's today); the person shows how many of the claims that count are overdue
  * and their dues added up.
@@ -54,6 +57,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
+  const [corrects, setCorrects] = useState('');
   const [invalid, setInvalid] = useState(false);
   // The claim whose last status change or edit was refused: its row shows the error.
   const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
@@ -61,8 +65,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (c: { id: number | null; amount: string; date: string; note: string }) => {
-      const body = { amount: c.amount, date: c.date, note: c.note, user };
+    mutationFn: (c: { id: number | null; amount: string; date: string; note: string; corrects: string }) => {
+      const body = { amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, user };
       return c.id === null
         ? postJson<Claim>(`${base}/people/${person.id}/claims`, body)
         : putJson<Claim>(`${base}/claims/${c.id}`, body);
@@ -103,6 +107,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     setAmount('');
     setDate('');
     setNote('');
+    setCorrects('');
   };
   const open = (c: Claim) => {
     clearError();
@@ -116,6 +121,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     setAmount(c.amount);
     setDate(c.date);
     setNote(c.note);
+    setCorrects(c.corrects === null ? '' : String(c.corrects));
   };
   const cancel = () => {
     clearError();
@@ -133,14 +139,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
           data-testid="claim-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!AMOUNT.test(amount.trim())) {
+            // A negative amount is a correction: it must name the number of the claim it corrects.
+            if (!AMOUNT.test(amount.trim()) || (amount.trim().startsWith('-') && !CLAIM_NUMBER.test(corrects.trim()))) {
               // Refused here, before anything is sent: the store is untouched.
               save.reset();
               setInvalid(true);
               return;
             }
             setInvalid(false);
-            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note }));
+            submitOnce(() => save.mutateAsync({ id: editing, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim() }));
           }}
         >
           <input
@@ -173,6 +180,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               clearError();
             }}
           />{' '}
+          <input
+            data-testid="claim-form-corrects"
+            aria-label="Corrects claim number"
+            placeholder="corrects no."
+            value={corrects}
+            onChange={(e) => {
+              setCorrects(e.target.value);
+              clearError();
+            }}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
@@ -180,9 +197,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             <span data-testid="claim-form-error" role="alert">
               {' '}
               {invalid
-                ? 'The amount must be 0.00 or more, with up to two decimals.'
+                ? 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.'
                 : save.error instanceof HttpError && save.error.status === 409 && save.error.body.includes('retired')
                   ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
+                  : save.error instanceof HttpError && save.error.body.includes('correction')
+                    ? `A correction must name a settled claim of ${person.name}.`
                   : 'Could not save this claim.'}
             </span>
           )}
@@ -196,6 +215,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{showDue(claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy))}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+              <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

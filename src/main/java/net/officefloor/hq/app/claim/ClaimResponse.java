@@ -4,13 +4,15 @@ package net.officefloor.hq.app.claim;
  *  the status as DRAFT, OPEN, SETTLED or VOID, the number null when the claim has none, the due
  *  fixed at settling with two decimals, null when it has none (its due is worked out live),
  *  who opened it, null while it has not been opened, whether its person's last statement binds it
- *  and the figure it binds it to (two decimals; null when unbound or bound to n/a). */
+ *  and the figure it binds it to (two decimals; null when unbound or bound to n/a), and the number
+ *  of the claim a correction corrects (null when it is not a correction). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note,
-        String status, Long number, String due, String openedBy, boolean stated, String statedDue) {
+        String status, Long number, String due, String openedBy, boolean stated, String statedDue, Long corrects) {
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),
                 claim.getDue() != null ? claim.getDue().toPlainString() : null, claim.getOpenedBy(),
-                claim.isStated(), claim.getStatedDue() != null ? claim.getStatedDue().toPlainString() : null);
+                claim.isStated(), claim.getStatedDue() != null ? claim.getStatedDue().toPlainString() : null,
+                claim.getCorrects());
     }
 }
