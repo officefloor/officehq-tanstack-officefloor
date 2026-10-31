@@ -8,6 +8,7 @@ public class RecordPersonAdded {
     public void record(@Val PersonRequest request, @Val Person person, Audit audit) {
         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + request.user()
                 + " name=" + person.getName() + " grade=" + person.getGrade()
-                + (person.getTerms() != null ? " terms=" + person.getTerms() : ""));
+                + (person.getTerms() != null ? " terms=" + person.getTerms() : "")
+                + (person.getContact() != null ? " contact=" + person.getContact() : ""));
     }
 }

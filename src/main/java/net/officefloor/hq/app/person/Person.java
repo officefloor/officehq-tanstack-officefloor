@@ -26,6 +26,10 @@ public class Person {
     private Integer terms;
     /** Whether this save changes the person's own terms. */
     private boolean termsChanged;
+    /** The person's contact (null: none). */
+    private String contact;
+    /** Whether this save changes the person's contact. */
+    private boolean contactChanged;
     private int statementCount;
     private BigDecimal statedTotal;
     private LocalDate statementDate;
@@ -78,6 +82,15 @@ public class Person {
     public void changeTerms(Integer terms) {
         this.termsChanged = !java.util.Objects.equals(this.terms, terms);
         this.terms = terms;
+    }
+    /** The person's contact; null when they have none. */
+    public String getContact() { return contact; }
+    public void setContact(String contact) { this.contact = contact; }
+    public boolean isContactChanged() { return contactChanged; }
+    /** Give the person this contact (null: none) with the next save, noting whether it changes. */
+    public void changeContact(String contact) {
+        this.contactChanged = !java.util.Objects.equals(this.contact, contact);
+        this.contact = contact;
     }
     /** How many times the person has been saved since added. */
     public int getVersion() { return version; }

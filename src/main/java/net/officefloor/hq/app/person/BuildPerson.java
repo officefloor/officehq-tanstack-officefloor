@@ -11,8 +11,12 @@ public class BuildPerson {
         if (people.nameTaken(sheetId, request.name(), null)) {
             throw new InvalidSheetRequestException("The name is already in use on this sheet");
         }
+        if (request.contactKey() != null && people.contactTaken(sheetId, request.contactKey(), null)) {
+            throw new InvalidSheetRequestException("The contact is already in use on this sheet");
+        }
         Person built = new Person(null, sheetId, request.name(), request.grade());
         built.setTerms(request.termsDays());
+        built.setContact(request.contactKey());
         person.set(built);
     }
 }

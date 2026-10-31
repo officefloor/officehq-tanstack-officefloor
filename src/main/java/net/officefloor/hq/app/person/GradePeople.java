@@ -31,7 +31,8 @@ public class GradePeople {
             Person person = people.find(sheetId, listed.getId());
             if (person == null) continue;
             PersonRequest request = new PersonRequest(person.getName(), bulk.grade(), bulk.user(), null, bulk.from(),
-                    person.getTerms() == null ? "" : String.valueOf(person.getTerms()));
+                    person.getTerms() == null ? "" : String.valueOf(person.getTerms()),
+                    person.getContact());
             Snapshot before = rollup.snapshot(sheetId);
             try {
                 apply.apply(request, person, people, sheets);

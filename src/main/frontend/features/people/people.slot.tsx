@@ -25,16 +25,18 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const [gradeFrom, setGradeFrom] = useState('');
   // The person's own terms in days; blank for none.
   const [terms, setTerms] = useState('');
+  // The person's contact; blank for none.
+  const [contact, setContact] = useState('');
   const today = useSheetToday(sheet);
   const [blank, setBlank] = useState(false);
   const base = `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (p: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; version: number }) =>
+    mutationFn: (p: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; version: number }) =>
       p.id === null
-        ? postJson<Person>(base, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, user })
-        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, version: p.version, user }),
+        ? postJson<Person>(base, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, contact: p.contact, user })
+        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, contact: p.contact, version: p.version, user }),
     onError: async (e) => {
       // Someone else saved this person since the editor loaded it: the form shows what is stored
       // now (and that version), and the list is re-read so a fresh editor loads it too.
@@ -43,6 +45,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
         setName(current.name);
         setGrade(gradeOn(current, today));
         setTerms(current.terms === null ? '' : String(current.terms));
+        setContact(current.contact ?? '');
         setVersion(current.version);
         await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
         return;
@@ -54,6 +57,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setContact('');
     },
     onSuccess: async () => {
       setEditing(null);
@@ -61,6 +65,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setContact('');
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
   });
@@ -79,6 +84,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
     setGrade(gradeOn(p, today));
     setGradeFrom('');
     setTerms(p.terms === null ? '' : String(p.terms));
+    setContact(p.contact ?? '');
   };
   const cancel = () => {
     clearError();
@@ -87,6 +93,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
     setGrade('A');
     setGradeFrom('');
     setTerms('');
+    setContact('');
   };
 
   return (
@@ -103,7 +110,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setBlank(false);
-          submitOnce(() => save.mutateAsync({ id: editing, name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), version }));
+          submitOnce(() => save.mutateAsync({ id: editing, name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim(), version }));
         }}
       >
         <label>
@@ -159,6 +166,17 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Contact{' '}
+          <input
+            data-testid="person-form-contact"
+            value={contact}
+            onChange={(e) => {
+              setContact(e.target.value);
+              clearError();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add' : 'Save'}
         </button>
@@ -189,6 +207,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th>Terms</th>
+            <th>Contact</th>
             <th />
             <PersonColumns.Slot user={user} sheet={sheet} />
           </tr>
@@ -199,6 +218,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{gradeOn(p, today)}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
+              <td data-testid="person-contact">{p.contact ?? ''}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                   Edit

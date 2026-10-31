@@ -12,7 +12,7 @@ public class ValidateBulkGrade {
         }
         // Checked by the person rules, so a grade or date the person form refuses is refused here too.
         PersonRequest checked = PersonRequest.checked(
-                new PersonRequest("-", request.grade(), request.user(), null, request.from(), null));
+                new PersonRequest("-", request.grade(), request.user(), null, request.from(), null, null));
         body.set(new BulkGrade(new LinkedHashSet<>(request.personIds()), checked.grade(), checked.gradeFrom(), request.user()));
     }
 }

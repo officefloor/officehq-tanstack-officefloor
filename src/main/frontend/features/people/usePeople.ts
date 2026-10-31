@@ -13,7 +13,8 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  reaches their retirement date, unless a statement binds them. `patrons` are the ids of the people they have named as patrons, in
  *  the order they were named. `grade` is the grade in force on the sheet's today when they were read;
  *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). `terms` are
- *  the person's own terms in days (null: none), ahead of their grade's and the sheet's. */
+ *  the person's own terms in days (null: none), ahead of their grade's and the sheet's.
+ *  `contact` is the person's contact, trimmed and lower-cased (null: none). */
 export type Person = {
   id: number;
   name: string;
@@ -29,6 +30,7 @@ export type Person = {
   holds: { from: string; to: string | null }[];
   patrons: number[];
   terms: number | null;
+  contact: string | null;
 };
 
 /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */
