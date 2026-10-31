@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -32,6 +31,14 @@ public class People {
                 sheetId, id).stream().findFirst().orElse(null);
     }
 
+    /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
+                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
+    }
+
     /** Insert a new person (assigning its id) or update an existing one. */
     public void save(Person person) {
         if (person.getId() != null) {
@@ -42,7 +49,7 @@ public class People {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
             ps.setString(3, person.getGrade());
