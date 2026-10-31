@@ -21,7 +21,8 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  person by an alias as well as by the name. `clashing` is whether their name or an alias is used
  *  on another sheet of the sheet's tree (its ancestors and descendants); such a person's edits are
  *  refused until one renames them to a name that does not clash. `origin` is the sheet the person
- *  was transferred from (null: they were not transferred here). */
+ *  was transferred from (null: they were not transferred here). `tags` are the person's tags,
+ *  lower-cased and sorted (empty: none); a claim counts in a tag's total when it or its person carries it. */
 export type Person = {
   id: number;
   name: string;
@@ -42,6 +43,7 @@ export type Person = {
   aliases: string[];
   clashing: boolean;
   origin: string | null;
+  tags: string[];
 };
 
 /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */

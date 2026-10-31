@@ -48,7 +48,7 @@ public record ClaimRequest(String amount, String date, String note, String corre
 
     /** Comma separated tags as stored: each trimmed and lower-cased, blanks and repeats dropped,
      *  sorted, joined by commas; null when there are none. */
-    static String tags(String raw) {
+    public static String tags(String raw) {
         if (raw == null) return null;
         TreeSet<String> tags = new TreeSet<>();
         for (String tag : raw.split(",")) {

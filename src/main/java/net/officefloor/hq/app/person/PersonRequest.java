@@ -3,22 +3,34 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Set;
+import net.officefloor.hq.app.claim.ClaimRequest;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 
 /** Body of a person add or edit: the name, the grade (A, B or C), who makes the change and, for an
  *  edit, the version of the person the editor loaded (null: no check), and the date the grade is
  *  in force from (yyyy-mm-dd; blank or null for the sheet's today), and the person's own terms in days
- *  (blank or null for none), and the person's contact (blank or null for none). */
+ *  (blank or null for none), and the person's contact (blank or null for none), and their tags, comma
+ *  separated (blank for none; null keeps the tags they have). */
 public record PersonRequest(String name, String grade, String user, Integer version, String gradeFrom, String terms,
-        String contact) {
+        String contact, String tags) {
+
+    public PersonRequest(String name, String grade, String user, Integer version, String gradeFrom, String terms,
+            String contact) {
+        this(name, grade, user, version, gradeFrom, terms, contact, null);
+    }
 
     public PersonRequest(String name, String grade, String user, Integer version) {
-        this(name, grade, user, version, null, null, null);
+        this(name, grade, user, version, null, null, null, null);
     }
 
     /** The contact given, without the spaces around it and lower-cased, or null when it was left blank. */
     public String contactKey() {
         return contact == null || contact.isBlank() ? null : contact.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** The tags given as stored (see {@link ClaimRequest#tags}), or null when none were given. */
+    public String tagsKey() {
+        return ClaimRequest.tags(tags);
     }
 
     /** The terms given, or null when they were left blank. */
@@ -55,6 +67,6 @@ public record PersonRequest(String name, String grade, String user, Integer vers
         }
         // Names are kept without the spaces around them.
         return new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version(), from, terms,
-                request.contactKey());
+                request.contactKey(), request.tags());
     }
 }

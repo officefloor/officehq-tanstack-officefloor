@@ -22,6 +22,7 @@ public class BuildPerson {
         Person built = new Person(null, sheetId, request.name(), request.grade());
         built.setTerms(request.termsDays());
         built.setContact(request.contactKey());
+        built.setTags(request.tagsKey());
         return built;
     }
 }

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, past_retirements, origin_sheet, origin_name, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, origin_sheet, origin_name, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
@@ -183,8 +183,8 @@ public class People {
      *  version it was loaded at; false (nothing written) when someone has saved it since. */
     public boolean save(Person person) {
         if (person.getId() != null) {
-            int n = jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE id = ? AND version = ?",
-                    person.getName(), person.getTerms(), person.getContact(), person.getId(), person.getVersion());
+            int n = jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = version + 1 WHERE id = ? AND version = ?",
+                    person.getName(), person.getTerms(), person.getContact(), person.getTags(), person.getId(), person.getVersion());
             if (n == 0) return false;
             person.setVersion(person.getVersion() + 1);
             Person.DatedGrade dated = person.getNewGrade();
@@ -194,14 +194,15 @@ public class People {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, position) VALUES (?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, position) VALUES (?, ?, ?, ?, ?, ?, "
                             + END_POSITION + ")", new String[] { "id" });
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
             ps.setString(3, person.getFirstGrade());
             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             ps.setString(5, person.getContact());
-            ps.setString(6, person.getSheetId());
+            ps.setString(6, person.getTags());
+            ps.setString(7, person.getSheetId());
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
@@ -422,6 +423,7 @@ public class People {
                 rs.getString("grade"), rs.getInt("version"));
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin_sheet"), rs.getString("origin_name"));
         person.setStatementCount(rs.getInt("statement_count"));
         person.setStatedTotal(rs.getBigDecimal("stated_total"));

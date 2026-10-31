@@ -92,17 +92,18 @@ public class Transfers {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, origin_sheet, origin_name, position) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet, origin_name, position) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
                             + People.END_POSITION + ")", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.getName());
             ps.setString(3, person.getFirstGrade());
             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             ps.setString(5, person.getContact());
-            ps.setString(6, person.getSheetId());
-            ps.setString(7, person.getName());
-            ps.setString(8, to);
+            ps.setString(6, person.getTags());
+            ps.setString(7, person.getSheetId());
+            ps.setString(8, person.getName());
+            ps.setString(9, to);
             return ps;
         }, keys);
         long toId = keys.getKey().longValue();

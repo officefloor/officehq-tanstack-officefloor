@@ -30,6 +30,8 @@ public class Person {
     private String contact;
     /** Whether this save changes the person's contact. */
     private boolean contactChanged;
+    /** The person's tags, lower-cased, sorted and comma separated (null: none). */
+    private String tags;
     /** The sheet the person was transferred from, and the name they had there (null: not transferred). */
     private String originSheet;
     private String originName;
@@ -106,6 +108,9 @@ public class Person {
         this.contactChanged = !java.util.Objects.equals(this.contact, contact);
         this.contact = contact;
     }
+    /** The person's tags, lower-cased, sorted and comma separated; null when they have none. */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
     /** How many times the person has been saved since added. */
     public int getVersion() { return version; }
     public void setVersion(int version) { this.version = version; }

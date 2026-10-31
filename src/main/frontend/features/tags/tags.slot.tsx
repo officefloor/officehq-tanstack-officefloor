@@ -6,9 +6,10 @@ import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
 /**
- * A due-total per tag, for every tag ever used on the sheet: the dues of the claims that count
- * (as the sheet's totals count them) which carry it, each as its claim shows it, added up (n/a
- * ones skipped). A claim with two tags counts in both.
+ * A due-total per tag, for every tag ever used on the sheet's claims or carried by its people: the
+ * dues of the claims that count (as the sheet's totals count them) which carry it or whose person
+ * does, each once, as its claim shows it, added up (n/a ones skipped). A claim with two tags counts
+ * in both.
  */
 function TagsPanel({ sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
@@ -19,7 +20,8 @@ function TagsPanel({ sheet }: { user: string; sheet: string }) {
   const late = useLate(sheet);
   const byId = new Map(people.map((p) => [p.id, p]));
   const claims = live(all, heldOnBy(people, today));
-  const tags = [...new Set(all.flatMap((c) => c.tagsUsed))].sort();
+  const tags = [...new Set([...all.flatMap((c) => c.tagsUsed), ...people.flatMap((p) => p.tags)])].sort();
+  const carries = (c: (typeof claims)[number], t: string) => c.tags.includes(t) || (byId.get(c.personId)?.tags.includes(t) ?? false);
   const dueOf = (c: (typeof claims)[number]) => {
     const p = byId.get(c.personId);
     return claimDueCents(c, floor, p ? rateOn(rates, gradeOn(p, c.date), c.date) : undefined, late);
@@ -39,7 +41,7 @@ function TagsPanel({ sheet }: { user: string; sheet: string }) {
           {tags.map((t) => (
             <tr key={t}>
               <td>{t}</td>
-              <td data-testid={`tag-${t}-due-total`}>{totalDue(claims.filter((c) => c.tags.includes(t)).map(dueOf))}</td>
+              <td data-testid={`tag-${t}-due-total`}>{totalDue(claims.filter((c) => carries(c, t)).map(dueOf))}</td>
             </tr>
           ))}
         </tbody>

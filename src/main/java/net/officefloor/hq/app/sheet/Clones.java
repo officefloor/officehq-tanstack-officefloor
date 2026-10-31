@@ -142,8 +142,8 @@ public class Clones {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, retired_from, past_retirements, "
-                            + "position, origin_sheet, origin_name) SELECT ?, name, grade, terms, contact, retired_from, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, retired_from, past_retirements, "
+                            + "position, origin_sheet, origin_name) SELECT ?, name, grade, terms, contact, tags, retired_from, "
                             + "past_retirements, position, origin_sheet, origin_name FROM person WHERE id = ?",
                     new String[] { "id" });
             ps.setString(1, to);

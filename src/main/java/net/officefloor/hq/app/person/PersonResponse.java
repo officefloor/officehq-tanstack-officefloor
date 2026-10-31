@@ -12,12 +12,12 @@ import java.util.List;
  *  the beginning of time, first); `terms` the person's own terms (null: none); `contact` their
  *  contact (null: none); `aliases` their aliases, sorted as names are compared; `clashing` whether
  *  their name or an alias is used on another sheet of their sheet's tree; `origin` the sheet they were
- *  transferred from (null: they were not). */
+ *  transferred from (null: they were not); `tags` their tags, sorted (empty: none). */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
         List<RetirementDates> pastRetirements,
         boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms,
-        String contact, List<String> aliases, boolean clashing, String origin) {
+        String contact, List<String> aliases, boolean clashing, String origin, List<String> tags) {
 
     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
     public record HoldDates(String from, String to) {
@@ -48,6 +48,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
                         .map(e -> new GradeFrom(e.getValue(), e.getKey().equals(LocalDate.MIN) ? null : e.getKey().toString()))
                         .toList(),
                 person.getTerms(), person.getContact(), List.copyOf(person.getAliases()),
-                person.isClashing(), person.getOriginSheet());
+                person.isClashing(), person.getOriginSheet(),
+                person.getTags() == null ? List.of() : List.of(person.getTags().split(",")));
     }
 }

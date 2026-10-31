@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 /** Changes the person's name and records the form's grade from its from-date (blank: the sheet's
  *  today), keeping the grades already recorded — except that a save leaving the grade as the row
  *  showed it (the one in force on the sheet's today), with the from-date blank, records none.
- *  The person's own terms and contact become the form's (blank: none). */
+ *  The person's own terms, contact and tags become the form's (blank: none; tags not given: kept). */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets)
             throws InvalidSheetRequestException, PersonConflictException {
@@ -40,6 +40,7 @@ public class ApplyPerson {
     static void applied(PersonRequest request, Person person, Sheets sheets) {
         person.setName(request.name());
         person.changeContact(request.contactKey());
+        if (request.tags() != null) person.setTags(request.tagsKey());
         person.changeTerms(request.termsDays());
         LocalDate from = request.gradeFromDate();
         LocalDate today = sheets.today(person.getSheetId());
