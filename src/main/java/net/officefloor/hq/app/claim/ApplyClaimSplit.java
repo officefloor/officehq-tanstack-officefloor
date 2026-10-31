@@ -33,7 +33,7 @@ public class ApplyClaimSplit {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Claim into = new Claim(null, claim.getSheetId(), claim.getPersonId(), split.amount(), claim.getDate(),
                 claim.getNote(), ClaimStatus.OPEN, null, null, split.user());
-        into.setDueBy(claim.getDate().plusDays(settings.terms(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate())));
+        into.setDueBy(BuildClaim.dueBy(person, claim.getDate(), settings));
         into.setSplitFrom(claim.getNumber());
         into.setNumber(numbers.next(into));
         split.into(into);

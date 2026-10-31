@@ -11,6 +11,8 @@ public class BuildPerson {
         if (people.nameTaken(sheetId, request.name(), null)) {
             throw new InvalidSheetRequestException("The name is already in use on this sheet");
         }
-        person.set(new Person(null, sheetId, request.name(), request.grade()));
+        Person built = new Person(null, sheetId, request.name(), request.grade());
+        built.setTerms(request.termsDays());
+        person.set(built);
     }
 }

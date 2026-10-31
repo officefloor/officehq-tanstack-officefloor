@@ -10,7 +10,8 @@ import { getJson } from '../../api/http';
  *  order added, from a date to a date (both inclusive; `to` null: open-ended). Their OPEN claims
  *  dated within a hold count in no live total, unless a statement binds them. `patrons` are the ids of the people they have named as patrons, in
  *  the order they were named. `grade` is the grade in force on the sheet's today when they were read;
- *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). */
+ *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). `terms` are
+ *  the person's own terms in days (null: none), ahead of their grade's and the sheet's. */
 export type Person = {
   id: number;
   name: string;
@@ -25,6 +26,7 @@ export type Person = {
   held: boolean;
   holds: { from: string; to: string | null }[];
   patrons: number[];
+  terms: number | null;
 };
 
 /** Whether `date` (yyyy-mm-dd) falls within any of the person's holds. */

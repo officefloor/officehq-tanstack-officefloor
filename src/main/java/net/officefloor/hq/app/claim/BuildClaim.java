@@ -11,7 +11,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Builds the new claim, its due-by fixed from the terms of its person's grade in force on its date, refusing one dated in a closed period or after its person's retirement date,
+/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, refusing one dated in a closed period or after its person's retirement date,
  *  and a correction that does not name a SETTLED claim of the same person. */
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
@@ -29,8 +29,15 @@ public class BuildClaim {
         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
-        built.setDueBy(date.plusDays(settings.terms(person.getSheetId(), person.gradeOn(date), date)));
+        built.setDueBy(dueBy(person, date, settings));
         return built;
+    }
+
+    /** The due-by of a claim of `person` dated `date`: its date plus the person's own terms, else
+     *  the terms of their grade then, else the sheet's terms then. */
+    static LocalDate dueBy(Person person, LocalDate date, Settings settings) {
+        Integer own = person.getTerms();
+        return date.plusDays(own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date));
     }
 
     /** Refuses a correction whose number is not a SETTLED claim of the same person. */

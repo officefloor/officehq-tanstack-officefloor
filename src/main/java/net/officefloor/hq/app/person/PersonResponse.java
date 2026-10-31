@@ -8,10 +8,10 @@ import java.util.List;
  *  and whether they are retired and from when (yyyy-mm-dd, null when not retired),
  *  and whether they have any hold and each hold's dates, and the ids of the people they have named as patrons. `grade` is
  *  the grade in force on the sheet's today; `grades` every grade recorded, by from-date (null: from
- *  the beginning of time, first). */
+ *  the beginning of time, first); `terms` the person's own terms (null: none). */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
-        boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades) {
+        boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms) {
 
     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
     public record HoldDates(String from, String to) {
@@ -33,6 +33,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
                 List.copyOf(person.getPatronIds()),
                 person.getGrades().entrySet().stream()
                         .map(e -> new GradeFrom(e.getValue(), e.getKey().equals(LocalDate.MIN) ? null : e.getKey().toString()))
-                        .toList());
+                        .toList(),
+                person.getTerms());
     }
 }

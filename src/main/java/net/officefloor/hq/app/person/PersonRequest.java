@@ -7,11 +7,17 @@ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 
 /** Body of a person add or edit: the name, the grade (A, B or C), who makes the change and, for an
  *  edit, the version of the person the editor loaded (null: no check), and the date the grade is
- *  in force from (yyyy-mm-dd; blank or null for the sheet's today). */
-public record PersonRequest(String name, String grade, String user, Integer version, String gradeFrom) {
+ *  in force from (yyyy-mm-dd; blank or null for the sheet's today), and the person's own terms in days
+ *  (blank or null for none). */
+public record PersonRequest(String name, String grade, String user, Integer version, String gradeFrom, String terms) {
 
     public PersonRequest(String name, String grade, String user, Integer version) {
-        this(name, grade, user, version, null);
+        this(name, grade, user, version, null, null);
+    }
+
+    /** The terms given, or null when they were left blank. */
+    public Integer termsDays() {
+        return terms == null || terms.isBlank() ? null : Integer.valueOf(terms.trim());
     }
 
     /** The from-date given, or null when it was left blank. */
@@ -37,7 +43,11 @@ public record PersonRequest(String name, String grade, String user, Integer vers
                 throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + from);
             }
         }
+        String terms = request.terms() == null ? "" : request.terms().trim();
+        if (!terms.isEmpty() && !terms.matches("\\d{1,4}")) {
+            throw new InvalidSheetRequestException("Terms must be a whole number of days: " + terms);
+        }
         // Names are kept without the spaces around them.
-        return new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version(), from);
+        return new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version(), from, terms);
     }
 }

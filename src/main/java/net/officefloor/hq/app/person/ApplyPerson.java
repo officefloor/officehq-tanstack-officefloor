@@ -6,7 +6,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Changes the person's name and records the form's grade from its from-date (blank: the sheet's
  *  today), keeping the grades already recorded — except that a save leaving the grade as the row
- *  showed it (the one in force on the sheet's today), with the from-date blank, records none. */
+ *  showed it (the one in force on the sheet's today), with the from-date blank, records none.
+ *  The person's own terms become the form's (blank: none). */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets)
             throws InvalidSheetRequestException, PersonConflictException {
@@ -17,6 +18,7 @@ public class ApplyPerson {
             throw new InvalidSheetRequestException("The name is already in use on this sheet");
         }
         person.setName(request.name());
+        person.changeTerms(request.termsDays());
         var from = request.gradeFromDate();
         var today = sheets.today(person.getSheetId());
         person.setToday(today);

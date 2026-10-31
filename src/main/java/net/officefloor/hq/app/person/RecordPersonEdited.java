@@ -7,6 +7,7 @@ import net.officefloor.plugin.variable.Val;
 public class RecordPersonEdited {
     public void record(@Val PersonRequest request, @Val Person person, Audit audit) {
         audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + request.user()
-                + " name=" + person.getName() + " grade=" + person.getGrade());
+                + " name=" + person.getName() + " grade=" + person.getGrade()
+                + (person.isTermsChanged() ? " terms=" + (person.getTerms() != null ? person.getTerms() : "") : ""));
     }
 }

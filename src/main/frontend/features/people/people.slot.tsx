@@ -23,16 +23,18 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const [grade, setGrade] = useState<string>('A');
   // The date the form's grade is in force from; blank for the sheet's today.
   const [gradeFrom, setGradeFrom] = useState('');
+  // The person's own terms in days; blank for none.
+  const [terms, setTerms] = useState('');
   const today = useSheetToday(sheet);
   const [blank, setBlank] = useState(false);
   const base = `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (p: { id: number | null; name: string; grade: string; gradeFrom: string; version: number }) =>
+    mutationFn: (p: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; version: number }) =>
       p.id === null
-        ? postJson<Person>(base, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, user })
-        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, version: p.version, user }),
+        ? postJson<Person>(base, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, user })
+        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, version: p.version, user }),
     onError: async (e) => {
       // Someone else saved this person since the editor loaded it: the form shows what is stored
       // now (and that version), and the list is re-read so a fresh editor loads it too.
@@ -40,15 +42,25 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
         const current = JSON.parse(e.body) as Person;
         setName(current.name);
         setGrade(gradeOn(current, today));
+        setTerms(current.terms === null ? '' : String(current.terms));
         setVersion(current.version);
         await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+        return;
       }
+      // Any other refusal (an invalid value) keeps its error showing but closes the editor, so the
+      // form is back to adding and nothing typed for the refused save carries into the next one.
+      setEditing(null);
+      setName('');
+      setGrade('A');
+      setGradeFrom('');
+      setTerms('');
     },
     onSuccess: async () => {
       setEditing(null);
       setName('');
       setGrade('A');
       setGradeFrom('');
+      setTerms('');
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
   });
@@ -66,6 +78,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
     setName(p.name);
     setGrade(gradeOn(p, today));
     setGradeFrom('');
+    setTerms(p.terms === null ? '' : String(p.terms));
   };
   const cancel = () => {
     clearError();
@@ -73,6 +86,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
     setName('');
     setGrade('A');
     setGradeFrom('');
+    setTerms('');
   };
 
   return (
@@ -89,7 +103,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setBlank(false);
-          submitOnce(() => save.mutateAsync({ id: editing, name, grade, gradeFrom: gradeFrom.trim(), version }));
+          submitOnce(() => save.mutateAsync({ id: editing, name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), version }));
         }}
       >
         <label>
@@ -132,6 +146,19 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Terms{' '}
+          <input
+            data-testid="person-form-terms"
+            placeholder="days"
+            size={5}
+            value={terms}
+            onChange={(e) => {
+              setTerms(e.target.value);
+              clearError();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add' : 'Save'}
         </button>
@@ -161,6 +188,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Terms</th>
             <th />
             <PersonColumns.Slot user={user} sheet={sheet} />
           </tr>
@@ -170,6 +198,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{gradeOn(p, today)}</td>
+              <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                   Edit

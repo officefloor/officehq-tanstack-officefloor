@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, version, statement_count, stated_total, statement_date, retired_from, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     private final JdbcTemplate jdbc;
@@ -89,8 +89,8 @@ public class People {
      *  version it was loaded at; false (nothing written) when someone has saved it since. */
     public boolean save(Person person) {
         if (person.getId() != null) {
-            int n = jdbc.update("UPDATE person SET name = ?, version = version + 1 WHERE id = ? AND version = ?",
-                    person.getName(), person.getId(), person.getVersion());
+            int n = jdbc.update("UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE id = ? AND version = ?",
+                    person.getName(), person.getTerms(), person.getId(), person.getVersion());
             if (n == 0) return false;
             person.setVersion(person.getVersion() + 1);
             Person.DatedGrade dated = person.getNewGrade();
@@ -100,10 +100,11 @@ public class People {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
             ps.setString(3, person.getFirstGrade());
+            ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
@@ -180,6 +181,7 @@ public class People {
     private static Person person(ResultSet rs, int i) throws SQLException {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getString("grade"), rs.getInt("version"));
+        person.setTerms(rs.getObject("terms", Integer.class));
         person.setStatementCount(rs.getInt("statement_count"));
         person.setStatedTotal(rs.getBigDecimal("stated_total"));
         Date date = rs.getDate("statement_date");

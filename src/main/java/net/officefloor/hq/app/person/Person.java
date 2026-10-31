@@ -22,6 +22,10 @@ public class Person {
     /** A grade this save records, from its date (null: the save records none). */
     private DatedGrade newGrade;
     private int version;
+    /** The person's own terms in days (null: none). */
+    private Integer terms;
+    /** Whether this save changes the person's own terms. */
+    private boolean termsChanged;
     private int statementCount;
     private BigDecimal statedTotal;
     private LocalDate statementDate;
@@ -65,6 +69,15 @@ public class Person {
         this.newGrade = new DatedGrade(grade, from);
         LocalDate key = grades.isEmpty() ? LocalDate.MIN : from;
         grades.put(key, grade);
+    }
+    /** The person's own terms in days; null when they have none. */
+    public Integer getTerms() { return terms; }
+    public void setTerms(Integer terms) { this.terms = terms; }
+    public boolean isTermsChanged() { return termsChanged; }
+    /** Give the person these terms (null: none) with the next save, noting whether they change. */
+    public void changeTerms(Integer terms) {
+        this.termsChanged = !java.util.Objects.equals(this.terms, terms);
+        this.terms = terms;
     }
     /** How many times the person has been saved since added. */
     public int getVersion() { return version; }
