@@ -502,7 +502,9 @@ public class AsOfView {
                 plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""),
                 plain.getOrDefault(ValidateSetting.SCORE_MID, ""), plain.getOrDefault(ValidateSetting.SCORE_HIGH, ""),
                 plain.getOrDefault(ValidateSetting.SCORE_LOG, ""), plain.getOrDefault(Settings.MAX_OPEN, ""),
-                plain.getOrDefault(Settings.PENDING_SLA, ""));
+                plain.getOrDefault(Settings.PENDING_SLA, ""), jdbc.query("SELECT from_date FROM setting_history WHERE sheet_id = ?"
+                        + " AND setting_key IN ('" + String.join("', '", Settings.POLICY_KEYS) + "')" + UP_TO + " ORDER BY seq",
+                        (rs, i) -> rs.getDate(1) == null ? "" : rs.getDate(1).toLocalDate().toString(), sheetId, end));
     }
 
     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */

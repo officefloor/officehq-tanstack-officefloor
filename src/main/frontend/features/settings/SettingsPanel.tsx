@@ -17,10 +17,11 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // before it rounds its live figures half up, one on or after it half to even; blank: the sheet's today; saved when its field is
 // filled or was the last one entered, together with any other field filled), the period numbering from (from that date,
 // a claim opened is numbered within its period; blank: off; saved like the policy date), the cap (two decimals; a person's
-// due-total is at most it; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward, viewer or restricted — a viewer sees everything and changes nothing; a restricted user sees on the people list only the people of their crews and themselves).
+// due-total is at most the one in force on the date of their latest claim that counts; blank: none; saved like the policy date) and the role each user name holds (clerk unless set to steward, viewer or restricted — a viewer sees everything and changes nothing; a restricted user sees on the people list only the people of their crews and themselves).
 // The clerk limit, the floor, the terms, each grade's terms, the late percent and the cap are dated: each has a from-date
 // field (blank: the sheet's today) and is saved as its value from that date, keeping the values from other dates; each
-// shows the value in force on the sheet's today. The proof threshold (two decimals; blank: none; saved like the cap) is dated
+// shows the value in force on the sheet's today. The rounding mode, the floor, the cap, the terms, the late percent and the
+// clerk limit are versioned together as the policy: every change to one is a new version, and the current number shows. The proof threshold (two decimals; blank: none; saved like the cap) is dated
 // too: a claim whose due is above the one in force on its date needs a proof to be settled or approved. So is the note
 // threshold (two decimals; blank: none; saved like the cap): a claim whose due is above the one in force on its date cannot be opened with an empty note. A claim takes the floor, late percent and terms in force on its date.
 // The permission matrix (not dated): for each of open, settle, void, reassign, close and reopen, the roles that may take it,
@@ -751,6 +752,7 @@ export function SettingsPanel() {
             saveSetting.reset();
           }}
         />{' '}
+        Policy version: <span data-testid="policy-version">{settings?.policyVersions?.length ?? 0}</span>{' '}
         Cap: <span data-testid="setting-cap-current">{settings?.cap ?? ''}</span>{' '}
         <input
           data-testid="setting-cap"

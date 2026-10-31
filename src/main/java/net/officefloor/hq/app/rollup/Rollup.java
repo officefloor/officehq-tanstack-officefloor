@@ -62,8 +62,7 @@ public class Rollup {
     public RollupFigures figures(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         LocalDate policyDate = settings.policyDate(sheetId);
-        BigDecimal cap = settings.cap(sheetId);
-        Map<Long, BigDecimal> cutTotals = cap == null ? Map.of() : pools.cutTotals(sheetId, null);
+        Map<Long, BigDecimal> cutTotals = pools.cutTotals(sheetId, null);
         List<Claim> all = claims.list(sheetId);
         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -82,6 +81,8 @@ public class Rollup {
             BigDecimal settled = BigDecimal.ZERO.setScale(2);
             int overdueCount = 0;
             boolean anyFigure = false;
+            // The cap is the one in force on the date of their latest claim that counts (the sheet's today when none does).
+            LocalDate capDate = null;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsClaimed(claim, today)) {
                     continue;
@@ -91,6 +92,9 @@ public class Rollup {
                 }
                 if (!person.countsLive(claim, today)) {
                     continue;
+                }
+                if (capDate == null || claim.getDate().isAfter(capDate)) {
+                    capDate = claim.getDate();
                 }
                 BigDecimal figure = due(claim, person, today, policyDate);
                 if (isOverdue(claim, grace(claim, person), today)) {
@@ -116,6 +120,7 @@ public class Rollup {
             due = due.subtract(partsOut.getOrDefault(person.getId(), BigDecimal.ZERO));
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
             boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
+            BigDecimal cap = settings.cap(sheetId, capDate == null ? today : capDate);
             due = Settings.capped(due, cap, cutTotals.getOrDefault(person.getId(), BigDecimal.ZERO));
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {

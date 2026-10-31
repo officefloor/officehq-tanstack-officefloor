@@ -85,10 +85,16 @@ export function useSheetFigures(sheet: string) {
       (sum, pool) => pool.members.reduce((s, m) => (m.personId === personId && m.cut !== '' ? s + toCents(m.cut) : s), sum),
       0n,
     );
-  // A person's due-total: at most the sheet's cap less their cut total, not below 0.00 (n/a is not capped);
+  // A person's due-total: at most their cap less their cut total, not below 0.00 (n/a is not capped);
   // everything that adds up due-totals uses it. Their excess is how far the sum of their figures is above that.
-  const totalOf = (person: Person) => capped(uncappedOf(person), cap, cutOf(person.id));
-  const excessOf = (person: Person) => excess(uncappedOf(person), cap, cutOf(person.id));
+  // The cap is the one in force on the date of their latest claim that counts (the sheet's today when none does).
+  const capOf = (person: Person) => {
+    const latest = live.filter((c) => c.personId === person.id).reduce<string | undefined>((d, c) => (d === undefined || c.date > d ? c.date : d), undefined);
+    const on = latest ?? today;
+    return on === undefined ? '' : cap(on);
+  };
+  const totalOf = (person: Person) => capped(uncappedOf(person), capOf(person), cutOf(person.id));
+  const excessOf = (person: Person) => excess(uncappedOf(person), capOf(person), cutOf(person.id));
   // A person's settled-total and open-total: the dues of their counting SETTLED claims (frozen
   // figures, corrections included), and of their counting OPEN and PENDING claims; n/a adds nothing.
   // Together they make the sum of their figures before the cap.

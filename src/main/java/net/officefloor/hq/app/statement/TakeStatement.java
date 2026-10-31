@@ -49,9 +49,14 @@ public class TakeStatement {
         Map<Long, BigDecimal> bound = new HashMap<>();
         // Taken now, the person's parts of claims shared with them count, and the parts of theirs others hold do not.
         net.officefloor.hq.app.rollup.Rollup.SharedParts parts = date == null ? rollup.sharedParts(sheetId) : null;
+        // The cap is the one in force on the date of their latest claim that counts (the date taken as of when none does).
+        LocalDate capDate = null;
         for (Claim claim : view.claims()) {
             if (!then.countsLive(claim, today)) {
                 continue;
+            }
+            if (capDate == null || claim.getDate().isAfter(capDate)) {
+                capDate = claim.getDate();
             }
             RoundingMode rounding = Rounding.of(claim, view.policyDate(), view.rounding());
             BigDecimal fixed = ClaimResponse.fixedDue(claim);
@@ -81,8 +86,9 @@ public class TakeStatement {
         }
         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
         boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;
-        BigDecimal cutTotal = view.cap() == null ? null : pools.cutTotals(sheetId, date).getOrDefault(person.getId(), BigDecimal.ZERO);
-        BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap(), cutTotal);
+        BigDecimal cap = view.cap().apply(capDate == null ? today : capDate);
+        BigDecimal cutTotal = cap == null ? null : pools.cutTotals(sheetId, date).getOrDefault(person.getId(), BigDecimal.ZERO);
+        BigDecimal dueTotal = na ? null : Settings.capped(total, cap, cutTotal);
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);

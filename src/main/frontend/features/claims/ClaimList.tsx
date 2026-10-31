@@ -6,7 +6,7 @@ import { claimDue, showDue } from '../rates/due';
 import { claimsKey, deferredShown, tagList, type Claim } from './useClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
+import { useFloor, useLatePct, usePolicy, usePolicyVersions, useSettings } from '../settings/useSettings';
 import { useRealSheetToday, useSheetToday } from '../sheet/useSheetToday';
 import { dueBy, isOverdue } from './overdue';
 import { useGrace } from './useGrace';
@@ -110,6 +110,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
   const latePct = useLatePct(sheet);
   const grace = useGrace(sheet);
   const policy = usePolicy(sheet);
+  const policyVersions = usePolicyVersions(sheet);
   const settings = useSettings(sheet);
 
   const status = useMutation({
@@ -460,6 +461,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-number">{c.number}</span>{' '}
       <span data-testid="claim-due">{showDue(claimDue(c, rate, floor, { pct: latePct, today, grace }, policy))}</span>{' '}
       <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+      <span data-testid="claim-policy">{policyVersions.on(c.date)}</span>{' '}
       <span data-testid="claim-review-late">{isReviewLate(c, today, settings?.reviewSla) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-pending-late">{isPendingLate(c, today, settings?.pendingSla) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-overdue">{isOverdue(c, today, grace) ? 'yes' : 'no'}</span>{' '}

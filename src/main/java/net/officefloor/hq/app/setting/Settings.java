@@ -83,21 +83,47 @@ public class Settings {
 
     /** The sheet's clerk limit in force on its today; null for no limit. */
     public BigDecimal clerkLimit(String sheetId) {
-        InForce found = on(sheetId, ValidateSetting.CLERK_LIMIT, sheets.today(sheetId));
+        return clerkLimit(sheetId, sheets.today(sheetId));
+    }
+
+    /** The sheet's clerk limit in force on a date (a claim's: its date); null for no limit. */
+    public BigDecimal clerkLimit(String sheetId, LocalDate on) {
+        InForce found = on(sheetId, ValidateSetting.CLERK_LIMIT, on);
         return found == null ? null : found.value();
     }
 
-    /** The clerk limit a claim of a person of this grade takes on the sheet's today: the grade's own in force then
-     *  when one is set, else the sheet's; null for no limit. */
-    public BigDecimal clerkLimitFor(String sheetId, String grade) {
-        InForce own = grade == null ? null : on(sheetId, ValidateSetting.GRADE_CLERK_LIMIT + grade, sheets.today(sheetId));
-        return own != null && own.value() != null ? own.value() : clerkLimit(sheetId);
+    /** The clerk limit a claim of a person of this grade dated on the date takes: the grade's own in force then
+     *  when one is set, else the sheet's then; null for no limit. */
+    public BigDecimal clerkLimitFor(String sheetId, String grade, LocalDate on) {
+        InForce own = grade == null ? null : on(sheetId, ValidateSetting.GRADE_CLERK_LIMIT + grade, on);
+        return own != null && own.value() != null ? own.value() : clerkLimit(sheetId, on);
     }
 
     /** The sheet's cap in force on its today: a person's due-total is at most it; null for no cap. */
     public BigDecimal cap(String sheetId) {
-        InForce found = on(sheetId, ValidateSetting.CAP, sheets.today(sheetId));
+        return cap(sheetId, sheets.today(sheetId));
+    }
+
+    /** The sheet's cap in force on a date (a person's: the date of their latest claim that counts); null for no cap. */
+    public BigDecimal cap(String sheetId, LocalDate on) {
+        InForce found = on(sheetId, ValidateSetting.CAP, on);
         return found == null ? null : found.value();
+    }
+
+    /** The settings versioned together as the policy: every change to one of them is a new policy version. */
+    public static final List<String> POLICY_KEYS = List.of(ValidateSetting.ROUNDING, ValidateSetting.FLOOR, ValidateSetting.CAP,
+            ValidateSetting.TERMS, ValidateSetting.LATE_PCT, ValidateSetting.CLERK_LIMIT);
+
+    /** The from-date of each policy version, numbered from 1 in the order made (null: no from-date, it counts always). */
+    public List<LocalDate> policyVersions(String sheetId) {
+        return jdbc.query("SELECT from_date FROM setting_history WHERE sheet_id = ? AND setting_key IN ('"
+                        + String.join("', '", POLICY_KEYS) + "') ORDER BY seq",
+                (rs, i) -> rs.getDate(1) == null ? null : rs.getDate(1).toLocalDate(), sheetId);
+    }
+
+    /** The policy version in force on a date: the number of versions from on or before it (one with no from-date always counts). */
+    public static int policyVersionOn(List<LocalDate> versions, LocalDate on) {
+        return (int) versions.stream().filter(from -> from == null || !from.isAfter(on)).count();
     }
 
     /** The sheet's proof threshold in force on a date (a claim's: its date); null for none. */
@@ -566,6 +592,7 @@ public class Settings {
                 String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""),
                 scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh),
                 scoreLog(sheetId) ? "on" : "", maxOpen == null ? "" : String.valueOf(maxOpen),
-                pendingSla == null ? "" : String.valueOf(pendingSla));
+                pendingSla == null ? "" : String.valueOf(pendingSla),
+                policyVersions(sheetId).stream().map(from -> from == null ? "" : from.toString()).toList());
     }
 }

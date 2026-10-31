@@ -32,8 +32,8 @@ import org.springframework.stereotype.Repository;
 public class AsOf {
 
     /** A person and their claims, with the date standing for the sheet's today and the figures in force then
-     *  (the rounding mode in force on a date: null for none). */
-    public record View(LocalDate today, LocalDate policyDate, BigDecimal cap, Person person, List<Claim> claims,
+     *  (the rounding mode and the cap in force on a date: null for none). */
+    public record View(LocalDate today, LocalDate policyDate, Function<LocalDate, BigDecimal> cap, Person person, List<Claim> claims,
             Rates.Lookup rate, Function<LocalDate, BigDecimal> floor,
             Function<LocalDate, BigDecimal> latePct, Function<LocalDate, java.math.RoundingMode> rounding) {
     }
@@ -58,7 +58,7 @@ public class AsOf {
     /** The person and their claims as they stand now. */
     public View now(Person person) {
         String sheetId = person.getSheetId();
-        return new View(sheets.today(sheetId), settings.policyDate(sheetId), settings.cap(sheetId), person,
+        return new View(sheets.today(sheetId), settings.policyDate(sheetId), on -> settings.cap(sheetId, on), person,
                 claims.ofPerson(sheetId, person.getId()), (grade, on, mark) -> rates.find(sheetId, grade, on, mark),
                 on -> settings.floor(sheetId, on), on -> settings.latePct(sheetId, on), on -> settings.roundingMode(sheetId, on));
     }
@@ -100,7 +100,7 @@ public class AsOf {
             BigDecimal value = setting.apply(ValidateSetting.LATE_PCT, on);
             return value == null ? Settings.START_LATE_PCT : value;
         };
-        BigDecimal cap = setting.apply(ValidateSetting.CAP, date);
+        Function<LocalDate, BigDecimal> cap = on -> setting.apply(ValidateSetting.CAP, on);
 
         // The policy date: the latest set (blank: the date itself).
         List<LocalDate> policies = new ArrayList<>();

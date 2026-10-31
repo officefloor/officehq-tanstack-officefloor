@@ -21,8 +21,9 @@ export type Role = { user: string; role: string };
  *  on the sheet's today (half-up or half-even; "" for none), and the review SLA in days ("" for none; not dated), and the pending SLA in days ("" for none; not dated), and the proof kinds,
  *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved,
  *  and the score thresholds, whole numbers ("" for blank; not dated): while both are set each person shows a band (see scoreBand),
- *  and the score log ("on", or "" for off; not dated): while on, changing the sheet's today audits each person's score. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string };
+ *  and the score log ("on", or "" for off; not dated): while on, changing the sheet's today audits each person's score,
+ *  and the from-date of each policy version, in the order made ("" for none; see usePolicyVersions). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string; policyVersions: string[] };
 
 /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
  *  steward, and the audit lines of their changes end with for=<by>. */
@@ -93,7 +94,22 @@ export function usePolicy(sheet: string): Policy {
   return { date: settings?.policyDate ? settings.policyDate : today, rounding: settings?.dated?.rounding ?? [] };
 }
 
-/** The sheet's cap in force on its today ("" for none): a person's due-total is at most it. */
-export function useCap(sheet: string): string {
-  return useSettings(sheet)?.cap ?? '';
+/** The sheet's cap in force on a date ("" for none; a person's: the date of their latest claim that counts): a person's
+ *  due-total is at most it. */
+export function useCap(sheet: string): (date: string) => string {
+  const settings = useSettings(sheet);
+  return (date) => inForce(settings, 'cap', date, '');
+}
+
+/** The policy settings (the rounding mode, the floor, the cap, the terms, the late percent and the clerk limit) are
+ *  versioned together: every change to one of them is a new version, numbered from 1 in the order made. */
+export function usePolicyVersions(sheet: string) {
+  const versions = useSettings(sheet)?.policyVersions ?? [];
+  return {
+    /** The current version number. */
+    current: versions.length,
+    /** The version in force on a date (a claim's: its date): how many versions are from on or before it (one with no
+     *  from-date counts always). */
+    on: (date: string) => versions.filter((from) => from === '' || from <= date).length,
+  };
 }
