@@ -7,11 +7,32 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A person's plan: the amount, from the start every N days (or monthly on a day of the month) up to the end; generated is
- *  how many claims it has made. Exactly one of every and day is set. */
+ *  how many claims it has made; pauses its pauses in the order they were taken. Exactly one of every and day is set. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end,
-        int generated) {
+        int generated, List<Pause> pauses) {
 
-    /** The plan dates up to and including last: the start then every N days, or the day in every month from the start's month
+    /** A pause: from the day it was paused up to (not including) the day it was resumed, null while still paused. */
+    public record Pause(LocalDate from, LocalDate to) {
+        boolean skips(LocalDate date) {
+            return !date.isBefore(from) && (to == null || date.isBefore(to));
+        }
+    }
+
+    /** Whether the plan is paused now: its latest pause not resumed. */
+    public boolean paused() {
+        return !pauses.isEmpty() && pauses.get(pauses.size() - 1).to() == null;
+    }
+
+    public Plan withPauses(List<Pause> pauses) {
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, generated, pauses);
+    }
+
+    /** Whether a pause skips the date. */
+    public boolean skipped(LocalDate date) {
+        return pauses.stream().anyMatch(p -> p.skips(date));
+    }
+
+    /** The plan dates up to and including last that no pause skips: the start then every N days, or the day in every month from the start's month
      *  (on the month's last day when the month is shorter), dates before the start left out. */
     public List<LocalDate> dates(LocalDate last) {
         List<LocalDate> dates = new ArrayList<>();
@@ -26,11 +47,13 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
                 dates.add(date);
             }
         }
+        dates.removeIf(this::skipped);
         return dates;
     }
 
-    /** The first count plan dates after today and on or before the end. */
+    /** The first count plan dates after today and on or before the end; none while the plan is paused. */
     public List<LocalDate> nextDates(LocalDate today, int count) {
+        if (paused()) return List.of();
         return dates(end).stream().filter(d -> d.isAfter(today)).limit(count).toList();
     }
 }

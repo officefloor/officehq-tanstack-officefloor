@@ -6,7 +6,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { usePersonAction } from '../people/usePersonAction';
 import { plansKey, usePlans, type Plan } from './usePlans';
 
-// The person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form that adds one: an amount
+// The person's plans, each with how many claims it has made so far, its next five dates after the sheet's today and whether it is
+// paused (with its pause and resume buttons), and the form that adds one: an amount
 // the claim form takes, a start (blank: the sheet's today), every N days (a whole number, at least 1) or
 // instead monthly on a day of the month (1 to 31), and an end not before the start. A refusal shows the plan error on the row.
 export function PlanControl({ personId }: { personId: string }) {
@@ -43,22 +44,7 @@ export function PlanControl({ personId }: { personId: string }) {
     <div>
       <ul>
         {plans.map((p) => (
-          <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            <span data-testid="plan-amount-shown">{p.amount}</span>{' '}
-            {p.day !== null ? (
-              <>
-                monthly on day <span data-testid="plan-day">{p.day}</span>
-              </>
-            ) : (
-              <>
-                every <span data-testid="plan-every">{p.every}</span> days
-              </>
-            )}{' '}
-            from{' '}
-            <span data-testid="plan-start">{p.start}</span> to <span data-testid="plan-end">{p.end}</span>, made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>, next{' '}
-            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
-          </li>
+          <PlanRow key={p.id} plan={p} />
         ))}
       </ul>
       <form
@@ -83,5 +69,57 @@ export function PlanControl({ personId }: { personId: string }) {
         )}
       </form>
     </div>
+  );
+}
+
+// One plan's line. Pause skips the plan's dates from the sheet's today until it is resumed; pausing a paused plan or resuming a
+// running one is refused, shown as the plan error on the line.
+function PlanRow({ plan: p }: { plan: Plan }) {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+
+  const toggle = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${encodeURIComponent(p.id)}/${action}`, { user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheet) }),
+  });
+  const taken = usePersonAction(p.personId, () => toggle.reset());
+  const act = (action: 'pause' | 'resume') => {
+    taken();
+    once(() => toggle.mutateAsync(action));
+  };
+
+  return (
+    <li data-testid={`plan-row-${p.id}`}>
+      <span data-testid="plan-amount-shown">{p.amount}</span>{' '}
+      {p.day !== null ? (
+        <>
+          monthly on day <span data-testid="plan-day">{p.day}</span>
+        </>
+      ) : (
+        <>
+          every <span data-testid="plan-every">{p.every}</span> days
+        </>
+      )}{' '}
+      from{' '}
+      <span data-testid="plan-start">{p.start}</span> to <span data-testid="plan-end">{p.end}</span>, made{' '}
+      <span data-testid="plan-generated">{p.generated}</span>, next{' '}
+      <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>, paused{' '}
+      <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" onClick={() => act('pause')}>
+        Pause
+      </button>{' '}
+      <button type="button" data-testid="plan-resume" onClick={() => act('resume')}>
+        Resume
+      </button>
+      {toggle.isError && (
+        <span data-testid="plan-error" role="alert">
+          {' '}
+          The plan could not be {toggle.variables === 'pause' ? 'paused: it is already paused' : 'resumed: it is not paused'}.
+        </span>
+      )}
+    </li>
   );
 }

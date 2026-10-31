@@ -20,7 +20,7 @@ public class Plans {
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2), rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
-            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"));
+            rs.getObject("month_day", Integer.class), rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -30,11 +30,27 @@ public class Plans {
 
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
+        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream().map(this::withPauses).toList();
     }
 
     public Plan find(long id) {
-        return jdbc.query(SELECT + " WHERE p.id = ?", ROW, id).stream().findFirst().orElse(null);
+        return jdbc.query(SELECT + " WHERE p.id = ?", ROW, id).stream().findFirst().map(this::withPauses).orElse(null);
+    }
+
+    private Plan withPauses(Plan plan) {
+        return plan.withPauses(jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new Plan.Pause(rs.getDate("paused_on").toLocalDate(),
+                        rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()), plan.id()));
+    }
+
+    /** Pauses the plan from the day. */
+    public void pause(long planId, LocalDate on) {
+        jdbc.update("INSERT INTO plan_pause (plan_id, paused_on) VALUES (?, ?)", planId, Date.valueOf(on));
+    }
+
+    /** Resumes the plan's open pause on the day. */
+    public void resume(long planId, LocalDate on) {
+        jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(on), planId);
     }
 
     public Plan add(String sheetId, long personId, java.math.BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end) {
