@@ -42,6 +42,7 @@ public class Claims {
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setWaived(rs.getBoolean("waived"));
         claim.setHeld(rs.getBoolean("held"));
+        claim.setReviewUser(rs.getString("review_user"));
         claim.setProofs(rs.getInt("proofs"));
         claim.setProofPhotos(rs.getInt("proof_photos"));
         claim.setSplitFrom(rs.getString("split_from"));
@@ -310,9 +311,9 @@ public class Claims {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, settled_due, opened_by, due_by,"
                             + " deferred_until, proofs, late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch,"
-                            + " listed_seq, rate_mark, waived, proof_photos, held)"
+                            + " listed_seq, rate_mark, waived, proof_photos, held, review_user)"
                             + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, due_by, deferred_until, proofs,"
-                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived, proof_photos, held"
+                            + " late_entry, reminded_on, ref, tags, void_reason, edited_by, terms, settle_batch, ?, rate_mark, waived, proof_photos, held, review_user"
                             + " FROM claim WHERE sheet_id = ? AND id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
@@ -415,6 +416,11 @@ public class Claims {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getSheetId(), claim.getId());
         history(claim.getSheetId(), claim.getId());
+    }
+
+    /** Records the user the claim's review is assigned to. */
+    public void assignReview(Claim claim) {
+        jdbc.update("UPDATE claim SET review_user = ? WHERE sheet_id = ? AND id = ?", claim.getReviewUser(), claim.getSheetId(), claim.getId());
     }
 
     /** Records that the claim's late charge is waived. */

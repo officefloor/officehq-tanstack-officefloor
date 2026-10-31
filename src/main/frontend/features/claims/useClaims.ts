@@ -37,6 +37,8 @@ export type Claim = {
   waived?: boolean;
   /** Whether the claim is held: it still counts in every total. */
   held?: boolean;
+  /** The user a steward assigned the claim's review to, "" when never assigned (kept once it leaves REVIEW). */
+  reviewUser?: string;
   /** The date the claim was last deferred until, "" if it was never deferred. */
   deferredUntil: string;
   /** The claim's proofs count. */

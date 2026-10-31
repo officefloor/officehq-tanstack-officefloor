@@ -106,6 +106,10 @@ public class Claim {
     private boolean waived;
     public boolean isWaived() { return waived; }
     public void setWaived(boolean waived) { this.waived = waived; }
+    /** The user a steward assigned the claim's review to; null when never assigned. */
+    private String reviewUser;
+    public String getReviewUser() { return reviewUser; }
+    public void setReviewUser(String reviewUser) { this.reviewUser = reviewUser; }
     /** Whether the claim is held: it still counts in every total. */
     private boolean held;
     public boolean isHeld() { return held; }

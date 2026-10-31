@@ -19,13 +19,14 @@ import java.util.List;
  *  batch is the number of the bulk settle batch that settled it, "" when settled one at a time or never;
  *  rateMark is the mark drawn when it arrived on the sheet: a forward-only rate applies to it only when its mark is lower;
  *  waived is whether a steward has waived its late charge; held is whether the claim is held;
+ *  reviewUser is the user its review is assigned to, "" when never assigned;
  *  shares are its holders in the order shared, each a person id and their share (two decimals) (empty unless listed). */
 public record ClaimResponse(String id, String personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String corrects,
         String roundingDate, String dueBy, List<String> log, String deferredUntil, String proofs,
         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, String tags,
         String voidReason, List<String> comments, String batch, List<String> lines, long rateMark, boolean waived,
-        String proofReceipts, String proofPhotos, boolean held, List<Share> shares) {
+        String proofReceipts, String proofPhotos, boolean held, List<Share> shares, String reviewUser) {
 
     /** One holder of the claim: the person's id and their share. */
     public record Share(String personId, String share) {
@@ -52,7 +53,8 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getLines().stream().map(ClaimLine::line).toList(), claim.getRateMark(),
                 claim.isWaived(), String.valueOf(claim.proofsOf(ProofKind.RECEIPT)),
                 String.valueOf(claim.proofsOf(ProofKind.PHOTO)), claim.isHeld(),
-                claim.getShares().stream().map(s -> new Share(String.valueOf(s.personId()), s.share().setScale(2).toPlainString())).toList());
+                claim.getShares().stream().map(s -> new Share(String.valueOf(s.personId()), s.share().setScale(2).toPlainString())).toList(),
+                claim.getReviewUser() == null ? "" : claim.getReviewUser());
     }
 
     /** The due a claim keeps whatever the rates do: fixed when settled, else bound by a statement. */

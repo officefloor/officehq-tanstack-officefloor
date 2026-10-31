@@ -40,6 +40,8 @@ import { peopleKey, type Person } from '../people/usePeople';
 // A steward waives an OPEN or PENDING claim's late charge with the waive button: it bears no late charge from then on,
 // whatever its overdue state. Waiving by anyone else, a claim in any other status, or one already waived is refused with
 // the claim's error. Each claim shows waived (yes or no).
+// A steward assigns a REVIEW claim's review to a user with the review entry and its button. A blank user, a claim in
+// any other status, or anyone else assigning is refused with the claim's error. Each claim shows the user assigned.
 // A claim is shared with another person on the sheet with the share select, the share percent (more than 0.00, two
 // decimals) and the share button; sharing with the claim's own person, a person already holding a share, shares totalling
 // more than 100.00, or a SETTLED, VOID or DELETED claim, is refused with the claim's error. Each claim shows its holders
@@ -184,6 +186,19 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
       ]),
+  });
+
+  const [reviewUser, setReviewUser] = useState('');
+  const reviewAssign = useMutation({
+    mutationFn: (reviewer: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/review-assign`,
+        { user, reviewer },
+      ),
+    onSuccess: () => {
+      setReviewUser('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
   });
 
   const [sharePersonId, setSharePersonId] = useState('');
@@ -376,6 +391,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     resettle.reset();
     defer.reset();
     waive.reset();
+    reviewAssign.reset();
     share.reset();
     hold.reset();
     remind.reset();
@@ -434,6 +450,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-review-assigned">{c.reviewUser ?? ''}</span>{' '}
       <span data-testid="claim-shares">
         {(c.shares ?? [])
           .flatMap((h) => {
@@ -589,6 +606,15 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-waive" onClick={() => act(() => waive.mutate())}>
         Waive late charge
       </button>{' '}
+      <input
+        data-testid="claim-review-user"
+        value={reviewUser}
+        placeholder="Reviewer"
+        onChange={(e) => act(() => setReviewUser(e.target.value))}
+      />{' '}
+      <button type="button" data-testid="claim-review-assign" onClick={() => act(() => reviewAssign.mutate(reviewUser))}>
+        Assign review
+      </button>{' '}
       <select
         data-testid="claim-share-select"
         value={sharePersonId}
@@ -728,6 +754,12 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only a steward can waive a claim's late charge, only an OPEN or PENDING claim's, and only once.
+        </span>
+      )}
+      {reviewAssign.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: only a steward can assign a claim's review, only a REVIEW claim's, and to a user.
         </span>
       )}
       {share.isError && (
