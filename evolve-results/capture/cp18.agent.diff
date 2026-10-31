@@ -1,0 +1,530 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 4ab797b7..cb4d8c7a 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -11,7 +11,8 @@ import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriod
+ /**
+  * The sheet's periods, each with its due-total — the figures of everyone's counted (OPEN or
+  * SETTLED) claims dated in it, n/a ones skipped — and one form to add a period: a name unique on
+- * the sheet and a from and to date, inclusive, overlapping no other period.
++ * the sheet and a from and to date, inclusive, overlapping no other period. A period can be closed:
++ * its due-total is then the one it had when it was closed, whatever rates do later.
+  */
+ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+@@ -23,6 +24,8 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+   const [invalid, setInvalid] = useState<string | null>(null);
++  // The period whose last close was refused: its row shows the error.
++  const [refused, setRefused] = useState<string | null>(null);
+ 
+   const submitOnce = useSubmitOnce();
+   const save = useMutation({
+@@ -36,6 +39,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
+     },
+   });
+ 
++  const close = useMutation({
++    mutationFn: (name: string) =>
++      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
++    onMutate: () => setRefused(null),
++    onError: (_e, name) => setRefused(name),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
++  });
++
+   // An error goes as soon as its form is changed or submitted again.
+   const clearError = () => {
+     save.reset();
+@@ -56,11 +67,13 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
+ 
+   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+   const dueIn = (period: Period) =>
+-    totalDue(
+-      counted(all)
+-        .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
+-        .map((c) => claimDueCents(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
+-    );
++    period.closed && period.closedTotal !== null
++      ? period.closedTotal
++      : totalDue(
++          counted(all)
++            .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
++            .map((c) => claimDueCents(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
++        );
+ 
+   return (
+     <section data-testid="periods-panel">
+@@ -131,6 +144,8 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
+             <th>From</th>
+             <th>To</th>
+             <th>Due</th>
++            <th>Closed</th>
++            <th></th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -140,6 +155,23 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
+               <td data-testid="period-from">{p.from}</td>
+               <td data-testid="period-to">{p.to}</td>
+               <td data-testid="period-due-total">{dueIn(p)}</td>
++              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
++              <td>
++                <button
++                  type="button"
++                  data-testid="period-close"
++                  disabled={close.isPending}
++                  onClick={() => close.mutate(p.name)}
++                >
++                  Close
++                </button>
++                {refused === p.name && (
++                  <span data-testid="period-error" role="alert">
++                    {' '}
++                    Could not close this period.
++                  </span>
++                )}
++              </td>
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/periods/usePeriods.ts b/src/main/frontend/features/periods/usePeriods.ts
+index e182771d..cb477a7d 100644
+--- a/src/main/frontend/features/periods/usePeriods.ts
++++ b/src/main/frontend/features/periods/usePeriods.ts
+@@ -1,8 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** A period as the server sends it: its name and its from and to dates (yyyy-mm-dd), inclusive. */
+-export type Period = { name: string; from: string; to: string };
++/** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
++ *  it is closed and, when it is, the due-total fixed when it was closed. */
++export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
+ 
+ export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 4e8cc0b9..9b574ca0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -1,12 +1,20 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+ 
++/** Edits the claim, refusing when it is dated in a closed period, or would be moved into one. */
+ public class ApplyClaim {
+-    public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets) {
++    public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods)
++            throws PeriodClosedException {
++        LocalDate date = values.date() != null ? values.date() : sheets.today(claim.getSheetId());
++        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
++        closedPeriods.refuse(claim.getSheetId(), date);
+         claim.setAmount(values.amount());
+-        claim.setDate(values.date() != null ? values.date() : sheets.today(claim.getSheetId()));
++        claim.setDate(date);
+         claim.setNote(values.note());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index f5c85635..1e0ba209 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+@@ -8,11 +10,13 @@ import net.officefloor.plugin.variable.Val;
+ /** Moves the claim to the action's status, refusing a change its current status does not allow.
+  *  Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
+  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+- *  bound it to, else its person's grade's rate in force on the claim's date; with no rate it stays live. The user who opened a claim may not settle it. */
++ *  bound it to, else its person's grade's rate in force on the claim's date; with no rate it stays live. The user who opened a claim may not settle it.
++ *  A claim dated in a closed period cannot change status at all. */
+ public class ApplyClaimStatus {
+     public void apply(@Val ClaimStatusChange change, @Val Claim claim, Sheets sheets, People people,
+-            Figures figures, Out<ClaimNumber> number)
+-            throws ClaimStatusRefusedException {
++            Figures figures, ClosedPeriods closedPeriods, Out<ClaimNumber> number)
++            throws ClaimStatusRefusedException, PeriodClosedException {
++        closedPeriods.refuse(claim.getSheetId(), claim.getDate());
+         if (!change.action().allowedFrom(claim.getStatus())) {
+             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index aae2e65c..6b6360cf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -1,14 +1,20 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
++/** Builds the new claim, refusing one dated in a closed period. */
+ public class BuildClaim {
+-    public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, Out<Claim> claim) {
+-        claim.set(new Claim(null, person.getSheetId(), person.getId(), values.amount(),
+-                values.date() != null ? values.date() : sheets.today(person.getSheetId()), values.note(),
++    public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
++            Out<Claim> claim) throws PeriodClosedException {
++        LocalDate date = values.date() != null ? values.date() : sheets.today(person.getSheetId());
++        closedPeriods.refuse(person.getSheetId(), date);
++        claim.set(new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
+                 ClaimStatus.DRAFT, null, null, null));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+new file mode 100644
+index 00000000..a82def66
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app.period;
++
++import java.math.BigDecimal;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.claim.Figures;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Closes the period, fixing its due-total as the screen shows it now: the figures of everyone's
++ *  counted (OPEN or SETTLED) claims dated in it, n/a ones skipped. A closed period cannot be
++ *  closed again. Publishes the closed period. */
++public class ClosePeriod {
++    public void close(@Val Period period, Periods periods, Claims claims, People people, Figures figures,
++            Out<ClosedPeriod> closed) throws PeriodClosedException {
++        if (period.closed()) throw new PeriodClosedException("Period " + period.name() + " is already closed");
++        Map<Long, String> gradeOf = people.onSheet(period.sheetId()).stream()
++                .collect(Collectors.toMap(Person::getId, Person::getGrade));
++        BigDecimal total = BigDecimal.ZERO.setScale(2);
++        for (Claim claim : claims.onSheet(period.sheetId())) {
++            if (!claim.getStatus().counts() || !period.contains(claim.getDate())) continue;
++            String grade = gradeOf.get(claim.getPersonId());
++            if (grade == null) continue;
++            BigDecimal figure = figures.figure(claim, grade);
++            if (figure != null) total = total.add(figure);
++        }
++        periods.close(period, total);
++        closed.set(new ClosedPeriod(new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosedPeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosedPeriod.java
+new file mode 100644
+index 00000000..1976ef54
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ClosedPeriod.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** The period as it is once closed. */
++public record ClosedPeriod(Period period) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosedPeriods.java b/src/main/java/net/officefloor/hq/app/period/ClosedPeriods.java
+new file mode 100644
+index 00000000..6c028d2d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ClosedPeriods.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import org.springframework.stereotype.Service;
++
++/** Guards claims dated in a closed period: none can be added, edited, opened, settled or voided. */
++@Service
++public class ClosedPeriods {
++
++    private final Periods periods;
++
++    public ClosedPeriods(Periods periods) {
++        this.periods = periods;
++    }
++
++    /** Refuse a change to a claim dated `date` when a closed period contains it. */
++    public void refuse(String sheetId, LocalDate date) throws PeriodClosedException {
++        Period closed = periods.closedOn(sheetId, date);
++        if (closed != null) throw new PeriodClosedException(closed, date);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/HandlePeriodClosed.java b/src/main/java/net/officefloor/hq/app/period/HandlePeriodClosed.java
+new file mode 100644
+index 00000000..2bc45216
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/HandlePeriodClosed.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandlePeriodClosed {
++    public void handle(@Parameter PeriodClosedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/LoadPeriod.java b/src/main/java/net/officefloor/hq/app/period/LoadPeriod.java
+new file mode 100644
+index 00000000..30df6567
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/LoadPeriod.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads who closes the period and loads it. */
++public class LoadPeriod {
++    public void load(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name,
++            @RequestBody PeriodCloseRequest request, Periods periods, Out<PeriodCloseRequest> body,
++            Out<Period> periodOut) throws InvalidSheetRequestException {
++        Period period = periods.find(sheetId, name);
++        if (period == null) throw new InvalidSheetRequestException("No period named " + name);
++        body.set(request == null ? new PeriodCloseRequest(null) : request);
++        periodOut.set(period);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index d0598a9d..7ebcaf3f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -1,12 +1,24 @@
+ package net.officefloor.hq.app.period;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A period of a sheet: its name, unique on the sheet, and its from and to dates, inclusive. */
+-public record Period(String sheetId, String name, LocalDate from, LocalDate to) {
++/** A period of a sheet: its name, unique on the sheet, and its from and to dates, inclusive. A
++ *  closed period keeps the due-total it had when it was closed (`closedTotal`). */
++public record Period(String sheetId, String name, LocalDate from, LocalDate to, boolean closed, BigDecimal closedTotal) {
++
++    /** A new, open period. */
++    public Period(String sheetId, String name, LocalDate from, LocalDate to) {
++        this(sheetId, name, from, to, false, null);
++    }
+ 
+     /** Whether the two periods share a day. */
+     public boolean overlaps(Period other) {
+         return !from.isAfter(other.to) && !other.from.isAfter(to);
+     }
++
++    /** Whether the date falls in the period. */
++    public boolean contains(LocalDate date) {
++        return !date.isBefore(from) && !date.isAfter(to);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloseRequest.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloseRequest.java
+new file mode 100644
+index 00000000..280cfd6a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloseRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** Body of a period close: who closes it. */
++public record PeriodCloseRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodClosedException.java b/src/main/java/net/officefloor/hq/app/period/PeriodClosedException.java
+new file mode 100644
+index 00000000..e5f03193
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodClosedException.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++
++/** A claim change refused because the claim is dated in a closed period; answered 409. */
++public class PeriodClosedException extends Exception {
++    public PeriodClosedException(Period period, LocalDate date) {
++        super("Period " + period.name() + " is closed: no claim dated " + date + " can be changed");
++    }
++
++    public PeriodClosedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index cef9b0ed..c6861206 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -1,8 +1,10 @@
+ package net.officefloor.hq.app.period;
+ 
+-/** A period as the screen sees it: its dates as yyyy-mm-dd. */
+-public record PeriodResponse(String name, String from, String to) {
++/** A period as the screen sees it: its dates as yyyy-mm-dd, whether it is closed and, when it is,
++ *  the due-total fixed when it was closed. */
++public record PeriodResponse(String name, String from, String to, boolean closed, String closedTotal) {
+     public static PeriodResponse from(Period period) {
+-        return new PeriodResponse(period.name(), period.from().toString(), period.to().toString());
++        return new PeriodResponse(period.name(), period.from().toString(), period.to().toString(), period.closed(),
++                period.closedTotal() == null ? null : period.closedTotal().setScale(2).toPlainString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index 038d81fc..c6f65371 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -1,6 +1,10 @@
+ package net.officefloor.hq.app.period;
+ 
++import java.math.BigDecimal;
+ import java.sql.Date;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -9,6 +13,8 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Periods {
+ 
++    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total FROM period";
++
+     private final JdbcTemplate jdbc;
+ 
+     public Periods(JdbcTemplate jdbc) {
+@@ -17,14 +23,35 @@ public class Periods {
+ 
+     /** Every period on the sheet, by from-date. */
+     public List<Period> onSheet(String sheetId) {
+-        return jdbc.query("SELECT sheet_id, name, from_date, to_date FROM period WHERE sheet_id = ? ORDER BY from_date",
+-                (rs, i) -> new Period(rs.getString("sheet_id"), rs.getString("name"),
+-                        rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate()),
+-                sheetId);
++        return jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY from_date", Periods::period, sheetId);
++    }
++
++    /** The period of this name on this sheet, or null when there is none. Locks its row for the
++     *  rest of the transaction. */
++    public Period find(String sheetId, String name) {
++        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND name = ? FOR UPDATE", Periods::period, sheetId, name)
++                .stream().findFirst().orElse(null);
++    }
++
++    /** The closed period of the sheet whose dates contain the date, or null when there is none. */
++    public Period closedOn(String sheetId, LocalDate date) {
++        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND closed AND from_date <= ? AND to_date >= ?",
++                Periods::period, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
+     }
+ 
+     public void add(Period period) {
+         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
+                 period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
+     }
++
++    /** Close the period, fixing its due-total. */
++    public void close(Period period, BigDecimal total) {
++        jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ?",
++                total, period.sheetId(), period.name());
++    }
++
++    private static Period period(ResultSet rs, int i) throws SQLException {
++        return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getDate("from_date").toLocalDate(),
++                rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"));
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RecordPeriodClosed.java b/src/main/java/net/officefloor/hq/app/period/RecordPeriodClosed.java
+new file mode 100644
+index 00000000..7297ed13
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RecordPeriodClosed.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the period is closed, so a refused close writes no audit line. */
++public class RecordPeriodClosed {
++    public void record(@Val PeriodCloseRequest request, @Val ClosedPeriod closed, Audit audit) {
++        Period period = closed.period();
++        audit.record("PERIOD_CLOSED sheet=" + period.sheetId() + " by=" + request.user()
++                + " period=" + period.name() + " total=" + period.closedTotal().setScale(2).toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithClosedPeriod.java b/src/main/java/net/officefloor/hq/app/period/RespondWithClosedPeriod.java
+new file mode 100644
+index 00000000..85efbbd7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithClosedPeriod.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithClosedPeriod {
++    public void respond(@Val ClosedPeriod closed, ObjectResponse<PeriodResponse> response) {
++        response.send(PeriodResponse.from(closed.period()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V14__period_closed.sql b/src/main/resources/db/migration/V14__period_closed.sql
+new file mode 100644
+index 00000000..e20e0609
+--- /dev/null
++++ b/src/main/resources/db/migration/V14__period_closed.sql
+@@ -0,0 +1,4 @@
++-- A period can be closed: closing fixes its due-total at that moment (`closed_total`, which later
++-- rate changes do not alter), and no claim dated in it can then be added, edited or change status.
++ALTER TABLE period ADD COLUMN closed BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE period ADD COLUMN closed_total DECIMAL(14,2);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.period.PeriodClosedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.period.PeriodClosedException.yml
+new file mode 100644
+index 00000000..a4759d93
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.period.PeriodClosedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.period.HandlePeriodClosed
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+new file mode 100644
+index 00000000..f0407245
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+@@ -0,0 +1,17 @@
++# Close a period, fixing its due-total. An unknown period is a 400; one already closed is a 409.
++load:
++  class: net.officefloor.hq.app.period.LoadPeriod
++  govern: [ transaction ]
++  next: close
++close:
++  class: net.officefloor.hq.app.period.ClosePeriod
++  govern: [ transaction ]
++  next: record
++# Audit only once the period is closed: a refused close writes no line.
++record:
++  class: net.officefloor.hq.app.period.RecordPeriodClosed
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithClosedPeriod
++  govern: [ transaction ]
