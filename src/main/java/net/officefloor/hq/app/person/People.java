@@ -200,6 +200,55 @@ public class People {
         person.setAliases(aliasesOf(person.getId()));
     }
 
+    /** Merge `from` into `into`: from's claims move to into (numbers and dates kept, listed after
+     *  into's own in the order they were added, each unbound from any statement); from's name and
+     *  aliases become into's aliases; from's patrons are added to into's (not into themselves, no
+     *  repeats) and anyone naming from as patron names into instead (no repeats); from's pool
+     *  memberships move to into (shares added where into is already a member) and their closed
+     *  periods' totals are added to into's. From's statements, holds, watchers, grades and contact go
+     *  with them, and they leave the sheet. Not an edit of into: their version is untouched. */
+    public void merge(Person from, Person into) {
+        String sheetId = from.getSheetId();
+        long fromId = from.getId();
+        long intoId = into.getId();
+        jdbc.query("SELECT id FROM claim WHERE person_id = ? ORDER BY listed", (ResultSet rs) -> {
+            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+                    + "listed = NEXT VALUE FOR claim_listed WHERE id = ?", intoId, rs.getLong(1));
+        }, fromId);
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ?", intoId, fromId);
+        String name = from.getName().trim();
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",
+                sheetId, intoId, name, name);
+        for (Long patronId : from.getPatronIds()) {
+            if (patronId != intoId && !into.getPatronIds().contains(patronId)) addPatron(into, find(sheetId, patronId));
+        }
+        jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR (patron_id = ? AND (person_id = ? "
+                + "OR person_id IN (SELECT person_id FROM person_patron WHERE patron_id = ?)))",
+                fromId, fromId, intoId, intoId);
+        jdbc.update("UPDATE person_patron SET patron_id = ? WHERE patron_id = ?", intoId, fromId);
+        jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f "
+                + "WHERE f.sheet_id = m.sheet_id AND f.pool = m.pool AND f.person_id = ?) WHERE m.person_id = ? "
+                + "AND m.pool IN (SELECT pool FROM pool_member WHERE sheet_id = ? AND person_id = ?)",
+                fromId, intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM pool_member WHERE person_id = ? AND pool IN "
+                + "(SELECT pool FROM pool_member WHERE sheet_id = ? AND person_id = ?)", fromId, sheetId, intoId);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
+        jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
+                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?) "
+                + "WHERE t.sheet_id = ? AND t.person_id = ? AND t.period_name IN "
+                + "(SELECT period_name FROM period_person_total WHERE sheet_id = ? AND person_id = ?)",
+                fromId, sheetId, intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ? AND period_name IN "
+                + "(SELECT period_name FROM period_person_total WHERE sheet_id = ? AND person_id = ?)",
+                sheetId, fromId, sheetId, intoId);
+        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                intoId, sheetId, fromId);
+        for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade")) {
+            jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", fromId);
+        }
+        jdbc.update("DELETE FROM person WHERE id = ?", fromId);
+    }
+
     private List<String> aliasesOf(long personId) {
         return new ArrayList<>(jdbc.queryForList(
                 "SELECT alias FROM person_alias WHERE person_id = ? ORDER BY alias_key, id", String.class, personId));
