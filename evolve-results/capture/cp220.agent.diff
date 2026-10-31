@@ -1,0 +1,93 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangePlanAmount.java b/src/main/java/net/officefloor/hq/app/claim/ChangePlanAmount.java
+index 5ac52c57..5939f795 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangePlanAmount.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangePlanAmount.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.plan.AmountRequest;
+@@ -10,6 +11,8 @@ import net.officefloor.hq.app.plan.InvalidPlanException;
+ import net.officefloor.hq.app.plan.Plan;
+ import net.officefloor.hq.app.plan.PlanResponse;
+ import net.officefloor.hq.app.plan.Plans;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupFigures;
+ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.setting.ViewerRefusedException;
+ import net.officefloor.hq.app.sheet.Sheets;
+@@ -18,10 +21,13 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Changes the plan's amount on the sheet's today, audited as PLAN_CHANGED: the claims it generates from then on take the new
+- *  amount, those already generated keep theirs. An amount the claim form refuses is refused. */
++ *  amount. Those it already generated that are still DRAFT take it too, each as the claim form would edit it (by its rules, keeping
++ *  the claim's date, note, ref and tags), audited as CLAIM_EDITED; a draft the form would refuse, and a claim in any other status,
++ *  keeps its amount. An amount the claim form refuses is refused. */
+ public class ChangePlanAmount {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("planId") String planId, @RequestBody AmountRequest request,
+-            Plans plans, People people, Sheets sheets, Settings settings, Audit audit, ObjectResponse<PlanResponse> response)
++            Plans plans, People people, Claims claims, Sheets sheets, Periods periods, Settings settings, Rollup rollup, Audit audit,
++            ObjectResponse<PlanResponse> response)
+             throws InvalidPlanException, ViewerRefusedException {
+         settings.refuseViewer(sheetId, request.user());
+         BigDecimal amount;
+@@ -44,6 +50,29 @@ public class ChangePlanAmount {
+         plans.changeAmount(plan.id(), today, amount);
+         audit.recordOnCommit("PLAN_CHANGED sheet=" + sheetId + " by=" + request.user() + " name=" + (person != null ? person.getName() : "")
+                 + " start=" + plan.start() + " amount=" + amount.toPlainString());
++        editDrafts(plan, amount, request.user(), plans, people, claims, sheets, periods, rollup, audit);
+         response.send(PlanResponse.from(plans.find(plan.id()), today));
+     }
++
++    /** Edits each DRAFT claim the plan generated (on its own sheet or the plan's target) to the amount, as the claim form would. */
++    private static void editDrafts(Plan plan, BigDecimal amount, String user, Plans plans, People people, Claims claims, Sheets sheets,
++            Periods periods, Rollup rollup, Audit audit) {
++        String on = plan.target() != null ? plan.target() : plan.sheetId();
++        RollupFigures before = null;
++        ApplyClaim form = new ApplyClaim();
++        for (long id : plans.claimIds(plan.id())) {
++            Claim claim = claims.find(on, id);
++            if (claim == null || claim.getStatus() != ClaimStatus.DRAFT) continue;
++            if (before == null) before = rollup.figures(on);
++            ValidClaim edit = new ValidClaim(amount, claim.getDate(), claim.getNote(), user, claim.getCorrects(), claim.getRef(), claim.getTags());
++            try {
++                form.apply(edit, claim, sheets, periods, people, claims);
++            } catch (InvalidClaimException e) {
++                continue; // the form would refuse this draft's edit: it keeps its amount
++            }
++            claims.save(claim);
++            audit.recordOnCommit(ClaimAudit.line("CLAIM_EDITED", user, people.find(on, claim.getPersonId()), claim, claim.getNumber()));
++        }
++        if (before != null) rollup.recordChanges(on, user, before);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plans.java b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+index 21fc1ba2..30f19a89 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+@@ -87,6 +87,11 @@ public class Plans {
+         return n != null && n > 0;
+     }
+ 
++    /** The ids of the claims the plan made, in the order of their plan dates. */
++    public List<Long> claimIds(long planId) {
++        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? AND claim_id IS NOT NULL ORDER BY claim_date", Long.class, planId);
++    }
++
+     /** Records that the plan made the claim for the date. */
+     public void recordMade(long planId, LocalDate date, long claimId) {
+         jdbc.update("INSERT INTO plan_claim (plan_id, claim_date, claim_id) VALUES (?, ?, ?)", planId, Date.valueOf(date), claimId);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+index 86bc131c..c2b3d6d5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+@@ -1,4 +1,4 @@
+-# Change the plan's amount from the sheet's today: the claims it generates from then on take it.
++# Change the plan's amount from the sheet's today: the claims it generates from then on take it, and so do its DRAFT claims.
+ service:
+   class: net.officefloor.hq.app.claim.ChangePlanAmount
+   govern: [ transaction ]
