@@ -9,6 +9,7 @@ public class RecordStatement {
         audit.record("STATEMENT sheet=" + person.getSheetId() + " by=" + statement.user()
                 + " name=" + person.getName()
                 + " due-total=" + (statement.dueTotal() != null ? statement.dueTotal().toPlainString() : "n/a")
-                + " claims=" + statement.claims());
+                + " claims=" + statement.claims()
+                + (statement.asOf() != null ? " asof=" + statement.asOf() : ""));
     }
 }
