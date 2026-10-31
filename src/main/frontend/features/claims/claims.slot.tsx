@@ -12,7 +12,7 @@ import {
   claimDueCents,
   claimed,
   claimsKey,
-  counted,
+  live,
   personDueCents,
   useClaims,
   type Claim,
@@ -26,12 +26,14 @@ const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, vo
  * one form to add a claim or edit the one whose editor is open (only a DRAFT can be edited), and the claims, newest first, each
  * with its period (the one whose dates contain its date, if any), its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date; in the
  * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
- * count toward claimed and the due-total.
+ * count toward claimed and the due-total, and not the OPEN ones while the person is held.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
+  // While the person is held, their OPEN claims count toward neither claimed nor the due-total.
+  const liveClaims = live(claims, () => person.held);
   const { data: rates = [] } = useRates(sheet);
   const { data: periods = [] } = usePeriods(sheet);
   const today = useSheetToday(sheet);
@@ -106,8 +108,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(counted(claims))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, pct, (d) => rateOn(rates, person.grade, d)))}</td>
+      <td data-testid="person-claimed">{claimed(liveClaims)}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(liveClaims, pct, (d) => rateOn(rates, person.grade, d)))}</td>
       <td>
         <form
           data-testid="claim-form"

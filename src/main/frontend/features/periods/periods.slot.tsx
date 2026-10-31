@@ -3,14 +3,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { claimDueCents, counted, useClaims } from '../claims/useClaims';
+import { claimDueCents, live, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /**
  * The sheet's periods, each with its due-total — the figures of everyone's counted (OPEN or
- * SETTLED) claims dated in it, n/a ones skipped — and one form to add a period: a name unique on
+ * SETTLED) claims dated in it, not a held person's OPEN ones, n/a ones skipped — and one form to add a period: a name unique on
  * the sheet and a from and to date, inclusive, overlapping no other period. A period can be closed:
  * its due-total is then the one it had when it was closed, whatever rates do later.
  */
@@ -66,11 +66,12 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   };
 
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
   const dueIn = (period: Period) =>
     period.closed && period.closedTotal !== null
       ? period.closedTotal
       : totalDue(
-          counted(all)
+          live(all, (id) => held.has(id))
             .filter((c) => periodOf([period], c.date) !== undefined && gradeOf.has(c.personId))
             .map((c) => claimDueCents(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))),
         );

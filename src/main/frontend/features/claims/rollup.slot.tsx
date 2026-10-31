@@ -2,16 +2,18 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/usePeople';
 import { rateOn, totalDue, useRates } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheet';
-import { claimed, counted, personDueCents, useClaims } from './useClaims';
+import { claimed, live, personDueCents, useClaims } from './useClaims';
 
 /**
- * The sheet's claimed-total, everyone's counted (OPEN or SETTLED) claims added up, and its due-total, everyone's due-total
+ * The sheet's claimed-total, everyone's counted (OPEN or SETTLED) claims added up
+ * (not a held person's OPEN ones), and its due-total, everyone's due-total
  * added up (a person whose due-total is n/a is skipped).
  */
 function ClaimedTotal({ sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
-  const claims = counted(all);
   const { data: people = [] } = usePeople(sheet);
+  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
+  const claims = live(all, (id) => held.has(id));
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const dues = people.map((p) =>

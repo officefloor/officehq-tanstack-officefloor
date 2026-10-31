@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from FROM person";
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held FROM person";
 
     private final JdbcTemplate jdbc;
 
@@ -93,6 +93,11 @@ public class People {
                 person.getRetiredFrom() != null ? Date.valueOf(person.getRetiredFrom()) : null, person.getId());
     }
 
+    /** Record whether the person is on hold. Not an edit: the person's version is untouched. */
+    public void saveHold(Person person) {
+        jdbc.update("UPDATE person SET held = ? WHERE id = ?", person.isHeld(), person.getId());
+    }
+
     private static Person person(ResultSet rs, int i) throws SQLException {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getString("grade"), rs.getInt("version"));
@@ -102,6 +107,7 @@ public class People {
         person.setStatementDate(date != null ? date.toLocalDate() : null);
         Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired != null ? retired.toLocalDate() : null);
+        person.setHeld(rs.getBoolean("held"));
         return person;
     }
 }

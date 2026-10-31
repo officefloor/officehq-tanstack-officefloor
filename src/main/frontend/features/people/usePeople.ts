@@ -6,7 +6,8 @@ import { getJson } from '../../api/http';
  *  taken for them; `statedTotal` the last one's due-total (two decimals, null when it was n/a or
  *  none was taken) and `statementDate` its date (yyyy-mm-dd, null when none was taken).
  *  `retired` is whether a retirement date is set (whatever the date), `retiredFrom` that date
- *  (yyyy-mm-dd, null when not retired). */
+ *  (yyyy-mm-dd, null when not retired). `held` is whether they are on hold: their OPEN claims then
+ *  count in no live total. */
 export type Person = {
   id: number;
   name: string;
@@ -17,6 +18,7 @@ export type Person = {
   statementDate: string | null;
   retired: boolean;
   retiredFrom: string | null;
+  held: boolean;
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;

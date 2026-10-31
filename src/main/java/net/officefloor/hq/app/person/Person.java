@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import net.officefloor.hq.app.claim.ClaimStatus;
 
 /** A person on a sheet. `id` is null until the person is first saved. */
 public class Person {
@@ -14,6 +15,7 @@ public class Person {
     private BigDecimal statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
+    private boolean held;
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -51,6 +53,15 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    /** Whether the person is on hold: their OPEN claims then count in no live total. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
+
+    /** Whether a claim of the person's in this status counts in the live totals: OPEN and SETTLED
+     *  ones do, but not an OPEN one while the person is held. */
+    public boolean counts(ClaimStatus status) {
+        return status.counts() && !(held && status == ClaimStatus.OPEN);
+    }
 
     /** Refuses a claim dated after the person's retirement date. */
     public void refuseRetired(LocalDate claimDate) throws PersonRetiredException {

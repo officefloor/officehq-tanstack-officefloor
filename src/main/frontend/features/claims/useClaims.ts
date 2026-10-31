@@ -45,6 +45,12 @@ export function counted(claims: Claim[]): Claim[] {
   return claims.filter((c) => c.status === 'OPEN' || c.status === 'SETTLED');
 }
 
+/** The claims that count in the live totals: OPEN and SETTLED ones, but not the OPEN ones of a
+ *  held person (`held` tells, by person id). */
+export function live(claims: Claim[], held: (personId: number) => boolean): Claim[] {
+  return counted(claims).filter((c) => c.status !== 'OPEN' || !held(c.personId));
+}
+
 /** The sum of these claims' amounts, with two decimals. Added up in cents, so it is exact. */
 export function claimed(claims: Claim[]): string {
   const cents = claims.reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
