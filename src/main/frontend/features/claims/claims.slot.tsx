@@ -20,8 +20,8 @@ import {
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open, and the claims, newest first, each
- * with its due (fixed once it is settled, else at the rate in force on the claim's date; in the
- * due-total too), its status, who opened it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
+ * with its due (fixed once it is settled, else bound by the last statement, else at the rate in force on the claim's date; in the
+ * due-total too), its status, who opened it, whether a statement binds it and the buttons to open, settle or void it (its opener cannot settle it). Only OPEN and SETTLED claims
  * count toward claimed and the due-total.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
@@ -157,6 +157,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+              <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               {(['open', 'settle', 'void'] as const).map((action) => (
                 <span key={action}>
                   <button

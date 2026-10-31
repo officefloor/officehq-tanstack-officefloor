@@ -1,6 +1,9 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -10,6 +13,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, version, statement_count, stated_total, statement_date FROM person";
+
     private final JdbcTemplate jdbc;
 
     public People(JdbcTemplate jdbc) {
@@ -17,18 +22,23 @@ public class People {
     }
 
     public List<Person> onSheet(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
-                (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                        rs.getString("grade"), rs.getInt("version")),
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id",
+                People::person,
                 sheetId);
     }
 
     /** The person with this id on this sheet, or null when there is none. */
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
-                (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
-                        rs.getString("grade"), rs.getInt("version")),
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ?",
+                People::person,
                 sheetId, id).stream().findFirst().orElse(null);
+    }
+
+    /** The person with this id on this sheet, read afresh and locked for the rest of the
+     *  transaction, so two statements for one person at once happen one after the other. */
+    public Person lock(String sheetId, long id) {
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ? FOR UPDATE", People::person, sheetId, id)
+                .stream().findFirst().orElse(null);
     }
 
     /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
@@ -60,5 +70,23 @@ public class People {
         }, keys);
         person.setId(keys.getKey().longValue());
         return true;
+    }
+
+    /** Record a statement taken for the person (their count, last due-total and date). Not an edit:
+     *  the person's version is untouched, so an editor open on them can still save. */
+    public void saveStatement(Person person) {
+        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ?",
+                person.getStatementCount(), person.getStatedTotal(), Date.valueOf(person.getStatementDate()),
+                person.getId());
+    }
+
+    private static Person person(ResultSet rs, int i) throws SQLException {
+        Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+                rs.getString("grade"), rs.getInt("version"));
+        person.setStatementCount(rs.getInt("statement_count"));
+        person.setStatedTotal(rs.getBigDecimal("stated_total"));
+        Date date = rs.getDate("statement_date");
+        person.setStatementDate(date != null ? date.toLocalDate() : null);
+        return person;
     }
 }

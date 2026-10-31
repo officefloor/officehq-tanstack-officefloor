@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.person;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 /** A person on a sheet. `id` is null until the person is first saved. */
 public class Person {
     private Long id;
@@ -7,6 +10,9 @@ public class Person {
     private String name;
     private String grade;
     private int version;
+    private int statementCount;
+    private BigDecimal statedTotal;
+    private LocalDate statementDate;
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -30,4 +36,13 @@ public class Person {
     /** How many times the person has been saved since added. */
     public int getVersion() { return version; }
     public void setVersion(int version) { this.version = version; }
+    /** How many statements have been taken for the person. */
+    public int getStatementCount() { return statementCount; }
+    public void setStatementCount(int statementCount) { this.statementCount = statementCount; }
+    /** The last statement's due-total; null when none was taken or it was n/a. */
+    public BigDecimal getStatedTotal() { return statedTotal; }
+    public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }
+    /** The sheet's today when the last statement was taken; null when none was. */
+    public LocalDate getStatementDate() { return statementDate; }
+    public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
 }

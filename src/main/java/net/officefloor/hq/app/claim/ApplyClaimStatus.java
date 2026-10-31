@@ -1,20 +1,17 @@
 package net.officefloor.hq.app.claim;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import net.officefloor.hq.app.person.People;
-import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
  *  Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
- *  Settling fixes the claim's due at its person's grade's rate in force on the
- *  claim's date; with no rate it stays live. The user who opened a claim may not settle it. */
+ *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+ *  bound it to, else its person's grade's rate in force on the claim's date; with no rate it stays live. The user who opened a claim may not settle it. */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, Sheets sheets, People people,
-            Rates rates, Out<ClaimNumber> number)
+            Figures figures, Out<ClaimNumber> number)
             throws ClaimStatusRefusedException {
         if (!change.action().allowedFrom(claim.getStatus())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
@@ -30,9 +27,7 @@ public class ApplyClaimStatus {
         }
         if (change.action() == ClaimAction.SETTLE) {
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).getGrade();
-            BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
-            claim.setDue(pct == null ? null
-                    : claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_EVEN));
+            claim.setDue(claim.isStated() ? claim.getStatedDue() : figures.live(claim, grade));
         }
         number.set(new ClaimNumber(claim.getNumber()));
         if (change.action() == ClaimAction.VOID) {

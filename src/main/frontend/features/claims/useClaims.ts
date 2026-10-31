@@ -19,6 +19,10 @@ export type Claim = {
   due: string | null;
   /** The user who opened the claim; null while it has not been opened. */
   openedBy: string | null;
+  /** Whether the person's last statement binds the claim to the figure it had then. */
+  stated: boolean;
+  /** The figure the last statement bound the claim to, two decimals; null when unbound or bound to n/a. */
+  statedDue: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -47,15 +51,17 @@ export function claimed(claims: Claim[]): string {
   return (cents / 100).toFixed(2);
 }
 
-/** What is due on one claim, in cents: the due fixed when it was settled, or else live at `pct`
- *  (null, n/a, when there is no rate). */
+/** What is due on one claim, in cents: the due fixed when it was settled, or else the figure its
+ *  person's last statement bound it to, or else live at `pct` (null, n/a, when there is no rate). */
 export function claimDueCents(claim: Claim, pct: string | undefined): bigint | null {
-  return claim.due !== null ? hundredths(claim.due) : dueCents(claim.amount, pct);
+  if (claim.due !== null) return hundredths(claim.due);
+  if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
+  return dueCents(claim.amount, pct);
 }
 
 
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
- *  a settled claim's fixed due, else live at `pctOn(claim's date)`, the rate in force on the claim's
+ *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim's date)`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. */

@@ -15,6 +15,8 @@ public class Claim {
     private Long number;
     private BigDecimal due;
     private String openedBy;
+    private boolean stated;
+    private BigDecimal statedDue;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Long number, BigDecimal due, String openedBy) {
@@ -51,4 +53,10 @@ public class Claim {
     /** The user who opened the claim; null while it has not been opened. */
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+    /** Whether the claim is bound by its person's last statement to the figure it had then. */
+    public boolean isStated() { return stated; }
+    public void setStated(boolean stated) { this.stated = stated; }
+    /** The figure the last statement bound the claim to; null when unbound, or bound to n/a. */
+    public BigDecimal getStatedDue() { return statedDue; }
+    public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
 }
