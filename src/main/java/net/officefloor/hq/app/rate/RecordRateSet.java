@@ -8,6 +8,7 @@ public class RecordRateSet {
     public void record(@Val RateRequest request, @Val Rate rate, Audit audit) {
         audit.record("RATE_SET sheet=" + rate.sheetId() + " by=" + request.user()
                 + " grade=" + rate.grade() + " rate=" + rate.pct().toPlainString()
-                + (rate.from() != null ? " from=" + rate.from() : ""));
+                + (rate.from() != null ? " from=" + rate.from() : "")
+                + (rate.to() != null ? " to=" + rate.to() : ""));
     }
 }

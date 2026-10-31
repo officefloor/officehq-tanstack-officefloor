@@ -26,17 +26,26 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidSheetRequestException("The rate must be a percent, 0.00 or more, with up to two decimals");
         }
-        String rawFrom = request.from() == null ? "" : request.from().trim();
-        LocalDate from = null;
-        if (!rawFrom.isEmpty()) {
-            try {
-                from = LocalDate.parse(rawFrom);
-            } catch (DateTimeParseException e) {
-                throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + rawFrom);
-            }
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidSheetRequestException("The to-date may not be before the from-date");
         }
         actor.set(new Actor(request.user()));
         body.set(request);
-        rate.set(new Rate(sheetId, request.grade(), new BigDecimal(pct).setScale(2), from));
+        rate.set(new Rate(sheetId, request.grade(), new BigDecimal(pct).setScale(2), from, to));
+    }
+
+    /** A yyyy-mm-dd date, or null when blank. */
+    private static LocalDate date(String value) throws InvalidSheetRequestException {
+        String raw = value == null ? "" : value.trim();
+        if (raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(raw);
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + raw);
+        }
     }
 }

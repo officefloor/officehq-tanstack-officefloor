@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
 /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
- *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time. */
-export type Rate = { grade: string; pct: string; from: string | null };
+ *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
+ *  date it applies through, or null when it has no end. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
 
 export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
 
@@ -22,7 +23,7 @@ export const PCT = /^\d{1,5}(\.\d{1,2})?$/;
 
 /**
  * The grade's rate in force on `date` (yyyy-mm-dd): the one whose from-date is the latest on or
- * before it, a rate with no from-date applying from the beginning of time. Undefined when none does.
+ * before it, a rate with no from-date applying from the beginning of time. Undefined when none does, or when that one's to-date is before `date`.
  */
 export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
   let found: Rate | undefined;
@@ -30,7 +31,7 @@ export function rateOn(rates: Rate[], grade: string, date: string): string | und
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
-  return found?.pct;
+  return found !== undefined && (found.to === null || found.to >= date) ? found.pct : undefined;
 }
 
 /** "12.34" as a whole number of hundredths (1234n), exactly. */

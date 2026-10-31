@@ -9,7 +9,7 @@ import { PCT, rateOn, ratesKey, useRates, type Rate } from './useRates';
 
 /**
  * The rate in force on the sheet's today for each grade, every rate set (by grade, then from-date),
- * and one form to set a grade's rate, from a date or (left blank) from the beginning of time.
+ * and one form to set a grade's rate, from a date or (left blank) from the beginning of time, through a date or (left blank) with no end.
  */
 function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -18,15 +18,17 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [invalid, setInvalid] = useState(false);
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (r: { grade: string; pct: string; from: string }) =>
+    mutationFn: (r: { grade: string; pct: string; from: string; to: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
     onSuccess: async () => {
       setPct('');
       setFrom('');
+      setTo('');
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
     },
   });
@@ -51,7 +53,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setInvalid(false);
-          submitOnce(() => save.mutateAsync({ grade, pct: pct.trim(), from: from.trim() }));
+          submitOnce(() => save.mutateAsync({ grade, pct: pct.trim(), from: from.trim(), to: to.trim() }));
         }}
       >
         <label>
@@ -95,6 +97,18 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            data-testid="rate-form-to"
+            placeholder="yyyy-mm-dd"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              clearError();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -128,6 +142,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -136,6 +151,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
               <td>
                 <span data-testid="rate-pct">{r.pct}</span>
               </td>
