@@ -82,10 +82,10 @@ public class Person {
     /** The person's own terms in days; null when none. */
     public Integer getTerms() { return terms; }
     public void setTerms(Integer terms) { this.terms = terms; }
-    /** Sets the terms the form gave, noting whether they differ from those the person had or from those in force
-     *  on the sheet's today. */
+    /** Sets the terms the form gave, noting whether they differ from those the person had (a save giving the
+     *  terms they already had changes nothing, even while dated terms are in force on the sheet's today). */
     public void editTerms(Integer terms) {
-        termsChanged = !java.util.Objects.equals(this.terms, terms) || !java.util.Objects.equals(getTermsShown(), terms);
+        termsChanged = !java.util.Objects.equals(this.terms, terms);
         this.terms = terms;
     }
     public boolean isTermsChanged() { return termsChanged; }

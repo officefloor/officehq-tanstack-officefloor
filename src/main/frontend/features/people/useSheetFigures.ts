@@ -65,10 +65,12 @@ export function useSheetFigures(sheet: string) {
   const overdueSum = (cs: typeof overdue) =>
     cs.reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(byId.get(c.personId)!, c.date), c), floor, late, policy) ?? 0n), 0n);
   const overdueTotal = (cs: typeof overdue) => formatCents(overdueSum(cs));
-  // The sheet's due-total: the people's due-totals added up, skipping n/a, trimmed.
-  const sheetDueTotal = formatCents(trimmedSum(people.map(totalOf).filter((due): due is bigint => due !== null)));
-  // The sheet's overdue-total: each person's overdue-total (always a figure) added up, trimmed.
-  const sheetOverdueTotal = formatCents(trimmedSum(people.map((p) => overdueSum(overdue.filter((c) => c.personId === p.id)))));
+  // Each person's due-total, skipping n/a, and overdue-total (always a figure), in list order.
+  const dueFigures = people.map(totalOf).filter((due): due is bigint => due !== null);
+  const overdueFigures = people.map((p) => overdueSum(overdue.filter((c) => c.personId === p.id)));
+  // The sheet's due-total and overdue-total: those figures added up, trimmed.
+  const sheetDueTotal = formatCents(trimmedSum(dueFigures));
+  const sheetOverdueTotal = formatCents(trimmedSum(overdueFigures));
   // Active: an OPEN or PENDING claim that counts, dated within the 30 days up to and including today.
   const activeFrom = today === undefined ? undefined : daysBefore(today, 29);
   const isActive = (person: Person) =>
@@ -126,12 +128,12 @@ export function useSheetFigures(sheet: string) {
   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
 // three or more.
-function trimmedSum(figures: bigint[]): bigint {
+export function trimmedSum(figures: bigint[]): bigint {
   const sum = figures.reduce((a, b) => a + b, 0n);
   if (figures.length < 3) return sum;
   const max = figures.reduce((a, b) => (b > a ? b : a));
