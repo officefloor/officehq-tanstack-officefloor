@@ -84,6 +84,15 @@ public class ValidateSettings {
                 throw new InvalidSheetRequestException("The period numbering from must be a date (yyyy-mm-dd), or blank");
             }
         }
+        String entry = request == null || request.entryDate() == null ? null : request.entryDate().trim();
+        LocalDate entryDate = null;
+        if (entry != null && !entry.isEmpty()) {
+            try {
+                entryDate = LocalDate.parse(entry);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSheetRequestException("The entry date must be a date (yyyy-mm-dd), or blank");
+            }
+        }
         String cap = request == null || request.cap() == null ? null : request.cap().trim();
         if (cap != null && !cap.isEmpty() && !AMOUNT.matcher(cap).matches()) {
             throw new InvalidSheetRequestException("The cap must be an amount with up to two decimals, or blank");
@@ -146,6 +155,7 @@ public class ValidateSettings {
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms,
                 threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
-                noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2)));
+                noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
+                entry != null, entryDate));
     }
 }

@@ -15,12 +15,12 @@ export type RoleEntry = { name: string; role: string };
  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
  *  terms, terms-<grade>, late-pct, cap, proof-threshold, note-threshold), oldest from-date first; and `proofThreshold` with
  *  two decimals, or null for none, as in force on the sheet's today; and `perms`, the roles set for each
- *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today. */
+ *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated). */
 /** A delegation of the steward role: the user acts as a steward while the sheet's today is from
  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
 export type DelegationEntry = { name: string; from: string; to: string; by: string };
 
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[] };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };

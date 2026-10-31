@@ -205,6 +205,25 @@ public class Settings {
                 sheetId, date != null ? Date.valueOf(date) : null);
     }
 
+    /** The sheet's entry date: while set, the default date of a new claim in place of the sheet's
+     *  today. Null when unset (off). */
+    public LocalDate entryDate(String sheetId) {
+        List<Date> values = jdbc.query("SELECT entry_date FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getDate("entry_date"), sheetId);
+        return values.isEmpty() || values.get(0) == null ? null : values.get(0).toLocalDate();
+    }
+
+    public void setEntryDate(String sheetId, LocalDate date) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, entry_date) KEY (sheet_id) VALUES (?, ?)",
+                sheetId, date != null ? Date.valueOf(date) : null);
+    }
+
+    /** The default date of a new claim: the sheet's entry date while set, else its today. */
+    public LocalDate claimDate(String sheetId) {
+        LocalDate entry = entryDate(sheetId);
+        return entry != null ? entry : sheets.today(sheetId);
+    }
+
     /** The sheet's grace days: when its today is changed, every open period whose to-date plus them
      *  is before the new today is closed. Null when unset (off). Not dated. */
     public Integer graceDays(String sheetId) {

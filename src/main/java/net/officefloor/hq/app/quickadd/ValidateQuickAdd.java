@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Checks the bar by the person and claim forms' rules: a person of grade A by that name, and a
- *  claim of that amount dated the sheet's today with an empty note. */
+ *  claim of that amount dated the sheet's entry date (else its today) with an empty note. */
 public class ValidateQuickAdd {
     public void validate(@RequestBody QuickAddRequest request, Out<PersonRequest> person,
             Out<ClaimValues> claim, Out<Actor> actor) throws InvalidSheetRequestException {

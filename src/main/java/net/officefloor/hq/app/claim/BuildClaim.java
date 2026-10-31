@@ -22,7 +22,7 @@ public class BuildClaim {
     /** The new DRAFT claim for these values and person, or refused by the claim form's rules. */
     static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
             Claims claims, Settings settings) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
-        LocalDate date = values.date() != null ? values.date() : sheets.today(person.getSheetId());
+        LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.getSheetId());
         closedPeriods.refuse(person.getSheetId(), date);
         person.refuseRetired(date);
         refuseUncorrected(values, person.getSheetId(), person.getId(), claims);

@@ -25,8 +25,8 @@ import tools.jackson.databind.ObjectMapper;
 /** A viewer sees every screen and can change nothing: every change to a sheet (a POST or PUT under
  *  {@code /api/sheets/<id>/}) by a user who is a viewer on that sheet is refused 400 before it
  *  reaches its pipeline, so it writes nothing and audits nothing. A bulk action still goes through,
- *  each selected item refused by the permission matrix (see {@link Settings#allows}), so its counts
- *  show none done. An archived sheet is guarded the same way for every user. */
+ *  each selected item refused by the permission matrix (see {@link Settings#allows}) — a bulk grade
+ *  grades no one — so its counts show none done. An archived sheet is guarded the same way for every user. */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ViewerGuard extends OncePerRequestFilter {
@@ -34,7 +34,7 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final String PREFIX = "/api/sheets/";
 
     /** The bulk actions, by the path after the sheet id: they answer counts instead of refusing. */
-    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle");
+    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle", "bulk-grade");
 
     private static final ObjectMapper JSON = new ObjectMapper();
 

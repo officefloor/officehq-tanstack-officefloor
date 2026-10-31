@@ -53,6 +53,10 @@ public class RecordSettingChanged {
         if (change.setsGraceDays()) {
             audit.record(prefix + " key=grace-days value=" + (change.graceDays() != null ? change.graceDays() : ""));
         }
+        if (change.setsEntryDate()) {
+            audit.record(prefix + " key=entry-date value="
+                    + (change.entryDate() != null ? change.entryDate().toString() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */
