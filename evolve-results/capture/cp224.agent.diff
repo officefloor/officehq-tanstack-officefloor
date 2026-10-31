@@ -1,0 +1,229 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 7ad836e5..1154ccb3 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -41,7 +41,6 @@ import { useSheetFigures } from './useSheetFigures';
+ import { dueBy } from '../claims/overdue';
+ import { useGrace } from '../claims/useGrace';
+ import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+-import { usePools } from '../pools/usePools';
+ import { useCrews } from '../crews/useCrews';
+ import { scoreBand, useSettings } from '../settings/useSettings';
+ 
+@@ -82,17 +81,11 @@ export function PeopleList() {
+   const [user] = useSearchParam('user', asString);
+   const [, setEditing] = useSearchParam('editPerson', asString);
+   const watched = useWatches(sheet, user);
+-  const { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
++  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+   const [showRetired] = useShowRetired();
+   const periods = usePeriods(sheet);
+   const periodDueOf = usePersonPeriodDueTotal(sheet);
+   const periodCarriedOf = usePersonPeriodCarried(sheet);
+-  const pools = usePools(sheet);
+-  const cutOf = (personId: string) =>
+-    pools.reduce(
+-      (sum, pool) => pool.members.reduce((s, m) => (m.personId === personId && m.cut !== '' ? s + toCents(m.cut) : s), sum),
+-      0n,
+-    );
+   const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
+   const [sortKey] = useSortBy();
+   const [shown] = useColumns();
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index 79bb37ce..a767981a 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -5,6 +5,7 @@ import { isReviewLate } from '../claims/reviewLate';
+ import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
+ import { claimRate, rateOn, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
++import { usePools } from '../pools/usePools';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { gradeOn, retiredOn, usePeople, type Person } from './usePeople';
+ 
+@@ -23,6 +24,7 @@ export function useSheetFigures(sheet: string) {
+   const late = { pct: useLatePct(sheet), today, grace };
+   const policy = usePolicy(sheet);
+   const cap = useCap(sheet);
++  const pools = usePools(sheet);
+   const reviewSla = useSettings(sheet)?.reviewSla;
+   const byId = new Map(people.map((p) => [p.id, p]));
+   const live = claims.filter((c) => {
+@@ -64,10 +66,16 @@ export function useSheetFigures(sheet: string) {
+     if (own === null && !parts.some((p) => p.holderId === person.id)) return null;
+     return (own ?? 0n) + partsOf(person, () => true);
+   };
+-  // A person's due-total: at most the sheet's cap (n/a is not capped); everything that adds up
+-  // due-totals uses it. Their excess is how far the sum of their figures is above the cap.
+-  const totalOf = (person: Person) => capped(uncappedOf(person), cap);
+-  const excessOf = (person: Person) => excess(uncappedOf(person), cap);
++  // A person's cut total: their cuts in every pool added up.
++  const cutOf = (personId: string) =>
++    pools.reduce(
++      (sum, pool) => pool.members.reduce((s, m) => (m.personId === personId && m.cut !== '' ? s + toCents(m.cut) : s), sum),
++      0n,
++    );
++  // A person's due-total: at most the sheet's cap less their cut total, not below 0.00 (n/a is not capped);
++  // everything that adds up due-totals uses it. Their excess is how far the sum of their figures is above that.
++  const totalOf = (person: Person) => capped(uncappedOf(person), cap, cutOf(person.id));
++  const excessOf = (person: Person) => excess(uncappedOf(person), cap, cutOf(person.id));
+   // A person's settled-total and open-total: the dues of their counting SETTLED claims (frozen
+   // figures, corrections included), and of their counting OPEN and PENDING claims; n/a adds nothing.
+   // Together they make the sum of their figures before the cap.
+@@ -156,7 +164,7 @@ export function useSheetFigures(sheet: string) {
+   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
+   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
+   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
+-  return { people, claims, rates, today, byId, live, claimedLive, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
++  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+ }
+ 
+ // People's figures added up, leaving out the single highest and the single lowest when there are
+diff --git a/src/main/frontend/features/rates/due.ts b/src/main/frontend/features/rates/due.ts
+index 4d1af0f7..340a38d2 100644
+--- a/src/main/frontend/features/rates/due.ts
++++ b/src/main/frontend/features/rates/due.ts
+@@ -129,15 +129,17 @@ export function dueTotal(
+   return figures.reduce<bigint>((sum, f) => sum + (f ?? 0n), 0n);
+ }
+ 
+-/** A due-total held to the sheet's cap ("" for none): the cap when it is above it. n/a is not capped. */
+-export function capped(total: bigint | null, cap: string): bigint | null {
++/** A due-total held to the sheet's cap ("" for none) less the person's cut total (not below 0.00): that when it is
++ *  above it. n/a is not capped. */
++export function capped(total: bigint | null, cap: string, cut: bigint = 0n): bigint | null {
+   if (total === null || cap === '') return total;
+-  const max = toCents(cap);
++  const room = toCents(cap) - cut;
++  const max = room < 0n ? 0n : room;
+   return total > max ? max : total;
+ }
+ 
+-/** How far a due-total is above the sheet's cap; 0 when it is not, or is n/a. */
+-export function excess(total: bigint | null, cap: string): bigint {
+-  const held = capped(total, cap);
++/** How far a due-total is above the sheet's cap less the person's cut total; 0 when it is not, or is n/a. */
++export function excess(total: bigint | null, cap: string, cut: bigint = 0n): bigint {
++  const held = capped(total, cap, cut);
+   return total === null || held === null ? 0n : total - held;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index a6448d9d..3d791c8f 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -80,6 +80,20 @@ public class Pools {
+         return withHistory;
+     }
+ 
++    /** Each person's cut total: their cuts in every pool added up (see {@link #list(String, LocalDate)}; null: now), by person id;
++     *  a person with no cut is left out. */
++    public Map<Long, BigDecimal> cutTotals(String sheetId, LocalDate on) {
++        Map<Long, BigDecimal> totals = new HashMap<>();
++        for (PoolResponse pool : compute(sheetId, on, false)) {
++            for (PoolResponse.Member m : pool.members()) {
++                if (m.personId() != null && !m.cut().isEmpty()) {
++                    totals.merge(Long.valueOf(m.personId()), new BigDecimal(m.cut()), BigDecimal::add);
++                }
++            }
++        }
++        return totals;
++    }
++
+     /** Every pool member's cut as it stands now (see {@link #list(String)}), to be fixed by a close or soft-close of a
+      *  period: one "<pool>\t<member key>\t<cut>" line per member. */
+     public String liveCuts(String sheetId) {
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 1b5af8ad..dbd7d658 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
+ 
+ /**
+  * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections; a hold does not take a claim out) and due-total, and the
+- * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
++ * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap less their cut total, not below 0.00 (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
+  * the claim's due less those parts) — worked out on the server so a change can audit what it
+  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
+  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
+@@ -44,8 +44,11 @@ public class Rollup {
+     private final Sheets sheets;
+     private final Settings settings;
+     private final Audit audit;
++    private final net.officefloor.hq.app.pool.Pools pools;
+ 
+-    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Audit audit) {
++    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings, Audit audit,
++            net.officefloor.hq.app.pool.Pools pools) {
++        this.pools = pools;
+         this.people = people;
+         this.claims = claims;
+         this.rates = rates;
+@@ -59,6 +62,7 @@ public class Rollup {
+         LocalDate today = sheets.today(sheetId);
+         LocalDate policyDate = settings.policyDate(sheetId);
+         BigDecimal cap = settings.cap(sheetId);
++        Map<Long, BigDecimal> cutTotals = cap == null ? Map.of() : pools.cutTotals(sheetId, null);
+         List<Claim> all = claims.list(sheetId);
+         Map<Long, RollupFigures.PersonFigures> byPerson = new LinkedHashMap<>();
+         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
+@@ -129,7 +133,7 @@ public class Rollup {
+             due = due.subtract(partsOut.getOrDefault(person.getId(), BigDecimal.ZERO));
+             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
+             boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
+-            due = Settings.capped(due, cap);
++            due = Settings.capped(due, cap, cutTotals.getOrDefault(person.getId(), BigDecimal.ZERO));
+             claimedTotal = claimedTotal.add(claimed);
+             if (!na) {
+                 dues.add(due);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index c3ffcda6..0687a1e3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -122,6 +122,15 @@ public class Settings {
+         return found == null ? null : found.value();
+     }
+ 
++    /** A due-total held to the sheet's cap less the person's cut total (not below 0.00); null (n/a) stays null. */
++    public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap, BigDecimal cutTotal) {
++        if (cap == null || cutTotal == null) {
++            return capped(dueTotal, cap);
++        }
++        BigDecimal room = cap.subtract(cutTotal).max(BigDecimal.ZERO).setScale(2);
++        return capped(dueTotal, room);
++    }
++
+     /** A due-total held to the sheet's cap: the cap when above it; null (n/a) stays null. */
+     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
+         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index c7aa987e..725857db 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Takes a statement: the person's due-total as the screen shows it now (the sum of their counting
+  * claims' dues — each fixed or at the rate in force on its date, its late charge on top, raised to the floor in force on its date;
+- * n/a when their grade has no rate today and no claim keeps a figure; held to the sheet's cap), and binds each counting claim to
++ * n/a when their grade has no rate today and no claim keeps a figure; held to the sheet's cap less their cut total, not below 0.00), and binds each counting claim to
+  * its due as shown now, its late charge and the floor included (a claim already bound keeps its bound figure); while bound
+  * the claim shows and totals that figure, its late charge no longer following the sheet's today.
+  * A claim that does not count (a deferred claim, or an unbound OPEN claim of a retired person, included) is left unbound.
+@@ -35,7 +35,7 @@ import net.officefloor.plugin.variable.Val;
+  */
+ public class TakeStatement {
+     public void take(@Val StatementRequest request, @Val Person person, Claims claims, AsOf asOf, Sheets sheets,
+-            People people, Settings settings, Out<Statement> statement) throws InvalidPersonException {
++            People people, Settings settings, net.officefloor.hq.app.pool.Pools pools, Out<Statement> statement) throws InvalidPersonException {
+         String sheetId = person.getSheetId();
+         LocalDate date = asOfDate(request, person, sheets.today(sheetId));
+         AsOf.View view = date == null ? asOf.now(person) : asOf.at(person, date);
+@@ -71,7 +71,8 @@ public class TakeStatement {
+         }
+         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
+         boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;
+-        BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap());
++        BigDecimal cutTotal = view.cap() == null ? null : pools.cutTotals(sheetId, date).getOrDefault(person.getId(), BigDecimal.ZERO);
++        BigDecimal dueTotal = na ? null : Settings.capped(total, view.cap(), cutTotal);
+         person.setStatementCount(person.getStatementCount() + 1);
+         person.setStatedTotal(dueTotal);
+         person.setStatementDate(today);
