@@ -1,0 +1,451 @@
+diff --git a/src/main/frontend/features/people/QuickAddBar.tsx b/src/main/frontend/features/people/QuickAddBar.tsx
+new file mode 100644
+index 00000000..2e68994a
+--- /dev/null
++++ b/src/main/frontend/features/people/QuickAddBar.tsx
+@@ -0,0 +1,71 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { claimsKey, type Claim } from '../claims/useClaims';
++import { peopleKey } from './usePeople';
++
++/** Adds a DRAFT claim by person name: dated the sheet's today, with an empty note, for the person
++ *  of that name — created with grade A when the name is not on the sheet. One change on the
++ *  server: a refused claim leaves no new person behind. */
++export function QuickAddBar({ user, sheet }: { user: string; sheet: string }) {
++  const queryClient = useQueryClient();
++  const [name, setName] = useState('');
++  const [amount, setAmount] = useState('');
++  const submitOnce = useSubmitOnce();
++  const add = useMutation({
++    mutationFn: (q: { name: string; amount: string }) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/quick-add`, { ...q, user }),
++    onSuccess: async () => {
++      setName('');
++      setAmount('');
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++      ]);
++    },
++  });
++
++  return (
++    <form
++      data-testid="quick-add"
++      onSubmit={(e) => {
++        e.preventDefault();
++        add.reset();
++        submitOnce(() => add.mutateAsync({ name, amount }));
++      }}
++    >
++      <label>
++        Quick add: name{' '}
++        <input
++          data-testid="quick-name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            add.reset();
++          }}
++        />
++      </label>{' '}
++      <label>
++        Amount{' '}
++        <input
++          data-testid="quick-amount"
++          value={amount}
++          onChange={(e) => {
++            setAmount(e.target.value);
++            add.reset();
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="quick-submit" disabled={add.isPending}>
++        Add claim
++      </button>
++      {add.isError && (
++        <span data-testid="quick-error" role="alert">
++          {' '}
++          Could not add this claim: a name and an amount of 0.00 or more are needed, dated outside a closed period.
++        </span>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 35712851..aebde160 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -4,6 +4,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { QuickAddBar } from './QuickAddBar';
+ import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
+ 
+ /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
+@@ -130,6 +131,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+           </span>
+         )}
+       </form>
++      <QuickAddBar user={user} sheet={sheet} />
+       <table data-testid="people-list">
+         <thead>
+           <tr>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+index a19264ea..604e0ccc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+@@ -1,6 +1,33 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++
+ /** Body of a claim add or edit, as typed: the amount, the date (blank for the sheet's today),
+  *  the note and who makes the change. */
+ public record ClaimRequest(String amount, String date, String note, String user) {
++    /** 0.00 or more, with up to two decimals. */
++    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
++
++    /** The request's values as the claim rules accept them, or refused. */
++    public static ClaimValues checked(ClaimRequest request) throws InvalidSheetRequestException {
++        String amount = request == null || request.amount() == null ? "" : request.amount().trim();
++        if (!AMOUNT.matcher(amount).matches()) {
++            throw new InvalidSheetRequestException("The amount must be 0.00 or more, with up to two decimals");
++        }
++        String rawDate = request.date() == null ? "" : request.date().trim();
++        LocalDate date = null;
++        if (!rawDate.isEmpty()) {
++            try {
++                date = LocalDate.parse(rawDate);
++            } catch (DateTimeParseException e) {
++                throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + rawDate);
++            }
++        }
++        String note = request.note() == null ? "" : request.note();
++        return new ClaimValues(new BigDecimal(amount).setScale(2), date, note, request.user());
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index 9149ee16..76abc31e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -1,35 +1,15 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import java.math.BigDecimal;
+-import java.time.LocalDate;
+-import java.time.format.DateTimeParseException;
+-import java.util.regex.Pattern;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateClaim {
+-    /** 0.00 or more, with up to two decimals. */
+-    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+-
+     public void validate(@RequestBody ClaimRequest request, Out<ClaimValues> body, Out<Actor> actor)
+             throws InvalidSheetRequestException {
+-        String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+-        if (!AMOUNT.matcher(amount).matches()) {
+-            throw new InvalidSheetRequestException("The amount must be 0.00 or more, with up to two decimals");
+-        }
+-        String rawDate = request.date() == null ? "" : request.date().trim();
+-        LocalDate date = null;
+-        if (!rawDate.isEmpty()) {
+-            try {
+-                date = LocalDate.parse(rawDate);
+-            } catch (DateTimeParseException e) {
+-                throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + rawDate);
+-            }
+-        }
+-        String note = request.note() == null ? "" : request.note();
+-        actor.set(new Actor(request.user()));
+-        body.set(new ClaimValues(new BigDecimal(amount).setScale(2), date, note, request.user()));
++        ClaimValues values = ClaimRequest.checked(request);
++        actor.set(new Actor(values.user()));
++        body.set(values);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index e45b94e5..f0f6803d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -41,6 +41,13 @@ public class People {
+                 .stream().findFirst().orElse(null);
+     }
+ 
++    /** The person on this sheet with this name (matched as names are kept unique: without the
++     *  spaces around it and in any case), or null when there is none. */
++    public Person named(String sheetId, String name) {
++        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", People::person,
++                sheetId, name).stream().findFirst().orElse(null);
++    }
++
+     /** Whether another person on this sheet (not `exceptId`, which may be null) already has this name. */
+     public boolean nameTaken(String sheetId, String name, Long exceptId) {
+         Integer n = jdbc.queryForObject(
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index 79eabf38..1eb90ee2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,6 +1,22 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.util.Set;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++
+ /** Body of a person add or edit: the name, the grade (A, B or C), who makes the change and, for an
+  *  edit, the version of the person the editor loaded (null: no check). */
+ public record PersonRequest(String name, String grade, String user, Integer version) {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    /** The request as the person rules accept it, or refused. */
++    public static PersonRequest checked(PersonRequest request) throws InvalidSheetRequestException {
++        if (request == null || request.name() == null || request.name().isBlank()) {
++            throw new InvalidSheetRequestException("A name is required");
++        }
++        if (request.grade() == null || !GRADES.contains(request.grade())) {
++            throw new InvalidSheetRequestException("The grade must be A, B or C");
++        }
++        // Names are kept without the spaces around them.
++        return new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version());
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 3d8a0a65..0bec1808 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -1,24 +1,15 @@
+ package net.officefloor.hq.app.person;
+ 
+-import java.util.Set;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePerson {
+-    private static final Set<String> GRADES = Set.of("A", "B", "C");
+-
+     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body, Out<Actor> actor)
+             throws InvalidSheetRequestException {
+-        if (request == null || request.name() == null || request.name().isBlank()) {
+-            throw new InvalidSheetRequestException("A name is required");
+-        }
+-        if (request.grade() == null || !GRADES.contains(request.grade())) {
+-            throw new InvalidSheetRequestException("The grade must be A, B or C");
+-        }
+-        // Names are kept without the spaces around them.
+-        actor.set(new Actor(request.user()));
+-        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version()));
++        PersonRequest checked = PersonRequest.checked(request);
++        actor.set(new Actor(checked.user()));
++        body.set(checked);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java
+new file mode 100644
+index 00000000..a11707b7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindQuickAddPerson.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The person by that name on the sheet, or a new (not yet saved) one when there is none. */
++public class FindQuickAddPerson {
++    public void find(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people,
++            Out<Person> person, Out<QuickAddPerson> found) {
++        Person existing = people.named(sheetId, request.name());
++        found.set(new QuickAddPerson(existing == null));
++        person.set(existing != null ? existing : new Person(null, sheetId, request.name(), request.grade()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/QuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/QuickAddPerson.java
+new file mode 100644
+index 00000000..0c727e9e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/QuickAddPerson.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.quickadd;
++
++/** Whether the quick-add creates its person (the name was not on the sheet) or uses one already there. */
++public record QuickAddPerson(boolean created) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/QuickAddRequest.java b/src/main/java/net/officefloor/hq/app/quickadd/QuickAddRequest.java
+new file mode 100644
+index 00000000..785d7748
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/QuickAddRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.quickadd;
++
++/** Body of a quick-add, as typed: the person's name, the claim's amount and who makes the change. */
++public record QuickAddRequest(String name, String amount, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RecordQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RecordQuickAdd.java
+new file mode 100644
+index 00000000..e98f4361
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RecordQuickAdd.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimValues;
++import net.officefloor.hq.app.claim.RecordClaimAdded;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.person.RecordPersonAdded;
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupBefore;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs once the person and claim are saved, so a refused quick-add writes nothing. Audited as the
++ *  person form then the claim form would: a new person's line and the figures that moved, then the
++ *  claim's line and the figures it moved. */
++public class RecordQuickAdd {
++    public void record(@Val PersonRequest personRequest, @Val ClaimValues values, @Val Person person,
++            @Val Claim claim, @Val QuickAddPerson found, @Val RollupBefore before, @Val Actor actor,
++            Rollup rollup, Audit audit) {
++        String sheetId = before.sheetId();
++        var since = before.snapshot();
++        if (found.created()) {
++            new RecordPersonAdded().record(personRequest, person, audit);
++            // The claim is saved already, but a DRAFT claim moves no figures: these are the person's.
++            rollup.record(sheetId, since, actor.user());
++            since = rollup.snapshot(sheetId);
++        }
++        new RecordClaimAdded().record(values, person, claim, audit);
++        rollup.record(sheetId, since, actor.user());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+new file mode 100644
+index 00000000..6b3c958e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.claim.ClaimValues;
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Refuses a claim dated in a closed period before anything is saved, so no new person is left behind. */
++public class RefuseClosedQuickAdd {
++    public void refuse(@PathVariable("sheetId") String sheetId, @Val ClaimValues values, Sheets sheets,
++            ClosedPeriods closedPeriods) throws PeriodClosedException {
++        closedPeriods.refuse(sheetId, values.date() != null ? values.date() : sheets.today(sheetId));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/SaveQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/SaveQuickAddPerson.java
+new file mode 100644
+index 00000000..61f9a792
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/SaveQuickAddPerson.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++/** Saves the person only when the quick-add creates them. */
++public class SaveQuickAddPerson {
++    public void save(@Val Person person, @Val QuickAddPerson found, People people) {
++        if (found.created()) people.save(person);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+new file mode 100644
+index 00000000..8274ec4b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.ClaimValues;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Checks the bar by the person and claim forms' rules: a person of grade A by that name, and a
++ *  claim of that amount dated the sheet's today with an empty note. */
++public class ValidateQuickAdd {
++    public void validate(@RequestBody QuickAddRequest request, Out<PersonRequest> person,
++            Out<ClaimValues> claim, Out<Actor> actor) throws InvalidSheetRequestException {
++        String user = request == null ? null : request.user();
++        person.set(PersonRequest.checked(new PersonRequest(request == null ? null : request.name(), "A", user, null)));
++        claim.set(ClaimRequest.checked(new ClaimRequest(request == null ? null : request.amount(), null, "", user)));
++        actor.set(new Actor(user));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+new file mode 100644
+index 00000000..39754165
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -0,0 +1,38 @@
++# Quick-add a DRAFT claim by person name, creating the person (grade A) when the name is not on the
++# sheet. One change: everything is checked before anything is saved, so a refused claim leaves no
++# new person behind and writes nothing.
++validate:
++  class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: find
++find:
++  class: net.officefloor.hq.app.quickadd.FindQuickAddPerson
++  govern: [ transaction ]
++  next: refuse
++refuse:
++  class: net.officefloor.hq.app.quickadd.RefuseClosedQuickAdd
++  govern: [ transaction ]
++  next: savePerson
++savePerson:
++  class: net.officefloor.hq.app.quickadd.SaveQuickAddPerson
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.claim.BuildClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: record
++record:
++  class: net.officefloor.hq.app.quickadd.RecordQuickAdd
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimCreated
++  govern: [ transaction ]
