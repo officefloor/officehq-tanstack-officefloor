@@ -239,7 +239,13 @@ public class Pools {
                     }
                 }, args);
         people.forEach((name, list) -> {
-            if (members.containsKey(name) || list.isEmpty()) {
+            if (members.containsKey(name)) {
+                return;
+            }
+            // A crew with no one left on the sheet is still a pool: it shares nothing.
+            if (list.isEmpty()) {
+                members.put(name, new ArrayList<>());
+                crews.add(name);
                 return;
             }
             BigDecimal each = FULL.divide(BigDecimal.valueOf(list.size()), 2, RoundingMode.HALF_EVEN);
