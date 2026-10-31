@@ -1,0 +1,189 @@
+diff --git a/src/main/frontend/features/people/useSheetFigures.ts b/src/main/frontend/features/people/useSheetFigures.ts
+index d445248d..281dd18f 100644
+--- a/src/main/frontend/features/people/useSheetFigures.ts
++++ b/src/main/frontend/features/people/useSheetFigures.ts
+@@ -3,7 +3,7 @@ import { isOverdue } from '../claims/overdue';
+ import { useGrace } from '../claims/useGrace';
+ import { isReviewLate } from '../claims/reviewLate';
+ import { isPendingLate } from '../claims/pendingLate';
+-import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
++import { capped, claimDue, dueTotal, excess, formatCents, roundsHalfUp, toCents } from '../rates/due';
+ import { claimRate, rateOn, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
+ import { usePools } from '../pools/usePools';
+@@ -39,15 +39,25 @@ export function useSheetFigures(sheet: string) {
+     const person = byId.get(c.personId);
+     return person !== undefined && countsClaimed(c, retiredOn(person, today), today);
+   });
+-  // A shared claim's parts: each holder's part is the claim's due times their share over 100, rounded half to even,
++  // A shared claim's parts: each holder's part is the claim's amount times their share over 100, times the rate of the
++  // holder's own grade in force on the claim's date over 100, rounded like the claim (0.00 when that grade has no rate);
++  // a settled claim's parts stay frozen at its settled due times the share over 100, rounded half to even. Each part is
+   // taken from the claim's own person; only a counting claim with a figure has parts.
+   const parts = live.flatMap((c) => {
+     const owner = byId.get(c.personId)!;
+     const due = (c.shares ?? []).length === 0 ? null : claimDue(c, claimRate(rates, gradeOn(owner, c.date), c), floor, late, policy);
+     if (due === null) return [];
++    const frozen = c.status === 'SETTLED' && c.due !== '';
+     return (c.shares ?? [])
+       .filter((h) => byId.has(h.personId))
+-      .map((h) => ({ claim: c, ownerId: c.personId, holderId: h.personId, part: halfEvenDiv(due * toCents(h.share), 10000n) }));
++      .flatMap((h) => {
++        if (frozen) return [{ claim: c, ownerId: c.personId, holderId: h.personId, part: halfEvenDiv(due * toCents(h.share), 10000n) }];
++        const rate = claimRate(rates, gradeOn(byId.get(h.personId)!, c.date), c);
++        // A holder whose grade has no rate holds 0.00: it takes nothing and gives them no figure.
++        if (rate === undefined) return [];
++        const part = roundDiv(toCents(c.amount) * toCents(h.share) * toCents(rate), 100000000n, roundsHalfUp(c, policy));
++        return [{ claim: c, ownerId: c.personId, holderId: h.personId, part }];
++      });
+   });
+   // What a person's parts move: added for the parts they hold, taken off for the parts of their own claims.
+   const partsOf = (person: Person, which: (c: (typeof live)[number]) => boolean) =>
+@@ -194,6 +204,14 @@ function daysBetween(from: string, to: string): number {
+   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+ }
+ 
++// n / d (d > 0) rounded half up (away from zero) or else half to even.
++function roundDiv(n: bigint, d: bigint, halfUp: boolean): bigint {
++  if (!halfUp) return halfEvenDiv(n, d);
++  const abs = n < 0n ? -n : n;
++  const q = (abs * 2n + d) / (2n * d);
++  return n < 0n ? -q : q;
++}
++
+ // n / d (d > 0) rounded half to even.
+ function halfEvenDiv(n: bigint, d: bigint): bigint {
+   let q = n / d;
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 96089929..09341e8d 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -391,7 +391,7 @@ public class AsOfView {
+         return recorded != null && recorded > 0 ? null : sheets.parent(sheetId);
+     }
+ 
+-    /** The periods added by the end of the date, by from-date, each closed (or soft-closed) as it stood then. */
++    /** The periods added by the end of the date, by from-date, each closed (or soft-closed) and locked as it stood then. */
+     public List<PeriodResponse> periods(String sheetId, LocalDate date) {
+         Date end = Date.valueOf(date);
+         Map<String, Date> addedOn = new HashMap<>();
+@@ -402,8 +402,11 @@ public class AsOfView {
+             Date added = addedOn.get(now.name());
+             if (added != null && added.toLocalDate().isAfter(date)) continue;
+             byName.put(now.name(), new PeriodResponse(now.name(), now.from(), now.to(), false, "", new LinkedHashMap<>(), false, now.cap(),
+-                    new LinkedHashMap<>(), now.locked(), now.addedOrder()));
++                    new LinkedHashMap<>(), false, now.addedOrder()));
+         }
++        Map<String, Boolean> locked = new HashMap<>();
++        jdbc.query("SELECT name, locked FROM period_lock_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
++                (RowCallbackHandler) rs -> locked.put(rs.getString(1), rs.getBoolean(2)), sheetId, end);
+         jdbc.query("SELECT name, closed, soft_closed, closed_total, person_totals, person_carried FROM period_history WHERE sheet_id = ?"
+                 + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
+                     PeriodResponse was = byName.get(rs.getString(1));
+@@ -411,8 +414,11 @@ public class AsOfView {
+                     BigDecimal total = rs.getBigDecimal(4);
+                     byName.put(was.name(), new PeriodResponse(was.name(), was.from(), was.to(), rs.getBoolean(2),
+                             total == null ? "" : total.setScale(2).toPlainString(), byPerson(rs.getString(5)), rs.getBoolean(3),
+-                            was.cap(), byPerson(rs.getString(6)), was.locked(), was.addedOrder()));
++                            was.cap(), byPerson(rs.getString(6)), false, was.addedOrder()));
+                 }, sheetId, end);
++        byName.replaceAll((name, was) -> !locked.getOrDefault(name, false) ? was : new PeriodResponse(was.name(), was.from(), was.to(),
++                was.closed(), was.closedTotal(), was.closedPersonTotals(), was.softClosed(), was.cap(), was.closedPersonCarried(), true,
++                was.addedOrder()));
+         return new ArrayList<>(byName.values());
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+index c51902d5..830afbfc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+@@ -7,8 +7,15 @@ import java.time.LocalDate;
+ /** One holder of a claim: the person holding a share of its due, the share (two decimals) and the sheet's today when shared. */
+ public record ClaimShare(long personId, BigDecimal share, LocalDate sharedOn) {
+ 
+-    /** The holder's part of a due: the due times the share over 100, rounded half to even. */
++    /** The holder's part of a settled claim's frozen due: the due times the share over 100, rounded half to even. */
+     public BigDecimal partOf(BigDecimal due) {
+         return due.multiply(share).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
+     }
++
++    /** The holder's part of a live claim: its amount times the share over 100, times the rate of the holder's grade in force
++     *  on its date over 100, rounded like the claim; 0.00 when the grade has no rate. */
++    public BigDecimal partOf(Claim claim, BigDecimal holderRate, RoundingMode rounding) {
++        return holderRate == null ? BigDecimal.ZERO.setScale(2)
++                : claim.getAmount().multiply(share).multiply(holderRate).movePointLeft(4).setScale(2, rounding);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index 48c06898..ad643865 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -102,12 +102,15 @@ public class Periods {
+     public void remove(String sheetId, String name) {
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+         jdbc.update("DELETE FROM period_history WHERE sheet_id = ? AND name = ?", sheetId, name);
++        jdbc.update("DELETE FROM period_lock_history WHERE sheet_id = ? AND name = ?", sheetId, name);
+         jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
+     }
+ 
+-    /** Lock or unlock the named period. */
++    /** Lock or unlock the named period, recorded in its lock history dated the sheet's today. */
+     public void setLocked(String sheetId, String name, boolean locked) {
+         jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ?", locked, sheetId, name);
++        jdbc.update("INSERT INTO period_lock_history (sheet_id, name, set_on, locked) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
++                sheetId, name, sheetId, locked);
+     }
+ 
+     /** Whether a date falls inside a closed period of the sheet. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index a42dde51..3a5664ef 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -24,8 +24,9 @@ import org.springframework.stereotype.Service;
+ 
+ /**
+  * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections; a hold does not take a claim out) and due-total, and the
+- * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap less their cut total, not below 0.00 (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
+- * the claim's due less those parts) — worked out on the server so a change can audit what it
++ * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap less their cut total, not below 0.00 (a holder's due-total counting their parts of the claims shared with them — each the claim's amount times their share
++ * over 100 times the rate of their own grade in force on its date over 100, rounded like the claim, a settled claim's parts
++ * frozen at its settled due times the share — the claim's own person's the claim's due less those parts) — worked out on the server so a change can audit what it
+  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
+  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
+  * totals changed. The sheet's due-total and overdue-total leave out the single highest and the single
+@@ -156,7 +157,17 @@ public class Rollup {
+                 if (!byId.containsKey(share.personId())) {
+                     continue;
+                 }
+-                BigDecimal part = share.partOf(figure);
++                BigDecimal part = figure;
++                if (claim.getSettledDue() != null) {
++                    part = share.partOf(figure);
++                } else {
++                    // A holder whose grade has no rate holds 0.00: it takes nothing and gives them no figure.
++                    BigDecimal rate = rates.find(claim, byId.get(share.personId()).gradeOn(claim.getDate()));
++                    if (rate == null) {
++                        continue;
++                    }
++                    part = share.partOf(claim, rate, Rounding.of(claim, policyDate, on -> settings.roundingMode(claim.getSheetId(), on)));
++                }
+                 partsIn.merge(share.personId(), part, BigDecimal::add);
+                 partsOut.merge(owner.getId(), part, BigDecimal::add);
+             }
+diff --git a/src/main/resources/db/migration/V120__period_lock_history.sql b/src/main/resources/db/migration/V120__period_lock_history.sql
+new file mode 100644
+index 00000000..b2db6bbf
+--- /dev/null
++++ b/src/main/resources/db/migration/V120__period_lock_history.sql
+@@ -0,0 +1,11 @@
++-- Each lock and unlock of a period, in the order made, dated the sheet's today when made (set_on), so the as-of view
++-- shows a period locked as it stood then. A NULL set_on is a lock carried over from before this history was kept: it
++-- counts as of any date.
++CREATE TABLE period_lock_history (
++    seq      BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL,
++    name     VARCHAR(200) NOT NULL,
++    set_on   DATE,
++    locked   BOOLEAN      NOT NULL
++);
++INSERT INTO period_lock_history (sheet_id, name, set_on, locked) SELECT sheet_id, name, NULL, TRUE FROM period WHERE locked;
