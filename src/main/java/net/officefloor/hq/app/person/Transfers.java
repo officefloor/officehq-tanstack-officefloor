@@ -37,11 +37,15 @@ public class Transfers {
      *  opened (by the sheet's today when each was opened, then by the order they were added). Figures
      *  a statement bound are lost, the statement count starts at 0, and references, locks and settle
      *  batches are not carried. The person then leaves their sheet entirely: with their claims go
-     *  their statements, holds, watches, patron links (either way), pool memberships and period totals. */
-    public long transfer(Person person, String to) {
+     *  their statements, holds, watches, patron links (either way), pool memberships and period totals.
+     *  When `into` (a person on sheet `to`) is given, the person is merged into them instead, as a merge
+     *  does: their claims arrive as into's, listed after into's own (each renumbered as above, unbound);
+     *  their name and aliases become into's aliases; their grades, terms and contact are lost; and the
+     *  answer is into's id. */
+    public long transfer(Person person, String to, Person into) {
         // The person arrives knowing the sheet they came from and their name there (the audit follows them back).
         long fromId = person.getId();
-        long toId = insertPerson(person, to);
+        long toId = into != null ? mergeInto(person, into) : insertPerson(person, to);
 
         List<Claim> kept = new ArrayList<>(claims.ofPerson(person.getSheetId(), fromId));
         Collections.reverse(kept); // oldest listed first, so they keep their order
@@ -69,6 +73,17 @@ public class Transfers {
         }
         jdbc.update("DELETE FROM person WHERE id = ?", fromId);
         return toId;
+    }
+
+    /** The person's name and aliases become into's aliases; answers into's id. */
+    private long mergeInto(Person person, Person into) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) "
+                + "SELECT ?, ?, alias, alias_key FROM person_alias WHERE person_id = ? ORDER BY id",
+                into.getSheetId(), into.getId(), person.getId());
+        String name = person.getName().trim();
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",
+                into.getSheetId(), into.getId(), name, name);
+        return into.getId();
     }
 
     private long insertPerson(Person person, String to) {

@@ -55,8 +55,8 @@ function PersonTransfer({ user, sheet, person }: { user: string; sheet: string; 
       {transfer.isError && (
         <span data-testid="person-error" role="alert">
           {' '}
-          Could not transfer this person (a steward only, to another sheet, not retired, no name, alias or
-          contact already there).
+          Could not transfer this person (a steward only, to another sheet, not retired, no contact
+          already there, names matching at most one person there and not a retired one).
         </span>
       )}
     </td>

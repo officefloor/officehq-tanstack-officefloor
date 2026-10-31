@@ -9,6 +9,10 @@ public class RecordPersonArrived {
     public void record(@Val Transfer transfer, Audit audit, Rollup rollup) {
         audit.record("PERSON_TRANSFERRED sheet=" + transfer.to() + " by=" + transfer.user()
                 + " name=" + transfer.name() + " from=" + transfer.from());
+        if (transfer.into() != null) {
+            audit.record("PERSON_MERGED sheet=" + transfer.to() + " by=" + transfer.user()
+                    + " from=" + transfer.name() + " into=" + transfer.into().getName());
+        }
         rollup.record(transfer.to(), transfer.toBefore(), transfer.user());
     }
 }
