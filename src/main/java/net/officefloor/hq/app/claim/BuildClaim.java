@@ -16,6 +16,12 @@ import net.officefloor.plugin.variable.Val;
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
             Claims claims, Settings settings, Out<Claim> claim) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+        claim.set(built(values, person, sheets, closedPeriods, claims, settings));
+    }
+
+    /** The new DRAFT claim for these values and person, or refused by the claim form's rules. */
+    static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
+            Claims claims, Settings settings) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         LocalDate date = values.date() != null ? values.date() : sheets.today(person.getSheetId());
         closedPeriods.refuse(person.getSheetId(), date);
         person.refuseRetired(date);
@@ -24,7 +30,7 @@ public class BuildClaim {
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
         built.setDueBy(date.plusDays(settings.terms(person.getSheetId(), person.gradeOn(date), date)));
-        claim.set(built);
+        return built;
     }
 
     /** Refuses a correction whose number is not a SETTLED claim of the same person. */
