@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status FROM claim";
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -25,18 +25,19 @@ public class Claims {
         return jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id DESC", Claims::claim, sheetId);
     }
 
-    /** The claim with this id on this sheet, or null when there is none. */
+    /** The claim with this id on this sheet, or null when there is none. Locks the claim's row for
+     *  the rest of the transaction, so two changes to one claim at once happen one after the other. */
     public Claim find(String sheetId, long id) {
-        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ?", Claims::claim, sheetId, id)
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ? FOR UPDATE", Claims::claim, sheetId, id)
                 .stream().findFirst().orElse(null);
     }
 
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ? WHERE id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                    claim.getId());
+                    claim.getNumber(), claim.getId());
             return;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -58,6 +59,6 @@ public class Claims {
     private static Claim claim(ResultSet rs, int i) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
-                ClaimStatus.valueOf(rs.getString("status")));
+                ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number", Long.class));
     }
 }

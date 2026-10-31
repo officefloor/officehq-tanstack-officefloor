@@ -11,6 +11,6 @@ public class RecordClaimEdited {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         audit.record("CLAIM_EDITED sheet=" + claim.getSheetId() + " by=" + values.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
-                + " date=" + claim.getDate());
+                + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : ""));
     }
 }

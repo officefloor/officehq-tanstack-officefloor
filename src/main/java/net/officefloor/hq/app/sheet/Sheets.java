@@ -28,6 +28,17 @@ public class Sheets {
                 .toLocalDate();
     }
 
+    /**
+     * The sheet's next claim number: 1 for its first, then 2, and so on. The sheet's row stays
+     * locked until the transaction ends, so two claims opened at once get different numbers, and a
+     * number is never given twice.
+     */
+    public long nextClaimNumber(String sheetId) {
+        today(sheetId);
+        jdbc.update("UPDATE sheet SET claim_numbers = claim_numbers + 1 WHERE id = ?", sheetId);
+        return jdbc.queryForObject("SELECT claim_numbers FROM sheet WHERE id = ?", Long.class, sheetId);
+    }
+
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, Date.valueOf(today));
     }

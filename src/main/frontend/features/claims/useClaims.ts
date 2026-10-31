@@ -12,6 +12,8 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
+  /** Given when the claim is opened; null for a DRAFT or VOID claim. */
+  number: number | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;

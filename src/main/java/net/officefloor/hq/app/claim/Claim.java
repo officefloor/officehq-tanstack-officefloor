@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A claim a person on a sheet has made, DRAFT until it is opened. `id` is null until the claim is first saved. */
+/** A claim a person on a sheet has made, DRAFT (and unnumbered) until it is opened. `id` is null until the claim is first saved. */
 public class Claim {
     private Long id;
     private final String sheetId;
@@ -12,9 +12,10 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
+    private Long number;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status) {
+            ClaimStatus status, Long number) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -22,6 +23,7 @@ public class Claim {
         this.date = date;
         this.note = note;
         this.status = status;
+        this.number = number;
     }
 
     public Long getId() { return id; }
@@ -36,4 +38,7 @@ public class Claim {
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
     public void setStatus(ClaimStatus status) { this.status = status; }
+    /** The claim's number on its sheet, given when it is opened; null for a DRAFT or VOID claim. */
+    public Long getNumber() { return number; }
+    public void setNumber(Long number) { this.number = number; }
 }

@@ -140,6 +140,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{showDue(dueCents(c.amount, pct))}</span>{' '}
+              <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               {(['open', 'settle', 'void'] as const).map((action) => (
                 <span key={action}>
