@@ -1,16 +1,27 @@
 package net.officefloor.hq.app.settings;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
+/** A dated setting is recorded from its from-date, else from the sheet's today. */
 public class SaveSettings {
-    public void save(@Val SettingsChange change, Settings settings) {
-        if (change.setsClerkLimit()) settings.setClerkLimit(change.sheetId(), change.clerkLimit());
-        if (change.floor() != null) settings.setFloor(change.sheetId(), change.floor());
-        if (change.terms() != null) settings.setTerms(change.sheetId(), change.terms());
-        change.gradeTerms().forEach((grade, terms) -> settings.setGradeTerms(change.sheetId(), grade, terms));
-        if (change.latePct() != null) settings.setLatePct(change.sheetId(), change.latePct());
-        if (change.setsPolicyDate()) settings.setPolicyDate(change.sheetId(), change.policyDate());
-        if (change.setsCap()) settings.setCap(change.sheetId(), change.cap());
-        if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(change.sheetId(), change.periodNumberingFrom());
+    public void save(@Val SettingsChange change, Settings settings, Sheets sheets) {
+        String sheetId = change.sheetId();
+        LocalDate today = sheets.today(sheetId);
+        if (change.setsClerkLimit()) setDated(settings, change, today, Settings.CLERK_LIMIT, change.clerkLimit());
+        if (change.floor() != null) setDated(settings, change, today, Settings.FLOOR, change.floor());
+        if (change.terms() != null) setDated(settings, change, today, Settings.TERMS, BigDecimal.valueOf(change.terms()));
+        change.gradeTerms().forEach((grade, terms) -> setDated(settings, change, today, Settings.gradeKey(grade),
+                terms != null ? BigDecimal.valueOf(terms) : null));
+        if (change.latePct() != null) setDated(settings, change, today, Settings.LATE_PCT, change.latePct());
+        if (change.setsPolicyDate()) settings.setPolicyDate(sheetId, change.policyDate());
+        if (change.setsCap()) setDated(settings, change, today, Settings.CAP, change.cap());
+        if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(sheetId, change.periodNumberingFrom());
+    }
+
+    private static void setDated(Settings settings, SettingsChange change, LocalDate today, String key, BigDecimal value) {
+        settings.setDated(change.sheetId(), key, change.froms().getOrDefault(key, today), value);
     }
 }

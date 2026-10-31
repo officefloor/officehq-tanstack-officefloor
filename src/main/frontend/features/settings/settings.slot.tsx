@@ -4,10 +4,13 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
-import { DAYS, TERM_GRADES, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
 type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; gradeTerms: Record<string, string> };
+
+/** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
+type Froms = Record<string, string>;
 
 /**
  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
@@ -20,13 +23,16 @@ type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: st
  * today, a claim opened is numbered within its period; blank is off), its cap (a person's due-total
  * is at most it, the rest their excess; blank is no cap),
  * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
- * whose fields were touched since the last one.
+ * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
+ * each grade's), the late percent and the cap are dated: a save records each from its from-date (blank
+ * is the sheet's today), and each shows the value in force on the sheet's today.
  */
 function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
   const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, gradeTerms: {} });
+  const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -34,9 +40,10 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
 
   const submitOnce = useSubmitOnce();
   const saveSettings = useMutation({
-    mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
+    mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
     onSuccess: (saved) => {
       setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, gradeTerms: {} });
+      setFroms({});
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
@@ -59,6 +66,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   // A field is set by the next save once it has been touched, starting from the value in force.
   const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms'>, current: string) =>
     setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
+  // The from-date field of a dated setting, by its key.
+  const fromField = (key: string) => (
+    <label>
+      from{' '}
+      <input
+        data-testid={`setting-${key}-from`}
+        placeholder="blank: the sheet's today"
+        size={10}
+        value={froms[key] ?? ''}
+        onChange={(e) => {
+          const value = e.target.value;
+          setFroms((was) => ({ ...was, [key]: value }));
+          clearSettingsError();
+        }}
+      />
+    </label>
+  );
   const clearRoleError = () => {
     saveRole.reset();
     setRoleInvalid(false);
@@ -79,6 +103,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const periodNumberingFrom = edit.periodNumberingFrom?.trim() ?? null;
           const cap = edit.cap?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
+          const from = Object.fromEntries(Object.entries(froms).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''));
           if (
             (limit !== null && !LIMIT.test(limit)) ||
             (floor !== null && !LIMIT.test(floor)) ||
@@ -87,7 +112,8 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (latePct !== null && !PERCENT.test(latePct)) ||
             (policyDate !== null && !POLICY_DATE.test(policyDate)) ||
             (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom)) ||
-            (cap !== null && !LIMIT.test(cap))
+            (cap !== null && !LIMIT.test(cap)) ||
+            Object.values(from).some((v) => !FROM_DATE.test(v))
           ) {
             // Refused here, before anything is sent: the store and the audit file are untouched.
             saveSettings.reset();
@@ -95,7 +121,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, gradeTerms }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, gradeTerms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -117,6 +143,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        {fromField('clerk-limit')}{' '}
         Floor:{' '}
         <strong data-testid="setting-floor-current">
           {saveSettings.isPending ? '' : (data?.floor ?? '')}
@@ -134,6 +161,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        {fromField('floor')}{' '}
         Terms:{' '}
         <strong data-testid="setting-terms-current">
           {saveSettings.isPending ? '' : (data?.terms ?? '')}
@@ -151,6 +179,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        {fromField('terms')}{' '}
         {TERM_GRADES.map((g) => {
           const own = data?.gradeTerms?.[g] !== undefined ? String(data.gradeTerms[g]) : '';
           return (
@@ -170,6 +199,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
                   }}
                 />
               </label>{' '}
+              {fromField(`terms-${g}`)}{' '}
             </span>
           );
         })}
@@ -190,6 +220,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        {fromField('late-pct')}{' '}
         Policy date:{' '}
         <strong data-testid="setting-policy-date-current">
           {saveSettings.isPending ? '' : (data?.policyDate ?? '')}
@@ -241,6 +272,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        {fromField('cap')}{' '}
         <button type="submit" data-testid="settings-save" disabled={saveSettings.isPending}>
           Save
         </button>
@@ -248,7 +280,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap an amount with up to two decimals (blank is no cap).
+            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap an amount with up to two decimals (blank is no cap), and each from-date a date, yyyy-mm-dd (blank is the sheet's today).
           </span>
         )}
       </form>

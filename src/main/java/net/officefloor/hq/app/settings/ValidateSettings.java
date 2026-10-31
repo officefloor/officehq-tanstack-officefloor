@@ -23,6 +23,10 @@ public class ValidateSettings {
     /** The grades terms can be set for. */
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
+    /** The settings that are dated, by key. */
+    private static final Set<String> DATED = Set.of(Settings.CLERK_LIMIT, Settings.FLOOR, Settings.TERMS,
+            Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"), Settings.LATE_PCT, Settings.CAP);
+
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
@@ -79,6 +83,21 @@ public class ValidateSettings {
         if (cap != null && !cap.isEmpty() && !AMOUNT.matcher(cap).matches()) {
             throw new InvalidSheetRequestException("The cap must be an amount with up to two decimals, or blank");
         }
+        Map<String, LocalDate> froms = new TreeMap<>();
+        if (request != null && request.from() != null) {
+            for (Map.Entry<String, String> e : request.from().entrySet()) {
+                if (!DATED.contains(e.getKey())) {
+                    throw new InvalidSheetRequestException("Not a dated setting: " + e.getKey());
+                }
+                String from = e.getValue() == null ? "" : e.getValue().trim();
+                if (from.isEmpty()) continue;
+                try {
+                    froms.put(e.getKey(), LocalDate.parse(from));
+                } catch (DateTimeParseException ex) {
+                    throw new InvalidSheetRequestException("A from-date must be a date (yyyy-mm-dd), or blank");
+                }
+            }
+        }
         String by = request == null ? null : request.user();
         actor.set(new Actor(by));
         change.set(new SettingsChange(sheetId, limit != null,
@@ -87,6 +106,6 @@ public class ValidateSettings {
                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
-                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2)));
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms));
     }
 }

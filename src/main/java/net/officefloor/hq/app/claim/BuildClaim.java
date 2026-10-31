@@ -23,7 +23,7 @@ public class BuildClaim {
         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
-        built.setDueBy(date.plusDays(settings.terms(person.getSheetId(), person.gradeOn(date))));
+        built.setDueBy(date.plusDays(settings.terms(person.getSheetId(), person.gradeOn(date), date)));
         claim.set(built);
     }
 

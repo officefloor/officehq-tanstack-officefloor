@@ -3,6 +3,7 @@ import { getJson } from '../../api/http';
 import { claimDueCents, live, type Claim, type Late } from '../claims/useClaims';
 import { gradeOn, heldOnBy, type Person } from '../people/usePeople';
 import { hundredths, rateOn, totalDue, type Rate } from '../rates/useRates';
+import type { FloorOn } from '../settings/useSettings';
 
 /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
@@ -40,7 +41,7 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
 /** A person's due-total for a period, in cents: the one fixed when the period was closed (0 for a
  *  person added since), else the figures of their counted (OPEN or SETTLED) claims dated in it, not
  *  OPEN ones dated within their hold unless stated, n/a ones skipped. */
-export function personPeriodDueCents(period: Period, person: Person, claims: Claim[], rates: Rate[], floor: string, late: Late): bigint {
+export function personPeriodDueCents(period: Period, person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late): bigint {
   if (period.closed) {
     const fixed = period.closedPersonTotals?.[String(person.id)];
     return fixed === undefined ? 0n : hundredths(fixed);
@@ -51,6 +52,6 @@ export function personPeriodDueCents(period: Period, person: Person, claims: Cla
 }
 
 /** A period's due-total: everyone's due-total for it added up. */
-export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: string, late: Late): string {
+export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: FloorOn, late: Late): string {
   return totalDue(people.map((p) => personPeriodDueCents(period, p, claims, rates, floor, late)));
 }

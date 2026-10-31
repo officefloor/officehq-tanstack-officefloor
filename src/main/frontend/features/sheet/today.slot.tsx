@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
+import { settingsKey } from '../settings/useSettings';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
 /** Shows the sheet's today and changes it. */
@@ -18,7 +19,11 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
     onSuccess: (saved) => {
       queryClient.setQueryData(sheetKey(sheet), saved);
       // A blank policy date is the sheet's today: it decides how each claim's live figures round.
-      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      // The dated settings show (and the clerk limit and cap apply) as in force on the sheet's today.
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: settingsKey(sheet) }),
+      ]);
     },
   });
 

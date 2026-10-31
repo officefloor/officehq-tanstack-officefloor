@@ -66,7 +66,7 @@ public class Figures {
 
     /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING) and its due-by (fixed
      *  when it was added) is before the sheet's today; then the sheet's late percent of the
-     *  figure for every full 30 days it is overdue (a correction has none), rounded by the claim's rounding to two decimals. Never bound
+     *  figure for every full 30 days it is overdue (the late percent in force on the claim's date) (a correction has none), rounded by the claim's rounding to two decimals. Never bound
      *  by a statement: it follows the sheet's today. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
@@ -74,17 +74,17 @@ public class Figures {
         String sheetId = claim.getSheetId();
         long periods = ChronoUnit.DAYS.between(claim.getDueBy(), sheets.today(sheetId)) / 30;
         if (periods <= 0) return none;
-        return figure.multiply(settings.latePct(sheetId)).multiply(BigDecimal.valueOf(periods))
+        return figure.multiply(settings.latePct(sheetId, claim.getDate())).multiply(BigDecimal.valueOf(periods))
                 .divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
     }
 
     /** The claim's due at its person's grade's rate in force on the claim's date: amount times the
-     *  rate divided by 100, rounded by the claim's rounding to two decimals, raised to the sheet's floor when it
+     *  rate divided by 100, rounded by the claim's rounding to two decimals, raised to the sheet's floor in force on the claim's date when it
      *  is below it (a correction has no floor); null when there is no rate. */
     public BigDecimal live(Claim claim, String grade) {
         BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
         if (pct == null) return null;
         BigDecimal due = claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
-        return claim.isCorrection() ? due : due.max(settings.floor(claim.getSheetId()));
+        return claim.isCorrection() ? due : due.max(settings.floor(claim.getSheetId(), claim.getDate()));
     }
 }

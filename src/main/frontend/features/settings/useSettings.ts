@@ -10,8 +10,13 @@ export type RoleEntry = { name: string; role: string };
  *  limit, `floor` with two decimals `terms` in days, `latePct` with two decimals and `policyDate` as
  *  set (yyyy-mm-dd), or null when blank: then the policy date is the sheet's today, and `periodNumberingFrom`
  *  (yyyy-mm-dd), or null when off, and `gradeTerms` the terms set per grade (a grade not in it uses the
- *  sheet's terms), and `cap` with two decimals, or null for no cap. */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[] };
+ *  sheet's terms), and `cap` with two decimals, or null for no cap — each dated one as in force on the
+ *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
+ *  terms, terms-<grade>, late-pct, cap), oldest from-date first. */
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]> };
+
+/** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
+export type DatedValue = { from: string; value: string | null };
 
 /** The floor of a sheet that has not set one. */
 export const DEFAULT_FLOOR = '1.00';
@@ -31,14 +36,28 @@ export function useSettings(sheet: string) {
   });
 }
 
-/** The sheet's floor: a claim's live due is at least it. */
-export function useFloor(sheet: string): string {
-  return useSettings(sheet).data?.floor ?? DEFAULT_FLOOR;
+/** The value of a dated setting in force on `date`: the one with the latest from-date on or before
+ *  it, else `start` (the setting's starting value; null when it has none). A blank value is null. */
+export function valueOn(settings: Settings | undefined, key: string, date: string, start: string | null): string | null {
+  let found: DatedValue | undefined;
+  for (const v of settings?.dated?.[key] ?? []) if (v.from <= date) found = v;
+  return found === undefined ? start : (found.value ?? start);
 }
 
-/** The sheet's cap: a person's due-total is at most it. Null for no cap. */
+/** The sheet's floor in force on a date: a claim's live due is at least the one on its date. */
+export type FloorOn = (date: string) => string;
+
+/** The sheet's floor, by date. */
+export function useFloor(sheet: string): FloorOn {
+  const settings = useSettings(sheet).data;
+  return (date) => valueOn(settings, 'floor', date, DEFAULT_FLOOR) ?? DEFAULT_FLOOR;
+}
+
+/** The sheet's cap in force on its today: a person's due-total is at most it. Null for no cap. */
 export function useCap(sheet: string): string | null {
-  return useSettings(sheet).data?.cap ?? null;
+  const settings = useSettings(sheet).data;
+  const today = useSheetToday(sheet);
+  return today === '' ? (settings?.cap ?? null) : valueOn(settings, 'cap', today, null);
 }
 
 /** The sheet's terms: a claim is due by its date plus this many days. */
@@ -49,12 +68,12 @@ export function useTerms(sheet: string): number {
 /** The late percent of a sheet that has not set one. */
 export const DEFAULT_LATE_PCT = '0.00';
 
-/** What makes an overdue claim's due grow: the sheet's today and its late percent. */
+/** What makes an overdue claim's due grow: the sheet's today and its late percent, by date. */
 export function useLate(sheet: string): Late {
   const settings = useSettings(sheet).data;
   return {
     today: useSheetToday(sheet),
-    pct: settings?.latePct ?? DEFAULT_LATE_PCT,
+    pctOn: (date) => valueOn(settings, 'late-pct', date, DEFAULT_LATE_PCT) ?? DEFAULT_LATE_PCT,
   };
 }
 
@@ -74,3 +93,6 @@ export const TERM_GRADES = ['A', 'B', 'C'] as const;
 
 /** Terms the server accepts: a whole number of days, or blank for the default 14. */
 export const DAYS = /^(\d{1,4})?$/;
+
+/** A from-date the server accepts: yyyy-mm-dd (a blank one is not sent: the sheet's today). */
+export const FROM_DATE = /^\d{4}-\d{2}-\d{2}$/;
