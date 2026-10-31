@@ -43,6 +43,8 @@ public class RecordSettingChanged {
                     + (change.proofThreshold() != null ? change.proofThreshold().toPlainString() : "")
                     + from(change, Settings.PROOF_THRESHOLD));
         }
+        change.perms().forEach((action, roles) ->
+                audit.record(prefix + " key=" + Settings.permKey(action) + " value=" + (roles != null ? roles : "")));
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

@@ -13,8 +13,9 @@ export type RoleEntry = { name: string; role: string };
  *  sheet's terms), and `cap` with two decimals, or null for no cap — each dated one as in force on the
  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
  *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first; and `proofThreshold` with
- *  two decimals, or null for none, as in force on the sheet's today. */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null };
+ *  two decimals, or null for none, as in force on the sheet's today; and `perms`, the roles set for each
+ *  action of the permission matrix, comma separated (an action not in it keeps the standing rule). */
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; perms: Record<string, string> };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };
@@ -97,3 +98,9 @@ export const DAYS = /^(\d{1,4})?$/;
 
 /** A from-date the server accepts: yyyy-mm-dd (a blank one is not sent: the sheet's today). */
 export const FROM_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The actions of the permission matrix: each may be given the roles allowed to take it. */
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+
+/** A permission the server accepts: a comma separated list of roles, or blank for the standing rule. */
+export const PERM_ROLES = /^(\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*)?$/i;

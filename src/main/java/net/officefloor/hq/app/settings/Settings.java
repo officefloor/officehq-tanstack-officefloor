@@ -32,6 +32,14 @@ public class Settings {
             LATE_PCT = "late-pct", CAP = "cap",
             PROOF_THRESHOLD = "proof-threshold";
 
+    /** The actions of the permission matrix, in order. */
+    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+
+    /** The key a permission is set under: perm-<action>. */
+    public static String permKey(String action) {
+        return "perm-" + action;
+    }
+
     private final JdbcTemplate jdbc;
     private final Sheets sheets;
 
@@ -181,5 +189,40 @@ public class Settings {
     public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
         BigDecimal cap = cap(sheetId);
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+    }
+
+    /** The roles set for `action` on the sheet, comma separated; null when blank (the standing rule). */
+    public String permission(String sheetId, String action) {
+        List<String> values = jdbc.query("SELECT roles FROM sheet_permission WHERE sheet_id = ? AND action_key = ?",
+                (rs, i) -> rs.getString("roles"), sheetId, action);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    /** Every permission set on the sheet, by action (one not in it keeps the standing rule). */
+    public Map<String, String> permissions(String sheetId) {
+        Map<String, String> perms = new TreeMap<>();
+        jdbc.query("SELECT action_key, roles FROM sheet_permission WHERE sheet_id = ? AND roles IS NOT NULL",
+                (RowCallbackHandler) rs -> perms.put(rs.getString("action_key"), rs.getString("roles")), sheetId);
+        return perms;
+    }
+
+    /** Set the roles that may take `action` (null for blank: the standing rule). */
+    public void setPermission(String sheetId, String action, String roles) {
+        jdbc.update("MERGE INTO sheet_permission (sheet_id, action_key, roles) KEY (sheet_id, action_key) VALUES (?, ?, ?)",
+                sheetId, action, roles);
+    }
+
+    /** Whether the user's role may take `action` on the sheet: the roles set for it, else the standing
+     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. */
+    public boolean allows(String sheetId, String action, String user) {
+        Role role = role(sheetId, user);
+        String roles = permission(sheetId, action);
+        if (roles == null) {
+            return role == Role.STEWARD || !(action.equals("reassign") || action.equals("reopen"));
+        }
+        for (String r : roles.split(",")) {
+            if (r.trim().equalsIgnoreCase(role.name())) return true;
+        }
+        return false;
     }
 }

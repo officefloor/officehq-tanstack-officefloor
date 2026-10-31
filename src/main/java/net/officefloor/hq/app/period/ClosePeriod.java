@@ -11,6 +11,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -19,10 +20,14 @@ import net.officefloor.plugin.variable.Val;
  *  at the end of the period's last day, as its status log records it — not deferred ones, nor
  *  ones open then and dated within their person's hold, unless stated — n/a ones skipped. A closed period cannot be
  *  closed again. Each person's due-total for it is fixed too, and the
- *  period's is their sum. Publishes the closed period. */
+ *  period's is their sum. Only the roles the permission matrix allows may close it (clerk and
+ *  steward by default). Publishes the closed period. */
 public class ClosePeriod {
-    public void close(@Val Period period, Periods periods, Claims claims, People people, Figures figures, ClaimLog log,
+    public void close(@Val Period period, @Val PeriodCloseRequest request, Settings settings, Periods periods, Claims claims, People people, Figures figures, ClaimLog log,
             Out<ClosedPeriod> closed) throws PeriodClosedException {
+        if (!settings.allows(period.sheetId(), "close", request.user())) {
+            throw new PeriodClosedException("Your role may not close period " + period.name());
+        }
         if (period.closed()) throw new PeriodClosedException("Period " + period.name() + " is already closed");
         Map<Long, Person> personOf = people.onSheet(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::getId, p -> p));

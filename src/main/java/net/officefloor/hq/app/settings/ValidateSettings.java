@@ -3,6 +3,10 @@ package net.officefloor.hq.app.settings;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -88,6 +92,26 @@ public class ValidateSettings {
         if (threshold != null && !threshold.isEmpty() && !AMOUNT.matcher(threshold).matches()) {
             throw new InvalidSheetRequestException("The proof threshold must be an amount with up to two decimals, or blank");
         }
+        Map<String, String> perms = new LinkedHashMap<>();
+        if (request != null && request.perms() != null) {
+            for (Map.Entry<String, String> e : request.perms().entrySet()) {
+                if (!Settings.PERM_ACTIONS.contains(e.getKey())) {
+                    throw new InvalidSheetRequestException("Not an action of the permission matrix: " + e.getKey());
+                }
+                String value = e.getValue() == null ? "" : e.getValue().trim();
+                List<String> roles = new ArrayList<>();
+                if (!value.isEmpty()) {
+                    for (String r : value.split(",", -1)) {
+                        String role = r.trim().toLowerCase(Locale.ROOT);
+                        if (!role.equals(Role.CLERK.show()) && !role.equals(Role.STEWARD.show())) {
+                            throw new InvalidSheetRequestException("A permission is a comma separated list of roles (clerk, steward), or blank");
+                        }
+                        if (!roles.contains(role)) roles.add(role);
+                    }
+                }
+                perms.put(e.getKey(), roles.isEmpty() ? null : String.join(",", roles));
+            }
+        }
         Map<String, LocalDate> froms = new TreeMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> e : request.from().entrySet()) {
@@ -112,6 +136,6 @@ public class ValidateSettings {
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms,
-                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2)));
+                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms));
     }
 }

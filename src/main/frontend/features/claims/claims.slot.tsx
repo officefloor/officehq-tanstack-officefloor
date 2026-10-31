@@ -28,8 +28,9 @@ import {
 const STATUS_REFUSED = "This claim's status cannot change that way (whoever opened a claim cannot settle it).";
 const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
 const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the user who opened it.';
+const NOT_ALLOWED = "Your role may not do that: the sheet's permission matrix decides who opens, settles and voids claims.";
 const NO_REASON = 'A rejection needs a reason.';
-const NOT_STEWARD_MOVE = 'Only a steward can reassign a claim.';
+const NOT_STEWARD_MOVE = "Your role may not reassign a claim (by default only a steward can).";
 const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
 const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
 const NO_TARGET = 'Choose another person to reassign this claim to.';
@@ -141,6 +142,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             ? OVER_LIMIT
             : e.body.includes('deferred')
               ? DEFERRED
+            : e.body.includes('Your role')
+              ? NOT_ALLOWED
             : e.body.includes('approve')
               ? NOT_STEWARD
               : e.body.includes('reason')
@@ -184,7 +187,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onError: (e, c) =>
       setRefused({
         id: c.id,
-        message: e instanceof HttpError && e.body.includes('steward')
+        message: e instanceof HttpError && e.body.includes('role')
           ? NOT_STEWARD_MOVE
           : e instanceof HttpError && e.body.includes('retired')
             ? 'That person is retired before this claim\'s date.'

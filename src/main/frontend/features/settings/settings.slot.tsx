@@ -4,10 +4,10 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
-import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+import { DAYS, FROM_DATE, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; gradeTerms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; gradeTerms: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -23,6 +23,9 @@ type Froms = Record<string, string>;
  * today, a claim opened is numbered within its period; blank is off), its cap (a person's due-total
  * is at most it, the rest their excess; blank is no cap), its proof threshold (a claim whose due is above
  * the one on its date cannot be settled or approved without a proof; blank is none),
+ * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
+ * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
+ * steward, reassign and reopen by steward; not dated),
  * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
  * each grade's), the late percent, the cap and the proof threshold are dated: a save records each from its from-date (blank
@@ -32,7 +35,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, gradeTerms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, gradeTerms: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -43,7 +46,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: ({ e, from }: { e: SettingsEdit; from: Froms }) => postJson<Settings>(`${base}/settings`, { ...e, from, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, gradeTerms: {} });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, gradeTerms: {}, perms: {} });
       setFroms({});
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
@@ -65,7 +68,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     setLimitInvalid(false);
   };
   // A field is set by the next save once it has been touched, starting from the value in force.
-  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms'>, current: string) =>
+  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'perms'>, current: string) =>
     setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
   // The from-date field of a dated setting, by its key.
   const fromField = (key: string) => (
@@ -105,6 +108,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const cap = edit.cap?.trim() ?? null;
           const proofThreshold = edit.proofThreshold?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
+          const perms = Object.fromEntries(Object.entries(edit.perms).map(([a, v]) => [a, v.trim()]));
           const from = Object.fromEntries(Object.entries(froms).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''));
           if (
             (limit !== null && !LIMIT.test(limit)) ||
@@ -116,6 +120,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom)) ||
             (cap !== null && !LIMIT.test(cap)) ||
             (proofThreshold !== null && !LIMIT.test(proofThreshold)) ||
+            Object.values(perms).some((v) => !PERM_ROLES.test(v)) ||
             Object.values(from).some((v) => !FROM_DATE.test(v))
           ) {
             // Refused here, before anything is sent: the store and the audit file are untouched.
@@ -124,7 +129,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, gradeTerms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, gradeTerms, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -294,6 +299,28 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           />
         </label>{' '}
         {fromField('proof-threshold')}{' '}
+        {PERM_ACTIONS.map((a) => {
+          const set = data?.perms?.[a] ?? '';
+          return (
+            <span key={a}>
+              May {a}:{' '}
+              <strong data-testid={`setting-perm-${a}-current`}>{saveSettings.isPending ? '' : set}</strong>{' '}
+              <label>
+                Set to{' '}
+                <input
+                  data-testid={`setting-perm-${a}`}
+                  placeholder={a === 'reassign' || a === 'reopen' ? 'blank: steward' : 'blank: clerk,steward'}
+                  value={edit.perms[a] ?? set}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEdit((was) => ({ ...was, perms: { ...was.perms, [a]: value } }));
+                    clearSettingsError();
+                  }}
+                />
+              </label>{' '}
+            </span>
+          );
+        })}
         <button type="submit" data-testid="settings-save" disabled={saveSettings.isPending}>
           Save
         </button>
@@ -301,7 +328,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof threshold amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today).
+            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof threshold amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule).
           </span>
         )}
       </form>

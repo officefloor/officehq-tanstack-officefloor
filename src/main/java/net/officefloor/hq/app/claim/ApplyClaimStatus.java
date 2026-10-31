@@ -20,7 +20,8 @@ import net.officefloor.plugin.variable.Val;
  *  A claim whose due is above the sheet's proof threshold in force on its date cannot be settled or
  *  approved while it has no proofs (refused before the clerk limit is considered).
  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
- *  A claim dated in a closed period cannot change status at all. */
+ *  A claim dated in a closed period cannot change status at all. Opening, settling and voiding are
+ *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}). */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, ClaimNumbers numbers, People people,
             Figures figures, ClosedPeriods closedPeriods, Settings settings)
@@ -28,6 +29,11 @@ public class ApplyClaimStatus {
         closedPeriods.refuse(claim.getSheetId(), claim.getDate());
         if (!change.action().allowedFrom(claim.getStatus())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
+        }
+        String perm = change.action() == ClaimAction.OPEN ? "open" : change.action() == ClaimAction.SETTLE ? "settle"
+                : change.action() == ClaimAction.VOID ? "void" : null;
+        if (perm != null && !settings.allows(claim.getSheetId(), perm, change.user())) {
+            throw new ClaimStatusRefusedException("Your role may not " + perm + " a claim");
         }
         if (change.action() == ClaimAction.SETTLE && claim.isDeferred()) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
