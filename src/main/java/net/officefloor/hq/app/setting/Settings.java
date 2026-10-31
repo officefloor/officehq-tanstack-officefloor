@@ -66,15 +66,19 @@ public class Settings {
                 sheetId, sheetId, key, Date.valueOf(from), value);
     }
 
+    /** A dated setting's value as shown ("" for none): the rounding mode by name, terms and grace in whole days, else at two decimals. */
+    public static String shown(String key, BigDecimal value) {
+        return value == null ? "" : ValidateSetting.ROUNDING.equals(key) ? net.officefloor.hq.app.claim.Rounding.name(value)
+                : key.startsWith("terms") || key.startsWith(ValidateSetting.GRADE_GRACE)
+                ? String.valueOf(value.intValue()) : value.setScale(2).toPlainString();
+    }
+
     /** Every value recorded for the sheet's dated settings, by key, oldest from-date first. */
     public java.util.Map<String, List<DatedValue>> dated(String sheetId) {
         java.util.Map<String, List<DatedValue>> all = new java.util.TreeMap<>();
         jdbc.query("SELECT setting_key, from_date, setting_value FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key, from_date",
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> {
-                    BigDecimal value = rs.getBigDecimal(3);
-                    String shown = value == null ? "" : ValidateSetting.ROUNDING.equals(rs.getString(1)) ? net.officefloor.hq.app.claim.Rounding.name(value)
-                            : rs.getString(1).startsWith("terms") || rs.getString(1).startsWith(ValidateSetting.GRADE_GRACE)
-                            ? String.valueOf(value.intValue()) : value.setScale(2).toPlainString();
+                    String shown = shown(rs.getString(1), rs.getBigDecimal(3));
                     all.computeIfAbsent(rs.getString(1), k -> new java.util.ArrayList<>())
                             .add(new DatedValue(rs.getDate(2).toLocalDate().toString(), shown));
                 }, sheetId);
@@ -119,6 +123,17 @@ public class Settings {
         return jdbc.query("SELECT from_date FROM setting_history WHERE sheet_id = ? AND setting_key IN ('"
                         + String.join("', '", POLICY_KEYS) + "') ORDER BY seq",
                 (rs, i) -> rs.getDate(1) == null ? null : rs.getDate(1).toLocalDate(), sheetId);
+    }
+
+    /** Each policy version, oldest first, among the setting history rows the extra condition keeps (bound to the args). */
+    public static List<PolicyVersion> policyLines(JdbcTemplate jdbc, String sheetId, String condition, Object... args) {
+        Object[] all = new Object[args.length + 1];
+        all[0] = sheetId;
+        System.arraycopy(args, 0, all, 1, args.length);
+        return jdbc.query("SELECT from_date, setting_key, setting_value FROM setting_history WHERE sheet_id = ? AND setting_key IN ('"
+                        + String.join("', '", POLICY_KEYS) + "')" + condition + " ORDER BY seq",
+                (rs, i) -> new PolicyVersion(rs.getDate(1) == null ? "" : rs.getDate(1).toLocalDate().toString(), rs.getString(2),
+                        shown(rs.getString(2), rs.getBigDecimal(3))), all);
     }
 
     /** The policy version in force on a date: the number of versions from on or before it (one with no from-date always counts). */
@@ -593,6 +608,7 @@ public class Settings {
                 scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh),
                 scoreLog(sheetId) ? "on" : "", maxOpen == null ? "" : String.valueOf(maxOpen),
                 pendingSla == null ? "" : String.valueOf(pendingSla),
-                policyVersions(sheetId).stream().map(from -> from == null ? "" : from.toString()).toList());
+                policyVersions(sheetId).stream().map(from -> from == null ? "" : from.toString()).toList(),
+                policyLines(jdbc, sheetId, ""));
     }
 }

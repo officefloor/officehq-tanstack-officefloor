@@ -504,7 +504,8 @@ public class AsOfView {
                 plain.getOrDefault(ValidateSetting.SCORE_LOG, ""), plain.getOrDefault(Settings.MAX_OPEN, ""),
                 plain.getOrDefault(Settings.PENDING_SLA, ""), jdbc.query("SELECT from_date FROM setting_history WHERE sheet_id = ?"
                         + " AND setting_key IN ('" + String.join("', '", Settings.POLICY_KEYS) + "')" + UP_TO + " ORDER BY seq",
-                        (rs, i) -> rs.getDate(1) == null ? "" : rs.getDate(1).toLocalDate().toString(), sheetId, end));
+                        (rs, i) -> rs.getDate(1) == null ? "" : rs.getDate(1).toLocalDate().toString(), sheetId, end),
+                Settings.policyLines(jdbc, sheetId, UP_TO, end));
     }
 
     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */

@@ -7,6 +7,7 @@ import { useGradeCodes } from '../grades/useGrades';
 import { poolsKey } from '../pools/usePools';
 import { inForce, PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
+import { PolicyViewer } from './PolicyViewer';
 
 // The sheet's settings: the clerk limit (a clerk settles only claims whose due is at or below it;
 // blank: no limit), the floor (a claim's live due is at least it; saved when its field is filled —
@@ -753,6 +754,7 @@ export function SettingsPanel() {
           }}
         />{' '}
         Policy version: <span data-testid="policy-version">{settings?.policyVersions?.length ?? 0}</span>{' '}
+        <PolicyViewer />{' '}
         Cap: <span data-testid="setting-cap-current">{settings?.cap ?? ''}</span>{' '}
         <input
           data-testid="setting-cap"
