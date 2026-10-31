@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { formatCents } from '../rates/due';
 import { usePeriodDueTotal } from './usePeriodDueTotal';
 import { ImportOpenings } from './ImportOpenings';
+import { openingsKey } from './useOpenings';
 import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
@@ -76,6 +77,21 @@ export function PeriodPanel() {
         { ...body, user },
       ),
     onSuccess: (saved) => queryClient.setQueryData(periodsKey(sheet), saved.periods),
+  });
+  // Roll the year over, by a steward only: generate the next fiscal year's twelve months as above, and carry each
+  // person's open figure at the end of the year's last period into their opening for the new year's first period.
+  // Shows how many periods were made; pressing again removes the old count until the new one is in.
+  const [rollYear, setRollYear] = useState('');
+  const rollover = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ generated: number; periods: Period[] }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/rollover`,
+        { ...body, user },
+      ),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(periodsKey(sheet), saved.periods);
+      void queryClient.invalidateQueries({ queryKey: openingsKey(sheet) });
+    },
   });
   const generated = [generate, generateFy, generateQuarters].reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
   const resetGenerated = () => {
@@ -327,6 +343,39 @@ export function PeriodPanel() {
           }}
         />{' '}
         <button type="submit" data-testid="period-generate-quarters">Generate quarters</button>
+      </form>
+      <form
+        data-testid="rollover-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitOnce(() => {
+            rollover.reset();
+            return rollover.mutateAsync({ year: rollYear.trim() });
+          });
+        }}
+      >
+        <input
+          data-testid="rollover-year"
+          value={rollYear}
+          placeholder="Fiscal year to roll over (YYYY)"
+          onChange={(e) => {
+            setRollYear(e.target.value);
+            rollover.reset();
+          }}
+        />{' '}
+        <button type="submit" data-testid="rollover">Roll the year over</button>
+        {rollover.isSuccess && (
+          <>
+            {' '}
+            Made <span data-testid="rollover-made">{rollover.data.generated}</span>
+          </>
+        )}
+        {rollover.isError && (
+          <span data-testid="rollover-error" role="alert">
+            {' '}
+            Could not roll the year over: only a steward can, of a year (YYYY) with periods on the sheet.
+          </span>
+        )}
       </form>
       <ImportOpenings />
     </>

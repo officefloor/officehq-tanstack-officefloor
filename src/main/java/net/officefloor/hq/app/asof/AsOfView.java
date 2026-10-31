@@ -246,6 +246,9 @@ public class AsOfView {
             then.setRef(current.getRef());
             then.setTags(current.getTags());
             then.setRateMark(current.getRateMark());
+            // Nor is its reminded date: it shows its last reminder when that was by the date.
+            LocalDate reminded = current.getRemindedOn();
+            then.setRemindedOn(reminded != null && !reminded.isAfter(date) ? reminded : null);
             // Nor is its void reason: a claim void by then shows the reason it was voided with.
             if (then.getStatus() == ClaimStatus.VOID) then.setVoidReason(current.getVoidReason());
             latest.put(then.getId(), then);

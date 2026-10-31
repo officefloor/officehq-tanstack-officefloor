@@ -124,6 +124,28 @@ public class PeriodCloser {
         return carried;
     }
 
+    /** A person's open figure at the end date: the dues as shown now of their claims whose due-by falls in one of the
+     *  periods that counted at the end date (see {@link Person#countsAtEnd}) and were then still OPEN or PENDING. */
+    public BigDecimal openAt(String sheetId, Person person, List<Claim> all, List<PeriodResponse> in, LocalDate end) {
+        LocalDate policyDate = settings.policyDate(sheetId);
+        LocalDate today = sheets.today(sheetId);
+        BigDecimal open = BigDecimal.ZERO.setScale(2);
+        for (Claim claim : all) {
+            if (claim.getPersonId() != person.getId()) {
+                continue;
+            }
+            LocalDate dueBy = claim.getPeriodDate();
+            boolean inside = in.stream().anyMatch(p -> !LocalDate.parse(p.from()).isAfter(dueBy)
+                    && !LocalDate.parse(p.to()).isBefore(dueBy));
+            ClaimStatus then = claim.statusAt(end);
+            if (!inside || (then != ClaimStatus.OPEN && then != ClaimStatus.PENDING) || !person.countsAtEnd(claim, end, today)) {
+                continue;
+            }
+            open = open.add(due(sheetId, person, claim, policyDate, today));
+        }
+        return open;
+    }
+
     /** The auto close, once the sheet's today is set: with grace days set, every open period whose to-date plus
      *  them is before the sheet's today is closed, in order of their to-dates; a soft-closed period is left as it is. */
     public void closeDue(String sheetId, String user) {
