@@ -69,7 +69,7 @@ public class Rollup {
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;
-                    if (claim.getStatus().isOpen() && today != null && claim.getDueBy().isBefore(today)) {
+                    if (claim.getStatus().isOpen() && !claim.isDeferred() && today != null && claim.getDueBy().isBefore(today)) {
                         overdue = overdue.add(figure);
                     }
                 }

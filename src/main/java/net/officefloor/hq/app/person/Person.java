@@ -97,10 +97,10 @@ public class Person {
     public void setPatronIds(List<Long> patronIds) { this.patronIds = patronIds; }
 
     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
-     *  but not an OPEN or PENDING one dated within one of the person's holds, unless a statement binds it. */
+     *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, unless a statement binds it. */
     public boolean counts(Claim claim) {
         ClaimStatus status = claim.getStatus();
-        if (!status.counts()) return false;
+        if (!status.counts() || claim.isDeferred()) return false;
         if (!status.isOpen() || !heldOn(claim.getDate())) return true;
         return claim.isStated() && status != ClaimStatus.PENDING;
     }

@@ -64,13 +64,13 @@ public class Figures {
         return live(claim, grade);
     }
 
-    /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING) and its due-by (fixed
+    /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING), not deferred, and its due-by (fixed
      *  when it was added) is before the sheet's today; then the sheet's late percent of the
      *  figure for every full 30 days it is overdue (the late percent in force on the claim's date) (a correction has none), rounded by the claim's rounding to two decimals. Never bound
      *  by a statement: it follows the sheet's today. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) return none;
+        if (figure == null || !claim.getStatus().isOpen() || claim.isDeferred() || claim.isCorrection()) return none;
         String sheetId = claim.getSheetId();
         long periods = ChronoUnit.DAYS.between(claim.getDueBy(), sheets.today(sheetId)) / 30;
         if (periods <= 0) return none;

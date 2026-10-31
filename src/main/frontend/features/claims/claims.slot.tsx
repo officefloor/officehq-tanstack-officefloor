@@ -33,6 +33,8 @@ const NOT_STEWARD_MOVE = 'Only a steward can reassign a claim.';
 const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to another person.';
 const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
 const NO_TARGET = 'Choose another person to reassign this claim to.';
+const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
+const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 
 const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
@@ -55,6 +57,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * and their dues added up.
  * A steward can reassign a DRAFT, OPEN or PENDING claim to another person on the sheet: it keeps its
  * number and date, is no longer bound by a statement, and is listed as its new person's newest claim.
+ * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
+ * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -87,6 +91,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [selected, setSelected] = useSelectedClaims();
   // The reason typed for rejecting each pending claim, by claim id.
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  // The date typed for deferring each claim, by claim id.
+  const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The person chosen to reassign each claim to, by claim id.
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -126,6 +132,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
           ? STATUS_REFUSED
           : e.body.includes('clerk limit')
             ? OVER_LIMIT
+            : e.body.includes('deferred')
+              ? DEFERRED
             : e.body.includes('approve')
               ? NOT_STEWARD
               : e.body.includes('reason')
@@ -140,6 +148,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/resettle`, { user }),
     onMutate: () => setRefused(null),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_RESETTLE }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // An OPEN claim is deferred until a date after the sheet's today.
+  const defer = useMutation({
+    mutationFn: (c: { id: number; until: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/defer`, { until: c.until, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setDeferTo((d) => ({ ...d, [c.id]: '' })),
+    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_DEFER }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -297,6 +315,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-due-by">{c.dueBy}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               {ACTIONS.map((action) => (
                 <span key={action}>
                   {action === 'reject' && (
@@ -337,6 +357,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => resettle.mutate({ id: c.id })}
               >
                 Re-settle
+              </button>{' '}
+              <input
+                data-testid="claim-defer-date"
+                aria-label="Defer until"
+                placeholder="yyyy-mm-dd"
+                value={deferTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setDeferTo({ ...deferTo, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-defer"
+                disabled={defer.isPending}
+                onClick={() => defer.mutate({ id: c.id, until: (deferTo[c.id] ?? '').trim() })}
+              >
+                Defer
               </button>{' '}
               <select
                 data-testid="claim-reassign-to"

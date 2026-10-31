@@ -47,6 +47,11 @@ export type Claim = {
   /** The claim's status log, oldest first: one line per status it has had, as
    *  "<STATUS> by <user> on <date> due=<due>" (the sheet's today and the claim's due then). */
   log: string[];
+  /** Whether the claim is deferred now: OPEN, and the sheet's today is before its deferred-until
+   *  date. A deferred claim counts in no total, is not overdue and cannot be settled. */
+  deferred: boolean;
+  /** The date (yyyy-mm-dd) the claim is deferred until; null while it is not deferred. */
+  deferredUntil: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -77,12 +82,12 @@ export function counted(claims: Claim[]): Claim[] {
   return claims.filter((c) => isOpen(c) || c.status === 'SETTLED');
 }
 
-/** The claims that count in the live totals: OPEN, PENDING and SETTLED ones, but not the OPEN or
- *  PENDING ones dated within a hold of their person's (`heldOn` tells, by person id and date),
+/** The claims that count in the live totals: OPEN, PENDING and SETTLED ones, but not deferred ones,
+ *  nor the OPEN or PENDING ones dated within a hold of their person's (`heldOn` tells, by person id and date),
  *  unless a statement binds them. */
 export function live(claims: Claim[], heldOn: (personId: number, date: string) => boolean): Claim[] {
   return counted(claims).filter(
-    (c) => !isOpen(c) || (c.stated && c.status !== 'PENDING') || !heldOn(c.personId, c.date),
+    (c) => !c.deferred && (!isOpen(c) || (c.stated && c.status !== 'PENDING') || !heldOn(c.personId, c.date)),
   );
 }
 
@@ -167,9 +172,9 @@ export function excessCents(due: bigint | null, cap?: string | null): bigint {
   return due === null || capped === null ? 0n : due - capped;
 }
 
-/** Whether a claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's `today`. */
+/** Whether a claim is overdue: it is OPEN (or PENDING), not deferred, and its due-by is before the sheet's `today`. */
 export function overdue(claim: Claim, today: string): boolean {
-  return isOpen(claim) && today !== '' && claim.dueBy < today;
+  return isOpen(claim) && !claim.deferred && today !== '' && claim.dueBy < today;
 }
 
 /** These claims' overdue ones: their count, and their dues with late charges added up in cents (n/a ones skipped).

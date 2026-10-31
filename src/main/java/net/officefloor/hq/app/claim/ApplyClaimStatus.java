@@ -17,6 +17,7 @@ import net.officefloor.plugin.variable.Val;
  *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge),
  *  and never the user who opened it; a rejection sends it back to OPEN, bound again by the last
  *  statement if that bound it.
+ *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
  *  A claim dated in a closed period cannot change status at all. */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatusChange change, @Val Claim claim, ClaimNumbers numbers, People people,
@@ -25,6 +26,9 @@ public class ApplyClaimStatus {
         closedPeriods.refuse(claim.getSheetId(), claim.getDate());
         if (!change.action().allowedFrom(claim.getStatus())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
+        }
+        if (change.action() == ClaimAction.SETTLE && claim.isDeferred()) {
+            throw new ClaimStatusRefusedException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
         }
         if (change.action() == ClaimAction.SETTLE && claim.getOpenedBy() != null
                 && claim.getOpenedBy().equals(change.user())) {

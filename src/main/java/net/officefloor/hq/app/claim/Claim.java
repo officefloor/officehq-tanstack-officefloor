@@ -19,6 +19,8 @@ public class Claim {
     private BigDecimal statedDue;
     private String corrects;
     private LocalDate dueBy;
+    private LocalDate deferredUntil;
+    private boolean deferred;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -69,6 +71,14 @@ public class Claim {
      *  person's grade in force on that date. Later changes to the terms or the claim's date leave it. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The date the claim was last deferred until; null when it never was. */
+    public LocalDate getDeferredUntil() { return deferredUntil; }
+    public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+    /** Whether the claim is deferred now: OPEN, and the sheet's today (as it was when the claim was
+     *  read) is before its deferred-until date. A deferred claim counts in no total, is not overdue,
+     *  cannot be settled and is left unbound by a statement. */
+    public boolean isDeferred() { return deferred && status == ClaimStatus.OPEN; }
+    public void setDeferred(boolean deferred) { this.deferred = deferred; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }
