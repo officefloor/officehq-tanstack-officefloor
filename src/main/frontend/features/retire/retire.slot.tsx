@@ -9,6 +9,8 @@ import { useRowAction } from '../people/useRowAction';
  * A person's retirement: whether they are retired and from when, and the date and button to retire
  * them (a blank date is the sheet's today). Set at all, they count as retired at once, whatever the
  * date: no claim dated after it is accepted, and the list hides them unless retired people are shown.
+ * A retired person can be unretired on the sheet's today: the retirement is kept as a past one, a line
+ * from its date to the day unretired, and no claim dated after the from and before the to is accepted.
  */
 function PersonRetire({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -19,11 +21,26 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
     onSuccess: () => setFrom(''),
     onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
   });
-  const actionTaken = useRowAction(sheet, person.id, retire.reset);
+  const unretire = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unretire`, { user }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+  });
+  const actionTaken = useRowAction(sheet, person.id, () => {
+    retire.reset();
+    unretire.reset();
+  });
   return (
     <>
       <td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td>
       <td data-testid="person-retired-from">{person.retiredFrom ?? ''}</td>
+      <td>
+        {person.pastRetirements.map((r, i) => (
+          <div key={i} data-testid="person-retirement-line">
+            {r.from} to {r.to}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="text"
@@ -33,6 +50,7 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
           onChange={(e) => {
             setFrom(e.target.value);
             retire.reset();
+            unretire.reset();
           }}
         />{' '}
         <button
@@ -41,11 +59,30 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
           disabled={retire.isPending}
           onClick={() => {
             actionTaken();
+            unretire.reset();
             retire.mutate(from);
           }}
         >
           Retire
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="person-unretire"
+          disabled={unretire.isPending}
+          onClick={() => {
+            actionTaken();
+            retire.reset();
+            unretire.mutate();
+          }}
+        >
+          Unretire
         </button>
+        {unretire.isError && (
+          <span data-testid="person-error" role="alert">
+            {' '}
+            Could not unretire this person.
+          </span>
+        )}
         {retire.isError && (
           <span data-testid="person-error" role="alert">
             {' '}
@@ -64,6 +101,7 @@ export const contributions = [
       <>
         <th>Retired</th>
         <th>Retired from</th>
+        <th>Past retirements</th>
         <th />
       </>
     ),

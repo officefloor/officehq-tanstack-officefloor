@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, origin_sheet, origin_name, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, past_retirements, origin_sheet, origin_name, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
@@ -278,10 +278,27 @@ public class People {
                 person.getStatementDate() != null ? Date.valueOf(person.getStatementDate()) : null, person.getId());
     }
 
-    /** Record the person's retirement date. Not an edit: the person's version is untouched. */
+    /** Record the person's retirement date and past retirements. Not an edit: the person's version is untouched. */
     public void saveRetirement(Person person) {
-        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?",
-                person.getRetiredFrom() != null ? Date.valueOf(person.getRetiredFrom()) : null, person.getId());
+        jdbc.update("UPDATE person SET retired_from = ?, past_retirements = ? WHERE id = ?",
+                person.getRetiredFrom() != null ? Date.valueOf(person.getRetiredFrom()) : null,
+                pastRetirements(person.getPastRetirements()), person.getId());
+    }
+
+    /** Past retirements as stored: `from:to` pairs separated by commas (null: none). */
+    private static String pastRetirements(List<PastRetirement> past) {
+        if (past.isEmpty()) return null;
+        return String.join(",", past.stream().map(p -> p.from() + ":" + p.to()).toList());
+    }
+
+    private static List<PastRetirement> pastRetirements(String stored) {
+        List<PastRetirement> past = new ArrayList<>();
+        if (stored == null || stored.isEmpty()) return past;
+        for (String pair : stored.split(",")) {
+            String[] dates = pair.split(":");
+            past.add(new PastRetirement(LocalDate.parse(dates[0]), LocalDate.parse(dates[1])));
+        }
+        return past;
     }
 
     /** Add a hold to the person. Not an edit: the person's version is untouched. */
@@ -411,6 +428,7 @@ public class People {
         person.setStatementDate(date != null ? date.toLocalDate() : null);
         Date retired = rs.getDate("retired_from");
         person.setRetiredFrom(retired != null ? retired.toLocalDate() : null);
+        person.setPastRetirements(pastRetirements(rs.getString("past_retirements")));
         Date today = rs.getDate("sheet_today");
         person.setToday(today != null ? today.toLocalDate() : LocalDate.now());
         return person;

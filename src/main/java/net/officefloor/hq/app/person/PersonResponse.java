@@ -5,7 +5,8 @@ import java.util.List;
 
 /** A person as the screen sees it, with their statement count, and the last statement's due-total
  *  (two decimals, null when it was n/a or none was taken) and date (yyyy-mm-dd, null when none was),
- *  and whether they are retired and from when (yyyy-mm-dd, null when not retired),
+ *  and whether they are retired and from when (yyyy-mm-dd, null when not retired), and each past
+ *  retirement's dates, in the order they ended,
  *  and whether they have any hold and each hold's dates, and the ids of the people they have named as patrons. `grade` is
  *  the grade in force on the sheet's today; `grades` every grade recorded, by from-date (null: from
  *  the beginning of time, first); `terms` the person's own terms (null: none); `contact` their
@@ -14,11 +15,16 @@ import java.util.List;
  *  transferred from (null: they were not). */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
+        List<RetirementDates> pastRetirements,
         boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms,
         String contact, List<String> aliases, boolean clashing, String origin) {
 
     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
     public record HoldDates(String from, String to) {
+    }
+
+    /** A past retirement's dates (yyyy-mm-dd): retired from `from`, unretired on `to`. */
+    public record RetirementDates(String from, String to) {
     }
 
     public record GradeFrom(String grade, String from) {
@@ -30,6 +36,9 @@ public record PersonResponse(long id, String name, String grade, int version, in
                 person.getStatedTotal() != null ? person.getStatedTotal().toPlainString() : null,
                 person.getStatementDate() != null ? person.getStatementDate().toString() : null,
                 person.isRetired(), person.getRetiredFrom() != null ? person.getRetiredFrom().toString() : null,
+                person.getPastRetirements().stream()
+                        .map(r -> new RetirementDates(r.from().toString(), r.to().toString()))
+                        .toList(),
                 person.isHeld(),
                 person.getHolds().stream()
                         .map(h -> new HoldDates(h.from().toString(), h.to() != null ? h.to().toString() : null))

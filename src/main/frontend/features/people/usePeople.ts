@@ -7,7 +7,9 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  taken for them; `statedTotal` the last one's due-total (two decimals, null when it was n/a or
  *  none was taken) and `statementDate` its date (yyyy-mm-dd, null when none was taken).
  *  `retired` is whether a retirement date is set (whatever the date), `retiredFrom` that date
- *  (yyyy-mm-dd, null when not retired). `held` is whether they have any hold; `holds` every hold, in the
+ *  (yyyy-mm-dd, null when not retired). `pastRetirements` are the retirements ended by unretiring
+ *  them, in the order they ended, from the retirement date to the day unretired; no claim dated after
+ *  the from and before the to of one is accepted. `held` is whether they have any hold; `holds` every hold, in the
  *  order added, from a date to a date (both inclusive; `to` null: open-ended). Their OPEN claims
  *  dated within a hold count in no live total, nor any OPEN or PENDING claim of theirs once the sheet's today
  *  reaches their retirement date, unless a statement binds them. `patrons` are the ids of the people they have named as patrons, in
@@ -31,6 +33,7 @@ export type Person = {
   statementDate: string | null;
   retired: boolean;
   retiredFrom: string | null;
+  pastRetirements: { from: string; to: string }[];
   held: boolean;
   holds: { from: string; to: string | null }[];
   patrons: number[];

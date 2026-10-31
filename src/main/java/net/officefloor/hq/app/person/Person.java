@@ -37,6 +37,8 @@ public class Person {
     private BigDecimal statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
+    /** The person's ended retirements, in the order they ended. */
+    private List<PastRetirement> pastRetirements = new ArrayList<>();
     private List<Hold> holds = new ArrayList<>();
     private List<Long> patronIds = new ArrayList<>();
     /** The person's aliases, sorted as names are compared. */
@@ -121,6 +123,14 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    /** The person's ended retirements, in the order they ended. */
+    public List<PastRetirement> getPastRetirements() { return pastRetirements; }
+    public void setPastRetirements(List<PastRetirement> pastRetirements) { this.pastRetirements = pastRetirements; }
+    /** End the person's retirement on `on`: they are no longer retired, and it is kept as a past one. */
+    public void unretire(LocalDate on) {
+        pastRetirements.add(new PastRetirement(retiredFrom, on));
+        retiredFrom = null;
+    }
     /** Whether the sheet's today (as read) has reached the person's retirement date: from then their
      *  OPEN and PENDING claims leave the live totals, as a hold's would. */
     public boolean retiredOut() {
@@ -160,10 +170,14 @@ public class Person {
         return claim.isStated() && status != ClaimStatus.PENDING;
     }
 
-    /** Refuses a claim dated after the person's retirement date. */
+    /** Refuses a claim dated after the person's retirement date, or after the from and before the
+     *  to of one of their past retirements. */
     public void refuseRetired(LocalDate claimDate) throws PersonRetiredException {
         if (retiredFrom != null && claimDate.isAfter(retiredFrom)) {
             throw new PersonRetiredException(name, retiredFrom);
+        }
+        for (PastRetirement past : pastRetirements) {
+            if (past.covers(claimDate)) throw new PersonRetiredException(name, past);
         }
     }
 

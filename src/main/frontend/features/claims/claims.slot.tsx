@@ -376,7 +376,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   : e.body.includes('DRAFT')
                     ? NOT_DRAFT
                     : e.body.includes('retired')
-                      ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
+                      ? e.body
                       : e.status === 400 || e.body.includes('correction')
                         ? BAD_AMOUNT
                         : 'Could not save this claim.',
@@ -584,7 +584,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               {invalid
                 ? BAD_AMOUNT
                 : claimError instanceof HttpError && claimError.status === 409 && claimError.body.includes('retired')
-                  ? `${person.name} is retired from ${person.retiredFrom}: a claim cannot be dated after it.`
+                  ? claimError.body
                   : claimError instanceof HttpError && claimError.body.includes('correction')
                     ? `A correction must name a settled claim of ${person.name}.`
                   : claimError instanceof HttpError && claimError.body.includes('reference')
