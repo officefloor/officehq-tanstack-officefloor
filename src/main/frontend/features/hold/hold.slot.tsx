@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { peopleKey, type Person } from '../people/usePeople';
+import { useRowAction } from '../people/useRowAction';
 
 /**
  * A person's holds: whether they have any, a line per hold with its dates, and the dates and button
@@ -23,6 +24,7 @@ function PersonHold({ user, sheet, person }: { user: string; sheet: string; pers
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
   });
+  const actionTaken = useRowAction(sheet, person.id, hold.reset);
   return (
     <>
       <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>
@@ -58,7 +60,10 @@ function PersonHold({ user, sheet, person }: { user: string; sheet: string; pers
           type="button"
           data-testid="person-hold-toggle"
           disabled={hold.isPending}
-          onClick={() => hold.mutate({ from, to })}
+          onClick={() => {
+            actionTaken();
+            hold.mutate({ from, to });
+          }}
         >
           Hold
         </button>

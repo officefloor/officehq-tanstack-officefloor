@@ -3,6 +3,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey, type Person } from '../people/usePeople';
+import { useRowAction } from '../people/useRowAction';
 
 /**
  * A person's statements: the button to take one, which records their due-total now and binds each
@@ -20,6 +21,7 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
       ]),
   });
+  const actionTaken = useRowAction(sheet, person.id, take.reset);
   const taken = person.statementCount > 0;
   return (
     <>
@@ -27,7 +29,10 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
       <td data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</td>
       <td data-testid="person-statement-date">{taken ? (person.statementDate ?? '') : ''}</td>
       <td>
-        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => take.mutate()}>
+        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => {
+            actionTaken();
+            take.mutate();
+          }}>
           Statement
         </button>
         {take.isError && (

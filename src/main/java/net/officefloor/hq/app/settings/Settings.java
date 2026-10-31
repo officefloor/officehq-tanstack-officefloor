@@ -213,9 +213,11 @@ public class Settings {
     }
 
     /** Whether the user's role may take `action` on the sheet: the roles set for it, else the standing
-     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. */
+     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. A
+     *  viewer may take none. */
     public boolean allows(String sheetId, String action, String user) {
         Role role = role(sheetId, user);
+        if (role == Role.VIEWER) return false;
         String roles = permission(sheetId, action);
         if (roles == null) {
             return role == Role.STEWARD || !(action.equals("reassign") || action.equals("reopen"));

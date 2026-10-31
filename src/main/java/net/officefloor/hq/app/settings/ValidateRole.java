@@ -17,7 +17,7 @@ public class ValidateRole {
         try {
             change.set(new RoleChange(sheetId, name, Role.valueOf(role.toUpperCase(Locale.ROOT)), request.user()));
         } catch (IllegalArgumentException e) {
-            throw new InvalidSheetRequestException("Not a role (clerk or steward): " + role);
+            throw new InvalidSheetRequestException("Not a role (clerk, steward or viewer): " + role);
         }
     }
 }

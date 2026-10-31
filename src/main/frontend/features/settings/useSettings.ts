@@ -79,7 +79,7 @@ export function useLate(sheet: string): Late {
   };
 }
 
-export const ROLES = ['clerk', 'steward'] as const;
+export const ROLES = ['clerk', 'steward', 'viewer'] as const;
 
 /** A clerk limit the server accepts: an amount with up to two decimals, or blank for no limit. */
 export const LIMIT = /^(\d{1,10}(\.\d{1,2})?)?$/;

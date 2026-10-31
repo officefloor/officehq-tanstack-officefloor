@@ -26,7 +26,7 @@ type Froms = Record<string, string>;
  * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
  * steward, reassign and reopen by steward; not dated),
- * and the roles given to user names (clerk, the default, or steward). A save sets only the settings
+ * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
  * each grade's), the late percent, the cap and the proof threshold are dated: a save records each from its from-date (blank
  * is the sheet's today), and each shows the value in force on the sheet's today.
@@ -361,7 +361,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           Role{' '}
           <input
             data-testid="role-form-role"
-            placeholder="clerk or steward"
+            placeholder="clerk, steward or viewer"
             list="role-options"
             value={role}
             onChange={(e) => {
@@ -380,7 +380,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
         </button>
         {(roleInvalid || saveRole.isError) && (
           <span data-testid="role-form-error" role="alert">
-            {' '}Give a user name the role clerk or steward.
+            {' '}Give a user name the role clerk, steward or viewer.
           </span>
         )}
       </form>

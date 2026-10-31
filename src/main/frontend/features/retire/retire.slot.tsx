@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { peopleKey, type Person } from '../people/usePeople';
+import { useRowAction } from '../people/useRowAction';
 
 /**
  * A person's retirement: whether they are retired and from when, and the date and button to retire
@@ -18,6 +19,7 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
     onSuccess: () => setFrom(''),
     onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
   });
+  const actionTaken = useRowAction(sheet, person.id, retire.reset);
   return (
     <>
       <td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td>
@@ -37,7 +39,10 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
           type="button"
           data-testid="person-retire"
           disabled={retire.isPending}
-          onClick={() => retire.mutate(from)}
+          onClick={() => {
+            actionTaken();
+            retire.mutate(from);
+          }}
         >
           Retire
         </button>
