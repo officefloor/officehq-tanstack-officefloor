@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimsKey, settleBatchKey, useLastSettleBatch } from './useClaims';
 import { peopleKey, usePeople } from '../people/usePeople';
+import { useVoidReasons } from '../voidreasons/useVoidReasons';
 
 type Selection = { selected: Set<string>; toggle: (id: string, on: boolean) => void; clear: () => void };
 
@@ -289,6 +290,85 @@ export function BulkRedateButton() {
         <span data-testid="bulk-redate-error" role="alert">
           {' '}
           The selected claims could not be re-dated.
+        </span>
+      )}
+    </p>
+  );
+}
+
+// Voids the selected claims together: the server voids each by the rules of voiding one claim, in list order, by the
+// signed-in user, with the reason chosen beside the button (shown while the sheet has void reasons), and leaves each
+// that cannot be voided as it is. Then shows how many were voided and how many were refused, and clears the
+// selection; pressing again removes the old counts until the new ones are in.
+export function BulkVoidButton() {
+  const [sheet] = useSearchParam('sheet', asString);
+  const [user] = useSearchParam('user', asString);
+  const queryClient = useQueryClient();
+  const once = useSubmitOnce();
+  const voidReasons = useVoidReasons(sheet);
+  const { selected, clear } = useClaimSelection();
+  const [reason, setReason] = useState('');
+
+  const voiding = useMutation({
+    mutationFn: ({ claimIds, reason }: { claimIds: string[]; reason?: string }) =>
+      postJson<{ voided: number; refused: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/bulk-void`,
+        { claimIds, reason, user },
+      ),
+    onSuccess: () => {
+      clear();
+      setReason('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+
+  return (
+    <p>
+      {voidReasons.length > 0 && (
+        <>
+          <select
+            data-testid="bulk-void-reason"
+            value={reason}
+            onChange={(e) => {
+              voiding.reset();
+              setReason(e.target.value);
+            }}
+          >
+            <option value="">Void reason…</option>
+            {voidReasons.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>{' '}
+        </>
+      )}
+      <button
+        type="button"
+        data-testid="bulk-void"
+        onClick={() => {
+          voiding.reset();
+          const claimIds = [...selected];
+          const chosen = voidReasons.length > 0 ? reason : undefined;
+          once(() => voiding.mutateAsync({ claimIds, reason: chosen }));
+        }}
+      >
+        Void selected
+      </button>
+      {voiding.isSuccess && (
+        <>
+          {' '}
+          Voided <span data-testid="bulk-voided">{voiding.data.voided}</span>, refused{' '}
+          <span data-testid="bulk-void-refused">{voiding.data.refused}</span>
+        </>
+      )}
+      {voiding.isError && (
+        <span data-testid="bulk-void-error" role="alert">
+          {' '}
+          The selected claims could not be voided.
         </span>
       )}
     </p>
