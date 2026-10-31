@@ -11,6 +11,7 @@ import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimResponse;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.claim.Rounding;
@@ -23,7 +24,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them — each person's claimed (leaving out corrections; a hold does not take a claim out) and due-total, and the
- * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap — worked out on the server so a change can audit what it
+ * sheet's claimed-total and due-total, each person's and the sheet's overdue-total (the dues of their overdue claims, uncapped), each person's due-total held to the sheet's cap (a holder's due-total counting their parts of the claims shared with them, the claim's own person's
+ * the claim's due less those parts) — worked out on the server so a change can audit what it
  * moved: after the change's own lines, one ROLLUP line per person whose figures changed (people in
  * the order they were added; a new person counts as changed), then a TOTALS line when the sheet's
  * totals changed. The sheet's due-total and overdue-total leave out the single highest and the single
@@ -62,7 +64,31 @@ public class Rollup {
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
-        for (Person person : people.list(sheetId)) {
+        List<Person> listed = people.list(sheetId);
+        // Each holder's parts of the shared claims that count for their own person, and what those parts take from it.
+        Map<Long, Person> byId = new LinkedHashMap<>();
+        listed.forEach(person -> byId.put(person.getId(), person));
+        Map<Long, BigDecimal> partsIn = new LinkedHashMap<>();
+        Map<Long, BigDecimal> partsOut = new LinkedHashMap<>();
+        for (Claim claim : all) {
+            Person owner = byId.get(claim.getPersonId());
+            if (claim.getShares().isEmpty() || owner == null || !owner.countsClaimed(claim, today) || !owner.countsLive(claim, today)) {
+                continue;
+            }
+            BigDecimal figure = due(claim, owner, today, policyDate);
+            if (figure == null) {
+                continue;
+            }
+            for (ClaimShare share : claim.getShares()) {
+                if (!byId.containsKey(share.personId())) {
+                    continue;
+                }
+                BigDecimal part = share.partOf(figure);
+                partsIn.merge(share.personId(), part, BigDecimal::add);
+                partsOut.merge(owner.getId(), part, BigDecimal::add);
+            }
+        }
+        for (Person person : listed) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
@@ -96,6 +122,11 @@ public class Rollup {
                     }
                 }
             }
+            if (partsIn.containsKey(person.getId())) {
+                anyFigure = true;
+                due = due.add(partsIn.get(person.getId()));
+            }
+            due = due.subtract(partsOut.getOrDefault(person.getId(), BigDecimal.ZERO));
             // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
             boolean na = !anyFigure && rates.find(sheetId, person.getGrade(), today) == null;
             due = Settings.capped(due, cap);

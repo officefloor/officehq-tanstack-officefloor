@@ -63,6 +63,8 @@ export type Claim = {
   batch?: string;
   /** The mark drawn when the claim arrived on the sheet: a forward-only rate applies to it only when its mark is lower. */
   rateMark?: number;
+  /** The claim's holders in the order shared: each holds their share (two decimals) of the claim's due. */
+  shares?: { personId: string; share: string }[];
 };
 
 /** OPEN and PENDING claims are open: their due is live (unless bound), they go overdue and a hold

@@ -208,6 +208,7 @@ public class AsOfView {
             }
             then.setLog(log);
             then.setComments(current.getComments().stream().filter(comment -> !comment.date().isAfter(date)).toList());
+            then.setShares(current.getShares().stream().filter(share -> !share.sharedOn().isAfter(date)).toList());
             shown.add(ClaimResponse.from(then));
         }
         return shown;

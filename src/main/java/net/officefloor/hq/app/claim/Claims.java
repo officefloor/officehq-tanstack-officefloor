@@ -126,6 +126,12 @@ public class Claims {
                     rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit")));
         }, sheetId);
         claims.forEach(claim -> claim.setLines(lines.getOrDefault(claim.getId(), List.of())));
+        Map<Long, List<ClaimShare>> shares = new HashMap<>();
+        jdbc.query("SELECT claim_id, person_id, share_pct, shared_on FROM claim_share WHERE sheet_id = ? ORDER BY id", rs -> {
+            shares.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>()).add(new ClaimShare(
+                    rs.getLong("person_id"), rs.getBigDecimal("share_pct"), rs.getDate("shared_on").toLocalDate()));
+        }, sheetId);
+        claims.forEach(claim -> claim.setShares(shares.getOrDefault(claim.getId(), List.of())));
         return claims;
     }
 
@@ -360,6 +366,7 @@ public class Claims {
         jdbc.update("INSERT INTO claim_transferred SELECT c.*, (SELECT today FROM sheet WHERE id = ?) FROM claim c"
                 + " WHERE c.sheet_id = ? AND c.id = ?", claim.getSheetId(), claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
+        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", claim.getSheetId(), claim.getId());
         jdbc.update("DELETE FROM claim WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
@@ -376,6 +383,19 @@ public class Claims {
         return jdbc.query("SELECT label, qty, unit FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
                 (rs, n) -> new ClaimLine(rs.getString("label"), rs.getInt("qty"), rs.getBigDecimal("unit")),
                 claim.getSheetId(), claim.getId());
+    }
+
+    /** The claim's holders, in the order shared. */
+    public List<ClaimShare> shares(Claim claim) {
+        return jdbc.query("SELECT person_id, share_pct, shared_on FROM claim_share WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                (rs, n) -> new ClaimShare(rs.getLong("person_id"), rs.getBigDecimal("share_pct"), rs.getDate("shared_on").toLocalDate()),
+                claim.getSheetId(), claim.getId());
+    }
+
+    /** Keeps a holder on the claim, after its others, shared on the sheet's today. */
+    public void share(Claim claim, long personId, BigDecimal share) {
+        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share_pct, shared_on) SELECT s.id, ?, ?, ?, s.today FROM sheet s WHERE s.id = ?",
+                claim.getId(), personId, share, claim.getSheetId());
     }
 
     /** Keeps a line on the claim, after its others. */

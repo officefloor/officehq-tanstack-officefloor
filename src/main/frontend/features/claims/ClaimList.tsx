@@ -40,6 +40,10 @@ import { peopleKey, type Person } from '../people/usePeople';
 // A steward waives an OPEN or PENDING claim's late charge with the waive button: it bears no late charge from then on,
 // whatever its overdue state. Waiving by anyone else, a claim in any other status, or one already waived is refused with
 // the claim's error. Each claim shows waived (yes or no).
+// A claim is shared with another person on the sheet with the share select, the share percent (more than 0.00, two
+// decimals) and the share button; sharing with the claim's own person, a person already holding a share, shares totalling
+// more than 100.00, or a SETTLED, VOID or DELETED claim, is refused with the claim's error. Each claim shows its holders
+// as <name> <share>, in the order shared, comma and space separated.
 // An OPEN or PENDING claim is held, and released, with the hold toggle: a held claim still
 // counts in every total. A claim in any other status is refused with the claim's
 // error. Each claim shows held (yes or no).
@@ -180,6 +184,24 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
       ]),
+  });
+
+  const [sharePersonId, setSharePersonId] = useState('');
+  const [sharePct, setSharePct] = useState('');
+  const share = useMutation({
+    mutationFn: ({ personId, pct }: { personId: string; pct: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/share`,
+        { user, personId, share: pct },
+      ),
+    onSuccess: () => {
+      setSharePersonId('');
+      setSharePct('');
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
   });
 
   const hold = useMutation({
@@ -354,6 +376,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
     resettle.reset();
     defer.reset();
     waive.reset();
+    share.reset();
     hold.reset();
     remind.reset();
     redate.reset();
@@ -411,6 +434,14 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
       <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-shares">
+        {(c.shares ?? [])
+          .flatMap((h) => {
+            const holder = people.find((p) => p.id === h.personId);
+            return holder ? [`${holder.name} ${h.share}`] : [];
+          })
+          .join(', ')}
+      </span>{' '}
       <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
       <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
       <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -558,6 +589,32 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
       <button type="button" data-testid="claim-waive" onClick={() => act(() => waive.mutate())}>
         Waive late charge
       </button>{' '}
+      <select
+        data-testid="claim-share-select"
+        value={sharePersonId}
+        onChange={(e) => act(() => setSharePersonId(e.target.value))}
+      >
+        <option value="">Share with…</option>
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <input
+        data-testid="claim-share-pct"
+        value={sharePct}
+        placeholder="Share %"
+        inputMode="decimal"
+        onChange={(e) => act(() => setSharePct(e.target.value))}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-share-add"
+        onClick={() => act(() => share.mutate({ personId: sharePersonId, pct: sharePct.trim() }))}
+      >
+        Share
+      </button>{' '}
       <button type="button" data-testid="claim-hold" onClick={() => act(() => hold.mutate())}>
         {c.held ? 'Release' : 'Hold'}
       </button>{' '}
@@ -671,6 +728,13 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[]; 
         <span data-testid="claim-error" role="alert">
           {' '}
           Not allowed: only a steward can waive a claim's late charge, only an OPEN or PENDING claim's, and only once.
+        </span>
+      )}
+      {share.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}
+          Not allowed: a claim is shared with another person on the sheet not already holding a share, for a share more than 0.00
+          with two decimals, the shares totalling at most 100.00; a SETTLED, VOID or DELETED claim cannot be shared.
         </span>
       )}
       {hold.isError && (

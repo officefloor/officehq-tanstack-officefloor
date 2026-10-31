@@ -183,6 +183,10 @@ public class Claim {
     /** The claim's lines, oldest first (empty unless listed). */
     public java.util.List<ClaimLine> getLines() { return lines; }
     public void setLines(java.util.List<ClaimLine> lines) { this.lines = lines; }
+    private java.util.List<ClaimShare> shares = java.util.List.of();
+    /** The claim's holders, in the order shared (empty unless listed). */
+    public java.util.List<ClaimShare> getShares() { return shares; }
+    public void setShares(java.util.List<ClaimShare> shares) { this.shares = shares; }
     /** The status the claim had at the end of the day, as its status log records it (each line dated the sheet's
      *  today when the change was made); null when it was added after that day. */
     public ClaimStatus statusAt(LocalDate end) {

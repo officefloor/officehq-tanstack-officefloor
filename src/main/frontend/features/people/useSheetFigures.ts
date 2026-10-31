@@ -34,10 +34,26 @@ export function useSheetFigures(sheet: string) {
     const person = byId.get(c.personId);
     return person !== undefined && countsClaimed(c, retiredOn(person, today), today);
   });
+  // A shared claim's parts: each holder's part is the claim's due times their share over 100, rounded half to even,
+  // taken from the claim's own person; only a counting claim with a figure has parts.
+  const parts = live.flatMap((c) => {
+    const owner = byId.get(c.personId)!;
+    const due = (c.shares ?? []).length === 0 ? null : claimDue(c, claimRate(rates, gradeOn(owner, c.date), c), floor, late, policy);
+    if (due === null) return [];
+    return (c.shares ?? [])
+      .filter((h) => byId.has(h.personId))
+      .map((h) => ({ claim: c, ownerId: c.personId, holderId: h.personId, part: halfEvenDiv(due * toCents(h.share), 10000n) }));
+  });
+  // What a person's parts move: added for the parts they hold, taken off for the parts of their own claims.
+  const partsOf = (person: Person, which: (c: (typeof live)[number]) => boolean) =>
+    parts.reduce(
+      (sum, p) => (!which(p.claim) ? sum : sum + (p.holderId === person.id ? p.part : 0n) - (p.ownerId === person.id ? p.part : 0n)),
+      0n,
+    );
   // A claim is worked at the grade in force on its date; the row shows the one in force today.
-  // The sum of a person's figures, before the cap.
-  const uncappedOf = (person: Person) =>
-    dueTotal(
+  // The sum of a person's figures, before the cap, with their parts; holding a part is a figure.
+  const uncappedOf = (person: Person) => {
+    const own = dueTotal(
       live.filter((c) => c.personId === person.id),
       (c) => claimRate(rates, gradeOn(person, c.date), c),
       rateOn(rates, gradeOn(person, today), today),
@@ -45,6 +61,9 @@ export function useSheetFigures(sheet: string) {
       late,
       policy,
     );
+    if (own === null && !parts.some((p) => p.holderId === person.id)) return null;
+    return (own ?? 0n) + partsOf(person, () => true);
+  };
   // A person's due-total: at most the sheet's cap (n/a is not capped); everything that adds up
   // due-totals uses it. Their excess is how far the sum of their figures is above the cap.
   const totalOf = (person: Person) => capped(uncappedOf(person), cap);
@@ -56,8 +75,10 @@ export function useSheetFigures(sheet: string) {
     live
       .filter((c) => c.personId === person.id && which(c))
       .reduce((sum, c) => sum + (claimDue(c, claimRate(rates, gradeOn(person, c.date), c), floor, late, policy) ?? 0n), 0n);
-  const settledTotalOf = (person: Person) => dueSumOf(person, (c) => c.status === 'SETTLED');
-  const openTotalOf = (person: Person) => dueSumOf(person, isOpen);
+  // Each counts the person's parts of those claims the same way.
+  const settledOf = (c: (typeof live)[number]) => c.status === 'SETTLED';
+  const settledTotalOf = (person: Person) => dueSumOf(person, settledOf) + partsOf(person, settledOf);
+  const openTotalOf = (person: Person) => dueSumOf(person, isOpen) + partsOf(person, isOpen);
   // The sheet's settled-total and open-total: everyone's figure added up, not trimmed.
   const sheetSettledTotal = formatCents(people.reduce((sum, p) => sum + settledTotalOf(p), 0n));
   const sheetOpenTotal = formatCents(people.reduce((sum, p) => sum + openTotalOf(p), 0n));
