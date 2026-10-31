@@ -1,0 +1,146 @@
+diff --git a/src/main/frontend/features/crews/CrewPanel.tsx b/src/main/frontend/features/crews/CrewPanel.tsx
+index 1b29e621..b9e30fe0 100644
+--- a/src/main/frontend/features/crews/CrewPanel.tsx
++++ b/src/main/frontend/features/crews/CrewPanel.tsx
+@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { formatCents } from '../rates/due';
+-import type { Person } from '../people/usePeople';
++import { shownName, type Person } from '../people/usePeople';
+ import { useSheetFigures } from '../people/useSheetFigures';
+ import { poolsKey } from '../pools/usePools';
+ import { crewDueCents, crewsKey, useCrews, type Crew } from './useCrews';
+@@ -18,7 +18,7 @@ export function CrewPanel() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+   const crews = useCrews(sheet);
+-  const { people, byId, totalOf } = useSheetFigures(sheet);
++  const { people, byId, totalOf, today } = useSheetFigures(sheet);
+   const [name, setName] = useState('');
+   const [leadId, setLeadId] = useState('');
+   const queryClient = useQueryClient();
+@@ -38,7 +38,7 @@ export function CrewPanel() {
+     <>
+       <ul data-testid="crew-list">
+         {crews.map((c) => (
+-          <CrewRow key={c.name} crew={c} dueTotal={dueTotalOf(c)} people={people} sheet={sheet} user={user} />
++          <CrewRow key={c.name} crew={c} lead={byId.get(c.leadId)} today={today} dueTotal={dueTotalOf(c)} people={people} sheet={sheet} user={user} />
+         ))}
+       </ul>
+       <form
+@@ -80,7 +80,7 @@ export function CrewPanel() {
+   );
+ }
+ 
+-function CrewRow({ crew, dueTotal, people, sheet, user }: { crew: Crew; dueTotal: string; people: Person[]; sheet: string; user: string }) {
++function CrewRow({ crew, lead, today, dueTotal, people, sheet, user }: { crew: Crew; lead: Person | undefined; today: string | undefined; dueTotal: string; people: Person[]; sheet: string; user: string }) {
+   const [personId, setPersonId] = useState('');
+   const queryClient = useQueryClient();
+   const submitOnce = useSubmitOnce();
+@@ -96,7 +96,7 @@ function CrewRow({ crew, dueTotal, people, sheet, user }: { crew: Crew; dueTotal
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+       <span data-testid="crew-name">{crew.name}</span>{' '}
+-      lead <span data-testid="crew-lead">{crew.leadName}</span>{' '}
++      lead <span data-testid="crew-lead">{lead ? shownName(lead, today) : crew.leadName}</span>{' '}
+       due-total <span data-testid="crew-due-total">{dueTotal}</span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index cb5f508b..7b912f5f 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -31,7 +31,7 @@ import { downloadCsv } from './csv';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+ import { SortBy, useSortBy } from './SortBy';
+ import { ColumnChooser, useColumns } from './ColumnChooser';
+-import { gradeOn, patronShares, sharedCents } from './usePeople';
++import { gradeOn, patronShares, sharedCents, shownName } from './usePeople';
+ import { usePersonPeriodCarried, usePersonPeriodDueTotal } from '../periods/usePeriodDueTotal';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { useSheetFigures } from './useSheetFigures';
+@@ -40,7 +40,7 @@ import { useGrace } from '../claims/useGrace';
+ import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
+ import { usePools } from '../pools/usePools';
+ 
+-// Every person on the sheet in the order they were added, with their name, grade (the one in force on the sheet's today), claimed (the
++// Every person on the sheet in the order they were added, with their name shown as "<name> (<grade in force today>)", grade (the one in force on the sheet's today), claimed (the
+ // sum of their OPEN and SETTLED claims, leaving out corrections), due-total (the
+ // sum of their counting claims' already-rounded dues, at most the sheet's cap — their excess shows how far the sum is above it, else 0.00; n/a when their grade has no rate today and no settled or stated claim keeps a figure),
+ // their due-total for each period (fixed when the period was closed, 0.00 for a person added after),
+@@ -114,10 +114,10 @@ export function PeopleList() {
+     patronShares(p)
+       .flatMap(({ id, share }) => {
+         const patron = byId.get(id);
+-        return patron ? [{ name: patron.name, share }] : [];
++        return patron ? [{ name: patron.name, shown: shownName(patron, today), share }] : [];
+       })
+       .sort((a, b) => BY_NAME(a.name, b.name))
+-      .map(({ name, share }) => `${name} ${formatCents(share)}`)
++      .map(({ shown, share }) => `${shown} ${formatCents(share)}`)
+       .join(', ');
+ 
+   const floor = useFloor(sheet);
+@@ -232,7 +232,7 @@ export function PeopleList() {
+                 <td>
+                   <PersonSelect personId={p.id} />
+                 </td>
+-                <td data-testid="person-name">{p.name}</td>
++                <td data-testid="person-name">{shownName(p, today)}</td>
+                 {shown('aliases') && <td data-testid="person-aliases">{p.aliases.join(', ')}</td>}
+                 <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
+                 <td data-testid="person-origin">{p.origin}</td>
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 6e14cbf6..bbaa6237 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -78,6 +78,9 @@ export function gradeOn(person: Person, date: string | undefined): string {
+   return found?.grade ?? person.grade;
+ }
+ 
++/** The person's name as the screen shows it: "<name> (<grade in force on the date>)". */
++export const shownName = (person: Person, date: string | undefined) => `${person.name} (${gradeOn(person, date)})`;
++
+ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+ export const peopleKey = (sheet: string, asOf = '') => ['sheet', sheet, 'people', asOf] as const;
+diff --git a/src/main/frontend/features/search/TreeSearch.tsx b/src/main/frontend/features/search/TreeSearch.tsx
+index b198e436..595f80a7 100644
+--- a/src/main/frontend/features/search/TreeSearch.tsx
++++ b/src/main/frontend/features/search/TreeSearch.tsx
+@@ -5,6 +5,7 @@ import { LiveReads } from '../asof/useAsOf';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useSheetFigures } from '../people/useSheetFigures';
+ import { showDue } from '../rates/due';
++import { shownName } from '../people/usePeople';
+ 
+ export const treeKey = (sheet: string) => ['sheet', sheet, 'tree'] as const;
+ 
+@@ -20,7 +21,7 @@ function useTree(sheet: string): string[] | undefined {
+ 
+ // Searches the sheet and every other sheet of its tree for the people whose name or an alias
+ // contains the typed text (case ignored; blank matches everyone), one line per person:
+-// <sheet id> <name> <due-total as their row shows it>. The sheet's people come first in list order
++// <sheet id> <name> (<grade in force on that sheet's today>) <due-total as their row shows it>. The sheet's people come first in list order
+ // (retired too), then the other sheets' by sheet id. Each press re-reads every sheet, live figures
+ // also while the screen is shown as of a date; the count is gone until the new lines are all in.
+ export function TreeSearch() {
+@@ -67,7 +68,7 @@ function Add({ sheets, text, lines }: { sheets: string[]; text: string; lines: s
+ 
+ function AddSheet({ sheets, text, lines }: { sheets: string[]; text: string; lines: string[] }) {
+   const sheet = sheets[0];
+-  const { people, totalOf } = useSheetFigures(sheet);
++  const { people, totalOf, today } = useSheetFigures(sheet);
+   const queryClient = useQueryClient();
+   const fetching = useIsFetching({ queryKey: ['sheet', sheet] });
+   const loaded = queryClient
+@@ -78,7 +79,7 @@ function AddSheet({ sheets, text, lines }: { sheets: string[]; text: string; lin
+   const matches = (name: string) => name.toLowerCase().includes(text);
+   const found = people
+     .filter((p) => matches(p.name) || p.aliases.some(matches))
+-    .map((p) => `${sheet} ${p.name} ${showDue(totalOf(p))}`);
++    .map((p) => `${sheet} ${shownName(p, today)} ${showDue(totalOf(p))}`);
+   return <Add sheets={sheets.slice(1)} text={text} lines={[...lines, ...found]} />;
+ }
+ 
