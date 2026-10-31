@@ -63,7 +63,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 
 export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
 
-/** The sheet's people in the order they were added, re-read whenever the sheet is loaded. */
+/** The sheet's people in list order (by position; see the move buttons), re-read whenever the sheet is loaded. */
 export function usePeople(sheet: string) {
   const [asOf] = useAsOf();
   return useQuery({

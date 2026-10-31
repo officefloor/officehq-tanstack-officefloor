@@ -14,12 +14,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The people of each sheet, kept in the order they were added. */
+/** The people of each sheet, kept in list order: by position (a new person goes to the end). */
 @Repository
 public class People {
 
     private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
+
+    /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
+    static final String END_POSITION = "(SELECT COALESCE(MAX(position), 0) + 1 FROM person WHERE sheet_id = ?)";
 
     private final JdbcTemplate jdbc;
 
@@ -28,7 +31,7 @@ public class People {
     }
 
     public List<Person> onSheet(String sheetId) {
-        List<Person> people = jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id",
+        List<Person> people = jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY position, id",
                 People::person,
                 sheetId);
         Map<Long, List<Long>> patrons = new HashMap<>();
@@ -191,18 +194,60 @@ public class People {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, position) VALUES (?, ?, ?, ?, ?, "
+                            + END_POSITION + ")", new String[] { "id" });
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
             ps.setString(3, person.getFirstGrade());
             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             ps.setString(5, person.getContact());
+            ps.setString(6, person.getSheetId());
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
         // The first grade a person is given applies from the beginning of time.
         saveGrade(person, new Person.DatedGrade(person.getFirstGrade(), null));
         return true;
+    }
+
+    /** Swap the person with their neighbour in the list (the one above when `up`, else below), both
+     *  locked for the rest of the transaction; false (nothing written) when there is none, the person
+     *  being first or last. Not an edit: neither person's version changes. */
+    public boolean move(Person person, boolean up) {
+        String sheetId = person.getSheetId();
+        Long mine = jdbc.queryForObject("SELECT position FROM person WHERE id = ? FOR UPDATE", Long.class, person.getId());
+        List<long[]> neighbour = jdbc.query("SELECT id, position FROM person WHERE sheet_id = ? AND "
+                + (up ? "(position < ? OR (position = ? AND id < ?)) ORDER BY position DESC, id DESC"
+                        : "(position > ? OR (position = ? AND id > ?)) ORDER BY position, id")
+                + " LIMIT 1 FOR UPDATE",
+                (rs, i) -> new long[] { rs.getLong(1), rs.getLong(2) }, sheetId, mine, mine, person.getId());
+        if (neighbour.isEmpty()) return false;
+        long otherId = neighbour.get(0)[0];
+        long theirs = neighbour.get(0)[1];
+        if (theirs == mine) {
+            // Equal positions cannot be swapped: spread the sheet's positions out first.
+            renumber(sheetId);
+            mine = jdbc.queryForObject("SELECT position FROM person WHERE id = ?", Long.class, person.getId());
+            theirs = jdbc.queryForObject("SELECT position FROM person WHERE id = ?", Long.class, otherId);
+        }
+        jdbc.update("UPDATE person SET position = ? WHERE id = ?", theirs, person.getId());
+        jdbc.update("UPDATE person SET position = ? WHERE id = ?", mine, otherId);
+        return true;
+    }
+
+    /** The person's place in their sheet's list, counting from 1. */
+    public int positionOf(Person person) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY position, id",
+                Long.class, person.getSheetId());
+        return ids.indexOf(person.getId()) + 1;
+    }
+
+    private void renumber(String sheetId) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY position, id",
+                Long.class, sheetId);
+        for (int i = 0; i < ids.size(); i++) {
+            jdbc.update("UPDATE person SET position = ? WHERE id = ?", i + 1, ids.get(i));
+        }
     }
 
     /** Record a statement taken for the person (their count, last due-total and date). Not an edit:

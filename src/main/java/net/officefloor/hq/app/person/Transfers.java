@@ -74,12 +74,14 @@ public class Transfers {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, position) VALUES (?, ?, ?, ?, ?, "
+                            + People.END_POSITION + ")", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.getName());
             ps.setString(3, person.getFirstGrade());
             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             ps.setString(5, person.getContact());
+            ps.setString(6, to);
             return ps;
         }, keys);
         long toId = keys.getKey().longValue();
