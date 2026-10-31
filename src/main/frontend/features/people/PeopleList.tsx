@@ -59,8 +59,8 @@ import { scoreBand, useSettings } from '../settings/useSettings';
 // takes none of their claims out of any figure or total; it only gives them no cut in the pools), their overdue count and
 // aliases (sorted as names are compared, comma and space separated), whether they clash (their name or an alias is used by someone else on a sheet of the tree), patrons (each as <name> <share>, sorted by name, comma and space separated; shares split 100.00 equally in the order named, rounded half to even, the remainder to the first-named) and backing (each patron's settled figure — their SETTLED claims dated within the 90 days up to and including today, at their frozen figures — times their share over 100, added up and rounded half to even; 0.00 with none),
 // their overdue count and overdue-total (how many of their counting claims are overdue, and the sum of those claims' dues with their late charges, n/a adding nothing), their statements (the statement button, how many were taken, the last one's due-total and date) and their claims; then the
-// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total and open-total (everyone's added up, untrimmed), overdue count and overdue-total (the
-// due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one).
+// sheet's claimed-total, due-total (the people's due-totals added up, skipping n/a), settled-total, open-total and cut total (everyone's added up), overdue count and overdue-total (the
+// due-total, overdue-total, settled-total, open-total and cut total leave out the single highest and lowest person's figure when three or more have one).
 // Then, for every tag ever used on the sheet's claims, its due-total: the dues of the counting claims carrying it. Retired
 // people have no row unless "show retired" is on, and from their retirement date their OPEN and PENDING claims, unless bound by a statement, leave every live total.
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
@@ -87,12 +87,11 @@ export function PeopleList() {
   const [user] = useSearchParam('user', asString);
   const [, setEditing] = useSearchParam('editPerson', asString);
   const watched = useWatches(sheet, user);
-  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
+  const { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, sheetCutTotal, tagTotals, monthTotals } = useSheetFigures(sheet);
   const [showRetired] = useShowRetired();
   const periods = usePeriods(sheet);
   const periodDueOf = usePersonPeriodDueTotal(sheet);
   const periodCarriedOf = usePersonPeriodCarried(sheet);
-  const sheetCutTotal = people.reduce((sum, p) => sum + cutOf(p.id), 0n);
   const [sortKey] = useSortBy();
   const [shown] = useColumns();
   // The rows as shown: list order, or sorted by the user's chosen key (by grade in force today, by
@@ -433,7 +432,7 @@ export function PeopleList() {
         Open total: <span data-testid="rollup-open-total">{sheetOpenTotal}</span>
       </p>
       <p>
-        Cut total: <span data-testid="rollup-cut-total">{formatCents(sheetCutTotal)}</span>
+        Cut total: <span data-testid="rollup-cut-total">{sheetCutTotal}</span>
       </p>
       <p>
         Aged 0-30: <span data-testid="rollup-aged-0-30">{sheetAged[0]}</span>

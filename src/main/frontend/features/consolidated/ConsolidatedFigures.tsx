@@ -5,14 +5,14 @@ import { STATUSES, trimmedSum, useSheetFigures } from '../people/useSheetFigures
 import { formatCents } from '../rates/due';
 import { useDescendants } from './useDescendants';
 
-type Totals = { people: string[][]; due: bigint[]; overdue: bigint[]; grades: bigint[]; statuses: number[] };
+type Totals = { people: string[][]; due: bigint[]; overdue: bigint[]; settled: bigint[]; open: bigint[]; cut: bigint[]; grades: bigint[]; statuses: number[] };
 
 // The root sheet's grades, the order of Totals.grades.
 type Grades = string[];
 
 // The figures over the sheet and all its descendants: their people, each counted once across the
-// tree (people whose names or aliases match, as names are compared, are one person); the due-total
-// and overdue-total, every person's figure over the tree (n/a skipped for due) added up, leaving out
+// tree (people whose names or aliases match, as names are compared, are one person); the due-total,
+// overdue-total, settled-total, open-total and cut total, every person's figure over the tree (n/a skipped for due) added up, leaving out
 // the single highest and the single lowest when there are three or more. Per grade, the due-totals of the people on it
 // today (retired people left out, n/a skipped) as each sheet's summary shows them, added up; per
 // status, how many claims have it, added up. A sheet with no children shows its own. While the
@@ -23,7 +23,7 @@ export function ConsolidatedFigures() {
   const descendants = useDescendants(sheet);
   const grades = useGradeCodes(sheet);
   return (
-    <Add sheets={[sheet, ...descendants]} grades={grades} totals={{ people: [], due: [], overdue: [], grades: grades.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
+    <Add sheets={[sheet, ...descendants]} grades={grades} totals={{ people: [], due: [], overdue: [], settled: [], open: [], cut: [], grades: grades.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
   );
 }
 
@@ -35,7 +35,7 @@ function Add({ sheets, grades, totals }: { sheets: string[]; grades: Grades; tot
 }
 
 function AddSheet({ sheets, grades, totals }: { sheets: string[]; grades: Grades; totals: Totals }) {
-  const { people, today, totalOf, statusCount, dueFigures, overdueFigures } = useSheetFigures(sheets[0]);
+  const { people, today, totalOf, statusCount, dueFigures, overdueFigures, settledFigures, openFigures, cutFigures } = useSheetFigures(sheets[0]);
   const current = people.filter((p) => !p.retired);
   const gradeDue = (g: string) =>
     current.filter((p) => gradeOn(p, today) === g).reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
@@ -47,6 +47,9 @@ function AddSheet({ sheets, grades, totals }: { sheets: string[]; grades: Grades
         people: [...totals.people, ...people.map((p) => [p.name, ...p.aliases].map(nameKey))],
         due: [...totals.due, ...dueFigures],
         overdue: [...totals.overdue, ...overdueFigures],
+        settled: [...totals.settled, ...settledFigures],
+        open: [...totals.open, ...openFigures],
+        cut: [...totals.cut, ...cutFigures],
         grades: grades.map((g, i) => (totals.grades[i] ?? 0n) + gradeDue(g)),
         statuses: STATUSES.map((s, i) => totals.statuses[i] + statusCount(s)),
       }}
@@ -78,6 +81,9 @@ function Shown({ grades, totals }: { grades: Grades; totals: Totals }) {
       Consolidated — People: <span data-testid="consolidated-people-count">{distinctPeople(totals.people)}</span>
       {' · '}Due: <span data-testid="consolidated-due-total">{formatCents(trimmedSum(totals.due))}</span>
       {' · '}Overdue: <span data-testid="consolidated-overdue-total">{formatCents(trimmedSum(totals.overdue))}</span>
+      {' · '}Settled: <span data-testid="consolidated-settled-total">{formatCents(trimmedSum(totals.settled))}</span>
+      {' · '}Open: <span data-testid="consolidated-open-total">{formatCents(trimmedSum(totals.open))}</span>
+      {' · '}Cut: <span data-testid="consolidated-cut-total">{formatCents(trimmedSum(totals.cut))}</span>
       {grades.map((g, i) => (
         <span key={g}>
           {' · '}Grade {g}: <span data-testid={`consolidated-grade-${g}-due-total`}>{formatCents(totals.grades[i])}</span>
