@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 
 /** Each sheet's settings: the roles given to user names, its policy date, its period numbering from,
  *  and its dated settings — its clerk limit, its floor, its terms (and any per grade), its late percent
- *  its cap and its proof threshold — each recorded from from-dates. */
+ *  its cap, its proof threshold and its note threshold — each recorded from from-dates. */
 @Repository
 public class Settings {
 
@@ -30,7 +30,7 @@ public class Settings {
     /** The keys of the dated settings. */
     public static final String CLERK_LIMIT = "clerk-limit", FLOOR = "floor", TERMS = "terms",
             LATE_PCT = "late-pct", CAP = "cap",
-            PROOF_THRESHOLD = "proof-threshold";
+            PROOF_THRESHOLD = "proof-threshold", NOTE_THRESHOLD = "note-threshold";
 
     /** The actions of the permission matrix, in order. */
     public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
@@ -226,6 +226,12 @@ public class Settings {
      *  cannot be settled or approved while it has no proofs. Null for none. */
     public BigDecimal proofThreshold(String sheetId, LocalDate date) {
         return valueOn(sheetId, PROOF_THRESHOLD, date, null);
+    }
+
+    /** The sheet's note threshold in force on `date`: a claim dated then whose due is above it
+     *  cannot be opened while its note is empty. Null for none. */
+    public BigDecimal noteThreshold(String sheetId, LocalDate date) {
+        return valueOn(sheetId, NOTE_THRESHOLD, date, null);
     }
 
     /** A person's due-total at most the sheet's cap; n/a (null) is not capped. */

@@ -43,6 +43,11 @@ public class RecordSettingChanged {
                     + (change.proofThreshold() != null ? change.proofThreshold().toPlainString() : "")
                     + from(change, Settings.PROOF_THRESHOLD));
         }
+        if (change.setsNoteThreshold()) {
+            audit.record(prefix + " key=note-threshold value="
+                    + (change.noteThreshold() != null ? change.noteThreshold().toPlainString() : "")
+                    + from(change, Settings.NOTE_THRESHOLD));
+        }
         change.perms().forEach((action, roles) ->
                 audit.record(prefix + " key=" + Settings.permKey(action) + " value=" + (roles != null ? roles : "")));
         if (change.setsGraceDays()) {

@@ -30,7 +30,7 @@ public class ValidateSettings {
     /** The settings that are dated, by key. */
     private static final Set<String> DATED = Set.of(Settings.CLERK_LIMIT, Settings.FLOOR, Settings.TERMS,
             Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"), Settings.LATE_PCT, Settings.CAP,
-            Settings.PROOF_THRESHOLD);
+            Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD);
 
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
@@ -92,6 +92,10 @@ public class ValidateSettings {
         if (threshold != null && !threshold.isEmpty() && !AMOUNT.matcher(threshold).matches()) {
             throw new InvalidSheetRequestException("The proof threshold must be an amount with up to two decimals, or blank");
         }
+        String noteThreshold = request == null || request.noteThreshold() == null ? null : request.noteThreshold().trim();
+        if (noteThreshold != null && !noteThreshold.isEmpty() && !AMOUNT.matcher(noteThreshold).matches()) {
+            throw new InvalidSheetRequestException("The note threshold must be an amount with up to two decimals, or blank");
+        }
         String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
             throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
@@ -141,6 +145,7 @@ public class ValidateSettings {
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), froms,
                 threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2), perms,
-                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace)));
+                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
+                noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2)));
     }
 }

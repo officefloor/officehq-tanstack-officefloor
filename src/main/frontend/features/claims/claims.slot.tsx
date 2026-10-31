@@ -39,6 +39,7 @@ const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be de
 const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never in or into a closed period, nor to a date after its person's retirement.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
 const NEEDS_PROOF = "A claim whose due is above the sheet's proof threshold cannot be settled or approved until it has a proof.";
+const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
 const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one dated in a closed period.';
 const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor dated in a closed period) can be split, by a user whose role may open a claim.";
 const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the claim's amount, with up to two decimals.";
@@ -93,6 +94,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one dated in a closed period); one whose due is above the sheet's proof threshold on its date
  * cannot be settled or approved while it has none.
+ * One whose due is above the sheet's note threshold on its date cannot be opened, alone or in bulk,
+ * while its note is empty.
  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
  * OPEN claim with the same date and note, the next number, opened by the user, which shows the
  * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
@@ -200,6 +203,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             ? CANNOT_VOID_SETTLED
           : e.body.includes('proof threshold')
             ? NEEDS_PROOF
+          : e.body.includes('note threshold')
+            ? NEEDS_NOTE
           : e.body.includes('clerk limit')
             ? OVER_LIMIT
             : e.body.includes('deferred')

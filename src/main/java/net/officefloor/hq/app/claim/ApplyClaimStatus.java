@@ -21,6 +21,8 @@ import net.officefloor.plugin.variable.Val;
  *  statement if that bound it.
  *  A claim whose due is above the sheet's proof threshold in force on its date cannot be settled or
  *  approved while it has no proofs (refused before the clerk limit is considered).
+ *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
+ *  its note is empty.
  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
  *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
@@ -41,6 +43,16 @@ public class ApplyClaimStatus {
                 : change.action() == ClaimAction.VOID ? "void" : null;
         if (perm != null && !settings.allows(claim.getSheetId(), perm, change.user())) {
             throw new ClaimStatusRefusedException("Your role may not " + perm + " a claim");
+        }
+        if (change.action() == ClaimAction.OPEN && (claim.getNote() == null || claim.getNote().isBlank())) {
+            BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());
+            if (threshold != null) {
+                String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+                BigDecimal due = figures.due(claim, grade);
+                if (due != null && due.compareTo(threshold) > 0) {
+                    throw new ClaimStatusRefusedException("A claim whose due is over the note threshold needs a note");
+                }
+            }
         }
         if (change.action() == ClaimAction.VOID && claim.getStatus() == ClaimStatus.SETTLED) {
             LocalDate settled = log.settledOn(claim);
