@@ -51,6 +51,7 @@ const LOCKED = 'Another user is editing this claim: it is locked until they save
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
 const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.';
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
+const EMPTY_COMMENT = 'A comment cannot be empty.';
 const VIEWER = 'A viewer can change nothing.';
 const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
 
@@ -105,6 +106,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
  * OPEN claim with the same date and note, the next number, opened by the user, which shows the
  * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
+ * A claim can be commented: each comment shows on it, oldest first, as "<user> on <date>: <text>"
+ * (the sheet's today when it was written); an empty comment is refused.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -155,6 +158,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   // The amount typed for splitting each claim, by claim id.
   const [splitOff, setSplitOff] = useState<Record<number, string>>({});
+  // The comment typed for each claim, by claim id.
+  const [commentText, setCommentText] = useState<Record<number, string>>({});
   // The amount typed in each claim's row for its inline edit, by claim id.
   const [inlineAmount, setInlineAmount] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -288,6 +293,30 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/proof`, { user }),
     onMutate: () => setRefused(null),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_PROVE }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A comment kept on the claim with who wrote it and the sheet's today.
+  const addComment = useMutation({
+    mutationFn: (c: { id: number; text: string }) => {
+      if (c.text.trim() === '') return Promise.reject(new Error(EMPTY_COMMENT));
+      return postJson<Claim>(`${base}/claims/${c.id}/comments`, { text: c.text, user });
+    },
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setCommentText((t) => ({ ...t, [c.id]: '' })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('viewer')
+          ? VIEWER
+          : e instanceof HttpError && e.body.includes('archived')
+            ? ARCHIVED
+            : e instanceof HttpError && e.message.includes('as of a date')
+              ? 'The sheet is shown as of a date: nothing can be changed.'
+              : e instanceof HttpError && !e.body.includes('empty')
+                ? 'Could not comment on this claim.'
+                : EMPTY_COMMENT,
+      }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -591,6 +620,23 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               >
                 Add proof
               </button>{' '}
+              <input
+                data-testid="claim-comment-text"
+                aria-label="Comment"
+                value={commentText[c.id] ?? ''}
+                onChange={(e) => {
+                  if (refused?.id === c.id) setRefused(null);
+                  setCommentText((t) => ({ ...t, [c.id]: e.target.value }));
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-comment-add"
+                disabled={addComment.isPending}
+                onClick={() => addComment.mutate({ id: c.id, text: commentText[c.id] ?? '' })}
+              >
+                Comment
+              </button>{' '}
               {ACTIONS.map((action) => (
                 <span key={action}>
                   {action === 'reject' && (
@@ -808,6 +854,13 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <ol data-testid="claim-log">
                 {c.log.map((line, i) => (
                   <li key={i} data-testid="claim-log-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
+              <ol data-testid="claim-comments">
+                {c.comments.map((line, i) => (
+                  <li key={i} data-testid="claim-comments-line">
                     {line}
                   </li>
                 ))}

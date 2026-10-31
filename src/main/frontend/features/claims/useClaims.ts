@@ -72,6 +72,8 @@ export type Claim = {
   tagsUsed: string[];
   /** The reason from the sheet's list the claim was voided with; null when none was given. */
   voidReason: string | null;
+  /** The claim's comments, oldest first, as "<user> on <date>: <text>" (the sheet's today when it was written). */
+  comments: string[];
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
