@@ -1,0 +1,304 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index f61b4623..2c4cbcbd 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -28,6 +28,9 @@ import { peopleKey, type Person } from '../people/usePeople';
+ // reassign permission allows) moves a DRAFT, OPEN or
+ // PENDING claim to another person on the sheet with the reassign button (it is listed first under them, live again until
+ // their next statement); a settled or voided claim, or a move by anyone else, is refused with the claim's error.
++// A claim is settled as of a date with the settle date beside the settle button (blank: the sheet's today): its frozen figure is
++// its due as it stood at the end of that day, as the as-of view works it out; a date after today, or a claim not on the sheet
++// by then, is refused with the claim's error.
+ // A steward re-settles a SETTLED claim (outside any closed period) with the re-settle button: its due is frozen again at the
+ // figure it would have today as an open claim bound by no statement, and its log gains a SETTLED line; else it is refused with the claim's error.
+ // An OPEN claim is deferred to a date after the sheet's today with the defer date and button (a claim that is not OPEN, a date
+@@ -102,19 +105,21 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+   const settings = useSettings(sheet);
+ 
+   const status = useMutation({
+-    mutationFn: ({ action, reason }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review'; reason?: string }) =>
++    mutationFn: ({ action, reason, on }: { action: 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review'; reason?: string; on?: string }) =>
+       postJson<Claim>(
+         `/api/sheets/${encodeURIComponent(sheet)}/claims/${encodeURIComponent(c.id)}/status`,
+-        { action, user, reason },
++        { action, user, reason, on },
+       ),
+     onSuccess: (_, { action }) => {
+       if (action === 'reject') setReason('');
++      if (action === 'settle') setSettleOn('');
+       if (action === 'void') setVoidReason('');
+       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+     },
+   });
+ 
+   const [reason, setReason] = useState('');
++  const [settleOn, setSettleOn] = useState('');
+   const [voidReason, setVoidReason] = useState('');
+   const voidReasons = useVoidReasons(sheet);
+   const [toPersonId, setToPersonId] = useState('');
+@@ -486,7 +491,14 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+       <button type="button" data-testid="claim-open" onClick={() => act(() => status.mutate({ action: 'open' }))}>
+         Open
+       </button>{' '}
+-      <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate({ action: 'settle' }))}>
++      <input
++        type="date"
++        data-testid="claim-settle-date"
++        value={settleOn}
++        title="Settle as of (blank: today)"
++        onChange={(e) => act(() => setSettleOn(e.target.value))}
++      />{' '}
++      <button type="button" data-testid="claim-settle" onClick={() => act(() => status.mutate({ action: 'settle', on: settleOn }))}>
+         Settle
+       </button>{' '}
+       <button type="button" data-testid="claim-resettle" onClick={() => act(() => resettle.mutate())}>
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index d9cefa9d..3ae4f301 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -192,11 +192,32 @@ public class AsOfView {
+ 
+     /** The claims on the sheet by the end of the date, each as it stood then (its log as written by then), newest first. */
+     public List<ClaimResponse> claims(String sheetId, LocalDate date) {
+-        Date end = Date.valueOf(date);
+-        Map<Long, Claim> latest = new HashMap<>();
+         Map<Long, Claim> now = new LinkedHashMap<>();
+         // Those transferred away since still stood on the sheet.
+         claims.listWithTransferredAfter(sheetId, date).forEach(claim -> now.put(claim.getId(), claim));
++        Map<Long, Claim> latest = then(sheetId, date, now);
++        List<ClaimResponse> shown = new ArrayList<>();
++        for (Claim current : now.values()) {
++            Claim then = latest.get(current.getId());
++            if (then == null) continue;
++            then.setCorrectedDate(claims.correctedDate(sheetId, then.getPersonId(), then.getCorrects()));
++            List<String> log = new ArrayList<>();
++            for (String line : current.getLog()) {
++                java.util.regex.Matcher on = LOG_DATE.matcher(line);
++                if (!on.find() || !LocalDate.parse(on.group(1)).isAfter(date)) log.add(line);
++            }
++            then.setLog(log);
++            then.setComments(current.getComments().stream().filter(comment -> !comment.date().isAfter(date)).toList());
++            shown.add(ClaimResponse.from(then));
++        }
++        return shown;
++    }
++
++    /** The claims as they stood at the end of the date, by id, built from their history (see V45) over the claims as they
++     *  are now; a claim with no history by then is left out. */
++    private Map<Long, Claim> then(String sheetId, LocalDate date, Map<Long, Claim> now) {
++        Date end = Date.valueOf(date);
++        Map<Long, Claim> latest = new HashMap<>();
+         jdbc.query("SELECT * FROM claim_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq", (RowCallbackHandler) rs -> {
+             Claim current = now.get(rs.getLong("claim_id"));
+             if (current == null) return;
+@@ -229,21 +250,91 @@ public class AsOfView {
+             if (then.getStatus() == ClaimStatus.VOID) then.setVoidReason(current.getVoidReason());
+             latest.put(then.getId(), then);
+         }, sheetId, end);
+-        List<ClaimResponse> shown = new ArrayList<>();
+-        for (Claim current : now.values()) {
+-            Claim then = latest.get(current.getId());
+-            if (then == null) continue;
+-            then.setCorrectedDate(claims.correctedDate(sheetId, then.getPersonId(), then.getCorrects()));
+-            List<String> log = new ArrayList<>();
+-            for (String line : current.getLog()) {
+-                java.util.regex.Matcher on = LOG_DATE.matcher(line);
+-                if (!on.find() || !LocalDate.parse(on.group(1)).isAfter(date)) log.add(line);
++        return latest;
++    }
++
++    /** The claim as it stood at the end of the date; null when it was not on the sheet by then. */
++    public Claim claim(String sheetId, long claimId, LocalDate date) {
++        Map<Long, Claim> now = new LinkedHashMap<>();
++        claims.listWithTransferredAfter(sheetId, date).stream().filter(claim -> claim.getId() == claimId)
++                .forEach(claim -> now.put(claim.getId(), claim));
++        Claim then = then(sheetId, date, now).get(claimId);
++        if (then != null) then.setCorrectedDate(claims.correctedDate(sheetId, then.getPersonId(), then.getCorrects()));
++        return then;
++    }
++
++    /** A claim's due as shown at the end of the date, the claim as it stood then (see {@link #claim}): fixed (settled or
++     *  bound), else its amount at the rate in force on its date for its person's grade then, with its late charge as of the
++     *  date and raised to the floor, each by the rates and settings as they stood then; null for n/a. */
++    public BigDecimal due(Claim then, LocalDate date) {
++        String sheetId = then.getSheetId();
++        String grade = gradeOn(sheetId, then.getPersonId(), then.getDate(), date);
++        java.math.RoundingMode rounding = net.officefloor.hq.app.claim.Rounding.of(then, policyDate(sheetId, date),
++                on -> net.officefloor.hq.app.claim.Rounding.mode(dated(sheetId, ValidateSetting.ROUNDING, on, date)));
++        BigDecimal fixed = ClaimResponse.fixedDue(then);
++        BigDecimal figure = fixed != null || then.isBound() ? fixed
++                : Rates.due(then.getAmount(), rate(sheetId, grade, then.getDate(), then.getRateMark(), date), rounding);
++        BigDecimal floor = dated(sheetId, ValidateSetting.FLOOR, then.getDate(), date);
++        BigDecimal grace = grade == null ? null : dated(sheetId, ValidateSetting.GRADE_GRACE + grade, then.getDate(), date);
++        return net.officefloor.hq.app.claim.LateCharge.due(then, figure, floor == null ? Settings.START_FLOOR : floor,
++                on -> {
++                    BigDecimal pct = dated(sheetId, ValidateSetting.LATE_PCT, on, date);
++                    return pct == null ? Settings.START_LATE_PCT : pct;
++                }, date, rounding, grace == null ? 0 : grace.intValue());
++    }
++
++    /** A person's grade in force on a day, by their grades as recorded by the end of the date. */
++    private String gradeOn(String sheetId, long personId, LocalDate on, LocalDate date) {
++        TreeMap<LocalDate, String> grades = new TreeMap<>();
++        jdbc.query("SELECT from_date, grade FROM grade_history WHERE sheet_id = ? AND person_id = ?" + UP_TO + " ORDER BY seq",
++                (RowCallbackHandler) rs -> {
++                    LocalDate from = local(rs.getDate(1));
++                    grades.put(from == null ? Person.BEGINNING : from, rs.getString(2));
++                }, sheetId, personId, Date.valueOf(date));
++        if (grades.isEmpty()) return people.find(sheetId, personId).gradeOn(on);
++        Map.Entry<LocalDate, String> found = grades.floorEntry(on);
++        return found == null ? grades.firstEntry().getValue() : found.getValue();
++    }
++
++    /** A dated setting's value in force on a day, as recorded by the end of the date; null when none (or cleared). */
++    private BigDecimal dated(String sheetId, String key, LocalDate on, LocalDate date) {
++        List<BigDecimal> found = jdbc.query("SELECT setting_value FROM setting_history WHERE sheet_id = ? AND setting_key = ?"
++                + " AND from_date <= ?" + UP_TO + " ORDER BY from_date DESC, seq DESC LIMIT 1", (rs, i) -> rs.getBigDecimal(1),
++                sheetId, key, Date.valueOf(on), Date.valueOf(date));
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** The policy date as last set by the end of the date; when blank, the date itself (standing for the sheet's today). */
++    private LocalDate policyDate(String sheetId, LocalDate date) {
++        List<LocalDate> policies = new ArrayList<>();
++        jdbc.query("SELECT policy_date FROM policy_history WHERE sheet_id = ?" + UP_TO + " ORDER BY seq",
++                (RowCallbackHandler) rs -> policies.add(local(rs.getDate(1))), sheetId, Date.valueOf(date));
++        LocalDate policy = policies.isEmpty() ? null : policies.get(policies.size() - 1);
++        return policy == null ? date : policy;
++    }
++
++    /** The rate for a grade in force on a day for a claim with a mark, by the rates as set by the end of the date on the
++     *  sheet, else on its ancestors then (as {@link Rates#find(String, String, LocalDate, long)} does live). */
++    private BigDecimal rate(String sheetId, String grade, LocalDate on, long claimMark, LocalDate date) {
++        if (grade == null) return null;
++        List<String> asked = new ArrayList<>(List.of(sheetId));
++        asked.addAll(ancestors(sheetId, date));
++        for (String at : asked) {
++            List<Object[]> found = jdbc.query("SELECT rate, to_date, after_mark FROM rate_history WHERE sheet_id = ?"
++                    + " AND TRIM(grade) = ? AND (from_date IS NULL OR from_date <= ?)" + UP_TO
++                    + " ORDER BY from_date DESC NULLS LAST, seq DESC",
++                    (rs, i) -> new Object[] { rs.getBigDecimal(1), rs.getDate(2), rs.getLong(3) },
++                    at, grade.trim(), Date.valueOf(on), Date.valueOf(date));
++            for (Object[] row : found) {
++                if (Rates.applies((Long) row[2], claimMark)) {
++                    Date to = (Date) row[1];
++                    BigDecimal rate = to != null && to.toLocalDate().isBefore(on) ? null : (BigDecimal) row[0];
++                    if (rate != null) return rate;
++                    break;
++                }
+             }
+-            then.setLog(log);
+-            then.setComments(current.getComments().stream().filter(comment -> !comment.date().isAfter(date)).toList());
+-            shown.add(ClaimResponse.from(then));
+         }
+-        return shown;
++        return null;
+     }
+ 
+     private static final java.util.regex.Pattern LOG_DATE = java.util.regex.Pattern.compile(" on (\\d{4}-\\d{2}-\\d{2}) due=[^ ]*$");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 934fefd7..5a109f2f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -16,13 +16,29 @@ import net.officefloor.plugin.variable.Val;
+ public class ApplyClaimStatus {
+     public void apply(@Val ValidClaimStatus request, @Val Claim claim, Sheets sheets, People people,
+             Rates rates, Periods periods, Settings settings, ClaimNumbering numbering, ClaimLog log, Claims claims,
+-            Out<ClaimNumber> number) throws ClaimStatusRefusedException {
++            net.officefloor.hq.app.asof.AsOfView asOfView, Out<ClaimNumber> number) throws ClaimStatusRefusedException {
++        Claim then = null;
++        if (request.on() != null) {
++            // Settled as of a date: on or before the sheet's today, and only a claim that was on the sheet by its end.
++            if (request.on().isAfter(sheets.today(claim.getSheetId()))) {
++                throw new ClaimStatusRefusedException("A claim cannot be settled as of a date after the sheet's today");
++            }
++            then = asOfView.claim(claim.getSheetId(), claim.getId(), request.on());
++            if (then == null) {
++                throw new ClaimStatusRefusedException("The claim was not on the sheet by " + request.on());
++            }
++        }
+         if (request.target() == ClaimStatus.OPEN && (request.decision() == ValidClaimStatus.Decision.NONE
+                 && claim.getStatus().canBecome(ClaimStatus.OPEN)
+                 || request.decision() == ValidClaimStatus.Decision.REVIEW && claim.getStatus() == ClaimStatus.REVIEW)) {
+             refuseOverCap(claim, periods, claims.list(claim.getSheetId()));
+         }
+-        number.set(change(request, claim, sheets, people, rates, periods, settings, numbering, log));
++        ClaimNumber changed = change(request, claim, sheets, people, rates, periods, settings, numbering, log);
++        if (then != null && claim.getStatus() == ClaimStatus.SETTLED) {
++            // The frozen figure is the claim's due as it stood at the end of the date, as the as-of view works it out.
++            claim.setSettledDue(asOfView.due(then, request.on()));
++        }
++        number.set(changed);
+     }
+ 
+     /** Applies a status change to the claim by the rules of a single change, returning its number;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index 2f9bd018..602c88b1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -44,6 +44,7 @@ public class AuditClaimStatus {
+         }
+         if (claim.getStatus() == ClaimStatus.SETTLED) {
+             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
++            if (request.on() != null) line += " on=" + request.on();
+         }
+         if (request.decision() == ValidClaimStatus.Decision.REJECT) {
+             line += " reason=" + request.reason();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+index a0c3ed66..a3491124 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.claim;
+ 
+ /** Body of POST /api/sheets/{sheetId}/claims/{claimId}/status: action is open, settle, approve, reject,
+  *  void, delete or restore; reason is required to reject, and to void
+- *  (one on the sheet's list) while the sheet has void reasons. */
+-public record ClaimStatusRequest(String action, String user, String reason) {
++ *  (one on the sheet's list) while the sheet has void reasons; on is the date to settle as of ("" or absent: the sheet's today). */
++public record ClaimStatusRequest(String action, String user, String reason, String on) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidClaimStatus.java
+index 1c8d6030..5c3e995f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidClaimStatus.java
+@@ -1,8 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /** A status change that names a known action: its target status, whether it is a steward's decision
+- *  on a PENDING claim (approve or reject), and the reason given to reject (or chosen from the sheet's list to void; null for none). */
+-public record ValidClaimStatus(ClaimStatus target, String user, Decision decision, String reason) {
++ *  on a PENDING claim (approve or reject), the reason given to reject (or chosen from the sheet's list to void; null for none),
++ *  and the date a settle is made as of (null: the sheet's today). */
++public record ValidClaimStatus(ClaimStatus target, String user, Decision decision, String reason, java.time.LocalDate on) {
++
++    public ValidClaimStatus(ClaimStatus target, String user, Decision decision, String reason) {
++        this(target, user, decision, reason, null);
++    }
+ 
+     /** A steward's decision on a PENDING claim (or REVIEW on a REVIEW claim, opening it); NONE for any other status change. */
+     public enum Decision { NONE, APPROVE, REJECT, REVIEW }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index e828b831..1890490f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -16,7 +16,19 @@ public class ValidateClaimStatus {
+         String reason = request.reason() == null ? "" : request.reason().trim();
+         ValidClaimStatus valid = switch (action) {
+             case "open" -> new ValidClaimStatus(ClaimStatus.OPEN, request.user(), ValidClaimStatus.Decision.NONE, null);
+-            case "settle" -> new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.NONE, null);
++            case "settle" -> {
++                // Settled as of a date when one is given; blank settles as of the sheet's today.
++                String on = request.on() == null ? "" : request.on().trim();
++                java.time.LocalDate asOf = null;
++                if (!on.isEmpty()) {
++                    try {
++                        asOf = java.time.LocalDate.parse(on);
++                    } catch (java.time.format.DateTimeParseException bad) {
++                        throw new InvalidClaimException("Not a date to settle as of: " + on);
++                    }
++                }
++                yield new ValidClaimStatus(ClaimStatus.SETTLED, request.user(), ValidClaimStatus.Decision.NONE, null, asOf);
++            }
+             case "void" -> {
+                 // While the sheet has void reasons, a void needs one chosen from them; without any, none is kept.
+                 if (voidReasons.list(sheetId).isEmpty()) {
