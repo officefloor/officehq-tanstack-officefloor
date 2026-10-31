@@ -1,0 +1,293 @@
+diff --git a/src/main/frontend/features/claims/ClaimList.tsx b/src/main/frontend/features/claims/ClaimList.tsx
+index 8dc75fcc..c289ae68 100644
+--- a/src/main/frontend/features/claims/ClaimList.tsx
++++ b/src/main/frontend/features/claims/ClaimList.tsx
+@@ -7,7 +7,7 @@ import { claimsKey, deferredShown, tagList, type Claim } from './useClaims';
+ import { useVoidReasons } from '../voidreasons/useVoidReasons';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
+-import { useSheetToday } from '../sheet/useSheetToday';
++import { useRealSheetToday, useSheetToday } from '../sheet/useSheetToday';
+ import { dueBy, isOverdue } from './overdue';
+ import { useGrace } from './useGrace';
+ import { ClaimSelect } from './BulkOpen';
+@@ -105,6 +105,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+   const period = periodOf(usePeriods(sheet), dueBy(c));
+   const floor = useFloor(sheet);
+   const today = useSheetToday(sheet);
++  const realToday = useRealSheetToday(sheet);
+   const latePct = useLatePct(sheet);
+   const grace = useGrace(sheet);
+   const policy = usePolicy(sheet);
+@@ -415,7 +416,7 @@ function ClaimRow({ claim: c, people, rate }: { claim: Claim; people: Person[];
+     (c.lockedBy ?? '') !== '' && c.lockedBy !== user ||
+     (settings?.roles.some((r) => r.user === user && r.role === 'viewer') === true &&
+       // a delegation covering the sheet's today makes the user a steward, as the server judges it
+-      !(settings?.delegations ?? []).some((d) => d.user === user && today !== undefined && d.from <= today && today <= d.to));
++      !(settings?.delegations ?? []).some((d) => d.user === user && realToday !== undefined && d.from <= realToday && realToday <= d.to));
+   const edit = () =>
+     act(() => {
+       if (knownRefused()) setEditRefused(true);
+diff --git a/src/main/frontend/features/dashboard/StewardDashboard.tsx b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+index 54b5662e..946aa8c8 100644
+--- a/src/main/frontend/features/dashboard/StewardDashboard.tsx
++++ b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+@@ -2,7 +2,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useDescendants } from '../consolidated/useDescendants';
+ import { useSheetFigures } from '../people/useSheetFigures';
+ import { useSettings } from '../settings/useSettings';
+-import { useSheetToday } from '../sheet/useSheetToday';
++import { useRealSheetToday } from '../sheet/useSheetToday';
+ 
+ type Counts = { pending: number; review: number; overdue: number };
+ 
+@@ -16,7 +16,7 @@ export function StewardDashboard() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+   const settings = useSettings(sheet);
+-  const today = useSheetToday(sheet);
++  const today = useRealSheetToday(sheet);
+   const descendants = useDescendants(sheet);
+   const steward =
+     settings !== undefined &&
+diff --git a/src/main/frontend/features/preview/PreviewControl.tsx b/src/main/frontend/features/preview/PreviewControl.tsx
+new file mode 100644
+index 00000000..a12dfb9a
+--- /dev/null
++++ b/src/main/frontend/features/preview/PreviewControl.tsx
+@@ -0,0 +1,27 @@
++import { useState } from 'react';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { PREVIEW_PARAM } from './usePreview';
++
++// Sets or clears the signed-in user's preview date, and shows it (nothing when none). While it is set every figure on
++// the screen is shown as if the sheet's today were that date; changes still use the real today. It is this screen's alone.
++export function PreviewControl() {
++  const [preview, setPreview] = useSearchParam(PREVIEW_PARAM, asString);
++  const [date, setDate] = useState('');
++  return (
++    <form
++      data-testid="preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = date.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) setPreview(trimmed);
++      }}
++    >
++      Preview: <span data-testid="sheet-preview">{preview}</span>{' '}
++      <input type="date" data-testid="preview-date" value={date} onChange={(e) => setDate(e.target.value)} />
++      <button type="submit" data-testid="preview-set">Set preview</button>
++      <button type="button" data-testid="preview-clear" onClick={() => setPreview(undefined)}>
++        Clear preview
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/preview/usePreview.ts b/src/main/frontend/features/preview/usePreview.ts
+new file mode 100644
+index 00000000..0cf7cfb8
+--- /dev/null
++++ b/src/main/frontend/features/preview/usePreview.ts
+@@ -0,0 +1,12 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The URL key holding the signed-in user's preview date ("" or absent: none). It is this screen's alone: other
++ *  users, and the store, are unaffected. */
++export const PREVIEW_PARAM = 'preview';
++
++/** The preview date (YYYY-MM-DD), "" for none. While it is set every figure on screen is worked as if the sheet's
++ *  today were that date, over the sheet's current records; every change still uses the sheet's real today. */
++export function usePreview(): string {
++  const [preview] = useSearchParam(PREVIEW_PARAM, asString);
++  return preview;
++}
+diff --git a/src/main/frontend/features/sheet/SheetToday.tsx b/src/main/frontend/features/sheet/SheetToday.tsx
+index adb82a3c..58e80b4f 100644
+--- a/src/main/frontend/features/sheet/SheetToday.tsx
++++ b/src/main/frontend/features/sheet/SheetToday.tsx
+@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { useSettings } from '../settings/useSettings';
+-import { sheetTodayKey, useSheetArchived, useSheetToday, type SheetToday as SheetTodayDto } from './useSheetToday';
++import { sheetTodayKey, useRealSheetToday, useSheetArchived, type SheetToday as SheetTodayDto } from './useSheetToday';
+ 
+ // Shows the active sheet's today and changes it. A blank date resets it to the real date.
+ // Also shows whether the sheet is archived, and archives it (a steward only), and its parent sheet (nothing when none),
+@@ -12,7 +12,7 @@ import { sheetTodayKey, useSheetArchived, useSheetToday, type SheetToday as Shee
+ export function SheetToday() {
+   const [sheet] = useSearchParam('sheet', asString);
+   const [user] = useSearchParam('user', asString);
+-  const today = useSheetToday(sheet);
++  const today = useRealSheetToday(sheet);
+   const archived = useSheetArchived(sheet);
+   const settings = useSettings(sheet);
+   const [date, setDate] = useState('');
+diff --git a/src/main/frontend/features/sheet/useSheetToday.ts b/src/main/frontend/features/sheet/useSheetToday.ts
+index 3222fce9..e87987d9 100644
+--- a/src/main/frontend/features/sheet/useSheetToday.ts
++++ b/src/main/frontend/features/sheet/useSheetToday.ts
+@@ -1,14 +1,24 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { readPath, useAsOf } from '../asof/useAsOf';
++import { usePreview } from '../preview/usePreview';
+ 
+ export type SheetToday = { sheet: string; today: string; archived: boolean };
+ 
+ export const sheetTodayKey = (sheet: string, asOf = '') => ['sheet', sheet, 'today', asOf] as const;
+ 
+-/** The sheet's today (YYYY-MM-DD; the as-of date while one is set). Every date decision and default date on screen reads this —
+- *  never `new Date()`. Undefined while loading. */
++/** The sheet's today as figures are shown on it (YYYY-MM-DD; the as-of date while one is set, else the preview date while
++ *  one is set). Every date decision and default date on screen reads this — never `new Date()`. Undefined while loading. */
+ export function useSheetToday(sheet: string): string | undefined {
++  const preview = usePreview();
++  const today = useRealSheetToday(sheet);
++  const asOf = useAsOf();
++  return asOf === '' && preview !== '' && today !== undefined ? preview : today;
++}
++
++/** The sheet's today whatever the preview date (the as-of date while one is set): what changes, and the rules
++ *  the server judges them by, go on. Undefined while loading. */
++export function useRealSheetToday(sheet: string): string | undefined {
+   const asOf = useAsOf();
+   const { data } = useQuery({
+     queryKey: sheetTodayKey(sheet, asOf),
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index a292aeef..b71da7a8 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -5,6 +5,7 @@ import { LocaleControl } from '../features/locale/LocaleControl';
+ import { SheetPicker } from '../features/session/SheetPicker';
+ import { SheetToday } from '../features/sheet/SheetToday';
+ import { AsOfControl } from '../features/asof/AsOfControl';
++import { PreviewControl } from '../features/preview/PreviewControl';
+ import { RatePanel } from '../features/rates/RatePanel';
+ import { HolidayPanel } from '../features/holidays/HolidayPanel';
+ import { GradePanel } from '../features/grades/GradePanel';
+@@ -47,6 +48,7 @@ function Home() {
+           <SheetToday />
+           <ConsolidatedFigures />
+           <AsOfControl />
++          <PreviewControl />
+           <RatePanel />
+           <GradePanel />
+           <HolidayPanel />
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index dbd7d658..a42dde51 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -69,29 +69,11 @@ public class Rollup {
+         List<BigDecimal> dues = new ArrayList<>();
+         List<BigDecimal> overdues = new ArrayList<>();
+         List<Person> listed = people.list(sheetId);
+-        // Each holder's parts of the shared claims that count for their own person, and what those parts take from it.
+         Map<Long, Person> byId = new LinkedHashMap<>();
+         listed.forEach(person -> byId.put(person.getId(), person));
+-        Map<Long, BigDecimal> partsIn = new LinkedHashMap<>();
+-        Map<Long, BigDecimal> partsOut = new LinkedHashMap<>();
+-        for (Claim claim : all) {
+-            Person owner = byId.get(claim.getPersonId());
+-            if (claim.getShares().isEmpty() || owner == null || !owner.countsClaimed(claim, today) || !owner.countsLive(claim, today)) {
+-                continue;
+-            }
+-            BigDecimal figure = due(claim, owner, today, policyDate);
+-            if (figure == null) {
+-                continue;
+-            }
+-            for (ClaimShare share : claim.getShares()) {
+-                if (!byId.containsKey(share.personId())) {
+-                    continue;
+-                }
+-                BigDecimal part = share.partOf(figure);
+-                partsIn.merge(share.personId(), part, BigDecimal::add);
+-                partsOut.merge(owner.getId(), part, BigDecimal::add);
+-            }
+-        }
++        SharedParts parts = sharedParts(all, byId, today, policyDate);
++        Map<Long, BigDecimal> partsIn = parts.in();
++        Map<Long, BigDecimal> partsOut = parts.out();
+         for (Person person : listed) {
+             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
+             BigDecimal due = BigDecimal.ZERO.setScale(2);
+@@ -146,6 +128,42 @@ public class Rollup {
+         return new RollupFigures(byPerson, show(claimedTotal), show(trimmedSum(dues)), show(trimmedSum(overdues)));
+     }
+ 
++    /** Each holder's parts of the shared claims that count for their own person ({@code in}), and what those parts take
++     *  from that person ({@code out}), by person id. */
++    public record SharedParts(Map<Long, BigDecimal> in, Map<Long, BigDecimal> out) {
++    }
++
++    /** The sheet's shared parts now. */
++    public SharedParts sharedParts(String sheetId) {
++        Map<Long, Person> byId = new LinkedHashMap<>();
++        people.list(sheetId).forEach(person -> byId.put(person.getId(), person));
++        return sharedParts(claims.list(sheetId), byId, sheets.today(sheetId), settings.policyDate(sheetId));
++    }
++
++    private SharedParts sharedParts(List<Claim> all, Map<Long, Person> byId, LocalDate today, LocalDate policyDate) {
++        Map<Long, BigDecimal> partsIn = new LinkedHashMap<>();
++        Map<Long, BigDecimal> partsOut = new LinkedHashMap<>();
++        for (Claim claim : all) {
++            Person owner = byId.get(claim.getPersonId());
++            if (claim.getShares().isEmpty() || owner == null || !owner.countsClaimed(claim, today) || !owner.countsLive(claim, today)) {
++                continue;
++            }
++            BigDecimal figure = due(claim, owner, today, policyDate);
++            if (figure == null) {
++                continue;
++            }
++            for (ClaimShare share : claim.getShares()) {
++                if (!byId.containsKey(share.personId())) {
++                    continue;
++                }
++                BigDecimal part = share.partOf(figure);
++                partsIn.merge(share.personId(), part, BigDecimal::add);
++                partsOut.merge(owner.getId(), part, BigDecimal::add);
++            }
++        }
++        return new SharedParts(partsIn, partsOut);
++    }
++
+     /** A claim's due as the screen shows it now; null for n/a. */
+     public BigDecimal due(Claim claim, Person person) {
+         String sheetId = claim.getSheetId();
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 725857db..4d627826 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -35,7 +35,8 @@ import net.officefloor.plugin.variable.Val;
+  */
+ public class TakeStatement {
+     public void take(@Val StatementRequest request, @Val Person person, Claims claims, AsOf asOf, Sheets sheets,
+-            People people, Settings settings, net.officefloor.hq.app.pool.Pools pools, Out<Statement> statement) throws InvalidPersonException {
++            People people, Settings settings, net.officefloor.hq.app.pool.Pools pools,
++            net.officefloor.hq.app.rollup.Rollup rollup, Out<Statement> statement) throws InvalidPersonException {
+         String sheetId = person.getSheetId();
+         LocalDate date = asOfDate(request, person, sheets.today(sheetId));
+         AsOf.View view = date == null ? asOf.now(person) : asOf.at(person, date);
+@@ -46,6 +47,8 @@ public class TakeStatement {
+         int counted = 0;
+         // The figure each counting claim is bound to, by id (a null figure: n/a).
+         Map<Long, BigDecimal> bound = new HashMap<>();
++        // Taken now, the person's parts of claims shared with them count, and the parts of theirs others hold do not.
++        net.officefloor.hq.app.rollup.Rollup.SharedParts parts = date == null ? rollup.sharedParts(sheetId) : null;
+         for (Claim claim : view.claims()) {
+             if (!then.countsLive(claim, today)) {
+                 continue;
+@@ -69,6 +72,13 @@ public class TakeStatement {
+             claim.setStatedDue(bound.get(claim.getId()));
+             claims.bind(claim);
+         }
++        if (parts != null) {
++            if (parts.in().containsKey(person.getId())) {
++                anyFigure = true;
++                total = total.add(parts.in().get(person.getId()));
++            }
++            total = total.subtract(parts.out().getOrDefault(person.getId(), BigDecimal.ZERO));
++        }
+         // n/a only when no claim keeps or gets a figure (each at the grade in force on its date).
+         boolean na = !anyFigure && view.rate().rate(then.getGrade(), today, Rates.IN_FORCE) == null;
+         BigDecimal cutTotal = view.cap() == null ? null : pools.cutTotals(sheetId, date).getOrDefault(person.getId(), BigDecimal.ZERO);
