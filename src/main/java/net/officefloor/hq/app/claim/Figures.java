@@ -82,7 +82,7 @@ public class Figures {
     /** The late charge on a figure of the claim: nothing unless the claim is OPEN (or PENDING), not deferred, and its due-by (fixed
      *  when it was added) plus its grace is before the sheet's today (a correction has none); then, for every full 30 days it is
      *  overdue, counted from its due-by plus its grace, the sheet's late percent in force on that boundary date (the due-by plus
-     *  the grace plus 30, 60, 90 ... days) of the figure, each rounded by the claim's rounding to two decimals, added up. A
+     *  the grace plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it (compounding), each rounded by the claim's rounding to two decimals, added up. A
      *  boundary whose percent is 0.00 adds nothing. Never bound by a statement: it follows the sheet's today. */
     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
@@ -94,7 +94,7 @@ public class Figures {
         for (long k = 1; k <= periods; k++) {
             BigDecimal pct = settings.latePct(sheetId, from.plusDays(30 * k));
             if (pct.signum() == 0) continue;
-            total = total.add(figure.multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim)));
+            total = total.add(figure.add(total).multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim)));
         }
         return total;
     }

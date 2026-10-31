@@ -154,7 +154,7 @@ export function overdueFrom(claim: Claim, late: Late): string {
 
 /** The late charge on an overdue claim's `figure`, in cents: for every full 30 days it is overdue,
  *  counted from its due-by plus its grace, the late percent in force on that boundary date (the due-by
- *  plus the grace plus 30, 60, 90 ... days) of it, each
+ *  plus the grace plus 30, 60, 90 ... days) of it plus the charges of the boundaries before it (compounding), each
  *  rounded by the claim's rounding (`halfUp`), added up; a boundary at 0.00 adds nothing. Nothing
  *  while it is not overdue. Never bound by a statement: it follows the sheet's today. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
@@ -166,7 +166,7 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
     const pct = hundredths(late.pctOn(addDays(from, 30 * k)));
     if (pct === 0n) continue;
     // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
-    total += roundTenThousandths(figure * pct, claim.halfUp);
+    total += roundTenThousandths((figure + total) * pct, claim.halfUp);
   }
   return total;
 }
