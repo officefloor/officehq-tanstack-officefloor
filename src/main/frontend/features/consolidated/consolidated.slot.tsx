@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { LiveReads } from '../asof/useAsOf';
 import { useClaims } from '../claims/useClaims';
 import { useSheetTotals } from '../claims/useSheetTotals';
 import { usePeople } from '../people/usePeople';
@@ -33,7 +34,8 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
 
 /**
  * The consolidated figures over the sheet and all its descendants (see useDescendants): how many
- * people, and each sheet's due-total and overdue-total as that sheet shows them, added up. A sheet
+ * people, and each sheet's due-total and overdue-total as that sheet shows them, added up — always
+ * as the sheets stand now, even while the screen shows the sheet as of a date. A sheet
  * with no children shows its own. Blank until every sheet's figures have loaded.
  */
 function Consolidated({ sheet }: { user: string; sheet: string }) {
@@ -48,9 +50,11 @@ function Consolidated({ sheet }: { user: string; sheet: string }) {
   const loaded = all.filter((f): f is Figures => f !== null);
   return (
     <section data-testid="consolidated">
-      {sheets.map((id) => (
-        <SheetFigures key={id} sheet={id} report={report} />
-      ))}
+      <LiveReads value={true}>
+        {sheets.map((id) => (
+          <SheetFigures key={id} sheet={id} report={report} />
+        ))}
+      </LiveReads>
       <p>
         Consolidated: people <strong data-testid="consolidated-people-count">{ready ? loaded.reduce((n, f) => n + f.people, 0) : ''}</strong>
         , due <strong data-testid="consolidated-due-total">{ready ? totalDue(loaded.map((f) => hundredths(f.due))) : ''}</strong>
