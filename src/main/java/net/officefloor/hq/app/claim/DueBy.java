@@ -11,12 +11,12 @@ public final class DueBy {
     private DueBy() {
     }
 
-    /** The due-by of a claim of `person` dated `date`: its date plus the person's own terms, else
-     *  the terms of their grade then, else the sheet's terms then; moved, when that is a holiday on
-     *  the sheet now, to the next day that is not one. */
+    /** The due-by of a claim of `person` dated `date`: the terms-th business day after its date,
+     *  taking the person's own terms, else the terms of their grade then, else the sheet's terms then,
+     *  and skipping every Saturday, Sunday and holiday on the sheet now. */
     public static LocalDate of(Person person, LocalDate date, Settings settings, Holidays holidays) {
         Integer own = person.getTerms();
-        LocalDate due = date.plusDays(own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date));
-        return holidays.nextWorking(person.getSheetId(), due);
+        int terms = own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date);
+        return holidays.businessDaysAfter(person.getSheetId(), date, terms);
     }
 }

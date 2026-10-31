@@ -84,7 +84,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * PENDING ones dated within one of the person's holds, unless a statement binds them.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
- * Each claim shows its due-by (fixed when it was added, from the terms of its person's grade) and whether it is overdue (OPEN and
+ * Each claim shows its due-by (fixed when it was added: the terms-th business day after its date, from the terms of its person's grade) and whether it is overdue (OPEN and
  * due by before the sheet's today); the person shows how many of the claims that count are overdue
  * and their dues added up.
  * A steward can reassign a DRAFT, OPEN or PENDING claim to another person on the sheet: it keeps its
