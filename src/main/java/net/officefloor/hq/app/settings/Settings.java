@@ -239,6 +239,28 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, pot) KEY (sheet_id) VALUES (?, ?)", sheetId, pot);
     }
 
+    /** The sheet's parent sheet: a grade with no rate in force on a date on this sheet takes the
+     *  parent's then (see {@link net.officefloor.hq.app.rate.Rates#pct}). Null when unset (none). Not
+     *  dated: read from the live sheet, so an as-of view shows it too. */
+    public String parent(String sheetId) {
+        List<String> values = jdbc.query("SELECT parent_id FROM PUBLIC.sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getString("parent_id"), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setParent(String sheetId, String parent) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, parent_id) KEY (sheet_id) VALUES (?, ?)", sheetId, parent);
+    }
+
+    /** Whether the sheet `ancestor` is the sheet `sheetId` or one of its parents, any number of levels up. */
+    public boolean isAncestor(String ancestor, String sheetId) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String sheet = sheetId; sheet != null && seen.add(sheet); sheet = parent(sheet)) {
+            if (sheet.equals(ancestor)) return true;
+        }
+        return false;
+    }
+
     /** The sheet's entry date: while set, the default date of a new claim in place of the sheet's
      *  today. Null when unset (off). */
     public LocalDate entryDate(String sheetId) {

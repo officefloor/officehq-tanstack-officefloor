@@ -53,6 +53,11 @@ public class Sheets {
         return jdbc.queryForObject("SELECT given FROM period_number WHERE sheet_id = ? AND seq = ?", Long.class, sheetId, seq);
     }
 
+    /** Whether the sheet has been loaded (used) at least once. */
+    public boolean exists(String sheetId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, sheetId) > 0;
+    }
+
     /** Whether a steward has archived the sheet: then every change to it is refused. */
     public boolean archived(String sheetId) {
         today(sheetId);

@@ -5,14 +5,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
 import { periodsKey } from '../periods/usePeriods';
-import { settingsKey } from '../settings/useSettings';
+import { settingsKey, useSettings } from '../settings/useSettings';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
-/** Shows the sheet's today and changes it; shows whether the sheet is archived and archives it (a
+/** Shows the sheet's today and changes it; shows its parent sheet (nothing when none); shows whether the sheet is archived and archives it (a
  *  steward only). Both share the sheet's error. */
 function SheetToday({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
+  const { data: settings } = useSettings(sheet);
   const [date, setDate] = useState('');
   const submitOnce = useSubmitOnce();
   const save = useMutation({
@@ -63,6 +64,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Save
       </button>
+      {' '}Parent: <strong data-testid="sheet-parent">{settings?.parent ?? ''}</strong>{' '}
       {' '}Archived: <strong data-testid="sheet-archived">{data ? (data.archived ? 'yes' : 'no') : ''}</strong>{' '}
       <button
         type="button"

@@ -5,16 +5,31 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
  *  date it applies through, or null when it has no end. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
+
+/** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
+type InheritedRates = { level: number; sheet: string; rates: Rate[] };
 
 export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
 
-/** The sheet's rates, by grade then from-date (the one with none first), re-read whenever the sheet is loaded. */
+/** The sheet's own rates, by grade then from-date (the one with none first), each with `level` 0;
+ *  then the rates of its parent sheets, nearest first, up to three levels up, each with the level it
+ *  is from (1 for the parent). Re-read whenever the sheet is loaded. */
 export function useRates(sheet: string) {
   const [asOf] = useAsOf();
   return useQuery({
     queryKey: asOfKey(ratesKey(sheet), asOf),
-    queryFn: () => getJson<Rate[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
+    queryFn: async () => {
+      const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+      const [own, inherited] = await Promise.all([
+        getJson<Rate[]>(asOfPath(`${base}/rates`, asOf)),
+        getJson<InheritedRates[]>(asOfPath(`${base}/rates/inherited`, asOf)),
+      ]);
+      return [
+        ...own.map((r) => ({ ...r, level: 0 })),
+        ...inherited.flatMap((i) => i.rates.map((r) => ({ ...r, level: i.level }))),
+      ];
+    },
     staleTime: 0,
     gcTime: 0,
   });
@@ -24,10 +39,23 @@ export function useRates(sheet: string) {
 export const PCT = /^\d{1,5}(\.\d{1,2})?$/;
 
 /**
- * The grade's rate in force on `date` (yyyy-mm-dd): the one whose from-date is the latest on or
- * before it, a rate with no from-date applying from the beginning of time. Undefined when none does, or when that one's to-date is before `date`.
+ * The grade's rate in force on `date` (yyyy-mm-dd): the sheet's own (level 0) when it has one then,
+ * else its parent's then, and so on up the levels.
  */
 export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
+  const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
+  for (const level of levels) {
+    const pct = levelRateOn(rates.filter((r) => (r.level ?? 0) === level), grade, date);
+    if (pct !== undefined) return pct;
+  }
+  return undefined;
+}
+
+/**
+ * The grade's rate in force on `date` among `rates` (of one sheet): the one whose from-date is the latest on or
+ * before it, a rate with no from-date applying from the beginning of time. Undefined when none does, or when that one's to-date is before `date`.
+ */
+function levelRateOn(rates: Rate[], grade: string, date: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;

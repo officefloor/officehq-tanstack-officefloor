@@ -13,6 +13,7 @@ import java.util.TreeMap;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,7 +39,7 @@ public class ValidateSettings {
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest request,
-            Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
+            Settings settings, Sheets sheets, Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
         String limit = request == null || request.clerkLimit() == null ? null : request.clerkLimit().trim();
         if (limit != null && !limit.isEmpty() && !AMOUNT.matcher(limit).matches()) {
             throw new InvalidSheetRequestException("The clerk limit must be an amount with up to two decimals, or blank");
@@ -141,6 +142,18 @@ public class ValidateSettings {
         if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
             throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
         }
+        String parent = request == null || request.parent() == null ? null : request.parent().trim();
+        if (parent != null && !parent.isEmpty()) {
+            if (parent.equals(sheetId)) {
+                throw new InvalidSheetRequestException("A sheet cannot be its own parent");
+            }
+            if (!sheets.exists(parent)) {
+                throw new InvalidSheetRequestException("The parent must be a sheet that has been loaded");
+            }
+            if (settings.isAncestor(sheetId, parent)) {
+                throw new InvalidSheetRequestException("The parent cannot be a sheet that has this sheet as an ancestor");
+            }
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request != null && request.perms() != null) {
             for (Map.Entry<String, String> e : request.perms().entrySet()) {
@@ -189,6 +202,7 @@ public class ValidateSettings {
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
                 noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
                 entry != null, entryDate, gradeGrace, gradeProof,
-                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2)));
+                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
+                parent != null, parent == null || parent.isEmpty() ? null : parent));
     }
 }

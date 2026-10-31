@@ -151,7 +151,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
           </tr>
         </thead>
         <tbody>
-          {rates.map((r) => (
+          {rates.filter((r) => (r.level ?? 0) === 0).map((r) => (
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
