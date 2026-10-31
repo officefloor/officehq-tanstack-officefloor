@@ -1,0 +1,122 @@
+diff --git a/src/main/frontend/features/audit/ActivityPanel.tsx b/src/main/frontend/features/audit/ActivityPanel.tsx
+new file mode 100644
+index 00000000..a94a2c60
+--- /dev/null
++++ b/src/main/frontend/features/audit/ActivityPanel.tsx
+@@ -0,0 +1,33 @@
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The sheet's activity: for every user and every event in the sheet's audit lines, one line
++// "<user> <EVENT> <count>", sorted by user then event. It reads the file on each show; a new show clears
++// the old list first.
++export function ActivityPanel() {
++  const [sheet] = useSearchParam('sheet', asString);
++  const show = useMutation({
++    mutationFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/activity`),
++  });
++  return (
++    <section>
++      <button
++        type="button"
++        data-testid="activity-show"
++        onClick={() => {
++          show.reset();
++          show.mutate();
++        }}
++      >
++        Show activity
++      </button>
++      {show.isError && <span data-testid="activity-error" role="alert"> Could not read the activity.</span>}
++      <ul data-testid="activity-list">
++        {(show.data ?? []).map((line, i) => (
++          <li key={i} data-testid="activity-line">{line}</li>
++        ))}
++      </ul>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 311eb068..43745df0 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -21,6 +21,7 @@ import { StewardDashboard } from '../features/dashboard/StewardDashboard';
+ import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
+ import { TreeSearch } from '../features/search/TreeSearch';
+ import { AuditViewer } from '../features/audit/AuditViewer';
++import { ActivityPanel } from '../features/audit/ActivityPanel';
+ 
+ // The one screen. Signed out it shows only the sign-in form; signed in, the user and the sheet
+ // picker, and — once a sheet is loaded — that sheet.
+@@ -57,6 +58,7 @@ function Home() {
+           <CrewPanel />
+           <TreeSearch />
+           <AuditViewer />
++          <ActivityPanel />
+         </div>
+       )}
+       {sheet === '' && <p data-testid="home-empty">Nothing here yet.</p>}
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 54d595c8..eccb3226 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -169,6 +169,31 @@ public class Audit {
+         return found;
+     }
+ 
++    /**
++     * The sheet's activity: for every user (by=) and every event in the sheet's lines, one line
++     * "<user> <EVENT> <count>", sorted by user then event. Read from the file: not a second record.
++     */
++    public synchronized List<String> activity(String sheet) {
++        java.util.TreeMap<String, java.util.TreeMap<String, Integer>> counts = new java.util.TreeMap<>();
++        for (String line : lines(sheet, null)) {
++            String event = line.split(" ", 2)[0];
++            String by = null;
++            for (String[] field : fields(line)) {
++                if (field[0].equals("by")) {
++                    by = field[1];
++                    break;
++                }
++            }
++            if (by == null || event.isEmpty()) {
++                continue;
++            }
++            counts.computeIfAbsent(by, k -> new java.util.TreeMap<>()).merge(event, 1, Integer::sum);
++        }
++        List<String> found = new ArrayList<>();
++        counts.forEach((user, events) -> events.forEach((event, n) -> found.add(user + " " + event + " " + n)));
++        return found;
++    }
++
+     /** Whether the line carries a field with the key. */
+     private static boolean hasKey(List<String[]> fields, String key) {
+         return fields.stream().anyMatch(field -> field[0].equals(key));
+diff --git a/src/main/java/net/officefloor/hq/app/audit/LoadActivity.java b/src/main/java/net/officefloor/hq/app/audit/LoadActivity.java
+new file mode 100644
+index 00000000..b86d870d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/LoadActivity.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The sheet's activity: one line "<user> <EVENT> <count>" per user and event in its audit lines, by user then event. */
++public class LoadActivity {
++    public void service(@PathVariable("sheetId") String sheetId, Audit audit, ObjectResponse<List<String>> response) {
++        response.send(audit.activity(sheetId));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+new file mode 100644
+index 00000000..79c2edcf
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.audit.LoadActivity
