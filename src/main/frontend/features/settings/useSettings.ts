@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Late } from '../claims/useClaims';
 import { useSheetToday } from '../sheet/useSheet';
+import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** A role given to a user name: clerk (the default for any name) or steward. */
 export type RoleEntry = { name: string; role: string };
@@ -34,9 +35,10 @@ export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as co
 
 /** The sheet's settings, re-read whenever the sheet is loaded. */
 export function useSettings(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: settingsKey(sheet),
-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`),
+    queryKey: asOfKey(settingsKey(sheet), asOf),
+    queryFn: () => getJson<Settings>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, asOf)),
     staleTime: 0,
     gcTime: 0,
   });

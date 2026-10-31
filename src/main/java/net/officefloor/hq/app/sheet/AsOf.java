@@ -3,6 +3,7 @@ package net.officefloor.hq.app.sheet;
 import java.sql.Connection;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -56,10 +57,25 @@ public class AsOf {
         });
     }
 
+    /** What a screen reads: `work` on the sheet as it stood at the end of the as-of date given (see
+     *  {@link #at}), or on the live sheet when none is given. Refused: an as-of that is not a date. */
+    public <T> T view(String sheetId, String asOfText, Supplier<T> work) throws InvalidSheetRequestException {
+        if (asOfText == null || asOfText.isBlank()) return work.get();
+        LocalDate date;
+        try {
+            date = LocalDate.parse(asOfText.trim());
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetRequestException("Not a date: " + asOfText);
+        }
+        return at(sheetId, date, work);
+    }
+
     private void rebuild(String sheetId, LocalDate date) {
         jdbc.update("DELETE FROM ASOF.sheet WHERE id = ?", sheetId);
         jdbc.update("INSERT INTO ASOF.sheet SELECT * FROM PUBLIC.sheet WHERE id = ?", sheetId);
-        jdbc.update("UPDATE ASOF.sheet SET today = ? WHERE id = ?", Date.valueOf(date), sheetId);
+        // Archived only by an archive made by then.
+        jdbc.update("UPDATE ASOF.sheet SET today = ?, archived = archived AND (archived_on IS NULL OR archived_on <= ?) "
+                + "WHERE id = ?", Date.valueOf(date), Date.valueOf(date), sheetId);
         for (String table : TABLES) {
             List<String> cols = columns(table);
             String names = '"' + String.join("\", \"", cols) + '"';

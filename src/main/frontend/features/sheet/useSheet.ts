@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 export type Sheet = { id: string; today: string; archived: boolean };
 
@@ -7,9 +8,10 @@ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
 
 /** The active sheet as the store holds it, re-read whenever the sheet is loaded. */
 export function useSheet(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: sheetKey(sheet),
-    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}`),
+    queryKey: asOfKey(sheetKey(sheet), asOf),
+    queryFn: () => getJson<Sheet>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}`, asOf)),
     staleTime: 0,
     gcTime: 0,
   });

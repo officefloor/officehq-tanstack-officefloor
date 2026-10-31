@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
@@ -10,9 +11,10 @@ export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
 
 /** The sheet's rates, by grade then from-date (the one with none first), re-read whenever the sheet is loaded. */
 export function useRates(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: ratesKey(sheet),
-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`),
+    queryKey: asOfKey(ratesKey(sheet), asOf),
+    queryFn: () => getJson<Rate[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
     staleTime: 0,
     gcTime: 0,
   });

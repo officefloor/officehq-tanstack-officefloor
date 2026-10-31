@@ -21,12 +21,14 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
   const take = useMutation({
     mutationFn: (date: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user, asOf: date }),
-    onSuccess: () => setAsOf(''),
-    onSettled: () =>
-      Promise.all([
+    // Taken or refused, the date is spent: the next press takes it as of a date only when one is typed again.
+    onSettled: () => {
+      setAsOf('');
+      return Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
-      ]),
+      ]);
+    },
   });
   const cancel = useMutation({
     mutationFn: () =>

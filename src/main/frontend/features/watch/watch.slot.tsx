@@ -3,15 +3,17 @@ import { getJson, postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import type { Person } from '../people/usePeople';
 import { useRowAction } from '../people/useRowAction';
+import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 const watchesKey = (sheet: string, user: string) => ['sheet', sheet, 'watches', user] as const;
 
 /** The ids of the people on the sheet the signed-in user watches, re-read whenever the sheet is loaded. */
 function useWatches(sheet: string, user: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: watchesKey(sheet, user),
+    queryKey: asOfKey(watchesKey(sheet, user), asOf),
     queryFn: () =>
-      getJson<number[]>(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`),
+      getJson<number[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`, asOf)),
     staleTime: 0,
     gcTime: 0,
   });

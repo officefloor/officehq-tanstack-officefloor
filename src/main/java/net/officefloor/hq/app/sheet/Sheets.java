@@ -61,7 +61,7 @@ public class Sheets {
 
     public void archive(String sheetId) {
         today(sheetId);
-        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", sheetId);
+        jdbc.update("UPDATE sheet SET archived = TRUE, archived_on = today WHERE id = ?", sheetId);
     }
 
     public void setToday(String sheetId, LocalDate today) {

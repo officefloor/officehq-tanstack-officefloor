@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** `version` counts the person's saves; an edit sends the version it loaded, so a save made by
  *  someone else in the meantime refuses it. `statementCount` is how many statements have been
@@ -56,9 +57,10 @@ export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
 
 /** The sheet's people in the order they were added, re-read whenever the sheet is loaded. */
 export function usePeople(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: peopleKey(sheet),
-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
+    queryKey: asOfKey(peopleKey(sheet), asOf),
+    queryFn: () => getJson<Person[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, asOf)),
     staleTime: 0,
     gcTime: 0,
   });

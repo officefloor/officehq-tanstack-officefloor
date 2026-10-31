@@ -7,6 +7,11 @@ export class HttpError extends Error {
 }
 
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
+  // While this screen shows the sheet as of a date (the `asof` search param, see
+  // features/asof/useAsOf.ts) every change is refused, before it reaches the store.
+  if (init?.method !== undefined && init.method !== 'GET' && asOfSet()) {
+    throw new HttpError(`${init.method} ${path} refused: the sheet is shown as of a date`, 409, '');
+  }
   const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -33,4 +38,8 @@ export function putJson<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function asOfSet(): boolean {
+  return (new URLSearchParams(window.location.search).get('asof') ?? '') !== '';
 }

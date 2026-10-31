@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
 import type { FloorOn } from '../settings/useSettings';
+import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
@@ -67,9 +68,10 @@ export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
 
 /** Every claim on the sheet, newest first, re-read whenever the sheet is loaded. */
 export function useClaims(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: claimsKey(sheet),
-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
+    queryKey: asOfKey(claimsKey(sheet), asOf),
+    queryFn: () => getJson<Claim[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, asOf)),
     staleTime: 0,
     gcTime: 0,
   });
