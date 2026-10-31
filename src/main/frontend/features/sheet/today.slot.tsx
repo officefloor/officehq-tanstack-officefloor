@@ -9,12 +9,13 @@ import { settingsKey, useSettings } from '../settings/useSettings';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
 
 /** Shows the sheet's today and changes it; shows its parent sheet (nothing when none); shows whether the sheet is archived and archives it (a
- *  steward only). Both share the sheet's error. */
+ *  steward only); clones the sheet to another, never used, id (a steward only) and shows the last clone made. All share the sheet's error. */
 function SheetToday({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
   const { data: settings } = useSettings(sheet);
   const [date, setDate] = useState('');
+  const [cloneTo, setCloneTo] = useState('');
   const submitOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (today: string) =>
@@ -37,6 +38,9 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
       queryClient.setQueryData(sheetKey(sheet), saved);
     },
   });
+  const clone = useMutation({
+    mutationFn: (to: string) => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/clone`, { to, user }),
+  });
 
   return (
     <form
@@ -44,6 +48,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
       onSubmit={(e) => {
         e.preventDefault();
         archive.reset();
+        clone.reset();
         submitOnce(() => save.mutateAsync(date.trim()));
       }}
     >
@@ -58,6 +63,7 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
             setDate(e.target.value);
             save.reset();
             archive.reset();
+            clone.reset();
           }}
         />
       </label>{' '}
@@ -73,15 +79,46 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
         onClick={() => {
           save.reset();
           archive.reset();
+          clone.reset();
           submitOnce(() => archive.mutateAsync());
         }}
       >
         Archive
+      </button>{' '}
+      <label>
+        Clone to{' '}
+        <input
+          data-testid="sheet-clone-to"
+          placeholder="Sheet id"
+          value={cloneTo}
+          onChange={(e) => {
+            setCloneTo(e.target.value);
+            save.reset();
+            archive.reset();
+            clone.reset();
+          }}
+        />
+      </label>{' '}
+      <button
+        type="button"
+        data-testid="sheet-clone"
+        disabled={clone.isPending}
+        onClick={() => {
+          save.reset();
+          archive.reset();
+          clone.reset();
+          submitOnce(() => clone.mutateAsync(cloneTo.trim()));
+        }}
+      >
+        Clone
       </button>
-      {(save.isError || archive.isError) && (
+      {' '}Cloned to: <strong data-testid="sheet-cloned-to">{clone.data?.id ?? ''}</strong>
+      {(save.isError || archive.isError || clone.isError) && (
         <span data-testid="sheet-error" role="alert">
           {' '}
-          {archive.isError
+          {clone.isError
+            ? 'Could not clone: only a steward can clone the sheet, to an id never used.'
+            : archive.isError
             ? data?.archived
               ? 'Could not archive: the sheet is already archived.'
               : 'Could not archive: only a steward can archive the sheet.'
