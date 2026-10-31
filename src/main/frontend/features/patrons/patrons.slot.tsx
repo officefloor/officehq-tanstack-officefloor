@@ -8,11 +8,34 @@ import { hundredths, totalDue } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheet';
 
 /**
- * A person's patrons: the other people on the sheet they have named (names sorted, comma and space
- * separated), and their backing, the patrons' SETTLED claims dated within the 90 days up to and
- * including the sheet's today added up, each at the due fixed when it was settled (0.00 with none). One patron is named at a time; the server refuses the person themselves and someone
- * already their patron.
+ * A person's patrons: the other people on the sheet they have named, each with a share of 100.00
+ * split equally in the order they were named (each rounded half to even to two decimals, the
+ * remainder to the first-named), shown as `<name> <share>` (sorted by name, comma and space
+ * separated). Their backing is the sum over the patrons of the patron's figure (their SETTLED claims
+ * dated within the 90 days up to and including the sheet's today added up, each at the due fixed
+ * when it was settled) times their share divided by 100, rounded half to even (0.00 with none). One
+ * patron is named at a time; the server refuses the person themselves and someone already their
+ * patron.
  */
+/** `n / d` rounded half to even (d > 0). */
+function divHalfEven(n: bigint, d: bigint): bigint {
+  const negative = n < 0n;
+  const abs = negative ? -n : n;
+  let q = abs / d;
+  const twice = (abs % d) * 2n;
+  if (twice > d || (twice === d && q % 2n === 1n)) q += 1n;
+  return negative ? -q : q;
+}
+
+/** Each of `count` patrons' share of 100.00 in hundredths, in the order they were named. */
+function shares(count: number): bigint[] {
+  if (count === 0) return [];
+  const each = divHalfEven(10_000n, BigInt(count));
+  const result = Array.from({ length: count }, () => each);
+  result[0] += 10_000n - each * BigInt(count);
+  return result;
+}
+
 /** The first day (yyyy-mm-dd) of the 90 days up to and including `today`. */
 function backingSince(today: string): string {
   if (today === '') return '';
@@ -26,13 +49,25 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
   const today = useSheetToday(sheet);
   const [chosen, setChosen] = useState('');
 
-  const patrons = people.filter((p) => person.patrons.includes(p.id));
-  const names = patrons.map((p) => p.name).sort();
+  const named = person.patrons;
+  const split = shares(named.length);
+  const shareOf = new Map(named.map((id, i) => [id, split[i]]));
+  const labels = people
+    .filter((p) => shareOf.has(p.id))
+    .map((p) => ({ name: p.name, label: `${p.name} ${totalDue([shareOf.get(p.id)!])}` }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((p) => p.label);
   const since = backingSince(today);
-  const backing = all
-    .filter((c) => person.patrons.includes(c.personId) && c.status === 'SETTLED' && c.due !== null)
-    .filter((c) => c.date >= since && c.date <= today)
-    .reduce((sum, c) => sum + hundredths(c.due!), 0n);
+  const figure = (id: number) =>
+    all
+      .filter((c) => c.personId === id && c.status === 'SETTLED' && c.due !== null)
+      .filter((c) => c.date >= since && c.date <= today)
+      .reduce((sum, c) => sum + hundredths(c.due!), 0n);
+  // figure (hundredths) × share (hundredths) is in millionths of the share-weighted sum; ÷ 10000.
+  const backing = divHalfEven(
+    named.reduce((sum, id) => sum + figure(id) * shareOf.get(id)!, 0n),
+    10_000n,
+  );
 
   const add = useMutation({
     mutationFn: (patronId: number) =>
@@ -43,7 +78,7 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
 
   return (
     <>
-      <td data-testid="person-patrons">{names.join(', ')}</td>
+      <td data-testid="person-patrons">{labels.join(', ')}</td>
       <td data-testid="person-backing">{totalDue([backing])}</td>
       <td>
         <select
