@@ -1,0 +1,195 @@
+diff --git a/src/main/frontend/features/people/importPeople.slot.tsx b/src/main/frontend/features/people/importPeople.slot.tsx
+index c261b87e..6a50832f 100644
+--- a/src/main/frontend/features/people/importPeople.slot.tsx
++++ b/src/main/frontend/features/people/importPeople.slot.tsx
+@@ -6,16 +6,18 @@ import { peopleKey } from './usePeople';
+ 
+ /**
+  * Paste lines of name,grade,terms,contact (the last two may be absent or blank): a person per line,
+- * in order, each as the person form would add them. Every line is checked by the form's rules
+- * first, and a name or contact repeated in the paste is refused: one refused line refuses the whole
+- * import. Shows how many were added; the count goes while the next press runs.
++ * in order. A line naming a person on the sheet (by name or alias) updates them as the person form
++ * would — the grade from the sheet's today, the terms and contact when given; any other line adds a
++ * person. Every line is checked by the form's rules first, and a name or contact repeated in the
++ * paste is refused: one refused line refuses the whole import. Shows how many were added and how
++ * many updated; the counts go while the next press runs.
+  */
+ function ImportPeople({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const [text, setText] = useState('');
+   const importing = useMutation({
+     mutationFn: (t: string) =>
+-      postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-people`, { text: t, user }),
++      postJson<{ added: number; updated: number }>(`/api/sheets/${encodeURIComponent(sheet)}/import-people`, { text: t, user }),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+   });
+   return (
+@@ -49,7 +51,8 @@ function ImportPeople({ user, sheet }: { user: string; sheet: string }) {
+       {importing.isSuccess && (
+         <span>
+           {' '}
+-          Added <strong data-testid="import-added">{importing.data.added}</strong>
++          Added <strong data-testid="import-added">{importing.data.added}</strong>, updated{' '}
++          <strong data-testid="import-updated">{importing.data.updated}</strong>
+         </span>
+       )}
+       {importing.isError && (
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+index 4046c388..9a4c9314 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+@@ -1,34 +1,74 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.ArrayList;
++import java.util.HashSet;
+ import java.util.List;
++import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.Snapshot;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Builds every imported person first, as the person form would, so one refused line refuses the
+- *  whole import before anything is saved; then saves each in order, audited PERSON_ADDED and then
+- *  the figures it moved, as the form's add does. */
++/** A line whose name matches a person on the sheet (by name or alias, as names are compared) edits
++ *  them as the person form would: their name kept, the line's grade from the sheet's today, and the
++ *  line's terms and contact when it gives them (blank: kept). Any other line adds a person as the
++ *  form would. Every line is checked first, so one refused line refuses the whole import before
++ *  anything is saved; then each is saved in order, audited PERSON_EDITED or PERSON_ADDED and then
++ *  the figures it moved, as the form does. */
+ public class AddImportedPeople {
+     public void add(@PathVariable("sheetId") String sheetId, @Val ImportedPeople imported, People people,
+-            Rollup rollup, Audit audit, Out<ImportPeopleResult> result)
++            Sheets sheets, Rollup rollup, Audit audit, Out<ImportPeopleResult> result)
+             throws InvalidSheetRequestException, PersonConflictException {
+-        List<Person> built = new ArrayList<>();
++        List<PersonRequest> requests = new ArrayList<>();
++        List<Person> targets = new ArrayList<>();
++        Set<Long> matched = new HashSet<>();
++        int n = 0;
+         for (PersonRequest line : imported.lines()) {
+-            built.add(BuildPerson.built(sheetId, line, people));
++            n++;
++            Person existing = people.named(sheetId, line.name());
++            try {
++                if (existing == null) {
++                    requests.add(line);
++                    targets.add(BuildPerson.built(sheetId, line, people));
++                    continue;
++                }
++                if (!matched.add(existing.getId())) {
++                    throw new InvalidSheetRequestException("the person is repeated in the import: " + existing.getName());
++                }
++                PersonRequest edit = new PersonRequest(existing.getName(), line.grade(), line.user(), null, null,
++                        line.termsDays() != null ? line.terms()
++                                : existing.getTerms() != null ? String.valueOf(existing.getTerms()) : "",
++                        line.contactKey() != null ? line.contactKey() : existing.getContact());
++                ApplyPerson.check(edit, existing, people);
++                requests.add(edit);
++                targets.add(existing);
++            } catch (InvalidSheetRequestException e) {
++                throw new InvalidSheetRequestException("Line " + n + ": " + e.getMessage());
++            }
+         }
+         SavePerson save = new SavePerson();
+-        RecordPersonAdded record = new RecordPersonAdded();
+-        for (int i = 0; i < built.size(); i++) {
++        RecordPersonAdded added = new RecordPersonAdded();
++        RecordPersonEdited edited = new RecordPersonEdited();
++        int addedCount = 0;
++        for (int i = 0; i < targets.size(); i++) {
++            Person person = targets.get(i);
++            PersonRequest request = requests.get(i);
+             Snapshot before = rollup.snapshot(sheetId);
+-            save.save(built.get(i), people);
+-            record.record(imported.lines().get(i), built.get(i), audit);
++            if (person.getId() == null) {
++                save.save(person, people);
++                added.record(request, person, audit);
++                addedCount++;
++            } else {
++                ApplyPerson.applied(request, person, sheets);
++                save.save(person, people);
++                edited.record(request, person, audit);
++            }
+             rollup.record(sheetId, before, imported.user());
+         }
+-        result.set(new ImportPeopleResult(built.size()));
++        result.set(new ImportPeopleResult(addedCount, targets.size() - addedCount));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 4cbcb285..8f4916c2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.time.LocalDate;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+@@ -14,6 +15,12 @@ public class ApplyPerson {
+         if (request.version() != null && request.version() != person.getVersion()) {
+             throw new PersonConflictException(PersonResponse.from(person));
+         }
++        check(request, person, people);
++        applied(request, person, sheets);
++    }
++
++    /** Refused when the edit's name, an alias of the person, or the edit's contact is taken. */
++    static void check(PersonRequest request, Person person, People people) throws InvalidSheetRequestException {
+         if (people.nameUsedInTree(person.getSheetId(), request.name(), person.getId())) {
+             throw new InvalidSheetRequestException("The name is already in use on this sheet or its tree");
+         }
+@@ -27,11 +34,15 @@ public class ApplyPerson {
+                 && people.contactTaken(person.getSheetId(), request.contactKey(), person.getId())) {
+             throw new InvalidSheetRequestException("The contact is already in use on this sheet");
+         }
++    }
++
++    /** Makes the checked edit to the person, ready to be saved. */
++    static void applied(PersonRequest request, Person person, Sheets sheets) {
+         person.setName(request.name());
+         person.changeContact(request.contactKey());
+         person.changeTerms(request.termsDays());
+-        var from = request.gradeFromDate();
+-        var today = sheets.today(person.getSheetId());
++        LocalDate from = request.gradeFromDate();
++        LocalDate today = sheets.today(person.getSheetId());
+         person.setToday(today);
+         if (from == null && request.grade().equals(person.getGrade())) return;
+         person.recordGrade(request.grade(), from != null ? from : today);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportPeopleResult.java b/src/main/java/net/officefloor/hq/app/person/ImportPeopleResult.java
+index 4e55aa72..8745988a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ImportPeopleResult.java
++++ b/src/main/java/net/officefloor/hq/app/person/ImportPeopleResult.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** How many people an import added. */
+-public record ImportPeopleResult(int added) {
++/** How many people an import added, and how many it updated. */
++public record ImportPeopleResult(int added, int updated) {
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
+index f9800685..f4fb96ac 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
+@@ -1,6 +1,6 @@
+-# Import lines of name,grade,terms,contact: a person per line, in order, each as the person form
+-# would add them. Every line is checked by the form's rules before any is saved: one refused line
+-# refuses the import and writes nothing.
++# Import lines of name,grade,terms,contact, in order: a line naming a person on the sheet (by name
++# or alias) edits them as the person form would; any other line adds a person as the form would.
++# Every line is checked before any is saved: one refused line refuses the import and writes nothing.
+ validate:
+   class: net.officefloor.hq.app.person.ValidateImportPeople
+   next: add
