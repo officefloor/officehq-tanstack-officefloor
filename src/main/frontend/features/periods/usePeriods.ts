@@ -33,6 +33,17 @@ export function usePeriods(sheet: string) {
   });
 }
 
+/** The fiscal year a date (yyyy-mm-dd) falls in, FY<yyyy>: a fiscal year starts on the first day of
+ *  the sheet's fiscal start month (1 to 12) and is named by the calendar year that day falls in. */
+export function fiscalYear(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
+}
+
+/** A fiscal year the server accepts: yyyy. */
+export const YEAR = /^\d{4}$/;
+
 /** A date the server accepts: yyyy-mm-dd. */
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

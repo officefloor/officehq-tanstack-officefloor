@@ -27,6 +27,9 @@ public class Settings {
     /** The late percent of a sheet that has not set one. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
+    /** The fiscal year start month of a sheet that has not set one: January. */
+    public static final int DEFAULT_FISCAL_START_MONTH = 1;
+
     /** The keys of the dated settings. */
     public static final String CLERK_LIMIT = "clerk-limit", FLOOR = "floor", TERMS = "terms",
             LATE_PCT = "late-pct", CAP = "cap",
@@ -306,6 +309,17 @@ public class Settings {
 
     public void setGraceDays(String sheetId, Integer days) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, grace_days) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
+    }
+
+    /** The month of the year (1 to 12) the sheet's fiscal year starts on: 1 unless set. Not dated. */
+    public int fiscalStartMonth(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT fiscal_start_month FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("fiscal_start_month", Integer.class), sheetId);
+        return values.isEmpty() || values.get(0) == null ? DEFAULT_FISCAL_START_MONTH : values.get(0);
+    }
+
+    public void setFiscalStartMonth(String sheetId, int month) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, fiscal_start_month) KEY (sheet_id) VALUES (?, ?)", sheetId, month);
     }
 
     /** The sheet's cap in force on its today: a person's due-total is at most it. Null for no cap. */

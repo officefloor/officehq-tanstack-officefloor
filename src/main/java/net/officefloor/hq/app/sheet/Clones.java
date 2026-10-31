@@ -51,8 +51,9 @@ public class Clones {
         }
 
         jdbc.update("INSERT INTO sheet_setting (sheet_id, clerk_limit, floor, terms, late_pct, policy_date, "
-                + "period_numbering_from, cap, grace_days, entry_date, pot, parent_id) SELECT ?, clerk_limit, floor, "
-                + "terms, late_pct, policy_date, period_numbering_from, cap, grace_days, entry_date, pot, parent_id "
+                + "period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month) SELECT ?, clerk_limit, "
+                + "floor, terms, late_pct, policy_date, period_numbering_from, cap, grace_days, entry_date, pot, parent_id, "
+                + "fiscal_start_month "
                 + "FROM sheet_setting WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_dated WHERE sheet_id = ?", to, from);

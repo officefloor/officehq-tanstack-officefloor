@@ -35,6 +35,9 @@ public class ValidateSettings {
             Settings.PROOF_THRESHOLD, Settings.proofKey("A"), Settings.proofKey("B"), Settings.proofKey("C"),
             Settings.NOTE_THRESHOLD);
 
+    /** A month of the year: 1 to 12. */
+    private static final Pattern MONTH = Pattern.compile("0?[1-9]|1[0-2]");
+
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
@@ -142,6 +145,10 @@ public class ValidateSettings {
         if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
             throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
         }
+        String fiscal = request == null || request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
+        if (fiscal != null && !MONTH.matcher(fiscal).matches()) {
+            throw new InvalidSheetRequestException("The fiscal year start month must be a month, 1 to 12");
+        }
         String parent = request == null || request.parent() == null ? null : request.parent().trim();
         if (parent != null && !parent.isEmpty()) {
             if (parent.equals(sheetId)) {
@@ -203,6 +210,7 @@ public class ValidateSettings {
                 noteThreshold != null, noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
                 entry != null, entryDate, gradeGrace, gradeProof,
                 pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
-                parent != null, parent == null || parent.isEmpty() ? null : parent));
+                parent != null, parent == null || parent.isEmpty() ? null : parent,
+                fiscal == null ? null : Integer.parseInt(fiscal)));
     }
 }

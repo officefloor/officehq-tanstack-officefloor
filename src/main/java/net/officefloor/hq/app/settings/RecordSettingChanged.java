@@ -69,6 +69,9 @@ public class RecordSettingChanged {
         if (change.setsParent()) {
             audit.record(prefix + " key=parent value=" + (change.parent() != null ? change.parent() : ""));
         }
+        if (change.fiscalStartMonth() != null) {
+            audit.record(prefix + " key=fiscal-start-month value=" + change.fiscalStartMonth());
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

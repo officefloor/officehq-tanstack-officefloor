@@ -6,9 +6,9 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { useRates } from '../rates/useRates';
-import { useFloor, useLate } from '../settings/useSettings';
+import { DEFAULT_FISCAL_START_MONTH, useFloor, useLate, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-import { DATE, periodDue, periodsKey, usePeriods, type Period } from './usePeriods';
+import { DATE, fiscalYear, periodDue, periodsKey, usePeriods, YEAR, type Period } from './usePeriods';
 
 /**
  * The sheet's periods, each with its due-total — the figures, as shown now, of everyone's claims
@@ -19,7 +19,8 @@ import { DATE, periodDue, periodsKey, usePeriods, type Period } from './usePerio
  * its due-total is then the one it had when it was closed, whatever rates do later. A steward can
  * reopen a closed period, making its due-total live again. A period can instead be soft-closed: its
  * figures are fixed as by a close, but claims dated in it can still be changed; it can then be closed
- * (fixing them afresh) or reopened.
+ * (fixing them afresh) or reopened. Each period shows the fiscal year its from-date falls in; a fiscal
+ * year's twelve monthly periods can be generated as the monthly generator makes them.
  */
 function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -30,6 +31,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const floor = useFloor(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
+  const fiscalStart = useSettings(sheet).data?.fiscalStartMonth ?? DEFAULT_FISCAL_START_MONTH;
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -37,6 +39,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [genFrom, setGenFrom] = useState('');
   const [genTo, setGenTo] = useState('');
   const [genInvalid, setGenInvalid] = useState<string | null>(null);
+  const [fyYear, setFyYear] = useState('');
   // The period whose last close or reopen was refused: its row shows the error.
   const [refused, setRefused] = useState<string | null>(null);
 
@@ -54,9 +57,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
 
   // One period per calendar month from the from-date's month to the to-date's, named yyyy-mm; a
   // month already named or overlapping a period is left out. Answers how many were made.
+  // A fiscal year generate makes the same periods for the fiscal year's twelve months; either shows
+  // its count in the one place.
   const generate = useMutation({
-    mutationFn: (g: { from: string; to: string }) =>
-      postJson<{ generated: number }>(`/api/sheets/${encodeURIComponent(sheet)}/generate-periods`, { ...g, user }),
+    mutationFn: (g: { from: string; to: string } | { year: string }) =>
+      postJson<{ generated: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/${'year' in g ? 'generate-fiscal-year' : 'generate-periods'}`,
+        { ...g, user },
+      ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
 
@@ -229,6 +237,36 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
           </span>
         )}
       </form>
+      <form
+        data-testid="period-generate-fy-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          clearGenerate();
+          const y = fyYear.trim();
+          if (!YEAR.test(y)) {
+            setGenInvalid('The fiscal year must be a year, yyyy.');
+            return;
+          }
+          generate.mutate({ year: y });
+        }}
+      >
+        <label>
+          Fiscal year{' '}
+          <input
+            data-testid="period-generate-fy-year"
+            placeholder="yyyy"
+            size={6}
+            value={fyYear}
+            onChange={(e) => {
+              setFyYear(e.target.value);
+              clearGenerate();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-fy" disabled={generate.isPending}>
+          Generate fiscal year
+        </button>
+      </form>
       <table data-testid="period-list">
         <thead>
           <tr>
@@ -237,6 +275,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             <th>To</th>
             <th>Due</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th></th>
           </tr>
         </thead>
@@ -248,6 +287,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{dueIn(p)}</td>
               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
+              <td data-testid="period-fy">{fiscalYear(p.from, fiscalStart)}</td>
               <td>
                 <button
                   type="button"
