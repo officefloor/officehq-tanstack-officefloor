@@ -5,9 +5,11 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { claimsKey } from '../claims/useClaims';
 import { GRADES, peopleKey } from '../people/usePeople';
-import { gradesKey, useGrades, type Grade } from './useGrades';
+import { gradesKey, useGradeCodes, useGrades, type Grade } from './useGrades';
 
-// The sheet's grades, each shown retired or not, and the select and button that retire one (a grade
+// The sheet's grades, each shown retired or not; the entry and button that add one (a code of one to three
+// capital letters not yet a grade, else refused), after which it can be chosen everywhere a grade is; and
+// the select and button that retire one (a grade
 // already retired is refused). A retired grade cannot be chosen for anyone; people on it keep it.
 // A steward merges a grade into another (the same grade twice, or anyone else, is refused): everyone on
 // the merged grade today is given the other from the sheet's today, and how many is shown; pressing
@@ -16,6 +18,7 @@ export function GradePanel() {
   const [sheet] = useSearchParam('sheet', asString);
   const [user] = useSearchParam('user', asString);
   const grades = useGrades(sheet);
+  const codes = useGradeCodes(sheet);
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const queryClient = useQueryClient();
   const submitOnce = useSubmitOnce();
@@ -24,6 +27,15 @@ export function GradePanel() {
       postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades/retire`, { grade: chosen, user }),
     onSuccess: (saved) => {
       queryClient.setQueryData(gradesKey(sheet), saved);
+    },
+  });
+  const [code, setCode] = useState('');
+  const add = useMutation({
+    mutationFn: (entered: string) =>
+      postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades`, { grade: entered, user }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(gradesKey(sheet), saved);
+      setCode('');
     },
   });
   const [from, setFrom] = useState<string>(GRADES[0]);
@@ -46,6 +58,33 @@ export function GradePanel() {
           </li>
         ))}
       </ul>
+      <p>
+        <input
+          data-testid="grade-add-code"
+          value={code}
+          placeholder="New grade, e.g. D"
+          onChange={(e) => {
+            setCode(e.target.value);
+            add.reset();
+            retire.reset();
+            merge.reset();
+          }}
+        />{' '}
+        <button
+          type="button"
+          data-testid="grade-add"
+          onClick={() =>
+            submitOnce(() => {
+              add.reset();
+              retire.reset();
+              merge.reset();
+              return add.mutateAsync(code);
+            })
+          }
+        >
+          Add grade
+        </button>
+      </p>
       <select
         data-testid="grade-retire-select"
         value={grade}
@@ -53,9 +92,10 @@ export function GradePanel() {
           setGrade(e.target.value);
           retire.reset();
           merge.reset();
+          add.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {codes.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}
@@ -66,6 +106,7 @@ export function GradePanel() {
           submitOnce(() => {
             retire.reset();
             merge.reset();
+            add.reset();
             return retire.mutateAsync(grade);
           })
         }
@@ -80,9 +121,10 @@ export function GradePanel() {
             setFrom(e.target.value);
             merge.reset();
             retire.reset();
+            add.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>{g}</option>
           ))}
         </select>{' '}
@@ -94,9 +136,10 @@ export function GradePanel() {
             setInto(e.target.value);
             merge.reset();
             retire.reset();
+            add.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>{g}</option>
           ))}
         </select>{' '}
@@ -107,6 +150,7 @@ export function GradePanel() {
             submitOnce(() => {
               merge.reset();
               retire.reset();
+              add.reset();
               return merge.mutateAsync({ from, into });
             })
           }
@@ -120,6 +164,7 @@ export function GradePanel() {
           </>
         )}
       </p>
+      {add.isError && <span data-testid="grade-error" role="alert"> The grade could not be added: it must be one to three capital letters, not yet a grade.</span>}
       {retire.isError && <span data-testid="grade-error" role="alert"> The grade could not be retired: it is already retired.</span>}
       {merge.isError && <span data-testid="grade-error" role="alert"> The grade could not be merged.</span>}
     </>

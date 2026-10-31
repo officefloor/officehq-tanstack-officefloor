@@ -54,8 +54,11 @@ public class AsOfView {
     private final People people;
     private final Claims claims;
     private final Periods periods;
+    private final net.officefloor.hq.app.grade.RetiredGrades grades;
 
-    public AsOfView(JdbcTemplate jdbc, Sheets sheets, People people, Claims claims, Periods periods) {
+    public AsOfView(JdbcTemplate jdbc, Sheets sheets, People people, Claims claims, Periods periods,
+            net.officefloor.hq.app.grade.RetiredGrades grades) {
+        this.grades = grades;
         this.jdbc = jdbc;
         this.sheets = sheets;
         this.people = people;
@@ -451,7 +454,7 @@ public class AsOfView {
         BigDecimal terms = on.apply(ValidateSetting.TERMS);
         BigDecimal latePct = on.apply(ValidateSetting.LATE_PCT);
         Map<String, String> gradeTerms = new TreeMap<>();
-        for (String grade : List.of("A", "B", "C")) {
+        for (String grade : grades.codes(sheetId)) {
             BigDecimal own = on.apply(ValidateSetting.GRADE_TERMS + grade);
             if (own != null) gradeTerms.put(grade, String.valueOf(own.intValue()));
         }

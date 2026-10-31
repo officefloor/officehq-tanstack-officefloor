@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { isOpen, useClaims } from '../claims/useClaims';
 import { useGrace } from '../claims/useGrace';
-import { GRADES, gradeOn, usePeople } from '../people/usePeople';
+import { gradeOn, usePeople } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 import { useFloor, useLatePct, usePolicy } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { asString, useSearchParam } from '../../url/useSearchParam';
@@ -16,6 +17,7 @@ const PCT = /^\d+(\.\d{1,2})?$/;
 // claim bound by a statement (or settled, which is left out) never moves. Nothing is saved.
 export function RatePreview() {
   const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
@@ -70,7 +72,7 @@ export function RatePreview() {
           changed();
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}

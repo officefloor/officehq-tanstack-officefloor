@@ -83,6 +83,7 @@ export function gradeOn(person: Person, date: string | undefined): string {
 /** The person's name as the screen shows it: "<name> (<grade in force on the date>)". */
 export const shownName = (person: Person, date: string | undefined) => `${person.name} (${gradeOn(person, date)})`;
 
+/** The standing grades every sheet has; a sheet may add more (see useGradeCodes). */
 export const GRADES = ['A', 'B', 'C'] as const;
 
 export const peopleKey = (sheet: string, asOf = '') => ['sheet', sheet, 'people', asOf] as const;

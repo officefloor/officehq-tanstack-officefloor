@@ -41,6 +41,7 @@ public class SheetCloner {
         copyRows("rate_history", "set_on, grade, rate, from_date, to_date, after_mark", " ORDER BY seq", from, to);
         copyRows("holiday", "holiday_date", "", from, to);
         copyRows("void_reason", "reason", " ORDER BY seq", from, to);
+        copyRows("sheet_grade", "grade", " ORDER BY seq", from, to);
         copyRows("retired_grade", "grade", "", from, to);
         copyRows("claim_template", "name, amount, note", "", from, to);
         copyRows("sheet_tag", "tag", "", from, to);

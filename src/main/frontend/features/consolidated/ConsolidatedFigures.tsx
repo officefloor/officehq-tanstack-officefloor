@@ -1,10 +1,14 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { GRADES, gradeOn } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { gradeOn } from '../people/usePeople';
 import { STATUSES, trimmedSum, useSheetFigures } from '../people/useSheetFigures';
 import { formatCents } from '../rates/due';
 import { useDescendants } from './useDescendants';
 
 type Totals = { people: string[][]; due: bigint[]; overdue: bigint[]; grades: bigint[]; statuses: number[] };
+
+// The root sheet's grades, the order of Totals.grades.
+type Grades = string[];
 
 // The figures over the sheet and all its descendants: their people, each counted once across the
 // tree (people whose names or aliases match, as names are compared, are one person); the due-total
@@ -17,31 +21,33 @@ type Totals = { people: string[][]; due: bigint[]; overdue: bigint[]; grades: bi
 export function ConsolidatedFigures() {
   const [sheet] = useSearchParam('sheet', asString);
   const descendants = useDescendants(sheet);
+  const grades = useGradeCodes(sheet);
   return (
-    <Add sheets={[sheet, ...descendants]} totals={{ people: [], due: [], overdue: [], grades: GRADES.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
+    <Add sheets={[sheet, ...descendants]} grades={grades} totals={{ people: [], due: [], overdue: [], grades: grades.map(() => 0n), statuses: STATUSES.map(() => 0) }} />
   );
 }
 
 // Adds the first sheet's figures to the totals and passes on to the rest: one sheet's hooks per
 // component, so the number of sheets can change.
-function Add({ sheets, totals }: { sheets: string[]; totals: Totals }) {
-  if (sheets.length === 0) return <Shown totals={totals} />;
-  return <AddSheet key={sheets[0]} sheets={sheets} totals={totals} />;
+function Add({ sheets, grades, totals }: { sheets: string[]; grades: Grades; totals: Totals }) {
+  if (sheets.length === 0) return <Shown grades={grades} totals={totals} />;
+  return <AddSheet key={sheets[0]} sheets={sheets} grades={grades} totals={totals} />;
 }
 
-function AddSheet({ sheets, totals }: { sheets: string[]; totals: Totals }) {
+function AddSheet({ sheets, grades, totals }: { sheets: string[]; grades: Grades; totals: Totals }) {
   const { people, today, totalOf, statusCount, dueFigures, overdueFigures } = useSheetFigures(sheets[0]);
   const current = people.filter((p) => !p.retired);
-  const gradeDue = (g: (typeof GRADES)[number]) =>
+  const gradeDue = (g: string) =>
     current.filter((p) => gradeOn(p, today) === g).reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
   return (
     <Add
       sheets={sheets.slice(1)}
+      grades={grades}
       totals={{
         people: [...totals.people, ...people.map((p) => [p.name, ...p.aliases].map(nameKey))],
         due: [...totals.due, ...dueFigures],
         overdue: [...totals.overdue, ...overdueFigures],
-        grades: GRADES.map((g, i) => totals.grades[i] + gradeDue(g)),
+        grades: grades.map((g, i) => (totals.grades[i] ?? 0n) + gradeDue(g)),
         statuses: STATUSES.map((s, i) => totals.statuses[i] + statusCount(s)),
       }}
     />
@@ -66,13 +72,13 @@ function distinctPeople(people: string[][]): number {
   return people.filter((_, i) => find(i) === i).length;
 }
 
-function Shown({ totals }: { totals: Totals }) {
+function Shown({ grades, totals }: { grades: Grades; totals: Totals }) {
   return (
     <section data-testid="consolidated">
       Consolidated — People: <span data-testid="consolidated-people-count">{distinctPeople(totals.people)}</span>
       {' · '}Due: <span data-testid="consolidated-due-total">{formatCents(trimmedSum(totals.due))}</span>
       {' · '}Overdue: <span data-testid="consolidated-overdue-total">{formatCents(trimmedSum(totals.overdue))}</span>
-      {GRADES.map((g, i) => (
+      {grades.map((g, i) => (
         <span key={g}>
           {' · '}Grade {g}: <span data-testid={`consolidated-grade-${g}-due-total`}>{formatCents(totals.grades[i])}</span>
         </span>

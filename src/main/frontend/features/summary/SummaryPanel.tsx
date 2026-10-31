@@ -1,5 +1,6 @@
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { GRADES, gradeOn, type Person } from '../people/usePeople';
+import { gradeOn, type Person } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 import { STATUSES } from '../people/useSheetFigures';
 import { useClassicPeriodDueTotal, usePeriodDueTotal } from '../periods/usePeriodDueTotal';
 import { usePeriods } from '../periods/usePeriods';
@@ -31,6 +32,7 @@ export function SummaryPanel({
   voidReasonCount: (reason: string) => number;
 }) {
   const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const periods = usePeriods(sheet);
   const periodDueTotal = usePeriodDueTotal(sheet);
   const classicPeriodDueTotal = useClassicPeriodDueTotal(sheet);
@@ -54,7 +56,7 @@ export function SummaryPanel({
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
+          {grades.map((g) => {
             const onGrade = current.filter((p) => gradeOn(p, today) === g);
             const due = onGrade.reduce((sum, p) => sum + (totalOf(p) ?? 0n), 0n);
             return (

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { GRADES } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { NA } from './due';
 import { ImportRates } from './ImportRates';
@@ -19,6 +19,7 @@ const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'
 // each month of the sheet's today's year (n/a where none), and a preview of a candidate rate for a grade.
 export function RatePanel() {
   const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const [user] = useSearchParam('user', asString);
   const rates = useRates(sheet);
   const [grade, setGrade] = useState<string>('A');
@@ -49,7 +50,7 @@ export function RatePanel() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateOn(rates, g, today) ?? NA}</td>
@@ -67,7 +68,7 @@ export function RatePanel() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               {months.map((m) => (
@@ -117,7 +118,7 @@ export function RatePanel() {
             save.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>{g}</option>
           ))}
         </select>{' '}

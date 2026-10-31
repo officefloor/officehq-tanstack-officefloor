@@ -56,7 +56,7 @@ export function ImportRates() {
       {importRates.isError && (
         <span data-testid="import-rates-error" role="alert">
           {' '}
-          Nothing was set: every line needs a grade A, B or C, a percent of 0.00 or more with at most two decimals,
+          Nothing was set: every line needs one of the sheet's grades, a percent of 0.00 or more with at most two decimals,
           from a valid date (YYYY-MM-DD) or none, to a valid date not before it or none.
         </span>
       )}

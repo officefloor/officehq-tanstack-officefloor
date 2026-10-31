@@ -1,11 +1,13 @@
 import { useIsFetching, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { getJson } from '../../api/http';
-import { GRADES, gradeOn, type Person } from '../people/usePeople';
+import { gradeOn, type Person } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSheetFigures } from '../people/useSheetFigures';
 import { formatCents } from '../rates/due';
 
-type GradeDue = (g: (typeof GRADES)[number]) => bigint;
+type GradeDue = (g: string) => bigint;
 
 // A grade's due-total as the summary shows it: the due-totals of the people on it today (retired people
 // left out, n/a skipped) added up.
@@ -46,13 +48,15 @@ function Compared({ other, mine }: { other: string; mine: GradeDue }) {
 }
 
 function OtherLines({ other, mine }: { other: string; mine: GradeDue }) {
+  const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const { people, today, totalOf } = useSheetFigures(other);
   const fetching = useIsFetching({ queryKey: ['sheet', other] });
   if (fetching > 0 || today === undefined) return null;
   const theirs = gradeDueOf(people, today, totalOf);
   return (
     <ul>
-      {GRADES.map((g) => (
+      {grades.map((g) => (
         <li key={g} data-testid="compare-line">
           {g} {formatCents(mine(g))} {formatCents(theirs(g))}
         </li>

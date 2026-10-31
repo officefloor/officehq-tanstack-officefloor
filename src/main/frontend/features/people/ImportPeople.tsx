@@ -59,7 +59,7 @@ export function ImportPeople() {
       {importPeople.isError && (
         <span data-testid="import-error" role="alert">
           {' '}
-          Nothing was imported: every line needs a name and a grade of A, B or C, terms of whole days, and a contact
+          Nothing was imported: every line needs a name and one of the sheet's grades, terms of whole days, and a contact
           used by no one else; a name not on the sheet must be used by no one in the tree; no name, person or contact
           may be given twice in the import.
         </span>

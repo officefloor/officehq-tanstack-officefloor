@@ -6,7 +6,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { tagList, tagsKey } from '../claims/useClaims';
 import { useEditorOpens } from './editorOpens';
-import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
+import { gradeOn, peopleKey, usePeople, type Person } from './usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 
 // Adds a person, or — while a person's editor is open (`editPerson` in the URL) — saves that
 // person. Opening the editor fills the form with the person's values and remembers the version it
@@ -25,6 +26,7 @@ import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople'
 // the editor (if one was open) closes, so the form is back to adding.
 export function PersonForm() {
   const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const [user] = useSearchParam('user', asString);
   const [editParam, setEditing] = useSearchParam('editPerson', asString);
   const people = usePeople(sheet);
@@ -153,7 +155,7 @@ export function PersonForm() {
           clearError();
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}

@@ -27,9 +27,12 @@ public class Settings {
 
     private final Sheets sheets;
 
-    public Settings(JdbcTemplate jdbc, Sheets sheets) {
+    private final net.officefloor.hq.app.grade.RetiredGrades grades;
+
+    public Settings(JdbcTemplate jdbc, Sheets sheets, net.officefloor.hq.app.grade.RetiredGrades grades) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.grades = grades;
     }
 
     /** The sheet's starting floor: in force before its first from-date. */
@@ -522,7 +525,7 @@ public class Settings {
                 "SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString(1), rs.getString(2)), sheetId);
         java.util.Map<String, String> gradeTerms = new java.util.TreeMap<>();
-        for (String grade : ValidateSetting.GRADES) {
+        for (String grade : grades.codes(sheetId)) {
             Integer own = gradeTerms(sheetId, grade, today);
             if (own != null) {
                 gradeTerms.put(grade, String.valueOf(own));

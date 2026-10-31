@@ -4,7 +4,8 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { claimsKey } from '../claims/useClaims';
-import { GRADES, peopleKey } from './usePeople';
+import { peopleKey } from './usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 import { poolsKey } from '../pools/usePools';
 
 type Selection = { selected: Set<string>; toggle: (id: string, on: boolean) => void; clear: () => void };
@@ -50,6 +51,7 @@ export function PersonSelect({ personId }: { personId: string }) {
 // until the new one is in. A refusal (a bad date) shows the error and changes nothing; a viewer's grades no one.
 export function BulkGrade() {
   const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const [user] = useSearchParam('user', asString);
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
@@ -84,7 +86,7 @@ export function BulkGrade() {
           apply.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}

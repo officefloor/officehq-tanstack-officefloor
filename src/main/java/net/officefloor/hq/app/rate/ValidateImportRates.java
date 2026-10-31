@@ -13,11 +13,13 @@ import org.springframework.web.bind.annotation.RequestBody;
  * each by the rate form's rules. Blank lines are skipped; an import with no rate in it is refused.
  */
 public class ValidateImportRates {
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRatesRequest request, Out<ValidImportRates> body, Settings settings)
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRatesRequest request, Out<ValidImportRates> body, Settings settings,
+            net.officefloor.hq.app.grade.RetiredGrades grades)
             throws InvalidRateException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String text = request.text() == null ? "" : request.text();
         List<ValidRate> rates = new ArrayList<>();
+        List<String> codes = grades.codes(sheetId);
         int number = 0;
         for (String raw : text.split("\\r?\\n")) {
             number++;
@@ -29,7 +31,7 @@ public class ValidateImportRates {
             RateRequest rate = new RateRequest(fields[0], fields[1], fields.length > 2 ? fields[2] : "",
                     fields.length > 3 ? fields[3] : "", request.user());
             try {
-                rates.add(ValidateRate.check(rate));
+                rates.add(ValidateRate.check(rate, codes));
             } catch (InvalidRateException e) {
                 throw new InvalidRateException("Line " + number + ": " + e.getMessage());
             }

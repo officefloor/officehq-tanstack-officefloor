@@ -29,6 +29,7 @@ public class ValidateImportPeople {
         if (grades.isRetired(sheetId, defaultGrade)) {
             defaultGrade = net.officefloor.hq.app.setting.Settings.START_DEFAULT_GRADE; // a retired default falls back to A
         }
+        List<String> codes = grades.codes(sheetId);
         int number = 0;
         for (String raw : text.split("\\r?\\n")) {
             number++;
@@ -40,7 +41,7 @@ public class ValidateImportPeople {
             PersonRequest person;
             try {
                 person = PersonRules.check(new PersonRequest(fields[0], fields[1].isBlank() ? defaultGrade : fields[1], request.user(), null, "",
-                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "", ""));
+                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "", ""), codes);
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());
             }

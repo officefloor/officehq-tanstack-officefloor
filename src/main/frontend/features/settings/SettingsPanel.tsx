@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { GRADES } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 import { poolsKey } from '../pools/usePools';
 import { inForce, PERM_ACTIONS, settingsKey, useSettings, type Settings } from './useSettings';
 import { useSheetToday } from '../sheet/useSheetToday';
@@ -49,6 +49,7 @@ import { useSheetToday } from '../sheet/useSheetToday';
 // field filled): a fiscal year is named FY<yyyy> by the calendar year its first day falls in.
 export function SettingsPanel() {
   const [sheet] = useSearchParam('sheet', asString);
+  const grades = useGradeCodes(sheet);
   const [user] = useSearchParam('user', asString);
   const settings = useSettings(sheet);
   const queryClient = useQueryClient();
@@ -257,7 +258,7 @@ export function SettingsPanel() {
   };
   // Entering another field leaves a blank grade's grace days as they are.
   const unchooseGradeGrace = () => {
-    for (const g of GRADES) {
+    for (const g of grades) {
       if ((gradeGrace[g] ?? '').trim() === '') graceGradeChosen.current.delete(g);
       if ((gradeProof[g] ?? '').trim() === '') proofGradeChosen.current.delete(g);
       if ((gradeLimit[g] ?? '').trim() === '') limitGradeChosen.current.delete(g);
@@ -530,10 +531,10 @@ export function SettingsPanel() {
             const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
             const scoreLogged = scoreLog.trim() !== '' || scoreLogChosen.current;
             const maxed = maxOpen.trim() !== '' || maxOpenChosen.current;
-            const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
-            const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
-            const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
-            const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
+            const ownTerms = grades.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
+            const ownGrace = grades.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
+            const ownProof = grades.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
+            const ownLimit = grades.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
                 || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || maxed || permitted.length > 0) {
@@ -591,7 +592,7 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('clerk-limit')}{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             Clerk limit for grade {g}: <span data-testid={`setting-clerk-limit-${g}-current`}>{today === undefined ? '' : inForce(settings, `clerk-limit-${g}`, today, '')}</span>{' '}
             <input
@@ -633,7 +634,7 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('terms')}{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             Terms for grade {g} (days): <span data-testid={`setting-terms-${g}-current`}>{settings?.gradeTerms?.[g] ?? ''}</span>{' '}
             <input
@@ -650,7 +651,7 @@ export function SettingsPanel() {
             {fromField(`terms-${g}`)}{' '}
           </span>
         ))}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             Grace for grade {g} (days): <span data-testid={`setting-grace-${g}-current`}>{today === undefined ? '' : inForce(settings, `grace-${g}`, today, '')}</span>{' '}
             <input
@@ -763,7 +764,7 @@ export function SettingsPanel() {
           }}
         />{' '}
         {fromField('proof-threshold', focusProof)}{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             Proof threshold for grade {g}: <span data-testid={`setting-proof-threshold-${g}-current`}>{today === undefined ? '' : inForce(settings, `proof-threshold-${g}`, today, '')}</span>{' '}
             <input
@@ -908,7 +909,7 @@ export function SettingsPanel() {
         <input
           data-testid="setting-default-grade"
           value={defaultGrade}
-          placeholder="Default grade: A, B or C (blank: A)"
+          placeholder="Default grade: one of the grades (blank: A)"
           onFocus={focusDefaultGrade}
           onChange={(e) => {
             setDefaultGrade(e.target.value);

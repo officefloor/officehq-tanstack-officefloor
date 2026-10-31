@@ -8,9 +8,10 @@ import net.officefloor.hq.app.setting.ViewerRefusedException;
 
 public class ValidatePerson {
 
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request, Out<PersonRequest> body, Settings settings)
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request, Out<PersonRequest> body, Settings settings,
+            net.officefloor.hq.app.grade.RetiredGrades grades)
             throws InvalidPersonException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
-        body.set(PersonRules.check(request));
+        body.set(PersonRules.check(request, grades.codes(sheetId)));
     }
 }

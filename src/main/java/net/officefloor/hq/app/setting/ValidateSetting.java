@@ -44,8 +44,6 @@ public class ValidateSetting {
     /** A grade's grace days: grace-<grade>; dated; blank: none. */
     public static final String GRADE_GRACE = "grace-";
 
-    static final List<String> GRADES = List.of("A", "B", "C");
-
     public static final String LATE_PCT = "late-pct";
 
     public static final String POLICY_DATE = "policy-date";
@@ -113,17 +111,19 @@ public class ValidateSetting {
     /** An amount: 0 or more, with at most two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
 
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<ValidSetting> body, Settings settings, Sheets sheets)
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<ValidSetting> body, Settings settings, Sheets sheets,
+            net.officefloor.hq.app.grade.RetiredGrades grades)
             throws InvalidSettingException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String key = request.key() == null ? "" : request.key().trim();
+        List<String> codes = grades.codes(sheetId);
         if (!CLERK_LIMIT.equals(key) && !FLOOR.equals(key) && !CAP.equals(key) && !PROOF_THRESHOLD.equals(key) && !NOTE_THRESHOLD.equals(key) && !REVIEW_THRESHOLD.equals(key) && !ROUNDING.equals(key) && !TERMS.equals(key) && !LATE_PCT.equals(key)
                 && !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key) && !PROOF_KINDS.equals(key) && !DEFAULT_GRADE.equals(key)
                 && !(key.startsWith(PERM) && ACTIONS.contains(key.substring(PERM.length())))
-                && !(key.startsWith(GRADE_CLERK_LIMIT) && GRADES.contains(key.substring(GRADE_CLERK_LIMIT.length())))
-                && !(key.startsWith(GRADE_TERMS) && GRADES.contains(key.substring(GRADE_TERMS.length())))
-                && !(key.startsWith(GRADE_GRACE) && GRADES.contains(key.substring(GRADE_GRACE.length())))
-                && !(key.startsWith(GRADE_PROOF_THRESHOLD) && GRADES.contains(key.substring(GRADE_PROOF_THRESHOLD.length())))) {
+                && !(key.startsWith(GRADE_CLERK_LIMIT) && codes.contains(key.substring(GRADE_CLERK_LIMIT.length())))
+                && !(key.startsWith(GRADE_TERMS) && codes.contains(key.substring(GRADE_TERMS.length())))
+                && !(key.startsWith(GRADE_GRACE) && codes.contains(key.substring(GRADE_GRACE.length())))
+                && !(key.startsWith(GRADE_PROOF_THRESHOLD) && codes.contains(key.substring(GRADE_PROOF_THRESHOLD.length())))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         String raw = request.value() == null ? "" : request.value().trim();
@@ -158,8 +158,8 @@ public class ValidateSetting {
             return;
         }
         if (DEFAULT_GRADE.equals(key)) {
-            if (!raw.isEmpty() && !GRADES.contains(raw)) {
-                throw new InvalidSettingException("The default grade must be one of the grades A, B and C, or blank for A");
+            if (!raw.isEmpty() && !codes.contains(raw)) {
+                throw new InvalidSettingException("The default grade must be one of the sheet's grades, or blank for A");
             }
             body.set(new ValidSetting(key, null, request.user(), null, null, null, raw));
             return;

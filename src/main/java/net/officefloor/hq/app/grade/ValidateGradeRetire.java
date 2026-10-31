@@ -12,8 +12,8 @@ public class ValidateGradeRetire {
             throws InvalidGradeException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String grade = request.grade() == null ? "" : request.grade().trim();
-        if (!RetiredGrades.GRADES.contains(grade)) {
-            throw new InvalidGradeException("Grade must be A, B or C");
+        if (!grades.isGrade(sheetId, grade)) {
+            throw new InvalidGradeException("Grade must be one of the sheet's grades");
         }
         if (grades.isRetired(sheetId, grade)) {
             throw new InvalidGradeException("Grade " + grade + " is already retired");
