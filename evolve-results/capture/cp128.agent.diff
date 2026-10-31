@@ -1,0 +1,169 @@
+diff --git a/src/main/frontend/features/transfer/transfer.slot.tsx b/src/main/frontend/features/transfer/transfer.slot.tsx
+index a78eb8a4..cff5fc5b 100644
+--- a/src/main/frontend/features/transfer/transfer.slot.tsx
++++ b/src/main/frontend/features/transfer/transfer.slot.tsx
+@@ -55,8 +55,8 @@ function PersonTransfer({ user, sheet, person }: { user: string; sheet: string;
+       {transfer.isError && (
+         <span data-testid="person-error" role="alert">
+           {' '}
+-          Could not transfer this person (a steward only, to another sheet, not retired, no name, alias or
+-          contact already there).
++          Could not transfer this person (a steward only, to another sheet, not retired, no contact
++          already there, names matching at most one person there and not a retired one).
+         </span>
+       )}
+     </td>
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
+index 771b2354..f0e9ff55 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonArrived.java
+@@ -9,6 +9,10 @@ public class RecordPersonArrived {
+     public void record(@Val Transfer transfer, Audit audit, Rollup rollup) {
+         audit.record("PERSON_TRANSFERRED sheet=" + transfer.to() + " by=" + transfer.user()
+                 + " name=" + transfer.name() + " from=" + transfer.from());
++        if (transfer.into() != null) {
++            audit.record("PERSON_MERGED sheet=" + transfer.to() + " by=" + transfer.user()
++                    + " from=" + transfer.name() + " into=" + transfer.into().getName());
++        }
+         rollup.record(transfer.to(), transfer.toBefore(), transfer.user());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Transfer.java b/src/main/java/net/officefloor/hq/app/person/Transfer.java
+index 5bddcec3..144ff123 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Transfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/Transfer.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.hq.app.rollup.Snapshot;
+ 
+ /** A person just transferred from one sheet to another, by whom, and the other sheet's figures as
+- *  they were before the person arrived. */
+-public record Transfer(String name, String from, String to, String user, Snapshot toBefore) {
++ *  they were before the person arrived; `into` the person there they were merged into (as they are
++ *  now), or null. */
++public record Transfer(String name, String from, String to, String user, Snapshot toBefore, Person into) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index 8eb3a98c..8bb7efe8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -11,8 +11,9 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** A steward transfers the person to another sheet (see {@link Transfers#transfer}). Refused: anyone
+- *  but a steward, a retired person, this sheet's own id, an archived sheet, and a name, alias or
+- *  contact of the person already on the other sheet. Publishes the person as they arrived. */
++ *  but a steward, a retired person, this sheet's own id, an archived sheet, a contact of the person
++ *  already on the other sheet, and a name or alias matching more than one person (or a retired one)
++ *  there. One person matching is merged into. Publishes the person as they arrived (or merged into). */
+ public class TransferPerson {
+     public void transfer(@PathVariable("sheetId") String sheetId, @PathVariable("personId") long personId,
+             @Val TransferRequest request, People people, Transfers transfers, Settings settings, Sheets sheets,
+@@ -33,14 +34,35 @@ public class TransferPerson {
+         if (sheets.archived(to)) {
+             throw new InvalidSheetRequestException("The other sheet is archived");
+         }
+-        if (people.nameTaken(to, person.getName(), null)
+-                || person.getAliases().stream().anyMatch(alias -> people.nameOrAliasTaken(to, alias))
+-                || (person.getContact() != null && people.contactTaken(to, person.getContact(), null))) {
+-            throw new InvalidSheetRequestException("The other sheet already has this name, alias or contact");
++        Person into = matching(people, person, to);
++        if (into != null) {
++            into = people.lock(to, into.getId());
++            if (into.isRetired()) {
++                throw new InvalidSheetRequestException("A retired person cannot be merged into");
++            }
++        } else if (person.getContact() != null && people.contactTaken(to, person.getContact(), null)) {
++            throw new InvalidSheetRequestException("The other sheet already has this contact");
+         }
+         Snapshot toBefore = rollup.snapshot(to);
+-        long arrivedId = transfers.transfer(person, to);
+-        personOut.set(people.find(to, arrivedId));
+-        transferOut.set(new Transfer(person.getName(), sheetId, to, request.user(), toBefore));
++        long arrivedId = transfers.transfer(person, to, into);
++        Person arrived = people.find(to, arrivedId);
++        personOut.set(arrived);
++        transferOut.set(new Transfer(person.getName(), sheetId, to, request.user(), toBefore,
++                into != null ? arrived : null));
++    }
++
++    /** The one person on sheet `to` with the person's name or one of their aliases, as names are
++     *  compared, or null when there is none. Refused when they match more than one person there. */
++    private static Person matching(People people, Person person, String to) throws InvalidSheetRequestException {
++        java.util.Map<Long, Person> found = new java.util.LinkedHashMap<>();
++        for (String name : java.util.stream.Stream.concat(java.util.stream.Stream.of(person.getName()),
++                person.getAliases().stream()).toList()) {
++            Person there = people.named(to, name);
++            if (there != null) found.putIfAbsent(there.getId(), there);
++        }
++        if (found.size() > 1) {
++            throw new InvalidSheetRequestException("The other sheet has more than one person by these names");
++        }
++        return found.values().stream().findFirst().orElse(null);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Transfers.java b/src/main/java/net/officefloor/hq/app/person/Transfers.java
+index 4ba517a5..b368f8e2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Transfers.java
++++ b/src/main/java/net/officefloor/hq/app/person/Transfers.java
+@@ -37,11 +37,15 @@ public class Transfers {
+      *  opened (by the sheet's today when each was opened, then by the order they were added). Figures
+      *  a statement bound are lost, the statement count starts at 0, and references, locks and settle
+      *  batches are not carried. The person then leaves their sheet entirely: with their claims go
+-     *  their statements, holds, watches, patron links (either way), pool memberships and period totals. */
+-    public long transfer(Person person, String to) {
++     *  their statements, holds, watches, patron links (either way), pool memberships and period totals.
++     *  When `into` (a person on sheet `to`) is given, the person is merged into them instead, as a merge
++     *  does: their claims arrive as into's, listed after into's own (each renumbered as above, unbound);
++     *  their name and aliases become into's aliases; their grades, terms and contact are lost; and the
++     *  answer is into's id. */
++    public long transfer(Person person, String to, Person into) {
+         // The person arrives knowing the sheet they came from and their name there (the audit follows them back).
+         long fromId = person.getId();
+-        long toId = insertPerson(person, to);
++        long toId = into != null ? mergeInto(person, into) : insertPerson(person, to);
+ 
+         List<Claim> kept = new ArrayList<>(claims.ofPerson(person.getSheetId(), fromId));
+         Collections.reverse(kept); // oldest listed first, so they keep their order
+@@ -71,6 +75,17 @@ public class Transfers {
+         return toId;
+     }
+ 
++    /** The person's name and aliases become into's aliases; answers into's id. */
++    private long mergeInto(Person person, Person into) {
++        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) "
++                + "SELECT ?, ?, alias, alias_key FROM person_alias WHERE person_id = ? ORDER BY id",
++                into.getSheetId(), into.getId(), person.getId());
++        String name = person.getName().trim();
++        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",
++                into.getSheetId(), into.getId(), name, name);
++        return into.getId();
++    }
++
+     private long insertPerson(Person person, String to) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+diff --git a/src/main/resources/db/migration/V71__alias_merged_twice.sql b/src/main/resources/db/migration/V71__alias_merged_twice.sql
+new file mode 100644
+index 00000000..42652890
+--- /dev/null
++++ b/src/main/resources/db/migration/V71__alias_merged_twice.sql
+@@ -0,0 +1,5 @@
++-- A person merged in by a transfer brings their name and aliases as aliases, even one that equals,
++-- as names are compared, an alias already there: aliases are no longer unique on their sheet (the
++-- screens still refuse a new name or alias that is taken).
++DROP INDEX person_alias_sheet_key;
++CREATE INDEX person_alias_sheet_key ON person_alias (sheet_id, alias_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+index bc69dd6a..03c16861 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+@@ -1,6 +1,7 @@
+ # A steward transfers the person to another sheet by its id: they arrive there with their grades,
+-# terms, contact, aliases and claims (renumbered there), and leave this sheet entirely. Refused (400)
+-# for anyone else, a retired person, this sheet's own id, or a name, alias or contact already there.
++# terms, contact, aliases and claims (renumbered there), and leave this sheet entirely; a person there
++# with their name or an alias is merged into instead. Refused (400) for anyone else, a retired person,
++# this sheet's own id, a contact already there, or names matching more than one (or a retired) person.
+ validate:
+   class: net.officefloor.hq.app.person.ValidateTransfer
+   next: snapshot
