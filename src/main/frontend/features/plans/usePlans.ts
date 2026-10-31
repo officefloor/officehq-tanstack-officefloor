@@ -2,14 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
-/** A plan as the server sends it: its person, amount (two decimals), start, every N days, end
+/** A plan as the server sends it: its person, amount (two decimals), start, every N days (null when monthly) or day of
+ *  the month (null otherwise), end
  *  (yyyy-mm-dd) and how many claims it has made so far. */
 export type Plan = {
   id: number;
   personId: number;
   amount: string;
   start: string;
-  every: number;
+  every: number | null;
+  day: number | null;
   end: string;
   generated: number;
 };

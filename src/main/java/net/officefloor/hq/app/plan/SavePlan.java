@@ -15,7 +15,9 @@ public class SavePlan {
         if (values.end().isBefore(start)) {
             throw new InvalidSheetRequestException("The end date cannot be before the start");
         }
-        long id = plans.add(person.getSheetId(), person.getId(), values.amount(), start, values.every(), values.end());
-        plan.set(new Plan(id, person.getSheetId(), person.getId(), values.amount(), start, values.every(), values.end(), 0));
+        long id = plans.add(person.getSheetId(), person.getId(), values.amount(), start, values.every(), values.day(),
+                values.end());
+        plan.set(new Plan(id, person.getSheetId(), person.getId(), values.amount(), start, values.every(), values.day(),
+                values.end(), 0));
     }
 }

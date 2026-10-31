@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** For every plan on the sheet, in the order added, a DRAFT claim of the plan's amount for each plan
- *  date (the start, then every N days) up to its end and the sheet's today that it has not made yet,
+ *  date (the start, then every N days; or the day of the month in every month) up to its end and the sheet's today that it has not made yet,
  *  dated that day with an empty note, by the claim form's rules: a date the form refuses is skipped,
  *  and tried again the next time. Each claim is saved and audited as an added claim. */
 public class GeneratePlans {
@@ -37,7 +37,7 @@ public class GeneratePlans {
             Person person = persons.computeIfAbsent(plan.personId(), id -> people.find(sheetId, id));
             if (person == null) continue;
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.dates(last)) {
                 if (plans.made(plan.id(), date)) continue;
                 ClaimValues values = new ClaimValues(plan.amount(), date, "", null, actor.user(), null, null);
                 Claim claim;

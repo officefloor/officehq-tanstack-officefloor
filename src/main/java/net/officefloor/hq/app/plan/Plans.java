@@ -19,18 +19,21 @@ public class Plans {
 
     /** Every plan on the sheet, in the order added, with how many claims it has made so far. */
     public List<Plan> onSheet(String sheetId) {
-        return jdbc.query("SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date, "
+        return jdbc.query("SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, "
                 + "(SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) "
                 + "FROM plan p WHERE p.sheet_id = ? ORDER BY p.id",
                 (rs, i) -> new Plan(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getBigDecimal(4).setScale(2),
-                        rs.getDate(5).toLocalDate(), rs.getInt(6), rs.getDate(7).toLocalDate(), rs.getInt(8)),
+                        rs.getDate(5).toLocalDate(), rs.getObject(6, Integer.class), rs.getObject(7, Integer.class),
+                        rs.getDate(8).toLocalDate(), rs.getInt(9)),
                 sheetId);
     }
 
     /** Adds the plan; answers its id. */
-    public long add(String sheetId, long personId, BigDecimal amount, LocalDate start, int every, LocalDate end) {
-        jdbc.update("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date) VALUES (?, ?, ?, ?, ?, ?)",
-                sheetId, personId, amount, Date.valueOf(start), every, Date.valueOf(end));
+    public long add(String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
+            LocalDate end) {
+        jdbc.update("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, personId, amount, Date.valueOf(start), every, day,
+                Date.valueOf(end));
         return jdbc.queryForObject("SELECT MAX(id) FROM plan WHERE sheet_id = ? AND person_id = ?", Long.class,
                 sheetId, personId);
     }
