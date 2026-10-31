@@ -19,6 +19,14 @@ public class ValidateRate {
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request,
             Out<RateRequest> body, Out<Rate> rate, Out<Actor> actor) throws InvalidSheetRequestException {
+        Rate checked = checked(sheetId, request);
+        actor.set(new Actor(request.user()));
+        body.set(request);
+        rate.set(checked);
+    }
+
+    /** The rate the form's request sets, checked by the form's rules. */
+    static Rate checked(String sheetId, RateRequest request) throws InvalidSheetRequestException {
         if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
             throw new InvalidSheetRequestException("The grade must be A, B or C");
         }
@@ -31,9 +39,7 @@ public class ValidateRate {
         if (from != null && to != null && to.isBefore(from)) {
             throw new InvalidSheetRequestException("The to-date may not be before the from-date");
         }
-        actor.set(new Actor(request.user()));
-        body.set(request);
-        rate.set(new Rate(sheetId, request.grade(), new BigDecimal(pct).setScale(2), from, to));
+        return new Rate(sheetId, request.grade(), new BigDecimal(pct).setScale(2), from, to);
     }
 
     /** A yyyy-mm-dd date, or null when blank. */
