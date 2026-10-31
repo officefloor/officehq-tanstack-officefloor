@@ -1,0 +1,597 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index eb82cd2b..443ad07e 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -7,6 +7,11 @@ export class HttpError extends Error {
+ }
+ 
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
++  // While this screen shows the sheet as of a date (the `asof` search param, see
++  // features/asof/useAsOf.ts) every change is refused, before it reaches the store.
++  if (init?.method !== undefined && init.method !== 'GET' && asOfSet()) {
++    throw new HttpError(`${init.method} ${path} refused: the sheet is shown as of a date`, 409, '');
++  }
+   const res = await fetch(path, init);
+   if (!res.ok) {
+     const body = await res.text().catch(() => '');
+@@ -34,3 +39,7 @@ export function putJson<T>(path: string, body: unknown): Promise<T> {
+     body: JSON.stringify(body),
+   });
+ }
++
++function asOfSet(): boolean {
++  return (new URLSearchParams(window.location.search).get('asof') ?? '') !== '';
++}
+diff --git a/src/main/frontend/features/asof/asof.slot.tsx b/src/main/frontend/features/asof/asof.slot.tsx
+new file mode 100644
+index 00000000..c15b42b1
+--- /dev/null
++++ b/src/main/frontend/features/asof/asof.slot.tsx
+@@ -0,0 +1,40 @@
++import { useState } from 'react';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { useAsOf } from './useAsOf';
++
++/** Shows the sheet as of a date on this user's screen (or as it stands, when cleared), and the
++ *  date it is shown as of. */
++function AsOfPicker() {
++  const [asOf, setAsOf] = useAsOf();
++  const [date, setDate] = useState('');
++
++  return (
++    <form
++      data-testid="asof-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = date.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) setAsOf(trimmed);
++      }}
++    >
++      As of: <strong data-testid="sheet-asof">{asOf}</strong>{' '}
++      <label>
++        Show as of{' '}
++        <input
++          data-testid="asof-date"
++          placeholder="yyyy-mm-dd"
++          value={date}
++          onChange={(e) => setDate(e.target.value)}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="asof-set">
++        Set
++      </button>{' '}
++      <button type="button" data-testid="asof-clear" onClick={() => setAsOf(undefined)}>
++        Clear
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 1, Component: AsOfPicker });
+diff --git a/src/main/frontend/features/asof/useAsOf.ts b/src/main/frontend/features/asof/useAsOf.ts
+new file mode 100644
+index 00000000..f5db2cdc
+--- /dev/null
++++ b/src/main/frontend/features/asof/useAsOf.ts
+@@ -0,0 +1,21 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/**
++ * The date this user's screen shows the sheet as of (yyyy-mm-dd), or '' for the sheet as it stands.
++ * It lives in the URL (`asof`), so it is this screen's alone. While it is set every read is of the
++ * sheet as it stood at the end of that date, and every change is refused (see api/http.ts).
++ */
++export function useAsOf() {
++  return useSearchParam('asof', asString);
++}
++
++/** A read's query key: the live key, or one apart from it for the sheet as of a date. It keeps the
++ *  live key as its prefix, so invalidating the live key re-reads both. */
++export function asOfKey<K extends readonly unknown[]>(key: K, asOf: string): K {
++  return (asOf === '' ? key : [...key, { asOf }]) as unknown as K;
++}
++
++/** A read's path, asking for the sheet as of the date when one is set. */
++export function asOfPath(path: string, asOf: string): string {
++  return asOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
++}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index a508dde4..27ab48d5 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
+ import type { FloorOn } from '../settings/useSettings';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
+  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
+@@ -67,9 +68,10 @@ export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
+ 
+ /** Every claim on the sheet, newest first, re-read whenever the sheet is loaded. */
+ export function useClaims(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: claimsKey(sheet),
+-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
++    queryKey: asOfKey(claimsKey(sheet), asOf),
++    queryFn: () => getJson<Claim[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index a2d57b24..20e163d8 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** `version` counts the person's saves; an edit sends the version it loaded, so a save made by
+  *  someone else in the meantime refuses it. `statementCount` is how many statements have been
+@@ -56,9 +57,10 @@ export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
+ 
+ /** The sheet's people in the order they were added, re-read whenever the sheet is loaded. */
+ export function usePeople(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: peopleKey(sheet),
+-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
++    queryKey: asOfKey(peopleKey(sheet), asOf),
++    queryFn: () => getJson<Person[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/periods/usePeriods.ts b/src/main/frontend/features/periods/usePeriods.ts
+index 51120df4..54b42c71 100644
+--- a/src/main/frontend/features/periods/usePeriods.ts
++++ b/src/main/frontend/features/periods/usePeriods.ts
+@@ -4,6 +4,7 @@ import { claimDueCents, type Claim, type ClaimStatus, type Late } from '../claim
+ import { gradeOn, heldOn, type Person } from '../people/usePeople';
+ import { hundredths, rateOn, totalDue, type Rate } from '../rates/useRates';
+ import type { FloorOn } from '../settings/useSettings';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
+  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
+@@ -23,9 +24,10 @@ export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as cons
+ 
+ /** The sheet's periods, by from-date, re-read whenever the sheet is loaded. */
+ export function usePeriods(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: periodsKey(sheet),
+-    queryFn: () => getJson<Period[]>(`/api/sheets/${encodeURIComponent(sheet)}/periods`),
++    queryKey: asOfKey(periodsKey(sheet), asOf),
++    queryFn: () => getJson<Period[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 87010a05..e1f88fc3 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
+  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
+@@ -10,9 +11,10 @@ export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
+ 
+ /** The sheet's rates, by grade then from-date (the one with none first), re-read whenever the sheet is loaded. */
+ export function useRates(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: ratesKey(sheet),
+-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`),
++    queryKey: asOfKey(ratesKey(sheet), asOf),
++    queryFn: () => getJson<Rate[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 5855cc3c..3f0a9d6e 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import type { Late } from '../claims/useClaims';
+ import { useSheetToday } from '../sheet/useSheet';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** A role given to a user name: clerk (the default for any name) or steward. */
+ export type RoleEntry = { name: string; role: string };
+@@ -34,9 +35,10 @@ export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as co
+ 
+ /** The sheet's settings, re-read whenever the sheet is loaded. */
+ export function useSettings(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: settingsKey(sheet),
+-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`),
++    queryKey: asOfKey(settingsKey(sheet), asOf),
++    queryFn: () => getJson<Settings>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/sheet/useSheet.ts b/src/main/frontend/features/sheet/useSheet.ts
+index 36339094..a23b0062 100644
+--- a/src/main/frontend/features/sheet/useSheet.ts
++++ b/src/main/frontend/features/sheet/useSheet.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ export type Sheet = { id: string; today: string; archived: boolean };
+ 
+@@ -7,9 +8,10 @@ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+ 
+ /** The active sheet as the store holds it, re-read whenever the sheet is loaded. */
+ export function useSheet(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: sheetKey(sheet),
+-    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}`),
++    queryKey: asOfKey(sheetKey(sheet), asOf),
++    queryFn: () => getJson<Sheet>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 4660b3a2..e94e7cf0 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -21,12 +21,14 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
+   const take = useMutation({
+     mutationFn: (date: string) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user, asOf: date }),
+-    onSuccess: () => setAsOf(''),
+-    onSettled: () =>
+-      Promise.all([
++    // Taken or refused, the date is spent: the next press takes it as of a date only when one is typed again.
++    onSettled: () => {
++      setAsOf('');
++      return Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+-      ]),
++      ]);
++    },
+   });
+   const cancel = useMutation({
+     mutationFn: () =>
+diff --git a/src/main/frontend/features/watch/watch.slot.tsx b/src/main/frontend/features/watch/watch.slot.tsx
+index 2dc68e7d..3494f7d8 100644
+--- a/src/main/frontend/features/watch/watch.slot.tsx
++++ b/src/main/frontend/features/watch/watch.slot.tsx
+@@ -3,15 +3,17 @@ import { getJson, postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import type { Person } from '../people/usePeople';
+ import { useRowAction } from '../people/useRowAction';
++import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ const watchesKey = (sheet: string, user: string) => ['sheet', sheet, 'watches', user] as const;
+ 
+ /** The ids of the people on the sheet the signed-in user watches, re-read whenever the sheet is loaded. */
+ function useWatches(sheet: string, user: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: watchesKey(sheet, user),
++    queryKey: asOfKey(watchesKey(sheet, user), asOf),
+     queryFn: () =>
+-      getJson<number[]>(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`),
++      getJson<number[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`, asOf)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index 0c009731..6473006c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -2,14 +2,21 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithClaims {
+-    public void respond(@PathVariable("sheetId") String sheetId, Claims claims, Figures figures, ClaimLog log,
+-            ObjectResponse<List<ClaimResponse>> response) {
+-        Map<Long, List<String>> lines = log.onSheet(sheetId);
+-        response.send(claims.onSheet(sheetId).stream()
+-                .map(c -> ClaimResponse.from(c, figures, lines.getOrDefault(c.getId(), List.of()))).toList());
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Claims claims, Figures figures,
++            ClaimLog log, AsOf asOfSheet, ObjectResponse<List<ClaimResponse>> response)
++            throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf, () -> {
++            Map<Long, List<String>> lines = log.onSheet(sheetId);
++            return claims.onSheet(sheetId).stream()
++                    .map(c -> ClaimResponse.from(c, figures, lines.getOrDefault(c.getId(), List.of()))).toList();
++        }));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index dcc80bcc..74ac86f7 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -1,13 +1,17 @@
+ package net.officefloor.hq.app.period;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithPeriods {
+-    public void respond(@PathVariable("sheetId") String sheetId, Periods periods,
+-            ObjectResponse<List<PeriodResponse>> response) {
+-        response.send(periods.onSheet(sheetId).stream()
+-                .map(p -> PeriodResponse.from(p, periods.personTotals(p))).toList());
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Periods periods, AsOf asOfSheet,
++            ObjectResponse<List<PeriodResponse>> response) throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf, () -> periods.onSheet(sheetId).stream()
++                .map(p -> PeriodResponse.from(p, periods.personTotals(p))).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index a9f6222b..6a5a3c2d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithPeople {
+-    public void respond(@PathVariable("sheetId") String sheetId, People people,
+-            ObjectResponse<List<PersonResponse>> response) {
+-        response.send(people.onSheet(sheetId).stream().map(PersonResponse::from).toList());
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, People people, AsOf asOfSheet,
++            ObjectResponse<List<PersonResponse>> response) throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf,
++                () -> people.onSheet(sheetId).stream().map(PersonResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java b/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
+index 774fca51..a2203838 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
+@@ -1,13 +1,17 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithWatches {
+     public void respond(@PathVariable("sheetId") String sheetId, @RequestParam(value = "user", required = false) String user,
+-            Watches watches, ObjectResponse<List<Long>> response) {
+-        response.send(user == null || user.isBlank() ? List.of() : watches.watchedBy(sheetId, user.trim()));
++            @RequestParam(value = "asOf", required = false) String asOf, Watches watches, AsOf asOfSheet,
++            ObjectResponse<List<Long>> response) throws InvalidSheetRequestException {
++        response.send(user == null || user.isBlank() ? List.of()
++                : asOfSheet.view(sheetId, asOf, () -> watches.watchedBy(sheetId, user.trim())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index 16388bc0..54f9201b 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithRates {
+-    public void respond(@PathVariable("sheetId") String sheetId, Rates rates,
+-            ObjectResponse<List<RateResponse>> response) {
+-        response.send(rates.onSheet(sheetId).stream().map(RateResponse::from).toList());
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Rates rates, AsOf asOfSheet,
++            ObjectResponse<List<RateResponse>> response) throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf,
++                () -> rates.onSheet(sheetId).stream().map(RateResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java
+index 38064dbc..62f93c51 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java
+@@ -1,12 +1,16 @@
+ package net.officefloor.hq.app.settings;
+ 
++import net.officefloor.hq.app.sheet.AsOf;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithSettings {
+-    public void respond(@PathVariable("sheetId") String sheetId, Settings settings, Sheets sheets,
+-            ObjectResponse<SettingsResponse> response) {
+-        response.send(SettingsResponse.of(sheetId, sheets.today(sheetId), settings));
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Settings settings, Sheets sheets,
++            AsOf asOfSheet, ObjectResponse<SettingsResponse> response) throws InvalidSheetRequestException {
++        response.send(asOfSheet.view(sheetId, asOf, () -> SettingsResponse.of(sheetId, sheets.today(sheetId), settings)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+index 146eb37b..50203186 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.sheet;
+ import java.sql.Connection;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.LinkedHashMap;
+@@ -56,10 +57,25 @@ public class AsOf {
+         });
+     }
+ 
++    /** What a screen reads: `work` on the sheet as it stood at the end of the as-of date given (see
++     *  {@link #at}), or on the live sheet when none is given. Refused: an as-of that is not a date. */
++    public <T> T view(String sheetId, String asOfText, Supplier<T> work) throws InvalidSheetRequestException {
++        if (asOfText == null || asOfText.isBlank()) return work.get();
++        LocalDate date;
++        try {
++            date = LocalDate.parse(asOfText.trim());
++        } catch (DateTimeParseException e) {
++            throw new InvalidSheetRequestException("Not a date: " + asOfText);
++        }
++        return at(sheetId, date, work);
++    }
++
+     private void rebuild(String sheetId, LocalDate date) {
+         jdbc.update("DELETE FROM ASOF.sheet WHERE id = ?", sheetId);
+         jdbc.update("INSERT INTO ASOF.sheet SELECT * FROM PUBLIC.sheet WHERE id = ?", sheetId);
+-        jdbc.update("UPDATE ASOF.sheet SET today = ? WHERE id = ?", Date.valueOf(date), sheetId);
++        // Archived only by an archive made by then.
++        jdbc.update("UPDATE ASOF.sheet SET today = ?, archived = archived AND (archived_on IS NULL OR archived_on <= ?) "
++                + "WHERE id = ?", Date.valueOf(date), Date.valueOf(date), sheetId);
+         for (String table : TABLES) {
+             List<String> cols = columns(table);
+             String names = '"' + String.join("\", \"", cols) + '"';
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index ab66d52f..c56fca16 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -2,10 +2,15 @@ package net.officefloor.hq.app.sheet;
+ 
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet; seen as of a date (?asOf=), as it stood then, with that date for its today. */
+ public class RespondWithSheet {
+-    public void respond(@PathVariable("sheetId") String sheetId, Sheets sheets,
+-            ObjectResponse<SheetResponse> response) {
+-        response.send(new SheetResponse(sheetId, sheets.today(sheetId).toString(), sheets.archived(sheetId)));
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(value = "asOf", required = false) String asOf, Sheets sheets, AsOf asOfSheet,
++            ObjectResponse<SheetResponse> response) throws InvalidSheetRequestException {
++        sheets.today(sheetId);
++        response.send(asOfSheet.view(sheetId, asOf,
++                () -> new SheetResponse(sheetId, sheets.today(sheetId).toString(), sheets.archived(sheetId))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+index 7e56a5e0..10b4cdd7 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheets.java
+@@ -61,7 +61,7 @@ public class Sheets {
+ 
+     public void archive(String sheetId) {
+         today(sheetId);
+-        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", sheetId);
++        jdbc.update("UPDATE sheet SET archived = TRUE, archived_on = today WHERE id = ?", sheetId);
+     }
+ 
+     public void setToday(String sheetId, LocalDate today) {
+diff --git a/src/main/resources/db/migration/V47__sheet_archived_on.sql b/src/main/resources/db/migration/V47__sheet_archived_on.sql
+new file mode 100644
+index 00000000..1634eddd
+--- /dev/null
++++ b/src/main/resources/db/migration/V47__sheet_archived_on.sql
+@@ -0,0 +1,4 @@
++-- The sheet's today when it was archived, so a sheet seen as of an earlier date is not archived
++-- (see sheet.AsOf). Null for a sheet archived before this was kept: archived as of any date.
++ALTER TABLE public.sheet ADD COLUMN archived_on DATE;
++ALTER TABLE asof.sheet ADD COLUMN archived_on DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
+index 16927a4d..79f5aaf1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
+@@ -1,4 +1,5 @@
+ # Every claim on the sheet, newest first; the screen lists them under their people.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaims
+-  govern: [ readonly-transaction ]
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+index bee55d1b..87cafa31 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+@@ -1,4 +1,5 @@
+ # The sheet's people, in the order they were added.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPeople
+-  govern: [ readonly-transaction ]
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
+index 3461f5ca..3cf6d1fd 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
+@@ -1,4 +1,5 @@
+ # The sheet's periods, by from-date.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
+ respond:
+   class: net.officefloor.hq.app.period.RespondWithPeriods
+-  govern: [ readonly-transaction ]
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+index 98562bc3..7c9ed38f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+@@ -1,4 +1,5 @@
+ # The sheet's rates, by grade.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
+ respond:
+   class: net.officefloor.hq.app.rate.RespondWithRates
+-  govern: [ readonly-transaction ]
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+index ddba3965..958fc87a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+@@ -1,4 +1,5 @@
+ # The sheet's settings: its clerk limit and the roles given to user names.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
+ respond:
+   class: net.officefloor.hq.app.settings.RespondWithSettings
+-  govern: [ readonly-transaction ]
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml
+index 44b2afa8..03a8cf23 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches.GET.yml
+@@ -1,4 +1,5 @@
+ # The ids of the people on the sheet the given user (?user=) watches.
++# Seen as of a date (?asOf=), as it stood then; see sheet.AsOf.
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithWatches
+-  govern: [ readonly-transaction ]
++  govern: [ transaction ]
