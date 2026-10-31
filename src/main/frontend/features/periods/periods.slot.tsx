@@ -3,11 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { claimDueCents, live, useClaims } from '../claims/useClaims';
-import { gradeOn, usePeople } from '../people/usePeople';
-import { rateOn, totalDue, useRates } from '../rates/useRates';
+import { useClaims } from '../claims/useClaims';
+import { usePeople } from '../people/usePeople';
+import { useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
-import { DATE, periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
+import { DATE, periodDue, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /**
  * The sheet's periods, each with its due-total — the figures of everyone's counted (OPEN or
@@ -77,16 +77,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
     return null;
   };
 
-  const personOf = new Map(people.map((p) => [p.id, p]));
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  const dueIn = (period: Period) =>
-    period.closed && period.closedTotal !== null
-      ? period.closedTotal
-      : totalDue(
-          live(all, (id) => held.has(id))
-            .filter((c) => periodOf([period], c.date) !== undefined && personOf.has(c.personId))
-            .map((c) => claimDueCents(c, floor, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), late)),
-        );
+  const dueIn = (period: Period) => periodDue(period, all, people, rates, floor, late);
 
   return (
     <section data-testid="periods-panel">
