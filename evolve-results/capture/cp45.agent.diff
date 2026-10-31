@@ -1,0 +1,204 @@
+diff --git a/src/main/frontend/features/bulk/bulkSettle.slot.tsx b/src/main/frontend/features/bulk/bulkSettle.slot.tsx
+new file mode 100644
+index 00000000..def96193
+--- /dev/null
++++ b/src/main/frontend/features/bulk/bulkSettle.slot.tsx
+@@ -0,0 +1,52 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { claimsKey } from '../claims/useClaims';
++import { useSelectedClaims } from './useSelectedClaims';
++
++/**
++ * Settle the ticked claims together, by the signed-in user. Each that can be settled is settled
++ * (or goes PENDING) in list order (people in list order, each person's newest claim first); each
++ * that cannot is left as it is. Shows how many were settled and how many refused; the counts go
++ * while the next press runs.
++ */
++function BulkSettle({ user, sheet }: { user: string; sheet: string }) {
++  const queryClient = useQueryClient();
++  const [selected, setSelected] = useSelectedClaims();
++  const bulk = useMutation({
++    mutationFn: (claimIds: number[]) =>
++      postJson<{ settled: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheet)}/bulk-settle`, { claimIds, user }),
++    onSuccess: () => setSelected([]),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++  });
++  return (
++    <section data-testid="bulk-settle-panel">
++      <button
++        type="button"
++        data-testid="bulk-settle"
++        disabled={bulk.isPending}
++        onClick={() => {
++          bulk.reset();
++          bulk.mutate(selected);
++        }}
++      >
++        Settle selected ({selected.length})
++      </button>
++      {bulk.isSuccess && (
++        <span>
++          {' '}
++          Settled <strong data-testid="bulk-settled">{bulk.data.settled}</strong>, refused{' '}
++          <strong data-testid="bulk-settle-refused">{bulk.data.refused}</strong>
++        </span>
++      )}
++      {bulk.isError && (
++        <span data-testid="bulk-settle-error" role="alert">
++          {' '}
++          {selected.length === 0 ? 'Select the claims to settle.' : 'Could not settle the selected claims.'}
++        </span>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 16, Component: BulkSettle });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettle.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettle.java
+new file mode 100644
+index 00000000..a1a9c889
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettle.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.Set;
++
++/** A validated bulk settle: the selected claims and who settles them. */
++public record BulkSettle(Set<Long> claimIds, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleRequest.java
+new file mode 100644
+index 00000000..83c9619d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of a bulk settle: the selected claims' ids and who settles them. */
++public record BulkSettleRequest(List<Long> claimIds, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleResult.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleResult.java
+new file mode 100644
+index 00000000..c4f338cb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** How many of the selected claims a bulk settle settled (a claim gone PENDING counts), and how many it refused. */
++public record BulkSettleResult(int settled, int refused) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkSettle.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkSettle.java
+new file mode 100644
+index 00000000..fa00f97a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkSettle.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkSettle {
++    public void respond(@Val BulkSettleResult result, ObjectResponse<BulkSettleResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+new file mode 100644
+index 00000000..b785f412
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -0,0 +1,47 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Snapshot;
++import net.officefloor.hq.app.settings.Settings;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Settles each selected claim that can be settled, in list order (people in list order, each
++ *  person's newest claim first), by the signed-in user. Each is settled as a single settle would
++ *  be — its own audit line, then the figures it moved; one that goes PENDING counts as settled. One
++ *  that cannot be settled (or is not on the sheet) is left as it is and counted as refused. */
++public class SettleClaims {
++    public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettle bulk, Claims claims, People people,
++            ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
++            ClaimLog log, Audit audit, Out<BulkSettleResult> result) {
++        ClaimStatusChange change = new ClaimStatusChange(ClaimAction.SETTLE, bulk.user());
++        ApplyClaimStatus apply = new ApplyClaimStatus();
++        RecordClaimStatusChanged record = new RecordClaimStatusChanged();
++        List<Claim> all = claims.onSheet(sheetId);
++        int settled = 0;
++        for (Person person : people.onSheet(sheetId)) {
++            for (Claim listed : all) {
++                if (listed.getPersonId() != person.getId() || !bulk.claimIds().contains(listed.getId())) continue;
++                Claim claim = claims.find(sheetId, listed.getId());
++                Snapshot before = rollup.snapshot(sheetId);
++                try {
++                    apply.apply(change, claim, numbers, people, figures, closedPeriods, settings);
++                } catch (ClaimStatusRefusedException | PeriodClosedException e) {
++                    continue;
++                }
++                claims.save(claim);
++                record.record(change, claim, people, log, audit);
++                rollup.record(sheetId, before, bulk.user());
++                settled++;
++            }
++        }
++        result.set(new BulkSettleResult(settled, bulk.claimIds().size() - settled));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateBulkSettle.java b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkSettle.java
+new file mode 100644
+index 00000000..84fdcae7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkSettle.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.LinkedHashSet;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateBulkSettle {
++    public void validate(@RequestBody BulkSettleRequest request, Out<BulkSettle> body) throws InvalidSheetRequestException {
++        if (request == null || request.claimIds() == null || request.claimIds().isEmpty()) {
++            throw new InvalidSheetRequestException("Select the claims to settle");
++        }
++        body.set(new BulkSettle(new LinkedHashSet<>(request.claimIds()), request.user()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+new file mode 100644
+index 00000000..22fb1dcc
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+@@ -0,0 +1,13 @@
++# Settle the selected claims together. Each that can be settled is settled (or goes PENDING) and
++# audited as a single settle would be, in list order; each that cannot is left as it is. Answers
++# how many of each.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateBulkSettle
++  next: settle
++settle:
++  class: net.officefloor.hq.app.claim.SettleClaims
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithBulkSettle
++  govern: [ transaction ]
