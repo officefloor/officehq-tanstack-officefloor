@@ -1,0 +1,88 @@
+diff --git a/src/main/frontend/features/active/active.slot.tsx b/src/main/frontend/features/active/active.slot.tsx
+new file mode 100644
+index 00000000..23f3b5c0
+--- /dev/null
++++ b/src/main/frontend/features/active/active.slot.tsx
+@@ -0,0 +1,18 @@
++import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
++import { useClaims } from '../claims/useClaims';
++import type { Person } from '../people/usePeople';
++import { useSheetToday } from '../sheet/useSheet';
++import { isActive } from './active';
++
++/** Whether a person is active: yes when they have an OPEN or PENDING claim that counts dated within
++ *  the 30 days up to and including the sheet's today. */
++function PersonActive({ sheet, person }: { user: string; sheet: string; person: Person }) {
++  const { data: all = [] } = useClaims(sheet);
++  const today = useSheetToday(sheet);
++  return <td data-testid="person-active">{isActive(person, all, today) ? 'yes' : 'no'}</td>;
++}
++
++export const contributions = [
++  PersonColumns.fill({ order: 12, Component: () => <th>Active</th> }),
++  PersonCells.fill({ order: 12, Component: PersonActive }),
++];
+diff --git a/src/main/frontend/features/active/active.ts b/src/main/frontend/features/active/active.ts
+new file mode 100644
+index 00000000..c6c413a6
+--- /dev/null
++++ b/src/main/frontend/features/active/active.ts
+@@ -0,0 +1,22 @@
++import { isOpen, live, type Claim } from '../claims/useClaims';
++import { heldOn, type Person } from '../people/usePeople';
++
++/** How many days back from the sheet's today a claim keeps its person active: dated within the 30
++ *  days up to and including today (today and the 29 days before it). */
++const ACTIVE_DAYS = 30;
++
++/** The yyyy-mm-dd `days` days before `date`. */
++function daysBefore(date: string, days: number): string {
++  return new Date(Date.parse(`${date}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
++}
++
++/** Whether a person is active on the sheet's `today`: they have an OPEN or PENDING claim that counts
++ *  (see `live`) dated within the 30 days up to and including today. `claims` may be the whole sheet's. */
++export function isActive(person: Person, claims: Claim[], today: string): boolean {
++  if (today === '') return false;
++  const since = daysBefore(today, ACTIVE_DAYS - 1);
++  return live(
++    claims.filter((c) => c.personId === person.id),
++    (_, date) => heldOn(person, date),
++  ).some((c) => isOpen(c) && c.date >= since && c.date <= today);
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 5b9ae766..b641d070 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,4 +1,5 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { isActive } from '../active/active';
+ import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
+ import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
+ import { periodDue, usePeriods } from '../periods/usePeriods';
+@@ -8,7 +9,8 @@ import { useSheetToday } from '../sheet/useSheet';
+ 
+ /**
+  * The sheet in figures, each worked out as the list works it out. Per grade: how many people not
+- * retired are on it on the sheet's today, and their due-totals added up (n/a ones skipped). Per
++ * retired are on it on the sheet's today, their due-totals added up (n/a ones skipped), and how many
++ * of them are active. Per
+  * period: its due-total. Per status: how many of the sheet's claims have it.
+  */
+ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
+@@ -40,6 +42,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
+             <th>Grade</th>
+             <th>People</th>
+             <th>Due</th>
++            <th>Active</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -50,6 +53,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>{totalDue(on.map(dueOf))}</td>
++                <td data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(p, all, today)).length}</td>
+               </tr>
+             );
+           })}
