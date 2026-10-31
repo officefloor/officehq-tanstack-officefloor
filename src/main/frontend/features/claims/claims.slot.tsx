@@ -15,6 +15,7 @@ import {
   claimDueCents,
   claimed,
   claimsKey,
+  isOpen,
   live,
   overdue,
   overdueFigures,
@@ -120,6 +121,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const cap = useCap(sheet);
   // The sum of their figures; their due-total is at most the cap, the rest their excess.
   const dueSum = personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
+  // The due-total before the cap, split (an n/a part shows 0.00): their SETTLED claims' figures, and their OPEN and PENDING ones'.
+  const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
+  const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
   const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
   const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
@@ -386,6 +390,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
       <td data-testid="person-claimed">{claimed(liveClaims)}</td>
       <td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td>
       <td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td>
+      <td data-testid="person-settled-total">{showDue(settledSum ?? 0n)}</td>
+      <td data-testid="person-open-total">{showDue(openSum ?? 0n)}</td>
       <td data-testid="person-overdue-count">{late.count}</td>
       <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
       <td>
@@ -681,6 +687,8 @@ export const contributions = [
         <th>Claimed</th>
         <th>Due</th>
         <th>Excess</th>
+        <th>Settled</th>
+        <th>Open</th>
         <th>Overdue</th>
         <th>Overdue due</th>
         <th>Claims</th>
