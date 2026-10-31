@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -72,7 +72,7 @@ public class Claims {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, number, opened_by, split_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -82,6 +82,9 @@ public class Claims {
             ps.setString(6, claim.getStatus().name());
             ps.setString(7, claim.getCorrects());
             ps.setDate(8, Date.valueOf(claim.getDueBy()));
+            ps.setString(9, claim.getNumber());
+            ps.setString(10, claim.getOpenedBy());
+            ps.setString(11, claim.getSplitFrom());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -97,6 +100,7 @@ public class Claims {
         claim.setCorrects(rs.getString("corrects"));
         claim.setDueBy(rs.getDate("due_by").toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
+        claim.setSplitFrom(rs.getString("split_from"));
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");
         claim.setDeferredUntil(until != null ? until.toLocalDate() : null);

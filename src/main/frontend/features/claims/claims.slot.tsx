@@ -38,6 +38,8 @@ const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be de
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
 const NEEDS_PROOF = "A claim whose due is above the sheet's proof threshold cannot be settled or approved until it has a proof.";
 const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one dated in a closed period.';
+const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor dated in a closed period) can be split, by a user whose role may open a claim.";
+const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the claim's amount, with up to two decimals.";
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 
 const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
@@ -65,6 +67,9 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one dated in a closed period); one whose due is above the sheet's proof threshold on its date
  * cannot be settled or approved while it has none.
+ * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
+ * OPEN claim with the same date and note, the next number, opened by the user, which shows the
+ * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
  */
 function PersonClaims({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -101,6 +106,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The person chosen to reassign each claim to, by claim id.
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
+  // The amount typed for splitting each claim, by claim id.
+  const [splitOff, setSplitOff] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   const submitOnce = useSubmitOnce();
@@ -176,6 +183,20 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/proof`, { user }),
     onMutate: () => setRefused(null),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_PROVE }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // An amount split off an OPEN claim into a new OPEN claim.
+  const split = useMutation({
+    mutationFn: (c: { id: number; amount: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/split`, { amount: c.amount, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setSplitOff((s) => ({ ...s, [c.id]: '' })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && (e.status === 400 || e.body.includes('less than')) ? BAD_SPLIT : CANNOT_SPLIT,
+      }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -336,6 +357,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+              <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <button
                 type="button"
                 data-testid="claim-proof"
@@ -402,6 +424,32 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => defer.mutate({ id: c.id, until: (deferTo[c.id] ?? '').trim() })}
               >
                 Defer
+              </button>{' '}
+              <input
+                data-testid="claim-split-amount"
+                aria-label="Amount to split off"
+                placeholder="0.00"
+                value={splitOff[c.id] ?? ''}
+                onChange={(e) => {
+                  setSplitOff({ ...splitOff, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-split"
+                disabled={split.isPending}
+                onClick={() => {
+                  const amount = (splitOff[c.id] ?? '').trim();
+                  if (!/^\d+(\.\d{1,2})?$/.test(amount)) {
+                    // Refused here, before anything is sent: the store is untouched.
+                    setRefused({ id: c.id, message: BAD_SPLIT });
+                    return;
+                  }
+                  split.mutate({ id: c.id, amount });
+                }}
+              >
+                Split
               </button>{' '}
               <select
                 data-testid="claim-reassign-to"

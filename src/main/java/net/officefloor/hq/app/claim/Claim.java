@@ -22,6 +22,7 @@ public class Claim {
     private LocalDate deferredUntil;
     private boolean deferred;
     private int proofs;
+    private String splitFrom;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -84,6 +85,9 @@ public class Claim {
      *  date cannot be settled or approved while it has none. */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
+    /** The number of the claim this one was split off; null when it was not split off one. */
+    public String getSplitFrom() { return splitFrom; }
+    public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

@@ -55,6 +55,8 @@ export type Claim = {
   /** How many proofs the claim has: one whose due is above the sheet's proof threshold on its date
    *  cannot be settled or approved while it has none. */
   proofs: number;
+  /** The number of the claim this one was split off; null when it was not split off one. */
+  splitFrom: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
