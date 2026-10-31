@@ -17,6 +17,8 @@ public class RecordSettingChanged {
         if (change.terms() != null) {
             audit.record(prefix + " key=terms value=" + change.terms());
         }
+        change.gradeTerms().forEach((grade, terms) ->
+                audit.record(prefix + " key=terms-" + grade + " value=" + (terms != null ? terms : "")));
         if (change.latePct() != null) {
             audit.record(prefix + " key=late-pct value=" + change.latePct().toPlainString());
         }

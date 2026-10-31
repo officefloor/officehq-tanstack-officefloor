@@ -18,6 +18,7 @@ public class Claim {
     private boolean stated;
     private BigDecimal statedDue;
     private String corrects;
+    private LocalDate dueBy;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -64,6 +65,10 @@ public class Claim {
     /** The number of the SETTLED claim of the same person this correction corrects; null when it is not a correction. */
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
+    /** The date the claim is due by, fixed when it was added: its date then plus the terms of its
+     *  person's grade in force on that date. Later changes to the terms or the claim's date leave it. */
+    public LocalDate getDueBy() { return dueBy; }
+    public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

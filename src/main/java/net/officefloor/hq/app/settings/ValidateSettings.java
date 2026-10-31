@@ -3,6 +3,9 @@ package net.officefloor.hq.app.settings;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
@@ -16,6 +19,9 @@ public class ValidateSettings {
 
     /** Terms: a whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+
+    /** The grades terms can be set for. */
+    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
@@ -33,6 +39,19 @@ public class ValidateSettings {
         String terms = request == null || request.terms() == null ? null : request.terms().trim();
         if (terms != null && !terms.isEmpty() && !DAYS.matcher(terms).matches()) {
             throw new InvalidSheetRequestException("The terms must be a whole number of days, or blank");
+        }
+        Map<String, Integer> gradeTerms = new TreeMap<>();
+        if (request != null && request.gradeTerms() != null) {
+            for (Map.Entry<String, String> e : request.gradeTerms().entrySet()) {
+                if (!GRADES.contains(e.getKey())) {
+                    throw new InvalidSheetRequestException("Terms can be set only for grade A, B or C");
+                }
+                String days = e.getValue() == null ? "" : e.getValue().trim();
+                if (!days.isEmpty() && !DAYS.matcher(days).matches()) {
+                    throw new InvalidSheetRequestException("The terms of a grade must be a whole number of days, or blank");
+                }
+                gradeTerms.put(e.getKey(), days.isEmpty() ? null : Integer.parseInt(days));
+            }
         }
         String late = request == null || request.latePct() == null ? null : request.latePct().trim();
         if (late != null && !late.isEmpty() && !PCT.matcher(late).matches()) {
@@ -63,6 +82,6 @@ public class ValidateSettings {
                 floor == null ? null : floor.isEmpty() ? Settings.DEFAULT_FLOOR : new BigDecimal(floor).setScale(2),
                 terms == null ? null : terms.isEmpty() ? Settings.DEFAULT_TERMS : Integer.parseInt(terms),
                 late == null ? null : late.isEmpty() ? Settings.DEFAULT_LATE_PCT : new BigDecimal(late).setScale(2),
-                policy != null, policyDate, numbering != null, numberingFrom, by));
+                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms, by));
     }
 }

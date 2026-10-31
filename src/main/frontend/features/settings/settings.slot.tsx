@@ -4,15 +4,16 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
-import { DAYS, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
+import { DAYS, TERM_GRADES, LIMIT, PERCENT, POLICY_DATE, ROLES, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string> };
 
 /**
  * The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
  * it; blank is no limit), its floor (a claim's live due is at least it; blank is the default, 1.00),
- * its terms (a claim is due by its date plus this many days; blank is the default, 14), its late
+ * its terms (a claim is due by its date plus this many days; blank is the default, 14), the terms
+ * of each grade (a claim of a person of that grade is due by them; blank uses the sheet's terms), its late
  * percent (an overdue claim's due gains it of its figure for every full 30 days; blank is 0.00),
  * its policy date (a claim dated before it rounds half up, on or after it half to even; blank is
  * the sheet's today), its period numbering from (while it is a date on or before the sheet's
@@ -24,7 +25,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, gradeTerms: {} });
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -34,7 +35,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const saveSettings = useMutation({
     mutationFn: (e: SettingsEdit) => postJson<Settings>(`${base}/settings`, { ...e, user }),
     onSuccess: (saved) => {
-      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null });
+      setEdit({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, gradeTerms: {} });
       queryClient.setQueryData(settingsKey(sheet), saved);
       // The policy date decides how each claim's live figures round.
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
@@ -55,7 +56,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     setLimitInvalid(false);
   };
   // A field is set by the next save once it has been touched, starting from the value in force.
-  const touch = (key: keyof SettingsEdit, current: string) =>
+  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms'>, current: string) =>
     setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
   const clearRoleError = () => {
     saveRole.reset();
@@ -75,10 +76,12 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const latePct = edit.latePct?.trim() ?? null;
           const policyDate = edit.policyDate?.trim() ?? null;
           const periodNumberingFrom = edit.periodNumberingFrom?.trim() ?? null;
+          const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           if (
             (limit !== null && !LIMIT.test(limit)) ||
             (floor !== null && !LIMIT.test(floor)) ||
             (terms !== null && !DAYS.test(terms)) ||
+            Object.values(gradeTerms).some((v) => !DAYS.test(v)) ||
             (latePct !== null && !PERCENT.test(latePct)) ||
             (policyDate !== null && !POLICY_DATE.test(policyDate)) ||
             (periodNumberingFrom !== null && !POLICY_DATE.test(periodNumberingFrom))
@@ -89,7 +92,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom }));
+          submitOnce(() => saveSettings.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, gradeTerms }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -145,6 +148,28 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        {TERM_GRADES.map((g) => {
+          const own = data?.gradeTerms?.[g] !== undefined ? String(data.gradeTerms[g]) : '';
+          return (
+            <span key={g}>
+              Terms {g}:{' '}
+              <strong data-testid={`setting-terms-${g}-current`}>{saveSettings.isPending ? '' : own}</strong>{' '}
+              <label>
+                Set to{' '}
+                <input
+                  data-testid={`setting-terms-${g}`}
+                  placeholder="blank: the sheet's terms"
+                  value={edit.gradeTerms[g] ?? own}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEdit((was) => ({ ...was, gradeTerms: { ...was.gradeTerms, [g]: value } }));
+                    clearSettingsError();
+                  }}
+                />
+              </label>{' '}
+            </span>
+          );
+        })}
         Late percent:{' '}
         <strong data-testid="setting-late-pct-current">
           {saveSettings.isPending ? '' : (data?.latePct ?? '')}
@@ -202,7 +227,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
         {(limitInvalid || saveSettings.isError) && (
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
-            limit, a blank floor is 1.00), the terms a whole number of days (blank is 14), and the late percent a percent with up to
+            limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
             two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off).
           </span>
         )}

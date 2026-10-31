@@ -4,10 +4,13 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms, its late percent, its policy date and its period numbering from. */
+/** Each sheet's settings: the roles given to user names, its clerk limit, its floor, its terms (and any per grade), its late percent, its policy date and its period numbering from. */
 @Repository
 public class Settings {
 
@@ -72,6 +75,36 @@ public class Settings {
 
     public void setTerms(String sheetId, int terms) {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, terms) KEY (sheet_id) VALUES (?, ?)", sheetId, terms);
+    }
+
+    /** The terms of `grade` on the sheet: its own when set, else the sheet's terms. */
+    public int terms(String sheetId, String grade) {
+        Integer own = gradeTerms(sheetId, grade);
+        return own != null ? own : terms(sheetId);
+    }
+
+    /** The terms set for `grade` on the sheet, or null when the grade uses the sheet's terms. */
+    public Integer gradeTerms(String sheetId, String grade) {
+        return jdbc.query("SELECT terms FROM sheet_grade_terms WHERE sheet_id = ? AND grade = ?",
+                (rs, i) -> rs.getInt("terms"), sheetId, grade).stream().findFirst().orElse(null);
+    }
+
+    /** Every grade's own terms on the sheet, by grade. */
+    public Map<String, Integer> gradeTerms(String sheetId) {
+        Map<String, Integer> terms = new TreeMap<>();
+        jdbc.query("SELECT grade, terms FROM sheet_grade_terms WHERE sheet_id = ?",
+                (RowCallbackHandler) rs -> terms.put(rs.getString("grade"), rs.getInt("terms")), sheetId);
+        return terms;
+    }
+
+    /** Set `grade`'s own terms, or with null clear them so the grade uses the sheet's terms. */
+    public void setGradeTerms(String sheetId, String grade, Integer terms) {
+        if (terms == null) {
+            jdbc.update("DELETE FROM sheet_grade_terms WHERE sheet_id = ? AND grade = ?", sheetId, grade);
+        } else {
+            jdbc.update("MERGE INTO sheet_grade_terms (sheet_id, grade, terms) KEY (sheet_id, grade) VALUES (?, ?, ?)",
+                    sheetId, grade, terms);
+        }
     }
 
     /** The sheet's late percent: an overdue claim's due gains it of its figure for every full 30 days

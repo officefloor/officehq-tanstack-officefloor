@@ -37,6 +37,9 @@ export type Claim = {
    *  even: half up when it is dated before the sheet's policy date (a correction goes by the date of
    *  the claim it corrects). */
   halfUp: boolean;
+  /** The date the claim is due by (yyyy-mm-dd), fixed when it was added from the terms of its
+   *  person's grade then; later changes to the terms or the claim's date leave it. */
+  dueBy: string;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -100,8 +103,8 @@ function claimFigureCents(claim: Claim, floor: string, pct: string | undefined):
   return due < least && !isCorrection(claim) ? least : due;
 }
 
-/** What makes an overdue claim's due grow: the sheet's `terms`, its `today` and its late percent `pct`. */
-export type Late = { terms: number; today: string; pct: string };
+/** What makes an overdue claim's due grow: the sheet's `today` and its late percent `pct`. */
+export type Late = { today: string; pct: string };
 
 /** Whole days from one yyyy-mm-dd to another. */
 function daysBetween(from: string, to: string): number {
@@ -112,8 +115,8 @@ function daysBetween(from: string, to: string): number {
  *  30 days it is overdue, rounded by the claim's rounding (`halfUp`). Nothing while it is not overdue. Never bound by a
  *  statement: it follows the sheet's today. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
-  if (!overdue(claim, late.terms, late.today) || isCorrection(claim)) return 0n;
-  const periods = BigInt(Math.floor(daysBetween(dueBy(claim, late.terms), late.today) / 30));
+  if (!overdue(claim, late.today) || isCorrection(claim)) return 0n;
+  const periods = BigInt(Math.floor(daysBetween(claim.dueBy, late.today) / 30));
   if (periods <= 0n) return 0n;
   // cents * hundredths-of-a-percent is in ten-thousandths of a cent.
   const product = figure * hundredths(late.pct) * periods;
@@ -138,22 +141,15 @@ export function personDueCents(claims: Claim[], floor: string, pct: string | und
   return pct === undefined && !any ? null : sum;
 }
 
-/** A claim's due-by (yyyy-mm-dd): its date plus the sheet's `terms` in days. */
-export function dueBy(claim: Claim, terms: number): string {
-  const d = new Date(`${claim.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
-}
-
 /** Whether a claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's `today`. */
-export function overdue(claim: Claim, terms: number, today: string): boolean {
-  return isOpen(claim) && today !== '' && dueBy(claim, terms) < today;
+export function overdue(claim: Claim, today: string): boolean {
+  return isOpen(claim) && today !== '' && claim.dueBy < today;
 }
 
 /** These claims' overdue ones: their count, and their dues with late charges added up in cents (n/a ones skipped).
  *  `pctOn` is the rate in force on a claim's date. */
 export function overdueFigures(claims: Claim[], late: Late, floor: string, pctOn: (date: string) => string | undefined): { count: number; cents: bigint } {
-  const over = claims.filter((c) => overdue(c, late.terms, late.today));
+  const over = claims.filter((c) => overdue(c, late.today));
   const cents = over.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c.date), late) ?? 0n), 0n);
   return { count: over.length, cents };
 }

@@ -15,7 +15,6 @@ import {
   claimDueCents,
   claimed,
   claimsKey,
-  dueBy,
   live,
   overdue,
   overdueFigures,
@@ -48,7 +47,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * PENDING ones while the person is held.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
- * Each claim shows its due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and
+ * Each claim shows its due-by (fixed when it was added, from the terms of its person's grade) and whether it is overdue (OPEN and
  * due by before the sheet's today); the person shows how many of the claims that count are overdue
  * and their dues added up.
  * A steward can reassign a DRAFT, OPEN or PENDING claim to another person on the sheet: it keeps its
@@ -68,7 +67,6 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const pct = rateOn(rates, gradeOn(person, today), today);
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);
-  const terms = lateBy.terms;
   const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
@@ -281,8 +279,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
-              <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
-              <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-due-by">{c.dueBy}</span>{' '}
+              <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}
               {ACTIONS.map((action) => (
                 <span key={action}>
                   {action === 'reject' && (

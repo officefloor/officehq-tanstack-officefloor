@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects FROM claim";
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -70,7 +70,7 @@ public class Claims {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -79,6 +79,7 @@ public class Claims {
             ps.setString(5, claim.getNote());
             ps.setString(6, claim.getStatus().name());
             ps.setString(7, claim.getCorrects());
+            ps.setDate(8, Date.valueOf(claim.getDueBy()));
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
@@ -92,6 +93,7 @@ public class Claims {
         claim.setStated(rs.getBoolean("stated"));
         claim.setStatedDue(rs.getBigDecimal("stated_due"));
         claim.setCorrects(rs.getString("corrects"));
+        claim.setDueBy(rs.getDate("due_by").toLocalDate());
         return claim;
     }
 }

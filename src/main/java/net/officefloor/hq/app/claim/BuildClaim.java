@@ -5,16 +5,17 @@ import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRetiredException;
+import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Builds the new claim, refusing one dated in a closed period or after its person's retirement date,
+/** Builds the new claim, its due-by fixed from the terms of its person's grade in force on its date, refusing one dated in a closed period or after its person's retirement date,
  *  and a correction that does not name a SETTLED claim of the same person. */
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
-            Claims claims, Out<Claim> claim) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+            Claims claims, Settings settings, Out<Claim> claim) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         LocalDate date = values.date() != null ? values.date() : sheets.today(person.getSheetId());
         closedPeriods.refuse(person.getSheetId(), date);
         person.refuseRetired(date);
@@ -22,6 +23,7 @@ public class BuildClaim {
         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
                 ClaimStatus.DRAFT, null, null, null);
         built.setCorrects(values.corrects());
+        built.setDueBy(date.plusDays(settings.terms(person.getSheetId(), person.gradeOn(date))));
         claim.set(built);
     }
 
