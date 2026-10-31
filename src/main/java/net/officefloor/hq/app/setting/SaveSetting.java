@@ -72,6 +72,14 @@ public class SaveSetting {
             response.send(settings.load(sheetId));
             return;
         }
+        if (ValidateSetting.SCORE_LOG.equals(setting.key())) {
+            settings.setScoreLog(sheetId, setting.text() != null);
+            audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()
+                    + " key=" + setting.key() + " value=" + (setting.text() == null ? "" : "on"));
+            rollup.recordChanges(sheetId, setting.user(), before);
+            response.send(settings.load(sheetId));
+            return;
+        }
         if (ValidateSetting.GRACE_DAYS.equals(setting.key())) {
             settings.setGraceDays(sheetId, setting.value() == null ? null : setting.value().intValue());
             audit.recordOnCommit("SETTING_CHANGED sheet=" + sheetId + " by=" + setting.user()

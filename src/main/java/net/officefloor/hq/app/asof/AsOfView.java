@@ -490,7 +490,8 @@ public class AsOfView {
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
                 plain.getOrDefault(Settings.ESCALATE, ""), plain.getOrDefault(Settings.REVIEW_SLA, ""),
                 plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""),
-                plain.getOrDefault(ValidateSetting.SCORE_MID, ""), plain.getOrDefault(ValidateSetting.SCORE_HIGH, ""));
+                plain.getOrDefault(ValidateSetting.SCORE_MID, ""), plain.getOrDefault(ValidateSetting.SCORE_HIGH, ""),
+                plain.getOrDefault(ValidateSetting.SCORE_LOG, ""));
     }
 
     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */

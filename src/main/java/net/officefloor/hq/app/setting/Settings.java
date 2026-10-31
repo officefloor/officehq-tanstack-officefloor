@@ -286,6 +286,18 @@ public class Settings {
         plainHistory(sheetId, key, value == null ? "" : String.valueOf(value));
     }
 
+    /** Whether the sheet's score log is on. */
+    public boolean scoreLog(String sheetId) {
+        sheets.today(sheetId); // the sheet's row holds the score log
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT score_log FROM sheet WHERE id = ?", Boolean.class, sheetId));
+    }
+
+    public void setScoreLog(String sheetId, boolean on) {
+        sheets.today(sheetId);
+        jdbc.update("UPDATE sheet SET score_log = ? WHERE id = ?", on, sheetId);
+        plainHistory(sheetId, ValidateSetting.SCORE_LOG, on ? "on" : "");
+    }
+
     private static String scoreColumn(String key) {
         return ValidateSetting.SCORE_HIGH.equals(key) ? "score_high" : "score_mid";
     }
@@ -514,6 +526,7 @@ public class Settings {
                 reviewThreshold == null ? "" : reviewThreshold.setScale(2).toPlainString(),
                 escalate == null ? "" : String.valueOf(escalate), reviewSla == null ? "" : String.valueOf(reviewSla),
                 String.join(",", proofKinds(sheetId)), Objects.toString(defaultGradeSet(sheetId), ""),
-                scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh));
+                scoreMid == null ? "" : String.valueOf(scoreMid), scoreHigh == null ? "" : String.valueOf(scoreHigh),
+                scoreLog(sheetId) ? "on" : "");
     }
 }

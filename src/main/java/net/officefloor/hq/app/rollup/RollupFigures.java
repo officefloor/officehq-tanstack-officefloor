@@ -6,6 +6,6 @@ import java.util.Map;
  *  sheet's totals, all as shown ("n/a" for a due-total with no figure). */
 public record RollupFigures(Map<Long, PersonFigures> people, String claimedTotal, String dueTotal, String overdueTotal) {
 
-    public record PersonFigures(String name, String claimed, String dueTotal, String overdueTotal) {
+    public record PersonFigures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
     }
 }

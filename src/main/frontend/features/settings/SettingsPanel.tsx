@@ -125,6 +125,9 @@ export function SettingsPanel() {
   const scoreMidChosen = useRef(false);
   const [scoreHigh, setScoreHigh] = useState('');
   const scoreHighChosen = useRef(false);
+  // The score log switch (not dated): on, or saved blank (off).
+  const [scoreLog, setScoreLog] = useState('');
+  const scoreLogChosen = useRef(false);
   // Entering a score threshold marks it as the one to save, as it is.
   const focusScoreMid = () => {
     unchoosePolicy();
@@ -133,6 +136,10 @@ export function SettingsPanel() {
   const focusScoreHigh = () => {
     unchoosePolicy();
     scoreHighChosen.current = true;
+  };
+  const focusScoreLog = () => {
+    unchoosePolicy();
+    scoreLogChosen.current = true;
   };
   // Entering the default grade marks it as the one to save, as it is.
   const focusDefaultGrade = () => {
@@ -236,6 +243,7 @@ export function SettingsPanel() {
     if (defaultGrade.trim() === '') defaultGradeChosen.current = false;
     if (scoreMid.trim() === '') scoreMidChosen.current = false;
     if (scoreHigh.trim() === '') scoreHighChosen.current = false;
+    if (scoreLog.trim() === '') scoreLogChosen.current = false;
     if (rounding.trim() === '') roundingChosen.current = false;
     if (reviewThreshold.trim() === '') reviewChosen.current = false;
     unchooseGradeGrace();
@@ -418,6 +426,10 @@ export function SettingsPanel() {
         setScoreHigh('');
         scoreHighChosen.current = false;
       }
+      else if (body.key === 'score-log') {
+        setScoreLog('');
+        scoreLogChosen.current = false;
+      }
       else if (body.key === 'parent') {
         setParent('');
         parentChosen.current = false;
@@ -505,13 +517,14 @@ export function SettingsPanel() {
             const defaulted = defaultGrade.trim() !== '' || defaultGradeChosen.current;
             const scoredMid = scoreMid.trim() !== '' || scoreMidChosen.current;
             const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
+            const scoreLogged = scoreLog.trim() !== '' || scoreLogChosen.current;
             const ownTerms = GRADES.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = GRADES.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = GRADES.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const ownLimit = GRADES.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
@@ -540,6 +553,7 @@ export function SettingsPanel() {
                 ...(defaulted ? [{ key: 'default-grade', value: defaultGrade.trim() }] : []),
                 ...(scoredMid ? [{ key: 'score-mid', value: scoreMid.trim() }] : []),
                 ...(scoredHigh ? [{ key: 'score-high', value: scoreHigh.trim() }] : []),
+                ...(scoreLogged ? [{ key: 'score-log', value: scoreLog.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -910,6 +924,18 @@ export function SettingsPanel() {
           onChange={(e) => {
             setScoreHigh(e.target.value);
             scoreHighChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Score log: <span data-testid="setting-score-log-current">{settings?.scoreLog ?? ''}</span>{' '}
+        <input
+          data-testid="setting-score-log"
+          value={scoreLog}
+          placeholder="Score log: on (blank: off)"
+          onFocus={focusScoreLog}
+          onChange={(e) => {
+            setScoreLog(e.target.value);
+            scoreLogChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}

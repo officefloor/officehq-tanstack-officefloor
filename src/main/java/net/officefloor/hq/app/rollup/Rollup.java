@@ -66,6 +66,8 @@ public class Rollup {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+            BigDecimal settled = BigDecimal.ZERO.setScale(2);
+            int overdueCount = 0;
             boolean anyFigure = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId() || !person.countsClaimed(claim, today)) {
@@ -78,6 +80,12 @@ public class Rollup {
                     continue;
                 }
                 BigDecimal figure = due(claim, person, today, policyDate);
+                if (isOverdue(claim, grace(claim, person), today)) {
+                    overdueCount++;
+                }
+                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED) {
+                    settled = settled.add(figure);
+                }
                 if (figure != null) {
                     anyFigure = true;
                     due = due.add(figure);
@@ -95,7 +103,8 @@ public class Rollup {
             }
             overdues.add(overdue);
             byPerson.put(person.getId(), new RollupFigures.PersonFigures(person.getName(),
-                    show(claimed), na ? NA : show(due), show(overdue)));
+                    show(claimed), na ? NA : show(due), show(overdue),
+                    score(settled, overdueCount)));
         }
         return new RollupFigures(byPerson, show(claimedTotal), show(trimmedSum(dues)), show(trimmedSum(overdues)));
     }
@@ -156,6 +165,23 @@ public class Rollup {
                 }
             });
         }
+    }
+
+    /** A person's score: their settled-total over 100, minus 5 for each of their overdue counting claims, rounded half to
+     *  even to a whole number. */
+    private static String score(BigDecimal settled, int overdueCount) {
+        return settled.subtract(BigDecimal.valueOf(5L * overdueCount * 100)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_EVEN)
+                .toPlainString();
+    }
+
+    /** Audit (on commit), while the sheet's score log is on, one SCORE line per person, in list order, with their score in
+     *  {@code before} (so call it before the SNAPSHOT lines). */
+    public void recordScores(String sheetId, String user, RollupFigures before) {
+        if (!settings.scoreLog(sheetId)) {
+            return;
+        }
+        String prefix = " sheet=" + sheetId + " by=" + user;
+        before.people().forEach((id, was) -> audit.recordOnCommit("SCORE" + prefix + " name=" + was.name() + " score=" + was.score()));
     }
 
     /** Whether a due-total as shown is above the threshold (n/a is no due-total). */

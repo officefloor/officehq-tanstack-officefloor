@@ -20,8 +20,9 @@ export type Role = { user: string; role: string };
  *  in force on its date a claim cannot be opened with an empty note), and the fiscal year start month, 1 to 12 ("1" unless set), and the rounding mode in force
  *  on the sheet's today (half-up or half-even; "" for none), and the review SLA in days ("" for none; not dated), and the proof kinds,
  *  comma separated ("" for none; not dated): above the proof threshold a claim needs one proof of each to be settled or approved,
- *  and the score thresholds, whole numbers ("" for blank; not dated): while both are set each person shows a band (see scoreBand). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string };
+ *  and the score thresholds, whole numbers ("" for blank; not dated): while both are set each person shows a band (see scoreBand),
+ *  and the score log ("on", or "" for off; not dated): while on, changing the sheet's today audits each person's score. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; roles: Role[]; gradeTerms: Record<string, string>; cap: string; dated: Record<string, Dated[]>; proofThreshold: string; perms: Record<string, string>; graceDays: string; delegations: Delegation[]; noteThreshold: string; entryDate: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string; escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string; scoreMid: string; scoreHigh: string; scoreLog: string };
 
 /** A steward's delegation of the steward role: while the sheet's today is from..to (inclusive) the user acts as a
  *  steward, and the audit lines of their changes end with for=<by>. */
