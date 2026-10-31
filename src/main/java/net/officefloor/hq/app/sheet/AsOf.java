@@ -29,7 +29,7 @@ public class AsOf {
     static final List<String> TABLES = List.of("CLAIM", "PERSON", "PERSON_GRADE", "PERSON_HOLD", "PERSON_PATRON",
             "PERSON_WATCH", "PERSON_STATEMENT", "PERIOD", "PERIOD_PERSON_TOTAL", "PERIOD_NUMBER", "RATE",
             "SHEET_SETTING", "SHEET_SETTING_DATED", "SHEET_ROLE", "SHEET_PERMISSION", "SHEET_DELEGATION",
-            "CLAIM_LOG", "SHEET_GRADE_TERMS");
+            "CLAIM_LOG", "SHEET_GRADE_TERMS", "SHEET_HOLIDAY");
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;

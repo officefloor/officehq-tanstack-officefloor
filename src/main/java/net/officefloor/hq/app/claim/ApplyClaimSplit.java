@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.person.People;
@@ -16,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
  *  Whether a closed period refuses the split is judged by the original claim alone. */
 public class ApplyClaimSplit {
     public void apply(@Val ClaimSplit split, @Val Claim claim, ClaimNumbers numbers, People people,
-            ClosedPeriods closedPeriods, Settings settings) throws ClaimStatusRefusedException, PeriodClosedException {
+            ClosedPeriods closedPeriods, Settings settings, Holidays holidays) throws ClaimStatusRefusedException, PeriodClosedException {
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         if (claim.getStatus() != ClaimStatus.OPEN || claim.isDeferred()) {
             throw new ClaimStatusRefusedException("Only an OPEN claim that is not deferred can be split");
@@ -34,7 +35,7 @@ public class ApplyClaimSplit {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Claim into = new Claim(null, claim.getSheetId(), claim.getPersonId(), split.amount(), claim.getDate(),
                 claim.getNote(), ClaimStatus.OPEN, null, null, split.user());
-        into.setDueBy(DueBy.of(person, claim.getDate(), settings));
+        into.setDueBy(DueBy.of(person, claim.getDate(), settings, holidays));
         into.setLateEntry(closedPeriods.late(claim.getSheetId(), into.getDueBy()));
         into.setSplitFrom(claim.getNumber());
         into.setNumber(numbers.next(into));

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.person.Person;
@@ -15,15 +16,15 @@ import net.officefloor.plugin.variable.Val;
  *  and a correction that does not name a SETTLED claim of the same person. */
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
-            Claims claims, Settings settings, Out<Claim> claim) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
-        claim.set(built(values, person, sheets, closedPeriods, claims, settings));
+            Claims claims, Settings settings, Holidays holidays, Out<Claim> claim) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+        claim.set(built(values, person, sheets, closedPeriods, claims, settings, holidays));
     }
 
     /** The new DRAFT claim for these values and person, or refused by the claim form's rules. */
     static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
-            Claims claims, Settings settings) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+            Claims claims, Settings settings, Holidays holidays) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.getSheetId());
-        LocalDate dueBy = DueBy.of(person, date, settings);
+        LocalDate dueBy = DueBy.of(person, date, settings, holidays);
         closedPeriods.refuse(person.getSheetId(), dueBy);
         person.refuseRetired(date);
         refuseUncorrected(values, person.getSheetId(), person.getId(), claims);

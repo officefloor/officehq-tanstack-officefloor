@@ -3,6 +3,7 @@ package net.officefloor.hq.app.quickadd;
 import java.time.LocalDate;
 import net.officefloor.hq.app.claim.DueBy;
 import net.officefloor.hq.app.claim.ClaimValues;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.person.Person;
@@ -14,8 +15,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  before anything is saved, so no new person is left behind. */
 public class RefuseClosedQuickAdd {
     public void refuse(@PathVariable("sheetId") String sheetId, @Val ClaimValues values, @Val Person person,
-            Settings settings, ClosedPeriods closedPeriods) throws PeriodClosedException {
+            Settings settings, Holidays holidays, ClosedPeriods closedPeriods) throws PeriodClosedException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(sheetId);
-        closedPeriods.refuse(sheetId, DueBy.of(person, date, settings));
+        closedPeriods.refuse(sheetId, DueBy.of(person, date, settings, holidays));
     }
 }

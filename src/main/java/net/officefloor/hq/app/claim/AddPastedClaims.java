@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.person.People;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  line refuses the whole paste before anything is saved; then saves and audits each in order. */
 public class AddPastedClaims {
     public void add(@PathVariable("sheetId") String sheetId, @Val PastedClaims paste, People people, Sheets sheets,
-            ClosedPeriods closedPeriods, Claims claims, Settings settings, ClaimLog log, Audit audit,
+            ClosedPeriods closedPeriods, Claims claims, Settings settings, Holidays holidays, ClaimLog log, Audit audit,
             Out<PasteClaimsResult> result) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         List<Person> persons = new ArrayList<>();
         List<Claim> built = new ArrayList<>();
@@ -27,7 +28,7 @@ public class AddPastedClaims {
             Person person = people.named(sheetId, line.name());
             if (person == null) throw new InvalidSheetRequestException("No one on the sheet is named " + line.name());
             persons.add(person);
-            built.add(BuildClaim.built(line.values(), person, sheets, closedPeriods, claims, settings));
+            built.add(BuildClaim.built(line.values(), person, sheets, closedPeriods, claims, settings, holidays));
         }
         RecordClaimAdded record = new RecordClaimAdded();
         for (int i = 0; i < built.size(); i++) {
