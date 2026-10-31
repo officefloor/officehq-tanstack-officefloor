@@ -495,7 +495,8 @@ public class AsOfView {
                 plain.getOrDefault(Settings.ESCALATE, ""), plain.getOrDefault(Settings.REVIEW_SLA, ""),
                 plain.getOrDefault(Settings.PROOF_KINDS, ""), plain.getOrDefault(Settings.DEFAULT_GRADE, ""),
                 plain.getOrDefault(ValidateSetting.SCORE_MID, ""), plain.getOrDefault(ValidateSetting.SCORE_HIGH, ""),
-                plain.getOrDefault(ValidateSetting.SCORE_LOG, ""), plain.getOrDefault(Settings.MAX_OPEN, ""));
+                plain.getOrDefault(ValidateSetting.SCORE_LOG, ""), plain.getOrDefault(Settings.MAX_OPEN, ""),
+                plain.getOrDefault(Settings.PENDING_SLA, ""));
     }
 
     /** Figures by person id from "<person id>=<figure>" joined by ";" (null or "": none). */

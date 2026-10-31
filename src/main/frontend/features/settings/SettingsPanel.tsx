@@ -149,6 +149,13 @@ export function SettingsPanel() {
     unchoosePolicy();
     maxOpenChosen.current = true;
   };
+  // The pending SLA in days (not dated): a whole number, or saved blank (none).
+  const [pendingSla, setPendingSla] = useState('');
+  const pendingSlaChosen = useRef(false);
+  const focusPendingSla = () => {
+    unchoosePolicy();
+    pendingSlaChosen.current = true;
+  };
   // Entering the default grade marks it as the one to save, as it is.
   const focusDefaultGrade = () => {
     unchoosePolicy();
@@ -442,6 +449,10 @@ export function SettingsPanel() {
         setMaxOpen('');
         maxOpenChosen.current = false;
       }
+      else if (body.key === 'pending-sla') {
+        setPendingSla('');
+        pendingSlaChosen.current = false;
+      }
       else if (body.key === 'parent') {
         setParent('');
         parentChosen.current = false;
@@ -531,13 +542,14 @@ export function SettingsPanel() {
             const scoredHigh = scoreHigh.trim() !== '' || scoreHighChosen.current;
             const scoreLogged = scoreLog.trim() !== '' || scoreLogChosen.current;
             const maxed = maxOpen.trim() !== '' || maxOpenChosen.current;
+            const pendingSlaed = pendingSla.trim() !== '' || pendingSlaChosen.current;
             const ownTerms = grades.filter((g) => (gradeTerms[g] ?? '').trim() !== '');
             const ownGrace = grades.filter((g) => (gradeGrace[g] ?? '').trim() !== '' || graceGradeChosen.current.has(g));
             const ownProof = grades.filter((g) => (gradeProof[g] ?? '').trim() !== '' || proofGradeChosen.current.has(g));
             const ownLimit = grades.filter((g) => (gradeLimit[g] ?? '').trim() !== '' || limitGradeChosen.current.has(g));
             const permitted = PERM_ACTIONS.filter((a) => (perms[a] ?? '').trim() !== '' || permsChosen.current.has(a));
             if (terms.trim() !== '' || ownTerms.length > 0 || ownGrace.length > 0 || latePct.trim() !== '' || fiscalStart.trim() !== '' || policy || numbering || capped || proofed || ownProof.length > 0 || ownLimit.length > 0
-                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || maxed || permitted.length > 0) {
+                || noted || rounded || reviewed || graced || escalated || slaed || entered || potted || alerted || parented || kinded || defaulted || scoredMid || scoredHigh || scoreLogged || maxed || pendingSlaed || permitted.length > 0) {
               const saves = [
                 ...(limit.trim() !== '' ? [{ key: 'clerk-limit', value: limit.trim() }] : []),
                 ...ownLimit.map((g) => ({ key: `clerk-limit-${g}`, value: (gradeLimit[g] ?? '').trim() })),
@@ -568,6 +580,7 @@ export function SettingsPanel() {
                 ...(scoredHigh ? [{ key: 'score-high', value: scoreHigh.trim() }] : []),
                 ...(scoreLogged ? [{ key: 'score-log', value: scoreLog.trim() }] : []),
                 ...(maxed ? [{ key: 'max-open', value: maxOpen.trim() }] : []),
+                ...(pendingSlaed ? [{ key: 'pending-sla', value: pendingSla.trim() }] : []),
                 ...permitted.map((a) => ({ key: `perm-${a}`, value: (perms[a] ?? '').trim() })),
               ];
               return saves.reduce<Promise<unknown>>((done, body) => done.then(() => save(body)), Promise.resolve());
@@ -962,6 +975,18 @@ export function SettingsPanel() {
           onChange={(e) => {
             setMaxOpen(e.target.value);
             maxOpenChosen.current = true;
+            saveSetting.reset();
+          }}
+        />{' '}
+        Pending SLA (days): <span data-testid="setting-pending-sla-current">{settings?.pendingSla ?? ''}</span>{' '}
+        <input
+          data-testid="setting-pending-sla"
+          value={pendingSla}
+          placeholder="Pending SLA days (blank: none)"
+          onFocus={focusPendingSla}
+          onChange={(e) => {
+            setPendingSla(e.target.value);
+            pendingSlaChosen.current = true;
             saveSetting.reset();
           }}
         />{' '}

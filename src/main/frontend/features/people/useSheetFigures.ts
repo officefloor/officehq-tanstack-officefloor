@@ -2,6 +2,7 @@ import { countsClaimed, countsLive, hasTag, isOpen, useClaims, useTags } from '.
 import { isOverdue } from '../claims/overdue';
 import { useGrace } from '../claims/useGrace';
 import { isReviewLate } from '../claims/reviewLate';
+import { isPendingLate } from '../claims/pendingLate';
 import { capped, claimDue, dueTotal, excess, formatCents, toCents } from '../rates/due';
 import { claimRate, rateOn, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLatePct, usePolicy, useSettings } from '../settings/useSettings';
@@ -25,7 +26,9 @@ export function useSheetFigures(sheet: string) {
   const policy = usePolicy(sheet);
   const cap = useCap(sheet);
   const pools = usePools(sheet);
-  const reviewSla = useSettings(sheet)?.reviewSla;
+  const settings = useSettings(sheet);
+  const reviewSla = settings?.reviewSla;
+  const pendingSla = settings?.pendingSla;
   const byId = new Map(people.map((p) => [p.id, p]));
   const live = claims.filter((c) => {
     const person = byId.get(c.personId);
@@ -163,8 +166,10 @@ export function useSheetFigures(sheet: string) {
   const statusCount = (s: (typeof STATUSES)[number]) => sheetClaims.filter((c) => c.status === s).length;
   // Review-late: REVIEW claims whose review day plus the sheet's review SLA is before the sheet's today.
   const reviewLateCount = sheetClaims.filter((c) => isReviewLate(c, today, reviewSla)).length;
+  // Pending-late: PENDING claims whose pending day plus the sheet's pending SLA is before the sheet's today.
+  const pendingLateCount = sheetClaims.filter((c) => isPendingLate(c, today, pendingSla)).length;
   const voidReasonCount = (reason: string) => sheetClaims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length;
-  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
+  return { people, claims, rates, today, byId, live, claimedLive, cutOf, totalOf, excessOf, overdue, overdueTotal, dueFigures, overdueFigures, sheetDueTotal, sheetOverdueTotal, statusCount, reviewLateCount, pendingLateCount, voidReasonCount, isActive, recentSettledOf, agedOf, sheetAged, settledTotalOf, openTotalOf, scoreOf, sheetSettledTotal, sheetOpenTotal, tagTotals, monthTotals };
 }
 
 // People's figures added up, leaving out the single highest and the single lowest when there are
