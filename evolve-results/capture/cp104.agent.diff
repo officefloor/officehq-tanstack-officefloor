@@ -1,0 +1,80 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java
+index 0c8a3828..a3a5473e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java
+@@ -11,12 +11,13 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the permission matrix allows may (a steward by
+  *  default). The
+- *  claim keeps its number and date but loses any figure a statement bound it to: it is live again
++ *  claim keeps its date, takes the next number in its sequence (see {@link ClaimNumbers}; its old
++ *  number is never used again, and a draft has none to renumber), but loses any figure a statement bound it to: it is live again
+  *  until its new person's next statement. A SETTLED or VOID claim cannot move, nor a claim dated in
+  *  a closed period, nor one dated after its new person's retirement date. */
+ public class ApplyClaimReassign {
+     public void apply(@Val ClaimReassignment change, @Val Claim claim, People people, Settings settings,
+-            ClosedPeriods closedPeriods)
++            ClosedPeriods closedPeriods, ClaimNumbers numbers)
+             throws ClaimStatusRefusedException, PersonNotFoundException, PersonRetiredException, PeriodClosedException {
+         if (!settings.allows(claim.getSheetId(), "reassign", change.user())) {
+             throw new ClaimStatusRefusedException("Your role may not reassign a claim");
+@@ -29,18 +30,19 @@ public class ApplyClaimReassign {
+         if (to.getId() == claim.getPersonId()) {
+             throw new ClaimStatusRefusedException("The claim is already " + to.getName() + "'s: reassign it to another person");
+         }
+-        move(change, claim, to, people, closedPeriods);
++        move(change, claim, to, people, closedPeriods, numbers);
+     }
+ 
+     /** The checks and the move once the claim's status and the user's role allow it: a claim due in a
+      *  closed period, or dated after its new person's retirement, stays where it is. */
+-    static void move(ClaimReassignment change, Claim claim, Person to, People people, ClosedPeriods closedPeriods)
+-            throws PersonRetiredException, PeriodClosedException {
++    static void move(ClaimReassignment change, Claim claim, Person to, People people, ClosedPeriods closedPeriods,
++            ClaimNumbers numbers) throws PersonRetiredException, PeriodClosedException {
+         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
+         to.refuseRetired(claim.getDate());
+         Person from = people.find(claim.getSheetId(), claim.getPersonId());
+         change.moved(from.getName(), to.getName());
+         claim.setPersonId(to.getId());
++        if (claim.getNumber() != null) claim.setNumber(numbers.next(claim));
+         claim.setStated(false);
+         claim.setStatedDue(null);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 6ca97809..1e8a7495 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -70,8 +70,8 @@ public class Claims {
+ 
+     /** Move the claim to its (new) person: unbound from any statement, and listed as that person's newest claim. */
+     public void reassign(Claim claim) {
+-        jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed WHERE id = ?",
+-                claim.getPersonId(), claim.getId());
++        jdbc.update("UPDATE claim SET person_id = ?, number = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed WHERE id = ?",
++                claim.getPersonId(), claim.getNumber(), claim.getId());
+     }
+ 
+     /** Release every editor's lock on the sheet's claims: the sheet's today has changed. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+index 1864c613..17f5327d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  that cannot move (or is not on the sheet) is left as it is and counted as refused. */
+ public class ReassignClaims {
+     public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassign bulk, Claims claims, People people,
+-            ClosedPeriods closedPeriods, Settings settings, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
++            ClosedPeriods closedPeriods, ClaimNumbers numbers, Settings settings, Rollup rollup, Audit audit, Out<BulkReassignResult> result) {
+         RecordClaimReassigned record = new RecordClaimReassigned();
+         Person to = people.find(sheetId, bulk.toPersonId());
+         int reassigned = 0;
+@@ -36,7 +36,7 @@ public class ReassignClaims {
+                     ClaimReassignment change = new ClaimReassignment(to.getId(), bulk.user());
+                     Snapshot before = rollup.snapshot(sheetId);
+                     try {
+-                        ApplyClaimReassign.move(change, claim, to, people, closedPeriods);
++                        ApplyClaimReassign.move(change, claim, to, people, closedPeriods, numbers);
+                     } catch (PersonRetiredException | PeriodClosedException e) {
+                         continue;
+                     }
