@@ -58,7 +58,8 @@ import { usePools } from '../pools/usePools';
 // Then the summary panel, worked from these same figures. The export button downloads every person (retired too), in list
 // order, as CSV: name, grade in force today, retired-from (or nothing) and due-total as shown. The export claims button
 // downloads every claim as CSV — people in list order (retired too), each person's claims oldest first — with person,
-// number, date, amount, due, status and period as the claim's row shows them. Claims ticked
+// number, date, amount, due, status and period as the claim's row shows them. Each person's export statement button downloads, as CSV, their claims bound by their last statement, oldest first: number, date, amount, the bound figure as the claim shows it, and status.
+// Claims ticked
 // with their select checkbox are opened together with the bulk open button, or moved to one person with the bulk reassign; people ticked with theirs
 // are given a grade together with the bulk grade.
 // Each person also shows their cut total: their cuts across every pool they are a member of, added up (a pool showing
@@ -124,6 +125,18 @@ export function PeopleList() {
   const latePct = useLatePct(sheet);
   const grace = useGrace(sheet);
   const policy = usePolicy(sheet);
+  // The person's claims bound by their last statement, oldest first, with the bound figure as the claim's row shows it.
+  const statementRows = (p: (typeof people)[number]) =>
+    claims
+      .filter((c) => c.personId === p.id && c.stated)
+      .reverse()
+      .map((c) => [
+        c.number,
+        c.date,
+        c.amount,
+        showDue(claimDue(c, claimRate(rates, gradeOn(p, c.date), c), floor, { pct: latePct, today, grace }, policy)),
+        c.status,
+      ]);
   const claimRows = () =>
     people.flatMap((p) =>
       claims
@@ -275,6 +288,15 @@ export function PeopleList() {
                   <MoveControl personId={p.id} />{' '}
                   <StatementButton personId={p.id} />{' '}
                   <UnstateButton personId={p.id} />{' '}
+                  <button
+                    type="button"
+                    data-testid="person-export-statement"
+                    onClick={() =>
+                      downloadCsv(`statement-${p.id}.csv`, [['number', 'date', 'amount', 'figure', 'status'], ...statementRows(p)])
+                    }
+                  >
+                    Export statement
+                  </button>{' '}
                   <RetireControl personId={p.id} />{' '}
                   <UnretireButton personId={p.id} />{' '}
                   <HoldControl personId={p.id} holds={p.holds} />{' '}
