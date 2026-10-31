@@ -6,6 +6,7 @@ import net.officefloor.hq.app.period.ClosedPeriods;
 import net.officefloor.hq.app.period.PeriodClosedException;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.Watches;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Snapshot;
 import net.officefloor.hq.app.settings.Settings;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettle bulk, Claims claims, People people,
             ClaimNumbers numbers, Figures figures, ClosedPeriods closedPeriods, Settings settings, Rollup rollup,
-            ClaimLog log, Audit audit, Out<BulkSettleResult> result) {
+            ClaimLog log, Watches watches, Audit audit, Out<BulkSettleResult> result) {
         ClaimStatusChange change = new ClaimStatusChange(ClaimAction.SETTLE, bulk.user());
         ApplyClaimStatus apply = new ApplyClaimStatus();
         RecordClaimStatusChanged record = new RecordClaimStatusChanged();
@@ -37,7 +38,7 @@ public class SettleClaims {
                     continue;
                 }
                 claims.save(claim);
-                record.record(change, claim, people, log, audit);
+                record.record(change, claim, people, log, watches, audit);
                 rollup.record(sheetId, before, bulk.user());
                 settled++;
             }

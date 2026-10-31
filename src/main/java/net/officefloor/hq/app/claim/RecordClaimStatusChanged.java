@@ -3,11 +3,12 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.Watches;
 import net.officefloor.plugin.variable.Val;
 
 /** Runs after the claim is saved, so a refused status change writes no audit line. */
 public class RecordClaimStatusChanged {
-    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, ClaimLog log, Audit audit) {
+    public void record(@Val ClaimStatusChange change, @Val Claim claim, People people, ClaimLog log, Watches watches, Audit audit) {
         log.write(claim, change.user());
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         // A clerk's settle over the clerk limit leaves the claim PENDING: it settles nothing yet.
@@ -18,5 +19,7 @@ public class RecordClaimStatusChanged {
                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
                 + (fixesDue ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")
                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : ""));
+        // A watched person's claim settled or approved: a line per watching user, after the claim's own.
+        if (fixesDue) watches.notify(claim, person, change.user(), audit);
     }
 }
