@@ -1,0 +1,547 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index 7a38283d..9149ee16 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+@@ -12,7 +13,7 @@ public class ValidateClaim {
+     /** 0.00 or more, with up to two decimals. */
+     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+-    public void validate(@RequestBody ClaimRequest request, Out<ClaimValues> body)
++    public void validate(@RequestBody ClaimRequest request, Out<ClaimValues> body, Out<Actor> actor)
+             throws InvalidSheetRequestException {
+         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+         if (!AMOUNT.matcher(amount).matches()) {
+@@ -28,6 +29,7 @@ public class ValidateClaim {
+             }
+         }
+         String note = request.note() == null ? "" : request.note();
++        actor.set(new Actor(request.user()));
+         body.set(new ClaimValues(new BigDecimal(amount).setScale(2), date, note, request.user()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index 8a83d95f..80800128 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -2,14 +2,16 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.util.Locale;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateClaimStatus {
+-    public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> body)
++    public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> body, Out<Actor> actor)
+             throws InvalidSheetRequestException {
+         String action = request == null || request.action() == null ? "" : request.action().trim();
+         try {
++            actor.set(new Actor(request.user()));
+             body.set(new ClaimStatusChange(ClaimAction.valueOf(action.toUpperCase(Locale.ROOT)), request.user()));
+         } catch (IllegalArgumentException e) {
+             throw new InvalidSheetRequestException("Not a claim action (open, settle or void): " + action);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index b97c699a..3d8a0a65 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -2,13 +2,14 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.Set;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePerson {
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+-    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body)
++    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body, Out<Actor> actor)
+             throws InvalidSheetRequestException {
+         if (request == null || request.name() == null || request.name().isBlank()) {
+             throw new InvalidSheetRequestException("A name is required");
+@@ -17,6 +18,7 @@ public class ValidatePerson {
+             throw new InvalidSheetRequestException("The grade must be A, B or C");
+         }
+         // Names are kept without the spaces around them.
++        actor.set(new Actor(request.user()));
+         body.set(new PersonRequest(request.name().trim(), request.grade(), request.user(), request.version()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java
+index 574144d7..f10652d2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateStatement.java
+@@ -1,10 +1,12 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateStatement {
+-    public void validate(@RequestBody StatementRequest request, Out<StatementRequest> body) {
++    public void validate(@RequestBody StatementRequest request, Out<StatementRequest> body, Out<Actor> actor) {
++        actor.set(new Actor(request != null ? request.user() : null));
+         body.set(request != null ? request : new StatementRequest(null));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 8687146a..d9599da7 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
+ import java.util.Set;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -17,7 +18,7 @@ public class ValidateRate {
+     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request,
+-            Out<RateRequest> body, Out<Rate> rate) throws InvalidSheetRequestException {
++            Out<RateRequest> body, Out<Rate> rate, Out<Actor> actor) throws InvalidSheetRequestException {
+         if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
+             throw new InvalidSheetRequestException("The grade must be A, B or C");
+         }
+@@ -34,6 +35,7 @@ public class ValidateRate {
+                 throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + rawFrom);
+             }
+         }
++        actor.set(new Actor(request.user()));
+         body.set(request);
+         rate.set(new Rate(sheetId, request.grade(), new BigDecimal(pct).setScale(2), from));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Actor.java b/src/main/java/net/officefloor/hq/app/rollup/Actor.java
+new file mode 100644
+index 00000000..d6f3066c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/Actor.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rollup;
++
++/** Who makes a change, published by the change's validating step for the steps after it. */
++public record Actor(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java b/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java
+new file mode 100644
+index 00000000..4ebdc909
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RecordRollup.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the change's own audit lines: audits the figures it moved. */
++public class RecordRollup {
++    public void record(@Val RollupBefore before, @Val Actor actor, Rollup rollup) {
++        rollup.record(before.sheetId(), before.snapshot(), actor.user());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+new file mode 100644
+index 00000000..b76c655a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -0,0 +1,98 @@
++package net.officefloor.hq.app.rollup;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.claim.Figures;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.sheet.Sheets;
++import org.springframework.stereotype.Service;
++
++/**
++ * The figures the screen shows — each person's claimed and due-total, the sheet's claimed-total and
++ * due-total — worked out as the screen does, so a change can audit the ones it moved: one ROLLUP
++ * line per person whose figures changed (a new person counts as changed), then a TOTALS line when
++ * the sheet's totals changed.
++ */
++@Service
++public class Rollup {
++
++    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2);
++
++    private final People people;
++    private final Claims claims;
++    private final Figures figures;
++    private final Rates rates;
++    private final Sheets sheets;
++    private final Audit audit;
++
++    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit) {
++        this.people = people;
++        this.claims = claims;
++        this.figures = figures;
++        this.rates = rates;
++        this.sheets = sheets;
++        this.audit = audit;
++    }
++
++    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures,
++     *  n/a when there is no rate today and none has a figure; the sheet's skips the n/a ones. */
++    public Snapshot snapshot(String sheetId) {
++        LocalDate today = sheets.today(sheetId);
++        List<Claim> all = claims.onSheet(sheetId);
++        Map<Long, Snapshot.PersonFigures> figuresOf = new LinkedHashMap<>();
++        BigDecimal claimedTotal = ZERO;
++        BigDecimal dueTotal = ZERO;
++        for (Person person : people.onSheet(sheetId)) {
++            BigDecimal claimed = ZERO;
++            BigDecimal due = ZERO;
++            boolean any = false;
++            for (Claim claim : all) {
++                if (claim.getPersonId() != person.getId() || !claim.getStatus().counts()) continue;
++                claimed = claimed.add(claim.getAmount());
++                BigDecimal figure = figures.figure(claim, person.getGrade());
++                if (figure != null) {
++                    due = due.add(figure);
++                    any = true;
++                }
++            }
++            if (!any && rates.pct(sheetId, person.getGrade(), today) == null) due = null;
++            figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due));
++            claimedTotal = claimedTotal.add(claimed);
++            if (due != null) dueTotal = dueTotal.add(due);
++        }
++        return new Snapshot(figuresOf, claimedTotal, dueTotal);
++    }
++
++    /** Audit the figures that moved between `before` and the sheet now. */
++    public void record(String sheetId, Snapshot before, String user) {
++        Snapshot after = snapshot(sheetId);
++        String prefix = " sheet=" + sheetId + " by=" + user;
++        after.people().forEach((id, now) -> {
++            Snapshot.PersonFigures was = before.people().get(id);
++            if (was != null && same(was.claimed(), now.claimed()) && same(was.dueTotal(), now.dueTotal())) return;
++            audit.record("ROLLUP" + prefix + " person=" + now.name() + " claimed=" + show(now.claimed())
++                    + " due-total=" + show(now.dueTotal()));
++        });
++        if (!same(before.claimedTotal(), after.claimedTotal()) || !same(before.dueTotal(), after.dueTotal())) {
++            audit.record("TOTALS" + prefix + " claimed-total=" + show(after.claimedTotal())
++                    + " due-total=" + show(after.dueTotal()));
++        }
++    }
++
++    private static boolean same(BigDecimal a, BigDecimal b) {
++        return a == null || b == null ? Objects.equals(a, b) : a.compareTo(b) == 0;
++    }
++
++    private static String show(BigDecimal value) {
++        return value == null ? "n/a" : value.setScale(2).toPlainString();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupBefore.java b/src/main/java/net/officefloor/hq/app/rollup/RollupBefore.java
+new file mode 100644
+index 00000000..334dff20
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupBefore.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rollup;
++
++/** The sheet's figures as they were before the change. */
++public record RollupBefore(String sheetId, Snapshot snapshot) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java b/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java
+new file mode 100644
+index 00000000..26af725e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.rollup;
++
++import java.math.BigDecimal;
++import java.util.Map;
++
++/** Every person's figures on a sheet at one moment, keyed by person id in the order they were
++ *  added, and the sheet's totals. A due-total is null when it is n/a. */
++public record Snapshot(Map<Long, PersonFigures> people, BigDecimal claimedTotal, BigDecimal dueTotal) {
++
++    public record PersonFigures(String name, BigDecimal claimed, BigDecimal dueTotal) {
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/SnapshotRollup.java b/src/main/java/net/officefloor/hq/app/rollup/SnapshotRollup.java
+new file mode 100644
+index 00000000..571cc2be
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/SnapshotRollup.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Runs before the change: keeps the sheet's figures as they were. */
++public class SnapshotRollup {
++    public void snapshot(@PathVariable("sheetId") String sheetId, Rollup rollup, Out<RollupBefore> before) {
++        before.set(new RollupBefore(sheetId, rollup.snapshot(sheetId)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index d535d4ad..72b0f298 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -2,15 +2,17 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateToday {
+-    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today)
++    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today, Out<Actor> actor)
+             throws InvalidSheetRequestException {
+         String raw = request == null || request.today() == null ? "" : request.today().trim();
+         try {
+             today.set(LocalDate.parse(raw));
++            actor.set(new Actor(request.user()));
+         } catch (DateTimeParseException e) {
+             throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + raw);
+         }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index da25cc96..d2043fc6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,6 +1,11 @@
+ # Change a claim's amount, date and note. Validate before Load so an invalid body is a 400, not a 404.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+@@ -18,6 +23,11 @@ save:
+ record:
+   class: net.officefloor.hq.app.claim.RecordClaimEdited
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+index c3b2aeaa..f746b05a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+@@ -2,6 +2,11 @@
+ # a change the claim's status does not allow is a 409 and writes nothing.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimStatus
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+@@ -19,6 +24,11 @@ save:
+ record:
+   class: net.officefloor.hq.app.claim.RecordClaimStatusChanged
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 459dcac7..f4f32c39 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -2,6 +2,11 @@
+ # a name already in use on the sheet is refused by Build, also a 400.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: build
+ build:
+   class: net.officefloor.hq.app.person.BuildPerson
+@@ -14,6 +19,11 @@ save:
+ record:
+   class: net.officefloor.hq.app.person.RecordPersonAdded
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPersonCreated
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 57e7245e..25f34d7c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,6 +1,11 @@
+ # Change a person's name and grade. Validate before Load so an invalid body is a 400, not a 404.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+@@ -18,6 +23,11 @@ save:
+ record:
+   class: net.officefloor.hq.app.person.RecordPersonEdited
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index d519b947..5cedcc9c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -2,6 +2,11 @@
+ # not masked by a 404 for a missing person.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+@@ -19,6 +24,11 @@ save:
+ record:
+   class: net.officefloor.hq.app.claim.RecordClaimAdded
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaimCreated
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index 81cc33be..373a74ae 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,6 +1,11 @@
+ # Take a person's statement: record their due-total and bind their counting claims to their figures.
+ validate:
+   class: net.officefloor.hq.app.person.ValidateStatement
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+@@ -14,6 +19,11 @@ take:
+ record:
+   class: net.officefloor.hq.app.person.RecordStatement
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+index b6f8eb55..be75f136 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+@@ -1,6 +1,11 @@
+ # Set a grade's rate. Validate first so a bad grade or percent is a 400 and writes nothing.
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.rate.SaveRate
+@@ -10,6 +15,11 @@ save:
+ record:
+   class: net.officefloor.hq.app.rate.RecordRateSet
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.rate.RespondWithRate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 368c689b..08ba9d34 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,10 +1,20 @@
+ # Change the sheet's today. Validate first so a bad date is a 400 and writes nothing.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplyToday
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.sheet.RespondWithSheet
