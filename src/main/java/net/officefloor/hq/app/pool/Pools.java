@@ -3,6 +3,7 @@ package net.officefloor.hq.app.pool;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,9 @@ public class Pools {
 
     private static final BigDecimal FULL = new BigDecimal("100.00");
 
+    /** The most pools in a chain of pools, each a member of the one before. */
+    public static final int MAX_DEPTH = 3;
+
     private final JdbcTemplate jdbc;
 
     public Pools(JdbcTemplate jdbc) {
@@ -22,8 +26,10 @@ public class Pools {
     }
 
     /** Every pool on the sheet with its members, its total share and whether it is balanced. A retired
-     *  member (a retirement date set, whatever the date) counts 0.00 toward the total. Each member of a
-     *  balanced pool has a cut of the sheet's pot (see {@link #cuts}); with no pot, none. */
+     *  member (a retirement date set, whatever the date) counts 0.00 toward the total. A member may be
+     *  another pool. A pool that is a member of none has the sheet's pot; a pool that is a member of
+     *  another has its cut there as its pot (none when the pool above is unbalanced or has none). Each
+     *  member of a balanced pool with a pot has a cut of it (see {@link #cuts}); otherwise, none. */
     public List<PoolResponse> onSheet(String sheetId) {
         List<BigDecimal> pots = jdbc.query("SELECT pot FROM sheet_setting WHERE sheet_id = ?",
                 (rs, i) -> rs.getBigDecimal(1), sheetId);
@@ -34,24 +40,49 @@ public class Pools {
             members.put(rs.getString(1), new ArrayList<>());
             totals.put(rs.getString(1), BigDecimal.ZERO.setScale(2));
         }, sheetId);
-        jdbc.query("SELECT m.pool, m.person_id, p.name, m.share, p.retired_from IS NOT NULL FROM pool_member m "
-                + "JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.position", rs -> {
+        Map<String, String> parents = new HashMap<>();
+        jdbc.query("SELECT m.pool, m.person_id, COALESCE(p.name, m.member_pool), m.share, p.retired_from IS NOT NULL, "
+                + "m.member_pool FROM pool_member m LEFT JOIN person p ON p.id = m.person_id "
+                + "WHERE m.sheet_id = ? ORDER BY m.position", rs -> {
                     String pool = rs.getString(1);
                     List<PoolMemberResponse> list = members.get(pool);
                     if (list == null) return;
+                    String memberPool = rs.getString(6);
+                    Long personId = memberPool == null ? rs.getLong(2) : null;
                     BigDecimal share = rs.getBigDecimal(4).setScale(2);
-                    boolean retired = rs.getBoolean(5);
-                    list.add(new PoolMemberResponse(rs.getLong(2), rs.getString(3), share.toPlainString(), retired, null));
+                    boolean retired = memberPool == null && rs.getBoolean(5);
+                    list.add(new PoolMemberResponse(personId, rs.getString(3), share.toPlainString(), retired, null,
+                            memberPool));
+                    if (memberPool != null) parents.put(memberPool, pool);
                     if (!retired) totals.merge(pool, share, BigDecimal::add);
                 }, sheetId);
+        // Each pool's pot, from the pools that are a member of none down through their member pools.
+        Map<String, List<PoolMemberResponse>> shown = new LinkedHashMap<>();
+        for (String name : members.keySet()) {
+            if (!parents.containsKey(name)) share(name, pot, members, totals, shown, 0);
+        }
         List<PoolResponse> pools = new ArrayList<>();
         members.forEach((name, list) -> {
             BigDecimal total = totals.get(name);
             boolean balanced = total.compareTo(FULL) == 0;
-            pools.add(new PoolResponse(name, balanced && pot != null ? cuts(list, pot) : list,
-                    total.toPlainString(), balanced));
+            pools.add(new PoolResponse(name, shown.getOrDefault(name, list), total.toPlainString(), balanced));
         });
         return pools;
+    }
+
+    /** Shares the pool's pot (null for none) among its members, then each member pool's cut among its own. */
+    private static void share(String name, BigDecimal pot, Map<String, List<PoolMemberResponse>> members,
+            Map<String, BigDecimal> totals, Map<String, List<PoolMemberResponse>> shown, int depth) {
+        if (shown.containsKey(name) || depth > MAX_DEPTH) return;
+        List<PoolMemberResponse> list = members.get(name);
+        boolean balanced = totals.get(name).compareTo(FULL) == 0;
+        List<PoolMemberResponse> withCuts = balanced && pot != null ? cuts(list, pot) : list;
+        shown.put(name, withCuts);
+        for (PoolMemberResponse m : withCuts) {
+            if (m.pool() != null && members.containsKey(m.pool())) {
+                share(m.pool(), m.cut() == null ? null : new BigDecimal(m.cut()), members, totals, shown, depth + 1);
+            }
+        }
     }
 
     /** The members with their cuts of the pot: the pot times their share divided by 100, rounded half
@@ -75,7 +106,8 @@ public class Pools {
         List<PoolMemberResponse> withCuts = new ArrayList<>(members.size());
         for (int i = 0; i < members.size(); i++) {
             PoolMemberResponse m = members.get(i);
-            withCuts.add(new PoolMemberResponse(m.personId(), m.name(), m.share(), m.retired(), cuts[i].toPlainString()));
+            withCuts.add(new PoolMemberResponse(m.personId(), m.name(), m.share(), m.retired(), cuts[i].toPlainString(),
+                    m.pool()));
         }
         return withCuts;
     }
@@ -100,10 +132,24 @@ public class Pools {
                 sheetId, name, sheetId);
     }
 
-    public void addMember(String sheetId, String pool, long personId, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool, person_id, share, position) VALUES (?, ?, ?, ?, "
+    /** The pool the pool is a member of, or null when none. */
+    public String parentOf(String sheetId, String pool) {
+        List<String> parents = jdbc.query("SELECT pool FROM pool_member WHERE sheet_id = ? AND member_pool = ?",
+                (rs, i) -> rs.getString(1), sheetId, pool);
+        return parents.isEmpty() ? null : parents.get(0);
+    }
+
+    /** The pools that are members of the pool. */
+    public List<String> memberPools(String sheetId, String pool) {
+        return jdbc.query("SELECT member_pool FROM pool_member WHERE sheet_id = ? AND pool = ? AND member_pool IS NOT NULL",
+                (rs, i) -> rs.getString(1), sheetId, pool);
+    }
+
+    /** A member of the pool: a person (memberPool null) or another pool (personId null). */
+    public void addMember(String sheetId, String pool, Long personId, String memberPool, BigDecimal share) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool, person_id, member_pool, share, position) VALUES (?, ?, ?, ?, ?, "
                 + "(SELECT COALESCE(MAX(position), 0) + 1 FROM pool_member WHERE sheet_id = ?))",
-                sheetId, pool, personId, share, sheetId);
+                sheetId, pool, personId, memberPool, share, sheetId);
     }
 
     /** The name of the sheet's person with that id, or null when the sheet has none. */
