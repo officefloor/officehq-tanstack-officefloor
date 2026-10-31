@@ -1,0 +1,179 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 3a309da1..1a9f5aac 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -54,6 +54,8 @@ const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount m
+ const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
+ const EMPTY_COMMENT = 'A comment cannot be empty.';
+ const VIEWER = 'A viewer can change nothing.';
++const CANNOT_DELETE = 'Only a DRAFT claim can be deleted, and never one due by in a closed period.';
++const CANNOT_RESTORE = 'A deleted claim can be restored to DRAFT only on the sheet\'s today it was deleted.';
+ const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
+ 
+ /** Why the server refused to open a claim's editor. */
+@@ -73,9 +75,9 @@ class LockRefused extends Error {
+   }
+ }
+ 
+-const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void'] as const;
++const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void', 'delete', 'restore'] as const;
+ type Action = (typeof ACTIONS)[number];
+-const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void' };
++const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void', delete: 'Delete', restore: 'Restore' };
+ 
+ /**
+  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
+@@ -107,6 +109,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle',
+  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
+  * OPEN claim with the same date and note, the next number, opened by the user, which shows the
+  * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
++ * A DRAFT claim (not one due by in a closed period) can be deleted: it shows DELETED, counts nowhere and
++ * cannot be edited, opened or voided; on the sheet's today it was deleted it can be restored to DRAFT.
+  * A claim can be commented: each comment shows on it, oldest first, as "<user> on <date>: <text>"
+  * (the sheet's today when it was written); an empty comment is refused.
+  */
+@@ -223,7 +227,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+     onError: (e, c) =>
+       setRefused({
+         id: c.id,
+-        message: !(e instanceof HttpError)
++        message: c.action === 'delete'
++          ? CANNOT_DELETE
++          : c.action === 'restore'
++            ? CANNOT_RESTORE
++          : !(e instanceof HttpError)
+           ? STATUS_REFUSED
+           : e.body.includes('void reason')
+             ? NO_VOID_REASON
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 17a1de61..33685987 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -6,10 +6,12 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+ /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
+  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
+- *  OPEN or PENDING → VOID; a steward may void a SETTLED claim within 7 days of its settlement. */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++ *  OPEN or PENDING → VOID; a steward may void a SETTLED claim within 7 days of its settlement.
++ *  A DRAFT can be DELETED (and restored to DRAFT on the same sheet's today); a DELETED claim counts
++ *  nowhere, not even in the status counts. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+-/** Every status, in life order — the order the summary and header list them in. */
++/** Every status that is counted, in life order — the order the summary and header list them in (not DELETED). */
+ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+ 
+ /** Whether a claim is still open: OPEN or PENDING. A PENDING claim is handled like an OPEN one: it
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java
+index 7c91c11e..adbe9b6f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java
+@@ -4,12 +4,13 @@ import net.officefloor.hq.app.period.ClosedPeriods;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Raises the claim's proofs count by one. A SETTLED or VOID claim, or one dated in a closed period, is refused. */
++/** Raises the claim's proofs count by one. A SETTLED, VOID or DELETED claim, or one dated in a closed period, is refused. */
+ public class ApplyClaimProof {
+     public void apply(@Val ClaimProof change, @Val Claim claim, ClosedPeriods closedPeriods)
+             throws ClaimStatusRefusedException, PeriodClosedException {
+         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
+-        if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
++        if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID
++                || claim.getStatus() == ClaimStatus.DELETED) {
+             throw new ClaimStatusRefusedException("A proof cannot be added to a " + claim.getStatus() + " claim");
+         }
+         claim.setProofs(claim.getProofs() + 1);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 4eace141..dd3fffe7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -31,7 +31,9 @@ import net.officefloor.plugin.variable.Val;
+  *  A claim due by in a closed period cannot change status at all. Opening, settling and voiding are
+  *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}).
+  *  While the sheet's list of void reasons is not empty, a void needs a reason from it, which the
+- *  claim keeps. */
++ *  claim keeps.
++ *  A DRAFT claim can be deleted; a DELETED one restored to DRAFT only on the sheet's today it was
++ *  deleted (its status log's last DELETED date). */
+ public class ApplyClaimStatus {
+     /** How many days after its settlement (the status log's SETTLED date) a steward may still void a claim. */
+     static final int SETTLED_VOID_DAYS = 7;
+@@ -67,6 +69,12 @@ public class ApplyClaimStatus {
+                         + SETTLED_VOID_DAYS + " days of its settlement");
+             }
+         }
++        if (change.action() == ClaimAction.RESTORE) {
++            LocalDate deleted = log.lastOn(claim, ClaimStatus.DELETED);
++            if (deleted == null || !deleted.equals(sheets.today(claim.getSheetId()))) {
++                throw new ClaimStatusRefusedException("A deleted claim can be restored only on the day it was deleted");
++            }
++        }
+         String voidReason = null;
+         if (change.action() == ClaimAction.VOID && !voidReasons.onSheet(claim.getSheetId()).isEmpty()) {
+             if (change.reason() == null || !voidReasons.has(claim.getSheetId(), change.reason())) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+index 7914b8a2..cb891459 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+@@ -8,7 +8,9 @@ public enum ClaimAction {
+     APPROVE(ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
+     REJECT(ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
+     VOID(ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING,
+-            ClaimStatus.SETTLED);
++            ClaimStatus.SETTLED),
++    DELETE(ClaimStatus.DELETED, "CLAIM_DELETED", ClaimStatus.DRAFT),
++    RESTORE(ClaimStatus.DRAFT, "CLAIM_RESTORED", ClaimStatus.DELETED);
+ 
+     private final ClaimStatus to;
+     private final String event;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java
+index 567a3949..fcdc99a1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java
+@@ -41,8 +41,13 @@ public class ClaimLog {
+ 
+     /** The date of the claim's last SETTLED log line, null when it has none. */
+     public LocalDate settledOn(Claim claim) {
++        return lastOn(claim, ClaimStatus.SETTLED);
++    }
++
++    /** The date of the claim's last log line with this status, null when it has none. */
++    public LocalDate lastOn(Claim claim, ClaimStatus status) {
+         List<Date> dates = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ? ORDER BY id DESC",
+-                Date.class, claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED.name());
++                Date.class, claim.getSheetId(), claim.getId(), status.name());
+         return dates.isEmpty() ? null : dates.get(0).toLocalDate();
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 47e42b57..0eeb45ae 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -2,9 +2,10 @@ package net.officefloor.hq.app.claim;
+ 
+ /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
+  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
+- *  OPEN or PENDING → VOID; a steward may also void a SETTLED claim within 7 days of its settlement. */
++ *  OPEN or PENDING → VOID; a steward may also void a SETTLED claim within 7 days of its settlement.
++ *  A DRAFT can be DELETED, and restored to DRAFT on the same sheet's today; a DELETED claim counts nowhere. */
+ public enum ClaimStatus {
+-    DRAFT, OPEN, PENDING, SETTLED, VOID;
++    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+ 
+     /** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total. */
+     public boolean counts() {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index 34a5581d..6ecc1158 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -19,7 +19,7 @@ public class ValidateClaimStatus {
+             }
+             body.set(new ClaimStatusChange(parsed, request.user(), parsed == ClaimAction.REJECT || (parsed == ClaimAction.VOID && !reason.isEmpty()) ? reason : null));
+         } catch (IllegalArgumentException e) {
+-            throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject or void): " + action);
++            throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject, void, delete or restore): " + action);
+         }
+     }
+ }
