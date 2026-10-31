@@ -6,6 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -61,6 +64,57 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * The sheet's lines exactly as the file holds them, newest first. With a name given, only the
+     * lines carrying name=<the name> or person=<the name>, compared as names are (case and the
+     * spaces around it ignored). Reads the file; records nothing.
+     */
+    public synchronized List<String> linesFor(String sheet, String name) {
+        List<String> all;
+        try {
+            all = Files.exists(file) ? Files.readAllLines(file, StandardCharsets.UTF_8) : List.of();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String key = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> lines = new ArrayList<>();
+        for (int i = all.size() - 1; i >= 0; i--) {
+            String line = all.get(i);
+            Matcher m = SHEET_BY.matcher(line);
+            if (!m.find() || !m.group(2).equals(sheet)) {
+                continue;
+            }
+            if (key.isEmpty() || about(line, key)) {
+                lines.add(line);
+            }
+        }
+        return lines;
+    }
+
+    /** Whether the line's name= or person= field holds this (lower-cased, trimmed) name. */
+    private static boolean about(String line, String key) {
+        String[] tokens = line.split(" ");
+        for (int i = 0; i < tokens.length; i++) {
+            String value;
+            if (tokens[i].startsWith("name=")) {
+                value = tokens[i].substring("name=".length());
+            } else if (tokens[i].startsWith("person=")) {
+                value = tokens[i].substring("person=".length());
+            } else {
+                continue;
+            }
+            // A name with spaces in it runs on until the next field (a token carrying '=').
+            StringBuilder full = new StringBuilder(value);
+            for (int j = i + 1; j < tokens.length && !tokens[j].contains("="); j++) {
+                full.append(' ').append(tokens[j]);
+            }
+            if (full.toString().trim().toLowerCase(Locale.ROOT).equals(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Remove the audit file. */
