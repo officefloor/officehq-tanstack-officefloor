@@ -3,7 +3,7 @@ import { isActive } from '../active/active';
 import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
 import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
-import { rateOn, totalDue, useRates } from '../rates/useRates';
+import { hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
@@ -12,7 +12,8 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
  * The sheet in figures, each worked out as the list works it out. Per grade: how many people not
  * retired are on it on the sheet's today, their due-totals added up (n/a ones skipped), and how many
  * of them are active. Per
- * period: its due-total. Per status: how many of the sheet's claims have it. Per void reason on
+ * period: its due-total, and its change from the period before it by from-date (none for the
+ * earliest). Per status: how many of the sheet's claims have it. Per void reason on
  * the sheet's list: how many VOID claims were voided with it.
  */
 function SummaryPanel({ sheet }: { user: string; sheet: string }) {
@@ -35,6 +36,14 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
       late,
       cap,
     );
+
+  const periodDues = new Map(periods.map((p) => [p.name, periodDue(p, all, everyone, rates, floor, late, today)]));
+  const byFrom = [...periods].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  const changeOf = (p: (typeof periods)[number]) => {
+    const i = byFrom.indexOf(p);
+    if (i <= 0) return '';
+    return totalDue([hundredths(periodDues.get(p.name)!) - hundredths(periodDues.get(byFrom[i - 1].name)!)]);
+  };
 
   return (
     <section data-testid="summary-panel">
@@ -67,13 +76,15 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
           <tr>
             <th>Period</th>
             <th>Due</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody>
           {periods.map((p) => (
             <tr key={p.name}>
               <td>{p.name}</td>
-              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDue(p, all, everyone, rates, floor, late, today)}</td>
+              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDues.get(p.name)}</td>
+              <td data-testid={`summary-period-${p.name}-change`}>{changeOf(p)}</td>
             </tr>
           ))}
         </tbody>
