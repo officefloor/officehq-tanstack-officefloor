@@ -24,9 +24,13 @@ public class SaveQuickClaim {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidQuickClaim request, People people, Claims claims,
             Sheets sheets, Periods periods, Audit audit, @Val RollupFigures before, Rollup rollup,
             net.officefloor.hq.app.setting.Settings settings, ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays,
+            net.officefloor.hq.app.grade.RetiredGrades grades,
             ObjectResponse<ResponseEntity<ClaimResponse>> response) throws InvalidClaimException {
         LocalDate date = settings.claimDate(sheetId);
         String grade = settings.defaultGrade(sheetId);
+        if (grades.isRetired(sheetId, grade)) {
+            grade = net.officefloor.hq.app.setting.Settings.START_DEFAULT_GRADE; // a retired default falls back to A
+        }
         Person person = people.findByName(sheetId, request.name());
         // Refuse before anything is written: the claim's period goes by the due-by it would be fixed with.
         LocalDate dueBy = holidays.dueBy(sheetId, date, person != null
@@ -42,6 +46,9 @@ public class SaveQuickClaim {
         if (person == null) {
             if (people.nameTaken(sheetId, request.name(), null)) {
                 throw new InvalidClaimException("The name is already in use");
+            }
+            if (grades.isRetired(sheetId, grade)) {
+                throw new InvalidClaimException("Grade " + grade + " is retired");
             }
             person = people.add(sheetId, request.name(), grade);
             audit.recordOnCommit("PERSON_ADDED sheet=" + sheetId + " by=" + request.user()

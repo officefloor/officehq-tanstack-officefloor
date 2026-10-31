@@ -19,10 +19,17 @@ import org.springframework.web.bind.annotation.PathVariable;
  */
 public class BulkGradePeople {
     public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeRequest request,
-            People people, Rollup rollup, Audit audit, ObjectResponse<BulkGradeResponse> response)
-            throws PersonConflictException {
+            People people, Rollup rollup, Audit audit, net.officefloor.hq.app.grade.RetiredGrades grades,
+            ObjectResponse<BulkGradeResponse> response) throws PersonConflictException, InvalidPersonException {
         Set<String> selected = new HashSet<>(request.personIds());
         int graded = 0;
+        // A retired grade cannot be chosen: refused before anything is written when it would be recorded for anyone.
+        for (Person person : people.list(sheetId)) {
+            if (selected.contains(String.valueOf(person.getId()))
+                    && (!request.gradeFrom().isEmpty() || !request.grade().equals(person.getGrade()))) {
+                grades.refuseRetired(sheetId, request.grade());
+            }
+        }
         for (Person person : people.list(sheetId)) {
             if (!selected.contains(String.valueOf(person.getId()))) {
                 continue;

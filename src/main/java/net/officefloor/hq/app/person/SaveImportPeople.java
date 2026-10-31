@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  */
 public class SaveImportPeople {
     public void save(@PathVariable("sheetId") String sheetId, @Val ValidImportPeople request, People people, Audit audit,
-            Rollup rollup, ObjectResponse<ImportPeopleResponse> response) throws InvalidPersonException, PersonConflictException {
+            Rollup rollup, net.officefloor.hq.app.grade.RetiredGrades grades, ObjectResponse<ImportPeopleResponse> response) throws InvalidPersonException, PersonConflictException {
         List<Person> matched = new ArrayList<>();
         Set<Long> updating = new HashSet<>();
         int number = 0;
@@ -39,6 +39,9 @@ public class SaveImportPeople {
             if (!line.contact().isEmpty()
                     && people.contactTaken(sheetId, line.contact(), person == null ? null : person.getId())) {
                 throw new InvalidPersonException("Person " + number + ": the contact is already in use");
+            }
+            if ((person == null || !line.grade().equals(person.getGrade())) && grades.isRetired(sheetId, line.grade())) {
+                throw new InvalidPersonException("Person " + number + ": grade " + line.grade() + " is retired");
             }
             matched.add(person);
         }

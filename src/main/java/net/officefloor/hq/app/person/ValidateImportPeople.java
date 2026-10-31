@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  * in the import, or an import with no one in it, is refused.
  */
 public class ValidateImportPeople {
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request, Out<ValidImportPeople> body, Settings settings)
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request, Out<ValidImportPeople> body, Settings settings,
+            net.officefloor.hq.app.grade.RetiredGrades grades)
             throws InvalidPersonException, ViewerRefusedException {
         settings.refuseViewer(sheetId, request.user());
         String text = request.text() == null ? "" : request.text();
@@ -25,6 +26,9 @@ public class ValidateImportPeople {
         Set<String> names = new HashSet<>();
         Set<String> contacts = new HashSet<>();
         String defaultGrade = settings.defaultGrade(sheetId);
+        if (grades.isRetired(sheetId, defaultGrade)) {
+            defaultGrade = net.officefloor.hq.app.setting.Settings.START_DEFAULT_GRADE; // a retired default falls back to A
+        }
         int number = 0;
         for (String raw : text.split("\\r?\\n")) {
             number++;

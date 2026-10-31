@@ -7,6 +7,7 @@ import { SheetToday } from '../features/sheet/SheetToday';
 import { AsOfControl } from '../features/asof/AsOfControl';
 import { RatePanel } from '../features/rates/RatePanel';
 import { HolidayPanel } from '../features/holidays/HolidayPanel';
+import { GradePanel } from '../features/grades/GradePanel';
 import { VoidReasonPanel } from '../features/voidreasons/VoidReasonPanel';
 import { NotePanel } from '../features/notes/NotePanel';
 import { PoolPanel } from '../features/pools/PoolPanel';
@@ -47,6 +48,7 @@ function Home() {
           <ConsolidatedFigures />
           <AsOfControl />
           <RatePanel />
+          <GradePanel />
           <HolidayPanel />
           <VoidReasonPanel />
           <NotePanel />

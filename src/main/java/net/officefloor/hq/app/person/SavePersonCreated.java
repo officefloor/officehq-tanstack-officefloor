@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 public class SavePersonCreated {
     public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, People people, Audit audit, @Val RollupFigures before, Rollup rollup,
-            ObjectResponse<ResponseEntity<PersonResponse>> response) throws InvalidPersonException {
+            net.officefloor.hq.app.grade.RetiredGrades grades, ObjectResponse<ResponseEntity<PersonResponse>> response) throws InvalidPersonException {
+        grades.refuseRetired(sheetId, request.grade());
         if (people.nameTaken(sheetId, request.name(), null)) {
             throw new InvalidPersonException("The name is already in use");
         }

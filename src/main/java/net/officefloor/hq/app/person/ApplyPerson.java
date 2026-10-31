@@ -4,7 +4,8 @@ import java.time.LocalDate;
 import net.officefloor.plugin.variable.Val;
 
 public class ApplyPerson {
-    public void apply(@Val PersonRequest request, @Val Person person, People people)
+    public void apply(@Val PersonRequest request, @Val Person person, People people,
+            net.officefloor.hq.app.grade.RetiredGrades grades)
             throws InvalidPersonException, PersonConflictException {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(person.getId());
@@ -15,6 +16,11 @@ public class ApplyPerson {
         }
         if (!request.contact().isEmpty() && people.contactTaken(person.getSheetId(), request.contact(), person.getId())) {
             throw new InvalidPersonException("The contact is already in use");
+        }
+        // A retired grade cannot be chosen: only a save leaving the person on it, with no from-date, keeps it.
+        boolean recordsGrade = !request.gradeFrom().isEmpty() || !request.grade().equals(person.getGrade());
+        if (recordsGrade) {
+            grades.refuseRetired(person.getSheetId(), request.grade());
         }
         person.setName(request.name());
         // The form's terms are recorded from their from-date, keeping those already recorded; with no
@@ -30,7 +36,7 @@ public class ApplyPerson {
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the
         // grades already recorded; a save leaving the grade as the row showed it with no from-date
         // records nothing.
-        if (request.gradeFrom().isEmpty() && request.grade().equals(person.getGrade())) {
+        if (!recordsGrade) {
             return;
         }
         LocalDate from = request.gradeFrom().isEmpty() ? person.getToday() : LocalDate.parse(request.gradeFrom());
