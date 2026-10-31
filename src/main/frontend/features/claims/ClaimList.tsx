@@ -21,7 +21,7 @@ import { peopleKey, type Person } from '../people/usePeople';
 // claim to PENDING, which keeps any figure a statement bound it to; a steward may void a SETTLED claim within 7 days of
 // its settlement by the sheet's today, its frozen figure leaving every total), approve and reject with a reason (a steward's decision
 // on a PENDING claim: approve settles it, reject returns it to OPEN; the opener or last editor cannot approve it), review (a steward's
-// decision on a REVIEW claim — one whose due was above the review threshold in force on its date when opened — making it OPEN with its number) and an edit button that
+// decision on a REVIEW claim — one whose due was above the review threshold in force on its date when opened — making it OPEN, unnumbered until settled) and an edit button that
 // opens a DRAFT claim in the person's claim form (cancel closes it again); editing any other claim, one whose due-by is inside a closed
 // period, or one another user's open editor locks, is refused with the claim's error — to change an open claim, void it and
 // add a new one. An open editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes. A steward (or the roles the sheet's

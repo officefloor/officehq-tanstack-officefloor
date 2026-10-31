@@ -6,12 +6,12 @@ import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Saves the split claim and adds the new OPEN claim with the split-off amount, the same date and note, the next
- *  number, opened by the user, its due-by fixed now from the terms in force on the sheet's today, split from the claim, carrying its tags, and a
+/** Saves the split claim and adds the new OPEN claim with the split-off amount, the same date and note, no number
+ *  (it is numbered when settled), opened by the user, its due-by fixed now from the terms in force on the sheet's today, split from the claim, carrying its tags, and a
  *  late entry when the claim is one. */
 public class SaveSplit {
     public void save(@Val ValidSplit request, @Val Claim claim, Claims claims, People people, Settings settings,
-            ClaimNumbering numbering, ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays, Out<ClaimSplit> split) {
+            ClaimLog log, net.officefloor.hq.app.holiday.Holidays holidays, Out<ClaimSplit> split) {
         claims.save(claim);
         claims.bind(claim);
         String sheetId = claim.getSheetId();
@@ -19,7 +19,6 @@ public class SaveSplit {
         Claim into = claims.add(sheetId, person.getId(), request.amount(), claim.getDate(), claim.getNote(),
                 holidays.dueBy(sheetId, claim.getDate(), settings.termsOnCreation(sheetId, person)));
         into.setStatus(ClaimStatus.OPEN);
-        into.setNumber(numbering.next(sheetId, into.getPeriodDate()));
         into.setOpenedBy(request.user());
         into.setSplitFrom(claim.getNumber());
         into.setTags(claim.getTags());

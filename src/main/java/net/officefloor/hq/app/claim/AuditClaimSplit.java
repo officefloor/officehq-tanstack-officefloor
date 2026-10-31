@@ -13,7 +13,7 @@ public class AuditClaimSplit {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         Claim into = split.into();
         audit.recordOnCommit(ClaimAudit.line("CLAIM_SPLIT", request.user(), person, claim, claim.getNumber())
-                + " into=" + into.getNumber());
+                + " into=" + (into.getNumber() == null ? "" : into.getNumber()));
         audit.recordOnCommit(ClaimAudit.line("CLAIM_OPENED", request.user(), person, into, into.getNumber()));
         rollup.recordChanges(claim.getSheetId(), request.user(), before);
     }

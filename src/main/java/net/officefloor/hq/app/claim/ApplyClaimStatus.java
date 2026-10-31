@@ -137,13 +137,13 @@ public class ApplyClaimStatus {
                 target = ClaimStatus.PENDING;
             }
         }
-        if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.REVIEW) {
-            // Reviewed: numbered as it opens; its opener stays the user who opened it.
-            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
-        }
+        // Reviewed: it opens unnumbered; its opener stays the user who opened it.
         if (target == ClaimStatus.OPEN && request.decision() == ValidClaimStatus.Decision.NONE) {
-            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
             claim.setOpenedBy(request.user());
+        }
+        if (target == ClaimStatus.SETTLED && claim.getNumber() == null) {
+            // Numbered as it settles (or is approved), by the date that places it then; one numbered before keeps its number.
+            claim.setNumber(numbering.next(claim.getSheetId(), claim.getPeriodDate()));
         }
         // A voided claim keeps its number; numbers are never reused.
         ClaimNumber number = new ClaimNumber(claim.getNumber());

@@ -18,14 +18,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * Opens the selected claims in list order (people in the order they were added, newest claim first
- * within a person), numbering each as it opens and auditing it as a single open would be. A selected
+ * within a person), unnumbered until settled, and auditing it as a single open would be. A selected
  * claim that cannot be opened (not DRAFT, its due-by inside a closed period, the user's role may not open, its note is empty while its due is above the note threshold, its person is flagged and the user is not a steward, or its person already has as many OPEN or PENDING claims in its period as the period's cap) is left as it is and counted
  * as refused; so is a selected id that is not a claim on the sheet. A claim whose due is above the review threshold goes to
  * REVIEW instead and counts as opened.
  */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
-            Claims claims, People people, Periods periods, Settings settings, Sheets sheets, Rates rates, ClaimNumbering numbering, Rollup rollup, Audit audit, ClaimLog log,
+            Claims claims, People people, Periods periods, Settings settings, Sheets sheets, Rates rates, Rollup rollup, Audit audit, ClaimLog log,
             ObjectResponse<BulkOpenResponse> response) {
         Set<String> selected = new HashSet<>(request.claimIds() == null ? List.of() : request.claimIds());
         List<Claim> all = claims.list(sheetId);
@@ -61,7 +61,6 @@ public class BulkOpenClaims {
                     continue;
                 }
                 RollupFigures before = rollup.figures(sheetId);
-                claim.setNumber(numbering.next(sheetId, claim.getPeriodDate()));
                 claim.setOpenedBy(request.user());
                 claim.setStatus(ClaimStatus.OPEN);
                 claims.save(claim);

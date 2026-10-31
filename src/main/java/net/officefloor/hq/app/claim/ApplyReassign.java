@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the sheet's reassign permission allows
  * (by default a steward) move a claim, and none whose due-by is inside a closed period moves.
  * It keeps its date, takes the next number in the sequence it would be numbered in now (its old number is
- * never used again; a DRAFT, having none, gets none), but loses any figure a statement bound it to: it is live again until
+ * never used again; a claim not yet numbered, having none, gets none), but loses any figure a statement bound it to: it is live again until
  * its new person's next statement.
  */
 public class ApplyReassign {

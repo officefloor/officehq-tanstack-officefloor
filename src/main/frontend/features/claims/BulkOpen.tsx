@@ -44,7 +44,7 @@ export function ClaimSelect({ claimId }: { claimId: string }) {
   );
 }
 
-// Opens the selected claims together: the server opens and numbers each that can be opened, in list
+// Opens the selected claims together: the server opens each that can be opened (unnumbered until settled), in list
 // order (people in the order they were added, newest claim first within a person), and leaves each
 // that cannot as it is. Then shows how many were opened and how many were refused, and clears the
 // selection; pressing again removes the old counts until the new ones are in.
