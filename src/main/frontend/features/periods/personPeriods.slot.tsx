@@ -3,6 +3,7 @@ import { useClaims } from '../claims/useClaims';
 import { type Person } from '../people/usePeople';
 import { showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
+import { useSheetToday } from '../sheet/useSheet';
 import { personPeriodDueCents, usePeriods } from './usePeriods';
 
 /** One header per period on the sheet. */
@@ -28,11 +29,12 @@ function PersonPeriods({ sheet, person }: { user: string; sheet: string; person:
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
+  const today = useSheetToday(sheet);
   return (
     <>
       {periods.map((p) => (
         <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {showDue(personPeriodDueCents(p, person, claims, rates, floor, late))}
+          {showDue(personPeriodDueCents(p, person, claims, rates, floor, late, today))}
         </td>
       ))}
     </>

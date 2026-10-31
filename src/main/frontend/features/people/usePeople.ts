@@ -8,7 +8,8 @@ import { getJson } from '../../api/http';
  *  `retired` is whether a retirement date is set (whatever the date), `retiredFrom` that date
  *  (yyyy-mm-dd, null when not retired). `held` is whether they have any hold; `holds` every hold, in the
  *  order added, from a date to a date (both inclusive; `to` null: open-ended). Their OPEN claims
- *  dated within a hold count in no live total, unless a statement binds them. `patrons` are the ids of the people they have named as patrons, in
+ *  dated within a hold count in no live total, nor any OPEN or PENDING claim of theirs once the sheet's today
+ *  reaches their retirement date, unless a statement binds them. `patrons` are the ids of the people they have named as patrons, in
  *  the order they were named. `grade` is the grade in force on the sheet's today when they were read;
  *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). `terms` are
  *  the person's own terms in days (null: none), ahead of their grade's and the sheet's. */
@@ -29,17 +30,23 @@ export type Person = {
   terms: number | null;
 };
 
-/** Whether `date` (yyyy-mm-dd) falls within any of the person's holds. */
-export function heldOn(person: Person, date: string): boolean {
-  return person.holds.some((h) => date >= h.from && (h.to === null || date <= h.to));
+/** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */
+export function retiredOut(person: Person, today: string): boolean {
+  return person.retiredFrom !== null && today !== '' && today >= person.retiredFrom;
 }
 
-/** By person id, whether a date falls within one of that person's holds. */
-export function heldOnBy(people: Person[]): (personId: number, date: string) => boolean {
+/** Whether a claim of the person's dated `date` (yyyy-mm-dd) is held out of the live totals: the date
+ *  falls within any of the person's holds, or the sheet's `today` has reached their retirement date. */
+export function heldOn(person: Person, date: string, today: string): boolean {
+  return retiredOut(person, today) || person.holds.some((h) => date >= h.from && (h.to === null || date <= h.to));
+}
+
+/** By person id, whether a claim dated then is held out (see `heldOn`) on the sheet's `today`. */
+export function heldOnBy(people: Person[], today: string): (personId: number, date: string) => boolean {
   const byId = new Map(people.map((p) => [p.id, p]));
   return (personId, date) => {
     const p = byId.get(personId);
-    return p !== undefined && heldOn(p, date);
+    return p !== undefined && heldOn(p, date, today);
   };
 }
 

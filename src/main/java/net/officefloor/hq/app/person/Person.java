@@ -96,6 +96,11 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    /** Whether the sheet's today (as read) has reached the person's retirement date: from then their
+     *  OPEN and PENDING claims leave the live totals, as a hold's would. */
+    public boolean retiredOut() {
+        return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
+    }
     /** Whether the person has any hold, whatever its dates. */
     public boolean isHeld() { return !holds.isEmpty(); }
     /** The person's holds, in the order they were added. */
@@ -110,7 +115,8 @@ public class Person {
     public void setPatronIds(List<Long> patronIds) { this.patronIds = patronIds; }
 
     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
-     *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, unless a statement binds it. */
+     *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, nor
+     *  one once the sheet's today has reached their retirement date, unless a statement binds it. */
     public boolean counts(Claim claim) {
         return counts(claim, claim.getStatus());
     }
@@ -120,7 +126,7 @@ public class Person {
     public boolean counts(Claim claim, ClaimStatus status) {
         if (status == null) return false;
         if (!status.counts() || claim.isDeferred()) return false;
-        if (!status.isOpen() || !heldOn(claim.getDate())) return true;
+        if (!status.isOpen() || !(heldOn(claim.getDate()) || retiredOut())) return true;
         return claim.isStated() && status != ClaimStatus.PENDING;
     }
 

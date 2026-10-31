@@ -101,14 +101,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
-  // Their OPEN and PENDING claims dated within a hold count toward neither claimed nor the due-total,
-  // unless a statement binds them.
-  const liveClaims = live(claims, (_, date) => heldOn(person, date));
+  const today = useSheetToday(sheet);
+  // Their OPEN and PENDING claims dated within a hold, or all of them once today reaches their
+  // retirement date, count toward neither claimed nor the due-total, unless a statement binds them.
+  const liveClaims = live(claims, (_, date) => heldOn(person, date, today));
   const { data: everyone = [] } = usePeople(sheet);
   const others = everyone.filter((p) => p.id !== person.id);
   const { data: rates = [] } = useRates(sheet);
   const { data: periods = [] } = usePeriods(sheet);
-  const today = useSheetToday(sheet);
   const pct = rateOn(rates, gradeOn(person, today), today);
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);

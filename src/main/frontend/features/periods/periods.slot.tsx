@@ -7,6 +7,7 @@ import { useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
+import { useSheetToday } from '../sheet/useSheet';
 import { DATE, periodDue, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /**
@@ -27,6 +28,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const { data: people = [] } = usePeople(sheet);
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloor(sheet);
+  const today = useSheetToday(sheet);
   const late = useLate(sheet);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
@@ -105,7 +107,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
     return null;
   };
 
-  const dueIn = (period: Period) => periodDue(period, all, people, rates, floor, late);
+  const dueIn = (period: Period) => periodDue(period, all, people, rates, floor, late, today);
 
   return (
     <section data-testid="periods-panel">

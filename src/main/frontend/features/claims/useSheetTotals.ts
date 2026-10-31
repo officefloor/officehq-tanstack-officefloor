@@ -14,9 +14,9 @@ import { claimed, live, overdueFigures, personDueCents, useClaims } from './useC
 export function useSheetTotals(sheet: string) {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
-  const claims = live(all, heldOnBy(people));
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
+  const claims = live(all, heldOnBy(people, today));
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const cap = useCap(sheet);

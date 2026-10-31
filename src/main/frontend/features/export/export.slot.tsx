@@ -26,7 +26,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const cap = useCap(sheet);
 
   const download = () => {
-    const claims = live(all, heldOnBy(people));
+    const claims = live(all, heldOnBy(people, today));
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const due = personDueCents(

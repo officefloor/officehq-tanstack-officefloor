@@ -25,7 +25,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const people = everyone.filter((p) => !p.retired);
   const dueOf = (p: (typeof people)[number]) =>
     personDueCents(
-      live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date)),
+      live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date, today)),
       floor,
       rateOn(rates, gradeOn(p, today), today),
       (d) => rateOn(rates, gradeOn(p, d), d),
@@ -70,7 +70,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
           {periods.map((p) => (
             <tr key={p.name}>
               <td>{p.name}</td>
-              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDue(p, all, everyone, rates, floor, late)}</td>
+              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDue(p, all, everyone, rates, floor, late, today)}</td>
             </tr>
           ))}
         </tbody>

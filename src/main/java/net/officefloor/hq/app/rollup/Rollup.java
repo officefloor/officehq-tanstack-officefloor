@@ -48,7 +48,8 @@ public class Rollup {
     }
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
-     *  person's OPEN claims dated within a hold of theirs do not count, unless a statement binds them),
+     *  person's OPEN claims dated within a hold of theirs, or any once today reaches their retirement
+     *  date, do not count, unless a statement binds them),
      *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
      *  capped); the sheet's skips the n/a ones, and its due and overdue totals leave out the single
      *  highest and lowest person's figure when three or more have one. */

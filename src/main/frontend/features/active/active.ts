@@ -17,6 +17,6 @@ export function isActive(person: Person, claims: Claim[], today: string): boolea
   const since = daysBefore(today, ACTIVE_DAYS - 1);
   return live(
     claims.filter((c) => c.personId === person.id),
-    (_, date) => heldOn(person, date),
+    (_, date) => heldOn(person, date, today),
   ).some((c) => isOpen(c) && c.date >= since && c.date <= today);
 }
