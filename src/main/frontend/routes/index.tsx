@@ -16,6 +16,7 @@ import { SettingsPanel } from '../features/settings/SettingsPanel';
 import { PeriodPanel } from '../features/periods/PeriodPanel';
 import { PersonForm } from '../features/people/PersonForm';
 import { PeopleList } from '../features/people/PeopleList';
+import { DuplicateClaims } from '../features/claims/DuplicateClaims';
 import { SheetHeader } from '../features/header/SheetHeader';
 import { StewardDashboard } from '../features/dashboard/StewardDashboard';
 import { ConsolidatedFigures } from '../features/consolidated/ConsolidatedFigures';
@@ -54,6 +55,7 @@ function Home() {
           <PeriodPanel />
           <PersonForm />
           <PeopleList />
+          <DuplicateClaims />
           <PoolPanel />
           <CrewPanel />
           <TreeSearch />
