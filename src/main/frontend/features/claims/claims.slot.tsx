@@ -8,6 +8,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateOn, showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
+import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import {
   AMOUNT,
   CLAIM_NUMBER,
@@ -61,6 +62,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [invalid, setInvalid] = useState(false);
   // The claim whose last status change or edit was refused: its row shows the error.
   const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
+  // The claims ticked for a bulk action (the bulk-open panel acts on them).
+  const [selected, setSelected] = useSelectedClaims();
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
   const submitOnce = useSubmitOnce();
@@ -209,6 +212,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
         <ul data-testid="claim-list">
           {claims.map((c) => (
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
+              <input
+                type="checkbox"
+                data-testid="claim-select"
+                aria-label="Select claim"
+                checked={selected.includes(c.id)}
+                onChange={(e) =>
+                  setSelected(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id))
+                }
+              />{' '}
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
