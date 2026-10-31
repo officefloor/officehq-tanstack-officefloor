@@ -1,0 +1,305 @@
+diff --git a/src/main/frontend/features/move/move.slot.tsx b/src/main/frontend/features/move/move.slot.tsx
+new file mode 100644
+index 00000000..e275146b
+--- /dev/null
++++ b/src/main/frontend/features/move/move.slot.tsx
+@@ -0,0 +1,46 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
++import { peopleKey, type Person } from '../people/usePeople';
++import { useRowAction } from '../people/useRowAction';
++
++/**
++ * The buttons to move a person up or down the list, swapping them with the one above or below.
++ * The list, the rollup lines and every action that works in list order follow it. The top row
++ * cannot move up, nor the bottom row down.
++ */
++function PersonMove({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const move = useMutation({
++    mutationFn: (direction: 'up' | 'down') =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/move`, { direction, user }),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++  });
++  const actionTaken = useRowAction(sheet, person.id, move.reset);
++  const press = (direction: 'up' | 'down') => {
++    actionTaken();
++    move.reset();
++    move.mutate(direction);
++  };
++  return (
++    <td>
++      <button type="button" data-testid="person-move-up" disabled={move.isPending} onClick={() => press('up')}>
++        Up
++      </button>{' '}
++      <button type="button" data-testid="person-move-down" disabled={move.isPending} onClick={() => press('down')}>
++        Down
++      </button>
++      {move.isError && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          Could not move this person.
++        </span>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumns.fill({ order: 2, Component: () => <th>Move</th> }),
++  PersonCells.fill({ order: 2, Component: PersonMove }),
++];
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index faa04b61..b9e1eb9e 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -63,7 +63,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+ export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
+ 
+-/** The sheet's people in the order they were added, re-read whenever the sheet is loaded. */
++/** The sheet's people in list order (by position; see the move buttons), re-read whenever the sheet is loaded. */
+ export function usePeople(sheet: string) {
+   const [asOf] = useAsOf();
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/person/Move.java b/src/main/java/net/officefloor/hq/app/person/Move.java
+new file mode 100644
+index 00000000..4d03d2d9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Move.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A checked move: up (else down) the list, and by whom. */
++public record Move(boolean up, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MovePerson.java b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+new file mode 100644
+index 00000000..afdb6d45
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Val;
++
++/** Swaps the person with the one above or below them in the list, answering where it leaves them
++ *  (counting from 1). Refused: the top row moving up, or the bottom row down. */
++public class MovePerson {
++    public Integer move(@Val Move move, @Val Person person, People people) throws InvalidSheetRequestException {
++        if (!people.move(person, move.up()))
++            throw new InvalidSheetRequestException(person.getName() + " is already " + (move.up() ? "first" : "last"));
++        return people.positionOf(person);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MoveRequest.java b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+new file mode 100644
+index 00000000..8b6208e7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a move, as sent: the direction ("up" or "down") and who makes the change. */
++public record MoveRequest(String direction, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 2a3c8135..2c6733fb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -14,13 +14,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The people of each sheet, kept in the order they were added. */
++/** The people of each sheet, kept in list order: by position (a new person goes to the end). */
+ @Repository
+ public class People {
+ 
+     private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, "
+             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
+ 
++    /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
++    static final String END_POSITION = "(SELECT COALESCE(MAX(position), 0) + 1 FROM person WHERE sheet_id = ?)";
++
+     private final JdbcTemplate jdbc;
+ 
+     public People(JdbcTemplate jdbc) {
+@@ -28,7 +31,7 @@ public class People {
+     }
+ 
+     public List<Person> onSheet(String sheetId) {
+-        List<Person> people = jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY id",
++        List<Person> people = jdbc.query(COLUMNS + " WHERE sheet_id = ? ORDER BY position, id",
+                 People::person,
+                 sheetId);
+         Map<Long, List<Long>> patrons = new HashMap<>();
+@@ -191,12 +194,14 @@ public class People {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, position) VALUES (?, ?, ?, ?, ?, "
++                            + END_POSITION + ")", new String[] { "id" });
+             ps.setString(1, person.getSheetId());
+             ps.setString(2, person.getName());
+             ps.setString(3, person.getFirstGrade());
+             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
+             ps.setString(5, person.getContact());
++            ps.setString(6, person.getSheetId());
+             return ps;
+         }, keys);
+         person.setId(keys.getKey().longValue());
+@@ -205,6 +210,46 @@ public class People {
+         return true;
+     }
+ 
++    /** Swap the person with their neighbour in the list (the one above when `up`, else below), both
++     *  locked for the rest of the transaction; false (nothing written) when there is none, the person
++     *  being first or last. Not an edit: neither person's version changes. */
++    public boolean move(Person person, boolean up) {
++        String sheetId = person.getSheetId();
++        Long mine = jdbc.queryForObject("SELECT position FROM person WHERE id = ? FOR UPDATE", Long.class, person.getId());
++        List<long[]> neighbour = jdbc.query("SELECT id, position FROM person WHERE sheet_id = ? AND "
++                + (up ? "(position < ? OR (position = ? AND id < ?)) ORDER BY position DESC, id DESC"
++                        : "(position > ? OR (position = ? AND id > ?)) ORDER BY position, id")
++                + " LIMIT 1 FOR UPDATE",
++                (rs, i) -> new long[] { rs.getLong(1), rs.getLong(2) }, sheetId, mine, mine, person.getId());
++        if (neighbour.isEmpty()) return false;
++        long otherId = neighbour.get(0)[0];
++        long theirs = neighbour.get(0)[1];
++        if (theirs == mine) {
++            // Equal positions cannot be swapped: spread the sheet's positions out first.
++            renumber(sheetId);
++            mine = jdbc.queryForObject("SELECT position FROM person WHERE id = ?", Long.class, person.getId());
++            theirs = jdbc.queryForObject("SELECT position FROM person WHERE id = ?", Long.class, otherId);
++        }
++        jdbc.update("UPDATE person SET position = ? WHERE id = ?", theirs, person.getId());
++        jdbc.update("UPDATE person SET position = ? WHERE id = ?", mine, otherId);
++        return true;
++    }
++
++    /** The person's place in their sheet's list, counting from 1. */
++    public int positionOf(Person person) {
++        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY position, id",
++                Long.class, person.getSheetId());
++        return ids.indexOf(person.getId()) + 1;
++    }
++
++    private void renumber(String sheetId) {
++        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY position, id",
++                Long.class, sheetId);
++        for (int i = 0; i < ids.size(); i++) {
++            jdbc.update("UPDATE person SET position = ? WHERE id = ?", i + 1, ids.get(i));
++        }
++    }
++
+     /** Record a statement taken for the person (their count, last due-total and date). Not an edit:
+      *  the person's version is untouched, so an editor open on them can still save. */
+     public void saveStatement(Person person) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonMoved.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonMoved.java
+new file mode 100644
+index 00000000..14fe8cc8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonMoved.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the move is saved, so a refused one writes no audit line. */
++public class RecordPersonMoved {
++    public void record(@Parameter Integer position, @Val Move move, @Val Person person, Audit audit) {
++        audit.record("PERSON_MOVED sheet=" + person.getSheetId() + " by=" + move.user()
++                + " name=" + person.getName() + " position=" + position);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Transfers.java b/src/main/java/net/officefloor/hq/app/person/Transfers.java
+index 06d210c3..e6a56af8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Transfers.java
++++ b/src/main/java/net/officefloor/hq/app/person/Transfers.java
+@@ -74,12 +74,14 @@ public class Transfers {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, position) VALUES (?, ?, ?, ?, ?, "
++                            + People.END_POSITION + ")", new String[] { "id" });
+             ps.setString(1, to);
+             ps.setString(2, person.getName());
+             ps.setString(3, person.getFirstGrade());
+             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
+             ps.setString(5, person.getContact());
++            ps.setString(6, to);
+             return ps;
+         }, keys);
+         long toId = keys.getKey().longValue();
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateMove.java b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+new file mode 100644
+index 00000000..e1b7733a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateMove {
++    public void validate(@RequestBody MoveRequest request, Out<Move> body) throws InvalidSheetRequestException {
++        String direction = request == null || request.direction() == null ? "" : request.direction().trim();
++        if (!direction.equals("up") && !direction.equals("down"))
++            throw new InvalidSheetRequestException("A move is up or down: " + direction);
++        body.set(new Move(direction.equals("up"), request.user()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V67__person_position.sql b/src/main/resources/db/migration/V67__person_position.sql
+new file mode 100644
+index 00000000..4b118429
+--- /dev/null
++++ b/src/main/resources/db/migration/V67__person_position.sql
+@@ -0,0 +1,12 @@
++-- A person's place in their sheet's list: the list (and every action that works in list order)
++-- runs by ascending position. A new person goes to the end; moving a person up or down swaps their
++-- position with their neighbour's. People already on a sheet keep the order they were added in.
++DROP TRIGGER public.person_history;
++ALTER TABLE public.person ADD COLUMN position BIGINT;
++ALTER TABLE asof.person ADD COLUMN position BIGINT;
++ALTER TABLE asof_hist.person ADD COLUMN position BIGINT;
++UPDATE public.person SET position = id;
++UPDATE asof_hist.person SET position = id;
++CREATE INDEX person_sheet_position ON public.person (sheet_id, position);
++-- The history trigger keeps the column list it was created with: create it again to see the new one.
++CREATE TRIGGER person_history AFTER INSERT, UPDATE, DELETE ON public.person FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml
+new file mode 100644
+index 00000000..6f0b0ee0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml
+@@ -0,0 +1,21 @@
++# Move a person up or down the list: swap them with the one above or below. The top row cannot
++# move up, nor the bottom row down.
++validate:
++  class: net.officefloor.hq.app.person.ValidateMove
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: move
++move:
++  class: net.officefloor.hq.app.person.MovePerson
++  govern: [ transaction ]
++  next: record
++# Audit only once the move is saved.
++record:
++  class: net.officefloor.hq.app.person.RecordPersonMoved
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
