@@ -9,8 +9,18 @@ import type { Person } from '../people/people';
 import { recentSettledCents, useClaims } from '../claims/claims';
 import { twoDecimals } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
-import { patronsKey, usePatrons } from './patrons';
+import { patronsKey, shareCents, usePatrons } from './patrons';
 import type { Patron } from './patrons';
+
+/** A figure in ten-thousandths of a hundredth (hundredths times a share in hundredths of a percent) as hundredths,
+ *  rounded half to even. */
+function roundHundredths(product: bigint): bigint {
+  const abs = product < 0n ? -product : product;
+  let quotient = abs / 10000n;
+  const remainder = abs % 10000n;
+  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
+  return product < 0n ? -quotient : quotient;
+}
 
 function PatronsHeader() {
   return (
@@ -22,9 +32,11 @@ function PatronsHeader() {
   );
 }
 
-// A person's patrons (names sorted, comma separated) and their backing: the patrons' settled figures added up
-// over their SETTLED claims dated within the 90 days up to and including the sheet's today (0.00 with none). A patron is picked from the others on the sheet and named one at a time; the
-// server refuses a patron already named.
+// A person's patrons, each with their share (see shareCents; shown "<name> <share>", sorted by name, comma separated),
+// and their backing: over the patrons, each patron's settled figures of their SETTLED claims dated within the 90 days up
+// to and including the sheet's today, times their share divided by 100, added up and rounded half to even (0.00 with
+// none). A patron is picked from the others on the sheet and named one at a time; the server refuses a patron already
+// named.
 function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: everyone = [] } = usePeople(sheet);
@@ -35,10 +47,17 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
 
   const mine = patrons
     .filter((p) => p.person === person.id)
+    .sort((a, b) => a.named - b.named)
     .map((p) => everyone.find((e) => e.id === p.patron))
     .filter((p): p is Person => p !== undefined);
-  const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
-  const backing = mine.reduce((sum, p) => sum + recentSettledCents(claims, p, today), 0n);
+  const shares = shareCents(mine.length);
+  const named = mine.map((p, i) => ({ patron: p, share: shares[i] }));
+  const names = [...named]
+    .sort((a, b) => a.patron.name.localeCompare(b.patron.name))
+    .map((n) => `${n.patron.name} ${twoDecimals(n.share)}`);
+  const backing = roundHundredths(
+    named.reduce((sum, n) => sum + recentSettledCents(claims, n.patron, today) * n.share, 0n),
+  );
   const others = everyone.filter((p) => p.id !== person.id);
 
   const add = useMutation({

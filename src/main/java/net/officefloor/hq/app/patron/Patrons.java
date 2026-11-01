@@ -9,7 +9,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Patrons {
 
-    private static final RowMapper<Patron> ROW = (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id"));
+    private static final RowMapper<Patron> ROW = (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id"),
+            rs.getLong("named"));
 
     private final JdbcTemplate jdbc;
 
@@ -17,9 +18,9 @@ public class Patrons {
         this.jdbc = jdbc;
     }
 
-    /** Every patron named on the sheet. */
+    /** Every patron named on the sheet, each person's in the order they were named. */
     public List<Patron> list(String sheet) {
-        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet = ? ORDER BY person_id, patron_id", ROW,
+        return jdbc.query("SELECT person_id, patron_id, named FROM patron WHERE sheet = ? ORDER BY person_id, named", ROW,
                 sheet);
     }
 
