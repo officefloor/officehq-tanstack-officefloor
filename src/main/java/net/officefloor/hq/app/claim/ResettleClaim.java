@@ -32,8 +32,8 @@ public class ResettleClaim {
         if (claim.status() != ClaimStatus.SETTLED) {
             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be re-settled");
         }
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be re-settled");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be re-settled");
         }
         Person person = people.find(sheet, claim.person());
         BigDecimal was = claim.settledDue() == null ? null : new BigDecimal(claim.settledDue());

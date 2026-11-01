@@ -134,14 +134,14 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   const split = useSubmitOnce(splitMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Edit opens the claim's editor by locking it for this user: the server refuses a claim that is not a DRAFT, one
-  // dated inside a closed period, or one another user's editor holds, and the row shows the error instead.
+  // due inside a closed period, or one another user's editor holds, and the row shows the error instead.
   const lockMutation = useMutation({
     mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/lock`, user), {}),
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
   const lock = useSubmitOnce(lockMutation);
   // What the screen already knows refuses at once (the server refuses the rest): a claim that is not a DRAFT, one
-  // dated inside a closed period, or one another user's editor holds.
+  // due inside a closed period, or one another user's editor holds.
   const [editRefused, setEditRefused] = useState(false);
   const clearEditError = () => {
     setEditRefused(false);
@@ -166,7 +166,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
-      period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
+      period <span data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</span>{' '}
       {(claim.periodNumber ?? claim.number) !== null && '#'}
       <span data-testid="claim-number">{claim.periodNumber ?? claim.number ?? ''}</span>{' '}
       {claim.openedBy !== null && 'opened by '}
@@ -257,7 +257,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           proofMutation.reset();
           clearEditError();
-          if (claim.status !== 'DRAFT' || periodOf(periods, claim.date)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
+          if (claim.status !== 'DRAFT' || periodOf(periods, claim.dueBy)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
             setEditRefused(true);
             return;
           }
@@ -438,12 +438,12 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       )}
       {proofMutation.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one dated inside a closed period).
+          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one due inside a closed period).
         </span>
       )}
       {splitMutation.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor dated inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
+          {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor due inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
         </span>
       )}
       {move.isError && (

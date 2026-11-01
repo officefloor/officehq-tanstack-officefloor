@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Soft-closes the period: its due-total and each person's are fixed now as a close fixes them, but claims dated in it
+ * Soft-closes the period: its due-total and each person's are fixed now as a close fixes them, but claims due in it
  * may still be added, edited and change status (one added meanwhile is a late entry). Refuses a role the permission
  * matrix does not let close, a period not on the sheet, or one already closed or soft-closed.
  */

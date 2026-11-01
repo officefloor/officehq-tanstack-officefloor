@@ -57,7 +57,7 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-/** Each period's live due-total (in hundredths, by name): the due now of the claims whose date falls in it that counted
+/** Each period's live due-total (in hundredths, by name): the due now of the claims whose due-by falls in it that counted
  *  at the end of its last day (see {@link countedOn}: OPEN, PENDING or SETTLED then by their status log, but not a
  *  deferred one, nor an unbound open one within its person's hold); a claim with no rate adds nothing. */
 export function periodDueCents(
@@ -88,7 +88,7 @@ export function personPeriodDueCents(
   const byId = new Map(people.map((p) => [p.id, p]));
   const totals = new Map<string, Map<number, bigint>>();
   for (const c of claims) {
-    const period = periodOf(periods, c.date);
+    const period = periodOf(periods, c.dueBy);
     const person = byId.get(c.person);
     if (period === undefined || person === undefined || !countedOn(c, person, period.to)) continue;
     const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;

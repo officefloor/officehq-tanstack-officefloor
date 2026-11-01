@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor dated inside a
+ * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor due inside a
  * closed period; only a role that may open a claim may, as the new claim is theirs to open. The claim keeps the rest
  * and loses any figure a statement bound it to; the new OPEN claim has the same date and note, the next number,
  * the user as its opener, a due-by fixed now from the terms in force on its date, and the claim's number as split-from.
@@ -34,9 +34,10 @@ public class SplitClaim {
         if (claim.deferred()) {
             throw new InvalidClaimStatusChangeException("A deferred claim cannot be split");
         }
+        // A split is judged by the claim split alone: by the period its due-by falls in.
         LocalDate date = LocalDate.parse(claim.date());
-        if (periods.closedOn(sheet, date)) {
-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be split");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be split");
         }
         BigDecimal was = new BigDecimal(claim.amount());
         if (amount.signum() <= 0 || amount.compareTo(was) >= 0) {
@@ -51,6 +52,10 @@ public class SplitClaim {
         }
         LocalDate dueBy = person.dueBy(sheet, date, settings);
         long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), dueBy, claim.shownNumber(), user);
+        // Judged by the claim split alone: the new claim is a late entry when that claim is one.
+        if (claim.lateEntry()) {
+            claims.setLateEntry(sheet, id);
+        }
         Claim opened = changer.number(sheet, claims.find(sheet, id));
         log.record(sheet, user, id);
         audit.record("CLAIM_SPLIT sheet=" + sheet + " by=" + user + " "

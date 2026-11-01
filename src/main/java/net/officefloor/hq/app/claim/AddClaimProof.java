@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Raises the claim's proofs count by one: not on a SETTLED or VOID claim, nor on one dated inside a closed period
+ * Raises the claim's proofs count by one: not on a SETTLED or VOID claim, nor on one due inside a closed period
  * (which may not be edited).
  */
 public class AddClaimProof {
@@ -19,8 +19,8 @@ public class AddClaimProof {
         if (claim.status() == ClaimStatus.SETTLED || claim.status() == ClaimStatus.VOID) {
             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be given a proof");
         }
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be given a proof");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be given a proof");
         }
         // Conditional on the status and count read, so a concurrent change by another user is refused, not overwritten.
         if (!claims.addProof(sheet, claim.id(), claim.status(), claim.proofs())) {

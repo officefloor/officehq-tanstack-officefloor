@@ -108,7 +108,7 @@ public class Claims {
         return keys.getKey().longValue();
     }
 
-    /** Marks the claim a late entry: added while the period its date falls in was soft-closed. */
+    /** Marks the claim a late entry: added while the period its due-by falls in was soft-closed. */
     public void setLateEntry(String sheet, long id) {
         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet = ? AND id = ?", sheet, id);
     }

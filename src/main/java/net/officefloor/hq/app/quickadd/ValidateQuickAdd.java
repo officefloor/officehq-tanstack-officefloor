@@ -1,11 +1,14 @@
 package net.officefloor.hq.app.quickadd;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.InvalidPersonException;
+import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,7 +23,7 @@ public class ValidateQuickAdd {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody QuickAddRequest request, Settings settings,
-            Periods periods, Out<QuickAddRequest> body, Out<ClaimInput> claim)
+            Periods periods, People people, Out<QuickAddRequest> body, Out<ClaimInput> claim)
             throws InvalidPersonException, InvalidClaimException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
@@ -31,8 +34,12 @@ public class ValidateQuickAdd {
             throw new InvalidClaimException("The amount must be a number of 0.00 or more with up to two decimals");
         }
         ClaimInput input = new ClaimInput(new BigDecimal(amount), settings.entryDay(sheet), "");
-        if (periods.closedOn(sheet, input.date())) {
-            throw new InvalidClaimException("A claim may not be dated inside a closed period");
+        // The due-by it would be fixed with: from the person of the name, else from a new person of grade A.
+        Person person = people.findByName(sheet, name);
+        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings)
+                : input.date().plusDays(settings.terms(sheet, "A", input.date()));
+        if (periods.closedOn(sheet, dueBy)) {
+            throw new InvalidClaimException("A claim may not be due inside a closed period");
         }
         body.set(new QuickAddRequest(name, amount));
         claim.set(input);

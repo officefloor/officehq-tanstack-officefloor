@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.paste;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimLog;
@@ -22,10 +23,11 @@ public class AddPastedClaims {
             Person person = line.person();
             ClaimInput input = line.input();
             Rollup.Snapshot before = rollup.take(sheet);
-            long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
+            LocalDate dueBy = person.dueBy(sheet, input.date(), settings);
+            long id = claims.add(sheet, person.id(), input, dueBy);
             log.record(sheet, user, id);
             audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
-            if (periods.softClosedOn(sheet, input.date())) {
+            if (periods.softClosedOn(sheet, dueBy)) {
                 claims.setLateEntry(sheet, id);
                 audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
             }

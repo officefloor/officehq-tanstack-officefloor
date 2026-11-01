@@ -25,8 +25,8 @@ public class DeferClaim {
         if (!until.isAfter(clock.today(sheet))) {
             throw new InvalidClaimStatusChangeException("A claim is deferred to a date after the sheet's today");
         }
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be deferred");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be deferred");
         }
         Person person = people.find(sheet, claim.person());
         Rollup.Snapshot before = rollup.take(sheet);

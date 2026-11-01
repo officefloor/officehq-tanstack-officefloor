@@ -74,8 +74,8 @@ public class ClaimStatusChanger {
                 && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("Your role may not " + requested.name().toLowerCase() + " a claim");
         }
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot change status");
         }
         // A steward voids a SETTLED claim only within 7 days of its settlement (its status log's last SETTLED date).
         if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
@@ -189,7 +189,7 @@ public class ClaimStatusChanger {
     public Claim number(String sheet, Claim claim) {
         LocalDate from = settings.periodNumberingFrom(sheet);
         if (from != null && !clock.today(sheet).isBefore(from)) {
-            String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
+            String period = periods.nameOn(sheet, LocalDate.parse(claim.dueBy()));
             String key = period == null ? "" : period;
             Claim numbered = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
             claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());

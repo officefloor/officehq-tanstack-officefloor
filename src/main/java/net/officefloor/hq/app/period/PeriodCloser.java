@@ -21,7 +21,7 @@ import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
 
 /**
- * Closes a period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims dated in it
+ * Closes a period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims whose due-by falls in it
  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
  * within its person's hold) (a claim with no rate adds nothing). Shared by a close by hand and the auto close of a today change.
  */
@@ -67,7 +67,7 @@ public class PeriodCloser {
         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
         byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
         for (Claim claim : claims.list(sheet)) {
-            LocalDate date = LocalDate.parse(claim.date());
+            LocalDate date = LocalDate.parse(claim.dueBy());
             Person person = byId.get(claim.person());
             if (person == null || !person.countsOn(claim, to) || date.isBefore(from) || date.isAfter(to)) {
                 continue;

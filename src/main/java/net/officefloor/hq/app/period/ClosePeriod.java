@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims dated in it
+ * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims whose due-by falls in it
  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
  * within its person's hold) (a
  * claim with no rate adds nothing). Refuses a role the permission matrix does not let close, a period not on the sheet or one already closed.

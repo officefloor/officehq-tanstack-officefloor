@@ -67,8 +67,8 @@ public class ValidatePaste {
         } catch (DateTimeParseException e) {
             throw new InvalidClaimException("Line " + at + ": not a valid date: " + date);
         }
-        if (periods.closedOn(sheet, on)) {
-            throw new InvalidClaimException("Line " + at + ": a claim may not be dated inside a closed period");
+        if (periods.closedOn(sheet, person.dueBy(sheet, on, settings))) {
+            throw new InvalidClaimException("Line " + at + ": a claim may not be due inside a closed period");
         }
         if (person.retiredBefore(on)) {
             throw new InvalidClaimException(

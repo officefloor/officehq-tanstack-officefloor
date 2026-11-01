@@ -14,9 +14,9 @@ public class SaveClaim {
     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
             @Val ClaimInput input, Claims claims, People people, Periods periods, Audit audit, Rollup rollup)
             throws InvalidClaimException {
-        // A claim dated inside a closed period may not be edited, nor moved into one.
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date())) || periods.closedOn(sheet, input.date())) {
-            throw new InvalidClaimException("A claim dated inside a closed period may not be edited");
+        // A claim due inside a closed period may not be edited; an edit leaves its due-by, so its period, as it is.
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimException("A claim due inside a closed period may not be edited");
         }
         // Only a draft may be edited: an open claim is voided and a new one added instead.
         if (claim.status() != ClaimStatus.DRAFT) {

@@ -67,7 +67,7 @@ export type Claim = {
   splitFrom: string | null;
   /** The user whose open editor locks the claim against everyone else's edit button (null when none does). */
   lockedBy: string | null;
-  /** Whether it was added while the period its date falls in was soft-closed. */
+  /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
 };
 

@@ -17,8 +17,8 @@ public class LockClaim {
         if (claim.status() != ClaimStatus.DRAFT) {
             throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can");
         }
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
-            throw new InvalidClaimException("A claim dated inside a closed period may not be edited");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimException("A claim due inside a closed period may not be edited");
         }
         if (claim.lockedBy() != null && !claim.lockedBy().equals(user)) {
             throw new InvalidClaimException("The claim is being edited by " + claim.lockedBy());

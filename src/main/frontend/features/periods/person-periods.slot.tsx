@@ -17,7 +17,7 @@ function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
   );
 }
 
-// Per period on the sheet, the person's due-total for it: the due now of their claims whose date falls in it that counted at its end,
+// Per period on the sheet, the person's due-total for it: the due now of their claims whose due-by falls in it that counted at its end,
 // fixed for everyone on the sheet when the period is closed (0.00 for a person added since). The period's own
 // due-total is the sum of these.
 function PersonPeriods({ sheet, person }: { sheet: string; user: string; person: Person }) {

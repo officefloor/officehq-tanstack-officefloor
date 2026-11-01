@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
@@ -13,20 +14,21 @@ public class BuildClaim {
     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
             @Val ClaimInput input, Claims claims, Periods periods, Settings settings, ClaimLog log, Audit audit, Rollup rollup)
             throws InvalidClaimException {
-        if (periods.closedOn(sheet, input.date())) {
-            throw new InvalidClaimException("A claim may not be dated inside a closed period");
+        // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
+        // stand on that date; the claim belongs to the period its due-by falls in.
+        LocalDate dueBy = person.dueBy(sheet, input.date(), settings);
+        if (periods.closedOn(sheet, dueBy)) {
+            throw new InvalidClaimException("A claim may not be due inside a closed period");
         }
         if (person.retiredBefore(input.date())) {
             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
         }
         input.checkCorrects(sheet, person.id(), claims);
         Rollup.Snapshot before = rollup.take(sheet);
-        // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
-        // stand on that date.
-        long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
+        long id = claims.add(sheet, person.id(), input, dueBy);
         log.record(sheet, user, id);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
-        if (periods.softClosedOn(sheet, input.date())) {
+        if (periods.softClosedOn(sheet, dueBy)) {
             claims.setLateEntry(sheet, id);
             audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
         }

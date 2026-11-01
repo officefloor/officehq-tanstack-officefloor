@@ -27,8 +27,8 @@ public class ReassignClaim {
                 && claim.status() != ClaimStatus.PENDING) {
             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be reassigned");
         }
-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be reassigned");
+        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
+            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be reassigned");
         }
         Person from = people.find(sheet, claim.person());
         Person to = people.find(sheet, body.to());
