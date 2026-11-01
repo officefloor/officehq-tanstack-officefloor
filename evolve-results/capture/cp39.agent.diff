@@ -1,0 +1,321 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 68fc8ea5..343e5a4e 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -201,6 +201,13 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           Cancel
+         </button>
+       )}
++      <ol>
++        {claim.log.map((line, i) => (
++          <li key={i} data-testid="claim-log-line">
++            {line.status} by {line.by} on {line.on} due={line.due}
++          </li>
++        ))}
++      </ol>
+       {editRefused && (
+         <span data-testid="claim-error" role="alert">
+           {' '}A {claim.status} claim cannot be edited; only a DRAFT can (void it and add a new one).
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 5e6f85c9..31f9bfac 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -31,7 +31,8 @@ export function bound(claim: Claim): boolean {
+  * corrects shows (null unless it is a correction: a negative amount), and the date it rounds on (its own, or for a
+  * correction the date of the claim it corrects), and its number within its period (<period>-<n>, or X-<n> in no
+  * period) when it was opened while the sheet numbered by period, shown in place of its number (null otherwise), and
+- * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date. */
++ * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date, and
++ * its status log, oldest first. */
+ export type Claim = {
+   id: number;
+   person: number;
+@@ -48,8 +49,13 @@ export type Claim = {
+   roundsOn: string;
+   periodNumber: string | null;
+   dueBy: string;
++  log: ClaimLogLine[];
+ };
+ 
++/** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
++ * claim's due as computed at that moment (two decimals, or n/a). */
++export type ClaimLogLine = { status: ClaimStatus; by: string; on: string; due: string };
++
+ export const claimsKey = (sheet: string) => ['claims', sheet] as const;
+ 
+ export const claimsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/claims`;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 0a717932..2ec27f7c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class BuildClaim {
+     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
+-            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, Audit audit, Rollup rollup)
++            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, ClaimLog log, Audit audit, Rollup rollup)
+             throws InvalidClaimException {
+         if (periods.closedOn(sheet, input.date())) {
+             throw new InvalidClaimException("A claim may not be dated inside a closed period");
+@@ -22,7 +22,8 @@ public class BuildClaim {
+         input.checkCorrects(sheet, person.id(), claims);
+         Rollup.Snapshot before = rollup.take(sheet);
+         // The due-by is fixed now, from the terms of the person's grade in force on the claim's date.
+-        claims.add(sheet, person.id(), input, input.date().plusDays(settings.terms(sheet, person.gradeOn(input.date()))));
++        long id = claims.add(sheet, person.id(), input, input.date().plusDays(settings.terms(sheet, person.gradeOn(input.date()))));
++        log.record(sheet, user, id);
+         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+         rollup.record(sheet, user, before);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 054d47cc..7f30ae5d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -14,11 +14,12 @@ import net.officefloor.hq.app.rate.Rate;
+  * the number of the claim it corrects (null unless it is a correction), and the date it rounds on: its own, or for
+  * a correction the date of the claim it corrects, and its number within its period (<period>-<n>, or X-<n> in no
+  * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise),
+- * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date.
++ * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date,
++ * and its status log, oldest first.
+  */
+ public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
+         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
+-        String roundsOn, String periodNumber, String dueBy) {
++        String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log) {
+ 
+     /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
+     public boolean correction() {
+@@ -32,17 +33,22 @@ public record Claim(long id, long person, String amount, String date, String not
+ 
+     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
+     public Claim withNumber(Integer number) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
+     }
+ 
+     /** This claim, numbered within its period: its audit fields end with number=<period number>. */
+     public Claim withPeriodNumber(String periodNumber) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
+     }
+ 
+     /** This claim, settled with its due fixed (null when its grade had no rate). */
+     public Claim withSettledDue(String settledDue) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
++    }
++
++    /** This claim, with its status log (oldest first). */
++    public Claim withLog(List<ClaimLogLine> log) {
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
+     }
+ 
+     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java
+new file mode 100644
+index 00000000..f5e89d66
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLog.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.sql.Date;
++import java.time.LocalDate;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Service;
++
++/** Writes a line to a claim's status log as it is added and each time its status changes. */
++@Service
++public class ClaimLog {
++
++    private final JdbcTemplate jdbc;
++    private final Claims claims;
++    private final People people;
++    private final Rates rates;
++    private final Settings settings;
++    private final SheetClock clock;
++
++    public ClaimLog(JdbcTemplate jdbc, Claims claims, People people, Rates rates, Settings settings, SheetClock clock) {
++        this.jdbc = jdbc;
++        this.claims = claims;
++        this.people = people;
++        this.rates = rates;
++        this.settings = settings;
++        this.clock = clock;
++    }
++
++    /** Logs the claim's status as the store now holds it, by the user on the sheet's today, with its due then. */
++    public void record(String sheet, String user, long id) {
++        Claim claim = claims.find(sheet, id);
++        Person person = people.find(sheet, claim.person());
++        LocalDate today = clock.today(sheet);
++        BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
++                settings.late(sheet, today));
++        jdbc.update("INSERT INTO claim_log (sheet, claim, status, by_user, on_date, due) VALUES (?, ?, ?, ?, ?, ?)",
++                sheet, id, claim.status().name(), user, Date.valueOf(today), due == null ? "n/a" : due.toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogLine.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogLine.java
+new file mode 100644
+index 00000000..f8b8007a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogLine.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.claim;
++
++/** One line of a claim's status log: the status it took, the user who made the change, the sheet's today then
++ *  (yyyy-MM-dd), and the claim's due as computed at that moment (two decimals, or n/a). */
++public record ClaimLogLine(ClaimStatus status, String by, String on, String due) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index 728df7da..6ecc0e04 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -28,9 +28,10 @@ public class ClaimStatusChanger {
+     private final SheetClock clock;
+     private final Audit audit;
+     private final Rollup rollup;
++    private final ClaimLog log;
+ 
+     public ClaimStatusChanger(Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
+-            SheetClock clock, Audit audit, Rollup rollup) {
++            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log) {
+         this.claims = claims;
+         this.people = people;
+         this.rates = rates;
+@@ -40,6 +41,7 @@ public class ClaimStatusChanger {
+         this.clock = clock;
+         this.audit = audit;
+         this.rollup = rollup;
++        this.log = log;
+     }
+ 
+     /** Applies the change to the claim, writing nothing when it is refused. */
+@@ -114,6 +116,7 @@ public class ClaimStatusChanger {
+         if (requested == ClaimStatusChange.REJECT) {
+             fields += " reason=" + reason.trim();
+         }
++        log.record(sheet, user, claim.id());
+         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+         rollup.record(sheet, user, before);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 05d8cb9d..dbaa27b4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -4,10 +4,14 @@ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
++import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The claims kept per sheet, each belonging to a person on that sheet. */
+@@ -24,7 +28,7 @@ public class Claims {
+             rs.getBigDecimal("stated_due") == null ? null
+                     : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
+             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
+-            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString());
++            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of());
+ 
+     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
+     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
+@@ -42,14 +46,34 @@ public class Claims {
+         this.jdbc = jdbc;
+     }
+ 
++    private static final String LOG = "SELECT claim, status, by_user, on_date, due FROM claim_log WHERE sheet = ?";
++
+     /** Every claim on the sheet, newest first. */
+     public List<Claim> list(String sheet) {
+-        return jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet);
++        return withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
++                jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet));
+     }
+ 
+     public Claim find(String sheet, long id) {
+         List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
+-        return found.isEmpty() ? null : found.get(0);
++        return found.isEmpty() ? null
++                : withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)).get(0);
++    }
++
++    private record Logged(long claim, ClaimLogLine line) {
++    }
++
++    private static final RowMapper<Logged> LOG_ROW = (rs, i) -> new Logged(rs.getLong("claim"),
++            new ClaimLogLine(ClaimStatus.valueOf(rs.getString("status")), rs.getString("by_user"),
++                    rs.getDate("on_date").toLocalDate().toString(), rs.getString("due")));
++
++    /** The claims, each with its own lines of the status log (oldest first). */
++    private static List<Claim> withLogs(String sheet, List<Claim> found, List<Logged> logged) {
++        Map<Long, List<ClaimLogLine>> lines = new HashMap<>();
++        for (Logged l : logged) {
++            lines.computeIfAbsent(l.claim(), k -> new ArrayList<>()).add(l.line());
++        }
++        return found.stream().map(c -> c.withLog(lines.getOrDefault(c.id(), List.of()))).toList();
+     }
+ 
+     /** The claim showing this number on the sheet (within its period, or on the sheet), or null when none does. */
+@@ -59,11 +83,23 @@ public class Claims {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
+-    /** Adds the claim with its due-by, fixed now and never moved after. */
+-    public void add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
+-        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, listed) VALUES (?, ?, ?, ?, ?, ?, ?, "
+-                + NEXT_LISTED + ")", sheet, person, input.amount(), Date.valueOf(input.date()), input.note(),
+-                input.corrects(), Date.valueOf(dueBy), sheet);
++    /** Adds the claim with its due-by, fixed now and never moved after; returns its id. */
++    public long add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
++        GeneratedKeyHolder keys = new GeneratedKeyHolder();
++        jdbc.update(con -> {
++            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, listed)"
++                    + " VALUES (?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", new String[] { "id" });
++            ps.setString(1, sheet);
++            ps.setLong(2, person);
++            ps.setBigDecimal(3, input.amount());
++            ps.setDate(4, Date.valueOf(input.date()));
++            ps.setString(5, input.note());
++            ps.setString(6, input.corrects());
++            ps.setDate(7, Date.valueOf(dueBy));
++            ps.setString(8, sheet);
++            return ps;
++        }, keys);
++        return keys.getKey().longValue();
+     }
+ 
+     /** Edits a draft claim: false when it is no longer a draft. */
+diff --git a/src/main/resources/db/migration/V25__claim_log.sql b/src/main/resources/db/migration/V25__claim_log.sql
+new file mode 100644
+index 00000000..9e64e2d4
+--- /dev/null
++++ b/src/main/resources/db/migration/V25__claim_log.sql
+@@ -0,0 +1,13 @@
++-- A claim's status log: one line per status it has had, in the order it had them (by id). Each line keeps the
++-- user who made the change, the sheet's today then, and the claim's due as it was computed at that moment
++-- (two decimals, or n/a when its grade had no rate). A claim already kept has no lines for its past.
++CREATE TABLE claim_log (
++    id      BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet   VARCHAR(200) NOT NULL,
++    claim   BIGINT       NOT NULL REFERENCES claim (id),
++    status  VARCHAR(20)  NOT NULL,
++    by_user VARCHAR(200) NOT NULL,
++    on_date DATE         NOT NULL,
++    due     VARCHAR(20)  NOT NULL
++);
++CREATE INDEX claim_log_sheet ON claim_log (sheet, claim, id);
