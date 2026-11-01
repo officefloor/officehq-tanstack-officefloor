@@ -201,6 +201,13 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           Cancel
         </button>
       )}
+      <ol>
+        {claim.log.map((line, i) => (
+          <li key={i} data-testid="claim-log-line">
+            {line.status} by {line.by} on {line.on} due={line.due}
+          </li>
+        ))}
+      </ol>
       {editRefused && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be edited; only a DRAFT can (void it and add a new one).

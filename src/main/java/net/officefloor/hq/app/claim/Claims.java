@@ -4,10 +4,14 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 /** The claims kept per sheet, each belonging to a person on that sheet. */
@@ -24,7 +28,7 @@ public class Claims {
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
-            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString());
+            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of());
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
@@ -42,14 +46,34 @@ public class Claims {
         this.jdbc = jdbc;
     }
 
+    private static final String LOG = "SELECT claim, status, by_user, on_date, due FROM claim_log WHERE sheet = ?";
+
     /** Every claim on the sheet, newest first. */
     public List<Claim> list(String sheet) {
-        return jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet);
+        return withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
+                jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet));
     }
 
     public Claim find(String sheet, long id) {
         List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
-        return found.isEmpty() ? null : found.get(0);
+        return found.isEmpty() ? null
+                : withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)).get(0);
+    }
+
+    private record Logged(long claim, ClaimLogLine line) {
+    }
+
+    private static final RowMapper<Logged> LOG_ROW = (rs, i) -> new Logged(rs.getLong("claim"),
+            new ClaimLogLine(ClaimStatus.valueOf(rs.getString("status")), rs.getString("by_user"),
+                    rs.getDate("on_date").toLocalDate().toString(), rs.getString("due")));
+
+    /** The claims, each with its own lines of the status log (oldest first). */
+    private static List<Claim> withLogs(String sheet, List<Claim> found, List<Logged> logged) {
+        Map<Long, List<ClaimLogLine>> lines = new HashMap<>();
+        for (Logged l : logged) {
+            lines.computeIfAbsent(l.claim(), k -> new ArrayList<>()).add(l.line());
+        }
+        return found.stream().map(c -> c.withLog(lines.getOrDefault(c.id(), List.of()))).toList();
     }
 
     /** The claim showing this number on the sheet (within its period, or on the sheet), or null when none does. */
@@ -59,11 +83,23 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Adds the claim with its due-by, fixed now and never moved after. */
-    public void add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
-        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, listed) VALUES (?, ?, ?, ?, ?, ?, ?, "
-                + NEXT_LISTED + ")", sheet, person, input.amount(), Date.valueOf(input.date()), input.note(),
-                input.corrects(), Date.valueOf(dueBy), sheet);
+    /** Adds the claim with its due-by, fixed now and never moved after; returns its id. */
+    public long add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, listed)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", new String[] { "id" });
+            ps.setString(1, sheet);
+            ps.setLong(2, person);
+            ps.setBigDecimal(3, input.amount());
+            ps.setDate(4, Date.valueOf(input.date()));
+            ps.setString(5, input.note());
+            ps.setString(6, input.corrects());
+            ps.setDate(7, Date.valueOf(dueBy));
+            ps.setString(8, sheet);
+            return ps;
+        }, keys);
+        return keys.getKey().longValue();
     }
 
     /** Edits a draft claim: false when it is no longer a draft. */

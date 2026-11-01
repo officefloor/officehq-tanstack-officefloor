@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class BuildClaim {
     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
-            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, Audit audit, Rollup rollup)
+            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, ClaimLog log, Audit audit, Rollup rollup)
             throws InvalidClaimException {
         if (periods.closedOn(sheet, input.date())) {
             throw new InvalidClaimException("A claim may not be dated inside a closed period");
@@ -22,7 +22,8 @@ public class BuildClaim {
         input.checkCorrects(sheet, person.id(), claims);
         Rollup.Snapshot before = rollup.take(sheet);
         // The due-by is fixed now, from the terms of the person's grade in force on the claim's date.
-        claims.add(sheet, person.id(), input, input.date().plusDays(settings.terms(sheet, person.gradeOn(input.date()))));
+        long id = claims.add(sheet, person.id(), input, input.date().plusDays(settings.terms(sheet, person.gradeOn(input.date()))));
+        log.record(sheet, user, id);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
         rollup.record(sheet, user, before);
     }

@@ -28,9 +28,10 @@ public class ClaimStatusChanger {
     private final SheetClock clock;
     private final Audit audit;
     private final Rollup rollup;
+    private final ClaimLog log;
 
     public ClaimStatusChanger(Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
-            SheetClock clock, Audit audit, Rollup rollup) {
+            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log) {
         this.claims = claims;
         this.people = people;
         this.rates = rates;
@@ -40,6 +41,7 @@ public class ClaimStatusChanger {
         this.clock = clock;
         this.audit = audit;
         this.rollup = rollup;
+        this.log = log;
     }
 
     /** Applies the change to the claim, writing nothing when it is refused. */
@@ -114,6 +116,7 @@ public class ClaimStatusChanger {
         if (requested == ClaimStatusChange.REJECT) {
             fields += " reason=" + reason.trim();
         }
+        log.record(sheet, user, claim.id());
         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
         rollup.record(sheet, user, before);
     }

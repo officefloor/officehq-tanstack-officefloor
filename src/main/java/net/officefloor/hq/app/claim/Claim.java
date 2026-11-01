@@ -14,11 +14,12 @@ import net.officefloor.hq.app.rate.Rate;
  * the number of the claim it corrects (null unless it is a correction), and the date it rounds on: its own, or for
  * a correction the date of the claim it corrects, and its number within its period (<period>-<n>, or X-<n> in no
  * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise),
- * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date.
+ * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date,
+ * and its status log, oldest first.
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
-        String roundsOn, String periodNumber, String dueBy) {
+        String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log) {
 
     /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
     public boolean correction() {
@@ -32,17 +33,22 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
     public Claim withNumber(Integer number) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
     }
 
     /** This claim, numbered within its period: its audit fields end with number=<period number>. */
     public Claim withPeriodNumber(String periodNumber) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
     }
 
     /** This claim, settled with its due fixed (null when its grade had no rate). */
     public Claim withSettledDue(String settledDue) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
+    }
+
+    /** This claim, with its status log (oldest first). */
+    public Claim withLog(List<ClaimLogLine> log) {
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
     }
 
     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */

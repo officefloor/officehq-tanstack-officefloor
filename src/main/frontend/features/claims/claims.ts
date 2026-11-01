@@ -31,7 +31,8 @@ export function bound(claim: Claim): boolean {
  * corrects shows (null unless it is a correction: a negative amount), and the date it rounds on (its own, or for a
  * correction the date of the claim it corrects), and its number within its period (<period>-<n>, or X-<n> in no
  * period) when it was opened while the sheet numbered by period, shown in place of its number (null otherwise), and
- * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date. */
+ * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date, and
+ * its status log, oldest first. */
 export type Claim = {
   id: number;
   person: number;
@@ -48,7 +49,12 @@ export type Claim = {
   roundsOn: string;
   periodNumber: string | null;
   dueBy: string;
+  log: ClaimLogLine[];
 };
+
+/** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
+ * claim's due as computed at that moment (two decimals, or n/a). */
+export type ClaimLogLine = { status: ClaimStatus; by: string; on: string; due: string };
 
 export const claimsKey = (sheet: string) => ['claims', sheet] as const;
 
