@@ -138,21 +138,21 @@ export function claimed(claims: Claim[]): string {
   return (cents / 100).toFixed(2);
 }
 
-/** What is due on one claim, in cents: the due fixed when it was settled, or else the greater of the
- *  sheet's `floor` on the claim's date and its figure (the one its person's last statement bound it to,
- *  or else live at `pct`) plus its late charge (null, n/a, when there is no rate). A correction has
+/** What is due on one claim, in cents: the due fixed when it was settled, or else the due its person's
+ *  last statement bound it to (as shown then, late charge and floor included), or else the greater of the
+ *  sheet's `floor` on the claim's date and its figure live at `pct` plus its late charge (null, n/a, when there is no rate). A correction has
  *  neither floor nor charge. */
 export function claimDueCents(claim: Claim, floor: FloorOn, pct: string | undefined, late?: Late): bigint | null {
   if (claim.due !== null) return hundredths(claim.due);
   const figure = claimFigureCents(claim, pct);
-  if (figure === null || isCorrection(claim)) return figure;
+  // A bound due already holds the late charge and floor it had when the statement was taken.
+  if (figure === null || claim.stated || isCorrection(claim)) return figure;
   const due = late === undefined ? figure : figure + lateChargeCents(claim, figure, late);
   const least = hundredths(floor(claim.date));
   return due < least ? least : due;
 }
 
-/** A claim's figure without any late charge or floor, in cents: the figure its person's last statement
- *  bound it to, or else live at `pct` (null, n/a, when there is no rate).
+/** A claim's figure, in cents: the due its person's last statement bound it to, or else live at `pct` (null, n/a, when there is no rate).
  *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
 function claimFigureCents(claim: Claim, pct: string | undefined): bigint | null {
   if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
@@ -182,7 +182,7 @@ export function overdueFrom(claim: Claim, late: Late): string {
  *  counted from its due-by plus its grace, the late percent in force on that boundary date (the due-by
  *  plus the grace plus 30, 60, 90 ... days) of it plus the charges of the boundaries before it (compounding), each
  *  rounded by the claim's rounding (`halfUp`), added up; a boundary at 0.00 adds nothing. Nothing
- *  while it is not overdue, or its charge is waived. Never bound by a statement: it follows the sheet's today. */
+ *  while it is not overdue, or its charge is waived. It follows the sheet's today; a statement binds it into the claim's due. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
   if (!overdue(claim, late) || isCorrection(claim) || claim.waived) return 0n;
   const from = overdueFrom(claim, late);

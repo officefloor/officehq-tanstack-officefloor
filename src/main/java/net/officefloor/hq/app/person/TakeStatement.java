@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
  *  with any late charges, each at least the floor (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
- *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its rate figure now, without its late charge or the floor; every other one is unbound.
+ *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its due as shown now, late charge and floor included (one bound already keeps its bound due); every other one is unbound.
  *  Taken as of a date (on or before the sheet's today), all of it is worked out on the sheet as it
  *  stood at the end of that date (see {@link AsOf}): the claims that counted then are bound to their
  *  figures then, and the statement is dated that date. Refused: a date after the sheet's today, or
@@ -65,9 +65,9 @@ public class TakeStatement {
         Map<Long, BigDecimal> bound = new HashMap<>();
         for (Claim claim : claims.ofPerson(sheetId, person.getId())) {
             if (person.counts(claim)) {
-                // The statement binds the rate figure; the late charge and floor on top keep following today.
-                bound.put(claim.getId(), figures.figure(claim, person.gradeOn(claim.getDate())));
+                // The statement binds the due as shown, late charge and floor included.
                 BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
+                bound.put(claim.getId(), figure);
                 if (figure != null) {
                     total = total.add(figure);
                     any = true;

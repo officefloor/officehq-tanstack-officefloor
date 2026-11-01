@@ -53,14 +53,16 @@ public class Figures {
 
     /** The claim's due as the screen shows and totals it: its figure plus its late charge while it
      *  is overdue, raised to the sheet's floor in force on the claim's date when it is below it (a
-     *  correction has neither). A settled claim's fixed due already holds the charge and floor it had then. */
+     *  correction has neither). A settled claim's fixed due already holds the charge and floor it had then;
+     *  a claim bound by a statement shows the due bound then, its late charge no longer following today. */
     public BigDecimal due(Claim claim, String grade) {
         BigDecimal figure = figure(claim, grade);
-        if (figure == null || claim.getDue() != null || claim.isCorrection()) return figure;
+        if (figure == null || claim.getDue() != null || claim.isStated() || claim.isCorrection()) return figure;
         return figure.add(charge(claim, grade, figure)).max(settings.floor(claim.getSheetId(), claim.getDate()));
     }
 
-    /** The claim's figure without any late charge or floor: the fixed due, else the bound figure, else live.
+    /** The claim's figure: the fixed due, else the bound due (with the late charge and floor it had when
+     *  bound), else live without any late charge or floor.
      *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
     public BigDecimal figure(Claim claim, String grade) {
         if (claim.getDue() != null) return claim.getDue();
@@ -86,7 +88,7 @@ public class Figures {
      *  when it was added) plus its grace is before the sheet's today (a correction, or a claim whose charge is waived, has none); then, for every full 30 days it is
      *  overdue, counted from its due-by plus its grace, the sheet's late percent in force on that boundary date (the due-by plus
      *  the grace plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it (compounding), each rounded by the claim's rounding to two decimals, added up. A
-     *  boundary whose percent is 0.00 adds nothing. Never bound by a statement: it follows the sheet's today. */
+     *  boundary whose percent is 0.00 adds nothing. It follows the sheet's today; a statement binds it into the claim's due (see {@link #due}). */
     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
         if (figure == null || !claim.getStatus().isOpen() || claim.isDeferred() || claim.isCorrection() || claim.isWaived()) return none;
