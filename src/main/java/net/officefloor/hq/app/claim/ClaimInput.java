@@ -5,7 +5,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 
 /**
- * A validated claim body: a blank date already defaulted to the sheet's today; a negative amount (a correction) with
+ * A validated claim body: a blank date already defaulted to the sheet's entry date (none set: its today); a negative amount (a correction) with
  * the number the claim it corrects shows (on the sheet, or within its period), which is null for any other claim.
  */
 public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {

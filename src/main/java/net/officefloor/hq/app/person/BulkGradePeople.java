@@ -6,6 +6,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.web.ObjectResponse;
@@ -16,13 +18,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Gives each selected person, in list order (the order they were added), the grade from the from-date exactly as
  * the person form would, each with its own PERSON_EDITED and rollup lines. A bad grade or date, or a selected
- * person not on the sheet, refuses the whole action before anything is written.
+ * person not on the sheet, refuses the whole action before anything is written. A viewer grades no one: it reports 0
+ * and writes nothing.
  */
 public class BulkGradePeople {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void grade(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
-            @RequestBody BulkGradeRequest request, People people, SheetClock clock, Audit audit, Rollup rollup,
+            @RequestBody BulkGradeRequest request, People people, SheetClock clock, Audit audit, Rollup rollup, Roles roles,
             ObjectResponse<BulkGradeResponse> response)
             throws InvalidPersonException, DuplicatePersonNameException, StalePersonException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
@@ -42,6 +45,10 @@ public class BulkGradePeople {
         List<Person> chosen = everyone.stream().filter((p) -> selected.contains(p.id())).toList();
         if (chosen.size() != selected.size()) {
             throw new InvalidPersonException("Every selected person must be on the sheet");
+        }
+        if (Role.VIEWER.equals(roles.of(sheet, user))) {
+            response.send(new BulkGradeResponse(0, everyone));
+            return;
         }
         for (Person person : chosen) {
             // Re-read so each is saved as the store holds it after the ones before it.

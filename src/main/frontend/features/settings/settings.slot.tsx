@@ -25,6 +25,7 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
 // its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward). The grace days (whole days,
 // not dated; blank turns it off): a today change closes each open period whose to-date plus them is before the new today.
+// The entry date (not dated; blank turns it off): while set, a new claim with a blank date takes it in place of the sheet's today.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -38,6 +39,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [graceDays, setGraceDays] = useState('');
+  const [entryDate, setEntryDate] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
@@ -63,6 +65,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setPolicyDate('');
       setPeriodNumberingFrom('');
       setGraceDays('');
+      setEntryDate('');
       setGradeTerms({});
       setPerms({});
       setFroms({});
@@ -102,7 +105,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
-      'grace-days': graceDays };
+      'grace-days': graceDays, 'entry-date': entryDate };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => (isDated(key) ? { key, value: values[key], from: froms[key] ?? '' } : { key, value: values[key] })));
   };
@@ -282,6 +285,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-grace-days-current">{data?.graceDays ?? ''}</span>{' '}
+        <label>
+          Entry date{' '}
+          <input
+            data-testid="setting-entry-date"
+            placeholder="yyyy-mm-dd (blank: off)"
+            value={entryDate}
+            onChange={(e) => {
+              setEntryDate(e.target.value);
+              touch('entry-date');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('entry-date')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-entry-date-current">{data?.entryDate ?? ''}</span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>
@@ -307,7 +325,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold, the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
+            {' '}The clerk limit, the cap, the proof threshold, the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
           </span>
         )}
       </form>

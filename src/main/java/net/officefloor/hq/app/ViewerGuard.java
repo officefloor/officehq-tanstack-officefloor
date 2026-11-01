@@ -22,7 +22,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
  * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
- * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done.
+ * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done; so is
+ * a viewer's bulk grade, which grades no one.
  * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
  * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
  */
@@ -34,6 +35,9 @@ public class ViewerGuard extends OncePerRequestFilter {
 
     /** The writes that report per-item counts, so a viewer's press goes through with every item refused. */
     private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle");
+
+    /** The writes that report a count, so a viewer's press goes through and changes no one (still refused when archived). */
+    private static final Set<String> VIEWER_COUNTED = Set.of("/people/bulk-grade");
 
     private final Roles roles;
     private final SheetArchive archive;
@@ -57,7 +61,7 @@ public class ViewerGuard extends OncePerRequestFilter {
             Matcher m = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
             if (m.matches() && !BULK.contains(m.group(2) == null ? "" : m.group(2))) {
                 String sheet = URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
-                if (Role.VIEWER.equals(roles.of(sheet, user))) {
+                if (!VIEWER_COUNTED.contains(m.group(2) == null ? "" : m.group(2)) && Role.VIEWER.equals(roles.of(sheet, user))) {
                     response.sendError(HttpServletResponse.SC_BAD_REQUEST, "A viewer cannot change the sheet");
                     return;
                 }

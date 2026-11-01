@@ -11,14 +11,14 @@ import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
-import net.officefloor.hq.app.sheet.SheetClock;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * Checks every pasted line (name,amount,date,note; the note may hold commas, the date may be blank for the sheet's
- * today, the note may be absent) by the claim form's rules before anything is written, so a refused paste adds
+ * Checks every pasted line (name,amount,date,note; the note may hold commas, the date may be blank for the sheet's entry
+ * date or today, the note may be absent) by the claim form's rules before anything is written, so a refused paste adds
  * nothing. The name must be on the sheet (ignoring case). A paste carries no corrected number, so a negative amount
  * is refused as on the form without one. Blank lines are skipped; a paste with no line is refused.
  */
@@ -26,7 +26,7 @@ public class ValidatePaste {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody PasteRequest request, People people,
-            SheetClock clock, Periods periods, Out<PastedClaims> pasted) throws InvalidClaimException {
+            Settings settings, Periods periods, Out<PastedClaims> pasted) throws InvalidClaimException {
         String text = request == null || request.text() == null ? "" : request.text();
         List<PastedClaim> lines = new ArrayList<>();
         int at = 0;
@@ -35,7 +35,7 @@ public class ValidatePaste {
             if (line.isBlank()) {
                 continue;
             }
-            lines.add(check(sheet, at, line, people, clock, periods));
+            lines.add(check(sheet, at, line, people, settings, periods));
         }
         if (lines.isEmpty()) {
             throw new InvalidClaimException("Paste at least one line of name,amount,date,note");
@@ -43,7 +43,7 @@ public class ValidatePaste {
         pasted.set(new PastedClaims(lines));
     }
 
-    private static PastedClaim check(String sheet, int at, String line, People people, SheetClock clock,
+    private static PastedClaim check(String sheet, int at, String line, People people, Settings settings,
             Periods periods) throws InvalidClaimException {
         String[] fields = line.split(",", 4);
         String name = fields[0].trim();
@@ -63,7 +63,7 @@ public class ValidatePaste {
         }
         LocalDate on;
         try {
-            on = date.isEmpty() ? clock.today(sheet) : LocalDate.parse(date);
+            on = date.isEmpty() ? settings.entryDay(sheet) : LocalDate.parse(date);
         } catch (DateTimeParseException e) {
             throw new InvalidClaimException("Line " + at + ": not a valid date: " + date);
         }
