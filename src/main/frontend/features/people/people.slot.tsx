@@ -8,7 +8,7 @@ import { QuickAddBar } from './QuickAddBar';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, useSortedPeople } from './SortBy';
 import { useSheetToday } from '../sheet/useSheet';
-import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
+import { GRADES, gradeOn, peopleKey, shownName, usePeople, type Person } from './usePeople';
 import { Col } from '../columns/useColumns';
 
 /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
@@ -259,7 +259,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
         <tbody>
           {people.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{shownName(p, today)}</td>
               <td data-testid="person-grade">{gradeOn(p, today)}</td>
               <Col user={user} id="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></Col>
               <Col user={user} id="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></Col>

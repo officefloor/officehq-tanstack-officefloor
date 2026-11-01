@@ -3,12 +3,12 @@ import { getJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { useClaims } from '../claims/useClaims';
 import { useSheetTotals } from '../claims/useSheetTotals';
-import { usePeople } from '../people/usePeople';
+import { shownName, usePeople } from '../people/usePeople';
 import { showDue, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheet } from '../sheet/useSheet';
 
-/** One result line: `<sheet id> <name> <due-total>`. */
+/** One result line: `<sheet id> <name> (<grade>) <due-total>`. */
 type Found = string[];
 
 /** One sheet's people whose name or an alias contains `text` (case ignored), in list order, each with
@@ -26,7 +26,7 @@ function SheetMatches({ sheet, text, report }: { sheet: string; text: string; re
   const needle = text.toLowerCase();
   const lines = perPerson
     .filter(({ person }) => [person.name, ...person.aliases].some((n) => n.toLowerCase().includes(needle)))
-    .map(({ person, due }) => `${sheet} ${person.name} ${showDue(due)}`);
+    .map(({ person, due }) => `${sheet} ${shownName(person, today.data?.today ?? '')} ${showDue(due)}`);
   const key = lines.join('\n');
   useEffect(() => {
     report(sheet, ready ? key.split('\n').filter((l) => l !== '') : null);

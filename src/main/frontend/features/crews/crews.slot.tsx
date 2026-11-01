@@ -4,9 +4,10 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { useSheetTotals } from '../claims/useSheetTotals';
-import { usePeople, type Person } from '../people/usePeople';
+import { shownName, usePeople, type Person } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
 import { totalDue } from '../rates/useRates';
+import { useSheetToday } from '../sheet/useSheet';
 import { crewDues, crewsKey, useCrews, type Crew } from './useCrews';
 
 /**
@@ -131,6 +132,8 @@ function CrewRow({
   dueTotal: string;
 }) {
   const queryClient = useQueryClient();
+  const today = useSheetToday(sheet);
+  const leadPerson = people.find((p) => p.id === crew.leadId);
   const [personId, setPersonId] = useState('');
   const [invalid, setInvalid] = useState(false);
 
@@ -155,7 +158,7 @@ function CrewRow({
     <tr data-testid={`crew-row-${crew.name}`}>
       <td data-testid="crew-name">{crew.name}</td>
       <td>
-        lead <span data-testid="crew-lead">{crew.lead ?? ''}</span>
+        lead <span data-testid="crew-lead">{crew.lead === null ? '' : leadPerson ? shownName(leadPerson, today) : crew.lead}</span>
       </td>
       <td>
         due-total <span data-testid="crew-due-total">{dueTotal}</span>

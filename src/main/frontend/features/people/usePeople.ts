@@ -99,3 +99,8 @@ export function gradeOn(person: Person, date: string): string {
   for (const g of person.grades) if (g.from === null || g.from <= date) found = g.grade;
   return found;
 }
+
+/** How the screen shows a person's name: `<name> (<grade in force on date>)`. */
+export function shownName(person: Person, date: string): string {
+  return `${person.name} (${gradeOn(person, date)})`;
+}

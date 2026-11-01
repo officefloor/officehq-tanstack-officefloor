@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useClaims } from '../claims/useClaims';
-import { peopleKey, usePeople, type Person } from '../people/usePeople';
+import { peopleKey, shownName, usePeople, type Person } from '../people/usePeople';
 import { hundredths, totalDue } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheet';
 import { Col } from '../columns/useColumns';
@@ -55,7 +55,7 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
   const shareOf = new Map(named.map((id, i) => [id, split[i]]));
   const labels = people
     .filter((p) => shareOf.has(p.id))
-    .map((p) => ({ name: p.name, label: `${p.name} ${totalDue([shareOf.get(p.id)!])}` }))
+    .map((p) => ({ name: p.name, label: `${shownName(p, today)} ${totalDue([shareOf.get(p.id)!])}` }))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((p) => p.label);
   const since = backingSince(today);
