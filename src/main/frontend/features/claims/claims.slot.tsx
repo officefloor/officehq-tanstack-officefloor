@@ -3,9 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { gradeOn, heldOn, retiredOut, usePeople, type Person } from '../people/usePeople';
+import { gradeOn, heldOn, heldOnBy, retiredOut, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
+import { claimRateOn, hundredths, rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate, useReviewLate, useScoreBand } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
@@ -26,6 +26,7 @@ import {
   overdueFigures,
   personDueCents,
   capCents,
+  carried,
   excessCents,
   useClaims,
   type Claim,
@@ -67,6 +68,8 @@ const VIEWER = 'A viewer can change nothing.';
 const CANNOT_DELETE = 'Only a DRAFT claim can be deleted, and never one due by in a closed period.';
 const CANNOT_RESTORE = 'A deleted claim can be restored to DRAFT only on the sheet\'s today it was deleted.';
 const ARCHIVED = 'The sheet is archived: nothing on it can be changed.';
+const CANNOT_SHARE = "A SETTLED, VOID or DELETED claim cannot be shared, nor with its own person, a person already holding a share, or past 100.00 in all.";
+const BAD_SHARE = 'Choose a person and a share more than 0.00, with up to two decimals.';
 
 /** Why the server refused to open a claim's editor. */
 function lockRefusal(e: unknown): string {
@@ -168,11 +171,18 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);
   const cap = useCap(sheet);
+  // The claims they carry: their own less the holders' parts, and their parts of those shared with them
+  // (each live by its own person, at its own person's rate).
+  const carriedClaims = carried(live(all, heldOnBy(everyone, today)), person.id);
+  const ownRate = (c: Claim) => {
+    const owner = everyone.find((p) => p.id === c.personId);
+    return owner === undefined ? undefined : claimRateOn(rates, gradeOn(owner, c.date), c);
+  };
   // The sum of their figures; their due-total is at most the cap, the rest their excess.
-  const dueSum = personDueCents(liveClaims, floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+  const dueSum = personDueCents(carriedClaims, floor, pct, ownRate, lateBy, undefined, person.id);
   // The due-total before the cap, split (an n/a part shows 0.00): their SETTLED claims' figures, and their OPEN and PENDING ones'.
-  const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
-  const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+  const settledSum = personDueCents(carriedClaims.filter((c) => c.status === 'SETTLED'), floor, pct, ownRate, lateBy, undefined, person.id);
+  const openSum = personDueCents(carriedClaims.filter(isOpen), floor, pct, ownRate, lateBy, undefined, person.id);
   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
   // Their score: their settled figures, corrections left out, over 100, less 5 for each overdue claim, rounded half to even.
   const scoredSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED' && !c.corrects), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
@@ -220,6 +230,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   // The line typed for each claim, by claim id.
   const NO_LINE = { label: '', qty: '', unit: '' };
   const [lineTyped, setLineTyped] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
+  // The person chosen and the share typed for sharing each claim, by claim id.
+  const [shareWith, setShareWith] = useState<Record<number, string>>({});
+  const [sharePct, setSharePct] = useState<Record<number, string>>({});
   // The amount typed in each claim's row for its inline edit, by claim id.
   const [inlineAmount, setInlineAmount] = useState<Record<number, string>>({});
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -524,6 +537,28 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
+  const share = useMutation({
+    mutationFn: (c: { id: number; personId: number; share: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/share`, { personId: c.personId, share: c.share, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => {
+      setShareWith((m) => ({ ...m, [c.id]: '' }));
+      setSharePct((m) => ({ ...m, [c.id]: '' }));
+    },
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('viewer')
+          ? VIEWER
+          : e instanceof HttpError && e.body.includes('archived')
+            ? ARCHIVED
+            : e instanceof HttpError && e.status === 400
+              ? BAD_SHARE
+              : CANNOT_SHARE,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
   const reassign = useMutation({
     mutationFn: (c: { id: number; toPersonId: number }) =>
       postJson<Claim>(`${base}/claims/${c.id}/reassign`, { toPersonId: c.toPersonId, user }),
@@ -823,6 +858,52 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               </button>{' '}
               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
               <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
+              <span data-testid="claim-shares">
+                {c.shares.map((h) => `${everyone.find((p) => p.id === h.personId)?.name ?? ''} ${h.share}`).join(', ')}
+              </span>{' '}
+              <select
+                data-testid="claim-share-select"
+                aria-label="Share with"
+                value={shareWith[c.id] ?? ''}
+                onChange={(e) => {
+                  setShareWith({ ...shareWith, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              >
+                <option value="">share with…</option>
+                {everyone.map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>{' '}
+              <input
+                data-testid="claim-share-pct"
+                aria-label="Share percent"
+                placeholder="0.00"
+                value={sharePct[c.id] ?? ''}
+                onChange={(e) => {
+                  setSharePct({ ...sharePct, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-share-add"
+                disabled={share.isPending}
+                onClick={() => {
+                  const to = shareWith[c.id] ?? '';
+                  const pct = (sharePct[c.id] ?? '').trim();
+                  if (to === '' || !/^\d+(\.\d{1,2})?$/.test(pct) || hundredths(pct) <= 0n) {
+                    // Refused here, before anything is sent: the store is untouched.
+                    setRefused({ id: c.id, message: BAD_SHARE });
+                    return;
+                  }
+                  share.mutate({ id: c.id, personId: Number(to), share: pct });
+                }}
+              >
+                Share
+              </button>{' '}
               <button
                 type="button"
                 data-testid="claim-remind"

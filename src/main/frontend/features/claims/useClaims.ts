@@ -92,6 +92,9 @@ export type Claim = {
   batch: number | null;
   /** The order the claim was added in: a forward-only rate applies only to claims added after it was saved (see `claimRateOn`). */
   seq: number;
+  /** The people the claim is shared with, in the order shared, each holding `share` (a percent, two
+   *  decimals) of its due: their part counts in their figures, and the claim's own person's in place. */
+  shares: { personId: number; share: string }[];
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -211,19 +214,40 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
 }
 
 
+/** A share holder's part of a claim's due, in cents: the due times their share divided by 100,
+ *  rounded half to even (on its size, so a negative due rounds like a positive one). */
+export function partCents(due: bigint, share: string): bigint {
+  const product = due * hundredths(share);
+  const rounded = roundTenThousandths(product < 0n ? -product : product, false);
+  return product < 0n ? -rounded : rounded;
+}
+
+/** The claims in a person's figures: their own, and those shared with them. */
+export function carried(claims: Claim[], personId: number): Claim[] {
+  return claims.filter((c) => c.personId === personId || c.shares.some((s) => s.personId === personId));
+}
+
+/** What of a claim's due a person carries, in cents: its own person the due less the holders' parts, a holder their part. */
+export function carriedCents(claim: Claim, due: bigint, personId: number): bigint {
+  if (claim.personId === personId) return claim.shares.reduce((rest, s) => rest - partCents(due, s.share), due);
+  const held = claim.shares.find((s) => s.personId === personId);
+  return held === undefined ? 0n : partCents(due, held.share);
+}
+
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
  *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim)` (the rate that applies to it on its date), plus any late charge and at least `floor`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
- *  is not capped). */
-export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (claim: Claim) => string | undefined, late?: Late, cap?: string | null): bigint | null {
+ *  is not capped). With `personId`, the claims are those the person carries (see `carried`), each
+ *  counting what of its due they carry (see `carriedCents`); `pctOn` then gives each claim's rate by its own person. */
+export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (claim: Claim) => string | undefined, late?: Late, cap?: string | null, personId?: number): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
     const due = claimDueCents(c, floor, pctOn ? pctOn(c) : pct, late);
     if (due === null) continue;
-    sum += due;
+    sum += personId === undefined ? due : carriedCents(c, due, personId);
     any = true;
   }
   if (pct === undefined && !any) return null;

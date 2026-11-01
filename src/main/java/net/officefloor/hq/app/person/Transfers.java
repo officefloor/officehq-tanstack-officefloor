@@ -76,8 +76,10 @@ public class Transfers {
             jdbc.update("DELETE FROM claim_log WHERE claim_id = ?", claim.getId());
             jdbc.update("DELETE FROM claim_comment WHERE claim_id = ?", claim.getId());
             jdbc.update("DELETE FROM claim_line WHERE claim_id = ?", claim.getId());
+            jdbc.update("DELETE FROM claim_share WHERE claim_id = ?", claim.getId());
             jdbc.update("DELETE FROM claim WHERE id = ?", claim.getId());
         }
+        jdbc.update("DELETE FROM claim_share WHERE sheet_id = ? AND person_id = ?", person.getSheetId(), fromId);
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", fromId, fromId);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", fromId);
         jdbc.update("DELETE FROM crew_member WHERE person_id = ?", fromId);

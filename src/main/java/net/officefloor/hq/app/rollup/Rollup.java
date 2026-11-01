@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
@@ -51,7 +52,8 @@ public class Rollup {
         this.settings = settings;
     }
 
-    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
+    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures, less
+     *  the parts their share holders carry, plus their parts of the counting claims shared with them (a
      *  person's OPEN claims once today reaches their retirement date do not count, unless a statement
      *  binds them; a hold takes nothing out),
      *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
@@ -64,7 +66,17 @@ public class Rollup {
         BigDecimal claimedTotal = ZERO;
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
-        for (Person person : people.onSheet(sheetId)) {
+        List<Person> everyone = people.onSheet(sheetId);
+        // Each counting claim's figure (by its own person's grade), for the parts its share holders carry.
+        Map<Long, BigDecimal> shared = new java.util.HashMap<>();
+        for (Claim claim : all) {
+            if (claim.getShares().isEmpty()) continue;
+            Person owner = everyone.stream().filter(p -> p.getId() == claim.getPersonId()).findFirst().orElse(null);
+            if (owner == null || !owner.counts(claim)) continue;
+            BigDecimal figure = figures.due(claim, owner.gradeOn(claim.getDate()));
+            if (figure != null) shared.put(claim.getId(), figure);
+        }
+        for (Person person : everyone) {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
             BigDecimal overdue = ZERO;
@@ -81,11 +93,24 @@ public class Rollup {
                 if (figure != null && claim.getStatus() == ClaimStatus.SETTLED
                         && claim.getCorrects() == null) settled = settled.add(figure);
                 if (figure != null) {
-                    due = due.add(figure);
+                    // Less the parts its share holders carry.
+                    BigDecimal kept = figure;
+                    for (ClaimShare share : claim.getShares()) kept = kept.subtract(share.partOf(figure));
+                    due = due.add(kept);
                     any = true;
                     if (figures.overdue(claim, grade)) {
                         overdue = overdue.add(figure);
                     }
+                }
+            }
+            // Their parts of the claims shared with them.
+            for (Claim claim : all) {
+                BigDecimal figure = shared.get(claim.getId());
+                if (figure == null) continue;
+                for (ClaimShare share : claim.getShares()) {
+                    if (share.personId() != person.getId()) continue;
+                    due = due.add(share.partOf(figure));
+                    any = true;
                 }
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;

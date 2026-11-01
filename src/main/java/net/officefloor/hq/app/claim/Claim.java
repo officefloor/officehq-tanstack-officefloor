@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /** A claim a person on a sheet has made, DRAFT (and unnumbered) until it is opened. `id` is null until the claim is first saved. */
 public class Claim {
@@ -39,6 +40,7 @@ public class Claim {
     private Integer dueTerms;
     private Integer batch;
     private Long addedSeq;
+    private List<ClaimShare> shares = List.of();
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -165,6 +167,13 @@ public class Claim {
     /** The order the claim was added in, for which rates apply to it (see {@link net.officefloor.hq.app.rate.Rates#pct}):
      *  its added sequence, else its id; null for a claim not yet added. */
     public Long seq() { return addedSeq != null ? addedSeq : id; }
+    /** The people the claim is shared with, in the order shared, each with the share of its due they hold. */
+    public List<ClaimShare> getShares() { return shares; }
+    public void setShares(List<ClaimShare> shares) { this.shares = shares; }
+    /** The shares of the claim's due its holders hold, added up (zero when it has none). */
+    public BigDecimal sharedTotal() {
+        return shares.stream().map(ClaimShare::share).reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+    }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

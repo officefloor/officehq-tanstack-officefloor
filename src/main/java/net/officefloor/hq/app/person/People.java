@@ -386,6 +386,12 @@ public class People {
                     + "listed = NEXT VALUE FOR claim_listed WHERE id = ?", intoId, rs.getLong(1));
         }, fromId);
         takeStatements(from, into);
+        // From's shares of claims go to into, but not of into's own claims nor where into holds one already.
+        jdbc.update("DELETE FROM claim_share s WHERE s.person_id = ? AND (s.claim_id IN (SELECT id FROM claim WHERE person_id = ?) "
+                + "OR s.claim_id IN (SELECT claim_id FROM claim_share WHERE person_id = ?))", fromId, intoId, intoId);
+        jdbc.update("DELETE FROM claim_share WHERE person_id = ? AND claim_id IN (SELECT id FROM claim WHERE person_id = ?)",
+                intoId, intoId);
+        jdbc.update("UPDATE claim_share SET person_id = ? WHERE person_id = ?", intoId, fromId);
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ?", intoId, fromId);
         String name = from.getName().trim();
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",

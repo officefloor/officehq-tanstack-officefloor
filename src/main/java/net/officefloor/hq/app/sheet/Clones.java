@@ -146,6 +146,14 @@ public class Clones {
                     + "SELECT ?, ?, label, qty, unit FROM claim_line WHERE claim_id = ? ORDER BY id",
                     to, newId, claim.getId());
         }
+        for (Map<String, Object> share : jdbc.queryForList(
+                "SELECT claim_id, person_id, share FROM claim_share WHERE sheet_id = ? ORDER BY id", from)) {
+            Long claimId = claimIds.get(((Number) share.get("CLAIM_ID")).longValue());
+            Long personId = personIds.get(((Number) share.get("PERSON_ID")).longValue());
+            if (claimId == null || personId == null) continue;
+            jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share) VALUES (?, ?, ?, ?)", to,
+                    claimId, personId, share.get("SHARE"));
+        }
         Map<String, String> renumbered = renumber(kept, claimIds, to);
         for (Claim claim : kept) {
             long newId = claimIds.get(claim.getId());

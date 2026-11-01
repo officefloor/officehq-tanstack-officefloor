@@ -17,6 +17,7 @@ import org.springframework.stereotype.Repository;
 public class Claims {
 
     private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, held, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
+            + "(SELECT LISTAGG(s.person_id || ':' || s.share, ',') WITHIN GROUP (ORDER BY s.id) FROM claim_share s WHERE s.claim_id = claim.id) AS shares, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -123,6 +124,12 @@ public class Claims {
         return last == null ? 1 : last + 1;
     }
 
+    /** Keep the claim's newest share: the person holds it of the claim's due. */
+    public void share(Claim claim, ClaimShare share) {
+        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share) VALUES (?, ?, ?, ?)",
+                claim.getSheetId(), claim.getId(), share.personId(), share.share());
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
@@ -188,6 +195,7 @@ public class Claims {
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setWaived(rs.getBoolean("waived"));
         claim.setHeld(rs.getBoolean("held"));
+        claim.setShares(ClaimShare.parse(rs.getString("shares")));
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");
         claim.setDeferredUntil(until != null ? until.toLocalDate() : null);
