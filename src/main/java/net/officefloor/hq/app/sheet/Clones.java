@@ -38,7 +38,7 @@ public class Clones {
     /** Copy sheet `from` to the never used sheet `to`: its today, settings (dated ones, grade terms and
      *  permissions among them), roles, rates, holidays, void reasons and templates; its people (in list
      *  order) with their grades, terms, contact, aliases, holds, retirements and patrons; its pools and
-     *  their members; its periods, all open; and its claims (listed in the order they were) with their
+     *  their members; its crews with their leads and members; its periods, all open; and its claims (listed in the order they were) with their
      *  status, dates, notes, tags, frozen figures, logs and comments. Each claim that had a number takes
      *  the clone's next one, in the order the claims were opened (by the sheet's today when each was
      *  opened, then by the order they were added to the clone). Statements are not copied: the statement
@@ -108,6 +108,20 @@ public class Clones {
                     + "to_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", to, member.get("POOL"),
                     personId == null ? null : personIds.get(personId.longValue()), member.get("MEMBER_POOL"),
                     member.get("SHARE"), member.get("POSITION"), member.get("FROM_DATE"), member.get("TO_DATE"));
+        }
+        for (Map<String, Object> crew : jdbc.queryForList("SELECT name, lead_id, position FROM crew "
+                + "WHERE sheet_id = ? ORDER BY position", from)) {
+            Long leadId = personIds.get(((Number) crew.get("LEAD_ID")).longValue());
+            if (leadId == null) continue;
+            jdbc.update("INSERT INTO crew (sheet_id, name, lead_id, position) VALUES (?, ?, ?, ?)", to,
+                    crew.get("NAME"), leadId, crew.get("POSITION"));
+        }
+        for (Map<String, Object> member : jdbc.queryForList("SELECT m.crew, m.person_id, m.position FROM crew_member m "
+                + "JOIN crew c ON c.sheet_id = ? AND c.name = m.crew WHERE m.sheet_id = ? ORDER BY m.position", to, from)) {
+            Long personId = personIds.get(((Number) member.get("PERSON_ID")).longValue());
+            if (personId == null) continue;
+            jdbc.update("INSERT INTO crew_member (sheet_id, crew, person_id, position) VALUES (?, ?, ?, ?)", to,
+                    member.get("CREW"), personId, member.get("POSITION"));
         }
 
         // Claims: person by person in list order, each person's oldest listed first, so they keep their order.

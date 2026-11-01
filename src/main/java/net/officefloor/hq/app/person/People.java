@@ -343,7 +343,8 @@ public class People {
      *  aliases become into's aliases; from's patrons are added to into's (not into themselves, no
      *  repeats) and anyone naming from as patron names into instead (no repeats); from's pool
      *  memberships move to into (shares added where into is already a member) and their closed
-     *  periods' totals are added to into's. From's holds, watchers, grades and contact go
+     *  periods' totals are added to into's; the crews they lead are led by into, and their crew
+     *  memberships move to into (not where into leads or is already a member). From's holds, watchers, grades and contact go
      *  with them, and they leave the sheet. Not an edit of into: their version is untouched. */
     public void merge(Person from, Person into) {
         String sheetId = from.getSheetId();
@@ -372,6 +373,14 @@ public class People {
         jdbc.update("DELETE FROM pool_member WHERE person_id = ? AND pool IN "
                 + "(SELECT pool FROM pool_member WHERE sheet_id = ? AND person_id = ?)", fromId, sheetId, intoId);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
+        // From's crews: those they lead are led by into (into no longer a member there), and their crew
+        // memberships move to into (not where into leads or is already a member).
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet_id = ? AND lead_id = ?", intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id IN (?, ?) AND crew IN "
+                + "(SELECT name FROM crew WHERE sheet_id = ? AND lead_id = ?)", sheetId, fromId, intoId, sheetId, intoId);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND crew IN "
+                + "(SELECT crew FROM crew_member WHERE sheet_id = ? AND person_id = ?)", fromId, sheetId, intoId);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
         jdbc.update("UPDATE plan SET person_id = ? WHERE person_id = ?", intoId, fromId);
         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
                 + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?), "

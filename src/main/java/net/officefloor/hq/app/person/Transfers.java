@@ -39,7 +39,7 @@ public class Transfers {
      *  opened (by the sheet's today when each was opened, then by the order they were added). Each claim
      *  keeps the figure a statement bound it to, and the person arrives with their statements (count,
      *  last one and history); references, locks and settle batches are not carried. The person then leaves their sheet entirely: with their claims go
-     *  their statements, holds, watches, patron links (either way), pool memberships and period totals.
+     *  their statements, holds, watches, patron links (either way), pool and crew memberships and period totals.
      *  When `into` (a person on sheet `to`) is given, the person is merged into them instead, as a merge
      *  does: their claims arrive as into's, listed after into's own (each renumbered as above, keeping its
      *  bound figure); into's statement count becomes their own plus the person's (see
@@ -77,6 +77,7 @@ public class Transfers {
         }
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", fromId, fromId);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", fromId);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ?", fromId);
         jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", fromId);
         jdbc.update("DELETE FROM plan WHERE person_id = ?", fromId);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.getSheetId(), fromId);
