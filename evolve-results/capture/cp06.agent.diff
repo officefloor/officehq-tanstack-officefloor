@@ -1,0 +1,179 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 62a0c7e3..bbc71483 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
++import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { peoplePath } from '../people/people';
+ import type { Person } from '../people/people';
+@@ -22,7 +23,7 @@ function ClaimedHeader() {
+ 
+ // A person's claimed total, then their claims (newest first) under one form that adds a claim or,
+ // once a claim's editor is opened, edits it. A blank date takes the sheet's today on the server.
+-function PersonClaims({ sheet, person }: { sheet: string; user: string; person: Person }) {
++function PersonClaims({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const { data: all = [] } = useClaims(sheet);
+   const claims = all.filter((c) => c.person === person.id);
+@@ -32,8 +33,8 @@ function PersonClaims({ sheet, person }: { sheet: string; user: string; person:
+   const save = useMutation({
+     mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
+       id === null
+-        ? postJson<Claim[]>(`${peoplePath(sheet)}/${person.id}/claims`, body)
+-        : putJson<Claim[]>(`${claimsPath(sheet)}/${id}`, body),
++        ? postJson<Claim[]>(byUser(`${peoplePath(sheet)}/${person.id}/claims`, user), body)
++        : putJson<Claim[]>(byUser(`${claimsPath(sheet)}/${id}`, user), body),
+     onSuccess: (updated) => {
+       queryClient.setQueryData(claimsKey(sheet), updated);
+       setDraft(EMPTY);
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 147bd950..1e558517 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
++import { byUser } from '../session/session';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { GRADES, peopleKey, peoplePath, usePeople } from './people';
+@@ -21,8 +22,8 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+   const save = useMutation({
+     mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
+       id === null
+-        ? postJson<Person[]>(peoplePath(sheet), body)
+-        : putJson<Person[]>(`${peoplePath(sheet)}/${id}`, body),
++        ? postJson<Person[]>(byUser(peoplePath(sheet), user), body)
++        : putJson<Person[]>(byUser(`${peoplePath(sheet)}/${id}`, user), body),
+     onSuccess: (updated) => {
+       queryClient.setQueryData(peopleKey(sheet), updated);
+       setDraft(EMPTY);
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 3f2845d9..7da53f64 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -4,3 +4,6 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ // `sheet`), so any feature reads them directly.
+ export const useCurrentUser = () => useSearchParam('user', asString);
+ export const useCurrentSheet = () => useSearchParam('sheet', asString);
++
++/** A write's path carrying who made it, so the server can record it in the audit file. */
++export const byUser = (path: string, user: string) => `${path}?user=${encodeURIComponent(user)}`;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index a8d0a428..af476ebe 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -1,11 +1,15 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class BuildClaim {
+-    public void build(@PathVariable("sheet") String sheet, @Val Person person, @Val ClaimInput input, Claims claims) {
++    public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
++            @Val ClaimInput input, Claims claims, Audit audit) {
+         claims.add(sheet, person.id(), input);
++        audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+index d0356aa7..8f0a5018 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+@@ -1,8 +1,15 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.time.LocalDate;
+ 
+ /** A validated claim body: a blank date already defaulted to the sheet's today. */
+ public record ClaimInput(BigDecimal amount, LocalDate date, String note) {
++
++    /** The audit fields of this claim for the named person: amount as the screen shows it, ISO date. */
++    public String auditFields(String person) {
++        return "person=" + person + " amount=" + amount.setScale(2, RoundingMode.UNNECESSARY).toPlainString()
++                + " date=" + date;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index a123625d..e2610e70 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -1,10 +1,16 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class SaveClaim {
+-    public void save(@PathVariable("sheet") String sheet, @Val Claim claim, @Val ClaimInput input, Claims claims) {
++    public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
++            @Val ClaimInput input, Claims claims, People people, Audit audit) {
+         claims.update(sheet, claim.id(), input);
++        String person = people.find(sheet, claim.person()).name();
++        audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(person));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+index 22b5dac6..30fd1460 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -1,12 +1,18 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class BuildPerson {
+-    public void build(@PathVariable("sheet") String sheet, @Val PersonRequest request, People people,
+-            Out<Person> person) throws DuplicatePersonNameException {
+-        person.set(people.add(sheet, request.name(), request.grade()));
++    public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @Val PersonRequest request, People people, Audit audit, Out<Person> person)
++            throws DuplicatePersonNameException {
++        Person added = people.add(sheet, request.name(), request.grade());
++        person.set(added);
++        audit.record("PERSON_ADDED sheet=" + sheet + " by=" + user + " name=" + added.name() + " grade="
++                + added.grade());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index 72fa0c9f..fd9bc530 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -1,11 +1,16 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class SavePerson {
+-    public void save(@PathVariable("sheet") String sheet, @Val Person person, @Val PersonRequest request,
+-            People people) throws DuplicatePersonNameException {
+-        people.update(sheet, new Person(person.id(), request.name(), request.grade()));
++    public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
++            @Val PersonRequest request, People people, Audit audit) throws DuplicatePersonNameException {
++        Person saved = new Person(person.id(), request.name(), request.grade());
++        people.update(sheet, saved);
++        audit.record("PERSON_EDITED sheet=" + sheet + " by=" + user + " name=" + saved.name() + " grade="
++                + saved.grade());
+     }
+ }
