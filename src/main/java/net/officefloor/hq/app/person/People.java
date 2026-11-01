@@ -472,6 +472,13 @@ public class People {
                 "SELECT alias FROM person_alias WHERE person_id = ? ORDER BY alias_key, id", String.class, personId));
     }
 
+    /** Every grade record of the person on `from` becomes `into`, whatever its date. */
+    public void regrade(Person person, String from, String into) {
+        jdbc.update("UPDATE person_grade SET grade = ? WHERE person_id = ? AND grade = ?", into, person.getId(), from);
+        jdbc.update("UPDATE person SET grade = ? WHERE id = ? AND grade = ?", into, person.getId(), from);
+        person.getGrades().replaceAll((date, grade) -> from.equals(grade) ? into : grade);
+    }
+
     /** Record the person's grade from its date, replacing the one they had from that date. */
     private void saveGrade(Person person, Person.DatedGrade dated) {
         Date from = dated.from() != null ? Date.valueOf(dated.from()) : null;

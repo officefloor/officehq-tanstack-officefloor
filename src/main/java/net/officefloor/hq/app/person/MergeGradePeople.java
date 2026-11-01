@@ -13,8 +13,10 @@ import net.officefloor.plugin.variable.Val;
 
 /** Audits the merge, then gives every person whose grade in force on the sheet's today is the merged
  *  grade the other one from the sheet's today, in list order, exactly as saving the person form would
- *  (their name and terms as they are): each audited PERSON_EDITED, then the figures it moved. Last,
- *  the figures the whole merge moved. */
+ *  (their name and terms as they are): each audited PERSON_EDITED, then the figures it moved. The merge
+ *  is retroactive: then every grade record of each person it moved on the merged grade becomes the
+ *  other, so all their claims, whatever their date, take the other grade. Last, the figures the whole
+ *  merge moved. */
 public class MergeGradePeople {
     public void merge(@Val GradeMerge merge, People people, Sheets sheets, Rollup rollup, Audit audit,
             Grades grades, Out<GradeMergeResult> result) {
@@ -24,7 +26,7 @@ public class MergeGradePeople {
         ApplyPerson apply = new ApplyPerson();
         SavePerson save = new SavePerson();
         RecordPersonEdited record = new RecordPersonEdited();
-        int moved = 0;
+        java.util.List<Person> movedPeople = new java.util.ArrayList<>();
         for (Person listed : people.onSheet(merge.sheetId())) {
             Person person = people.find(merge.sheetId(), listed.getId());
             if (person == null) continue;
@@ -42,9 +44,12 @@ public class MergeGradePeople {
             }
             record.record(request, person, audit);
             rollup.record(merge.sheetId(), before, merge.by());
-            moved++;
+            movedPeople.add(person);
+        }
+        for (Person person : movedPeople) {
+            people.regrade(person, merge.from(), merge.into());
         }
         rollup.record(merge.sheetId(), start, merge.by());
-        result.set(new GradeMergeResult(merge.from(), merge.into(), moved));
+        result.set(new GradeMergeResult(merge.from(), merge.into(), movedPeople.size()));
     }
 }
