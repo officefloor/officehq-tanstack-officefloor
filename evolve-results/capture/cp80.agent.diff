@@ -1,0 +1,709 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 4982a432..0f57df3e 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -134,14 +134,14 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+   const split = useSubmitOnce(splitMutation);
+   const selected = useSelectedClaims(sheet).has(claim.id);
+   // Edit opens the claim's editor by locking it for this user: the server refuses a claim that is not a DRAFT, one
+-  // dated inside a closed period, or one another user's editor holds, and the row shows the error instead.
++  // due inside a closed period, or one another user's editor holds, and the row shows the error instead.
+   const lockMutation = useMutation({
+     mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/lock`, user), {}),
+     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+   });
+   const lock = useSubmitOnce(lockMutation);
+   // What the screen already knows refuses at once (the server refuses the rest): a claim that is not a DRAFT, one
+-  // dated inside a closed period, or one another user's editor holds.
++  // due inside a closed period, or one another user's editor holds.
+   const [editRefused, setEditRefused] = useState(false);
+   const clearEditError = () => {
+     setEditRefused(false);
+@@ -166,7 +166,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+       overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
+       <span data-testid="claim-status">{claim.status}</span>{' '}
+       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
+-      period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
++      period <span data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</span>{' '}
+       {(claim.periodNumber ?? claim.number) !== null && '#'}
+       <span data-testid="claim-number">{claim.periodNumber ?? claim.number ?? ''}</span>{' '}
+       {claim.openedBy !== null && 'opened by '}
+@@ -257,7 +257,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+           splitMutation.reset();
+           proofMutation.reset();
+           clearEditError();
+-          if (claim.status !== 'DRAFT' || periodOf(periods, claim.date)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
++          if (claim.status !== 'DRAFT' || periodOf(periods, claim.dueBy)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
+             setEditRefused(true);
+             return;
+           }
+@@ -438,12 +438,12 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+       )}
+       {proofMutation.isError && (
+         <span data-testid="claim-error" role="alert">
+-          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one dated inside a closed period).
++          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one due inside a closed period).
+         </span>
+       )}
+       {splitMutation.isError && (
+         <span data-testid="claim-error" role="alert">
+-          {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor dated inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
++          {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor due inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
+         </span>
+       )}
+       {move.isError && (
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index e1aefb4e..7a4b57e6 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -67,7 +67,7 @@ export type Claim = {
+   splitFrom: string | null;
+   /** The user whose open editor locks the claim against everyone else's edit button (null when none does). */
+   lockedBy: string | null;
+-  /** Whether it was added while the period its date falls in was soft-closed. */
++  /** Whether it was added while the period its due-by falls in was soft-closed. */
+   lateEntry: boolean;
+ };
+ 
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 3799ea1f..22815ad3 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -57,7 +57,7 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
+   return periods.find((p) => p.from <= date && date <= p.to);
+ }
+ 
+-/** Each period's live due-total (in hundredths, by name): the due now of the claims whose date falls in it that counted
++/** Each period's live due-total (in hundredths, by name): the due now of the claims whose due-by falls in it that counted
+  *  at the end of its last day (see {@link countedOn}: OPEN, PENDING or SETTLED then by their status log, but not a
+  *  deferred one, nor an unbound open one within its person's hold); a claim with no rate adds nothing. */
+ export function periodDueCents(
+@@ -88,7 +88,7 @@ export function personPeriodDueCents(
+   const byId = new Map(people.map((p) => [p.id, p]));
+   const totals = new Map<string, Map<number, bigint>>();
+   for (const c of claims) {
+-    const period = periodOf(periods, c.date);
++    const period = periodOf(periods, c.dueBy);
+     const person = byId.get(c.person);
+     if (period === undefined || person === undefined || !countedOn(c, person, period.to)) continue;
+     const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+diff --git a/src/main/frontend/features/periods/person-periods.slot.tsx b/src/main/frontend/features/periods/person-periods.slot.tsx
+index cc4fca2b..7dfa1be9 100644
+--- a/src/main/frontend/features/periods/person-periods.slot.tsx
++++ b/src/main/frontend/features/periods/person-periods.slot.tsx
+@@ -17,7 +17,7 @@ function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
+   );
+ }
+ 
+-// Per period on the sheet, the person's due-total for it: the due now of their claims whose date falls in it that counted at its end,
++// Per period on the sheet, the person's due-total for it: the due now of their claims whose due-by falls in it that counted at its end,
+ // fixed for everyone on the sheet when the period is closed (0.00 for a person added since). The period's own
+ // due-total is the sum of these.
+ function PersonPeriods({ sheet, person }: { sheet: string; user: string; person: Person }) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaimProof.java b/src/main/java/net/officefloor/hq/app/claim/AddClaimProof.java
+index 31d166f4..434a1b5b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaimProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaimProof.java
+@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Raises the claim's proofs count by one: not on a SETTLED or VOID claim, nor on one dated inside a closed period
++ * Raises the claim's proofs count by one: not on a SETTLED or VOID claim, nor on one due inside a closed period
+  * (which may not be edited).
+  */
+ public class AddClaimProof {
+@@ -19,8 +19,8 @@ public class AddClaimProof {
+         if (claim.status() == ClaimStatus.SETTLED || claim.status() == ClaimStatus.VOID) {
+             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be given a proof");
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be given a proof");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be given a proof");
+         }
+         // Conditional on the status and count read, so a concurrent change by another user is refused, not overwritten.
+         if (!claims.addProof(sheet, claim.id(), claim.status(), claim.proofs())) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 71cde1ae..6afbb490 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.Person;
+@@ -13,20 +14,21 @@ public class BuildClaim {
+     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
+             @Val ClaimInput input, Claims claims, Periods periods, Settings settings, ClaimLog log, Audit audit, Rollup rollup)
+             throws InvalidClaimException {
+-        if (periods.closedOn(sheet, input.date())) {
+-            throw new InvalidClaimException("A claim may not be dated inside a closed period");
++        // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
++        // stand on that date; the claim belongs to the period its due-by falls in.
++        LocalDate dueBy = person.dueBy(sheet, input.date(), settings);
++        if (periods.closedOn(sheet, dueBy)) {
++            throw new InvalidClaimException("A claim may not be due inside a closed period");
+         }
+         if (person.retiredBefore(input.date())) {
+             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
+         }
+         input.checkCorrects(sheet, person.id(), claims);
+         Rollup.Snapshot before = rollup.take(sheet);
+-        // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
+-        // stand on that date.
+-        long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
++        long id = claims.add(sheet, person.id(), input, dueBy);
+         log.record(sheet, user, id);
+         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+-        if (periods.softClosedOn(sheet, input.date())) {
++        if (periods.softClosedOn(sheet, dueBy)) {
+             claims.setLateEntry(sheet, id);
+             audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index 359cde92..c1759e13 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -74,8 +74,8 @@ public class ClaimStatusChanger {
+                 && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {
+             throw new InvalidClaimStatusChangeException("Your role may not " + requested.name().toLowerCase() + " a claim");
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot change status");
+         }
+         // A steward voids a SETTLED claim only within 7 days of its settlement (its status log's last SETTLED date).
+         if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
+@@ -189,7 +189,7 @@ public class ClaimStatusChanger {
+     public Claim number(String sheet, Claim claim) {
+         LocalDate from = settings.periodNumberingFrom(sheet);
+         if (from != null && !clock.today(sheet).isBefore(from)) {
+-            String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
++            String period = periods.nameOn(sheet, LocalDate.parse(claim.dueBy()));
+             String key = period == null ? "" : period;
+             Claim numbered = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
+             claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index e4d4c7f6..dd40ec3c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -108,7 +108,7 @@ public class Claims {
+         return keys.getKey().longValue();
+     }
+ 
+-    /** Marks the claim a late entry: added while the period its date falls in was soft-closed. */
++    /** Marks the claim a late entry: added while the period its due-by falls in was soft-closed. */
+     public void setLateEntry(String sheet, long id) {
+         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet = ? AND id = ?", sheet, id);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/DeferClaim.java b/src/main/java/net/officefloor/hq/app/claim/DeferClaim.java
+index 8813398d..8824de21 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/DeferClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/DeferClaim.java
+@@ -25,8 +25,8 @@ public class DeferClaim {
+         if (!until.isAfter(clock.today(sheet))) {
+             throw new InvalidClaimStatusChangeException("A claim is deferred to a date after the sheet's today");
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be deferred");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be deferred");
+         }
+         Person person = people.find(sheet, claim.person());
+         Rollup.Snapshot before = rollup.take(sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LockClaim.java b/src/main/java/net/officefloor/hq/app/claim/LockClaim.java
+index 42a7eba6..989a82cb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/LockClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/LockClaim.java
+@@ -17,8 +17,8 @@ public class LockClaim {
+         if (claim.status() != ClaimStatus.DRAFT) {
+             throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can");
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimException("A claim dated inside a closed period may not be edited");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimException("A claim due inside a closed period may not be edited");
+         }
+         if (claim.lockedBy() != null && !claim.lockedBy().equals(user)) {
+             throw new InvalidClaimException("The claim is being edited by " + claim.lockedBy());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+index 29571ac0..448a0b07 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -27,8 +27,8 @@ public class ReassignClaim {
+                 && claim.status() != ClaimStatus.PENDING) {
+             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be reassigned");
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be reassigned");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be reassigned");
+         }
+         Person from = people.find(sheet, claim.person());
+         Person to = people.find(sheet, body.to());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java b/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java
+index 6a99986d..e04a6377 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RedateClaim.java
+@@ -1,7 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
+-import java.util.Objects;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.People;
+@@ -9,22 +8,19 @@ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.rollup.Rollup;
+-import net.officefloor.hq.app.setting.Settings;
+-import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * A steward moves an OPEN or PENDING claim to another date, on or before its person's retirement, neither from nor
+- * into a closed period. Its due-by stays as it was fixed and a figure its statement bound stays bound; its period
+- * follows the new date, and a claim numbered within its period takes the next number of its new period when that
+- * changes (its old number is never used again).
++ * A steward moves an OPEN or PENDING claim to another date, on or before its person's retirement, unless it is due
++ * inside a closed period. Its due-by stays as it was fixed and a figure its statement bound stays bound; so does its
++ * period (the one its due-by falls in), and with it any number it has within its period.
+  */
+ public class RedateClaim {
+     public void redate(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val LocalDate date,
+-            @Val Claim claim, Claims claims, People people, Periods periods, Roles roles, Settings settings,
+-            SheetClock clock, Audit audit, Rollup rollup) throws InvalidClaimStatusChangeException {
++            @Val Claim claim, Claims claims, People people, Periods periods, Roles roles, Audit audit,
++            Rollup rollup) throws InvalidClaimStatusChangeException {
+         if (!Role.STEWARD.equals(roles.of(sheet, user))) {
+             throw new InvalidClaimStatusChangeException("Only a steward may re-date a claim");
+         }
+@@ -32,11 +28,8 @@ public class RedateClaim {
+             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be re-dated");
+         }
+         LocalDate old = LocalDate.parse(claim.date());
+-        if (periods.closedOn(sheet, old)) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be re-dated");
+-        }
+-        if (periods.closedOn(sheet, date)) {
+-            throw new InvalidClaimStatusChangeException("A claim cannot be re-dated into a closed period");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be re-dated");
+         }
+         Person person = people.find(sheet, claim.person());
+         if (person.retiredBefore(date)) {
+@@ -48,15 +41,6 @@ public class RedateClaim {
+             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
+         }
+         Claim redated = claim.withDate(date.toString());
+-        String was = periods.nameOn(sheet, old);
+-        String now = periods.nameOn(sheet, date);
+-        LocalDate numberingFrom = settings.periodNumberingFrom(sheet);
+-        if (claim.periodNumber() != null && numberingFrom != null && !clock.today(sheet).isBefore(numberingFrom)
+-                && !Objects.equals(was, now)) {
+-            redated = redated.withPeriodNumber((now == null ? "X" : now) + "-"
+-                    + claims.nextPeriodNumber(sheet, now == null ? "" : now));
+-            claims.setPeriodNumber(sheet, claim.id(), redated.periodNumber());
+-        }
+         audit.record("CLAIM_REDATED sheet=" + sheet + " by=" + user + " " + redated.statusAuditFields(person.name())
+                 + " old=" + old + " new=" + date);
+         rollup.record(sheet, user, before);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
+index 0a4ea229..fafcdc4e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
+@@ -32,8 +32,8 @@ public class ResettleClaim {
+         if (claim.status() != ClaimStatus.SETTLED) {
+             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be re-settled");
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be re-settled");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be re-settled");
+         }
+         Person person = people.find(sheet, claim.person());
+         BigDecimal was = claim.settledDue() == null ? null : new BigDecimal(claim.settledDue());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 691509b5..1707f85e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -14,9 +14,9 @@ public class SaveClaim {
+     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
+             @Val ClaimInput input, Claims claims, People people, Periods periods, Audit audit, Rollup rollup)
+             throws InvalidClaimException {
+-        // A claim dated inside a closed period may not be edited, nor moved into one.
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date())) || periods.closedOn(sheet, input.date())) {
+-            throw new InvalidClaimException("A claim dated inside a closed period may not be edited");
++        // A claim due inside a closed period may not be edited; an edit leaves its due-by, so its period, as it is.
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimException("A claim due inside a closed period may not be edited");
+         }
+         // Only a draft may be edited: an open claim is voided and a new one added instead.
+         if (claim.status() != ClaimStatus.DRAFT) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index 33d09b1d..3c43f18a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor dated inside a
++ * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor due inside a
+  * closed period; only a role that may open a claim may, as the new claim is theirs to open. The claim keeps the rest
+  * and loses any figure a statement bound it to; the new OPEN claim has the same date and note, the next number,
+  * the user as its opener, a due-by fixed now from the terms in force on its date, and the claim's number as split-from.
+@@ -34,9 +34,10 @@ public class SplitClaim {
+         if (claim.deferred()) {
+             throw new InvalidClaimStatusChangeException("A deferred claim cannot be split");
+         }
++        // A split is judged by the claim split alone: by the period its due-by falls in.
+         LocalDate date = LocalDate.parse(claim.date());
+-        if (periods.closedOn(sheet, date)) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be split");
++        if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
++            throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot be split");
+         }
+         BigDecimal was = new BigDecimal(claim.amount());
+         if (amount.signum() <= 0 || amount.compareTo(was) >= 0) {
+@@ -51,6 +52,10 @@ public class SplitClaim {
+         }
+         LocalDate dueBy = person.dueBy(sheet, date, settings);
+         long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), dueBy, claim.shownNumber(), user);
++        // Judged by the claim split alone: the new claim is a late entry when that claim is one.
++        if (claim.lateEntry()) {
++            claims.setLateEntry(sheet, id);
++        }
+         Claim opened = changer.number(sheet, claims.find(sheet, id));
+         log.record(sheet, user, id);
+         audit.record("CLAIM_SPLIT sheet=" + sheet + " by=" + user + " "
+diff --git a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+index 4a89dc1c..7d2ad1d6 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.paste;
+ 
++import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimInput;
+ import net.officefloor.hq.app.claim.ClaimLog;
+@@ -22,10 +23,11 @@ public class AddPastedClaims {
+             Person person = line.person();
+             ClaimInput input = line.input();
+             Rollup.Snapshot before = rollup.take(sheet);
+-            long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
++            LocalDate dueBy = person.dueBy(sheet, input.date(), settings);
++            long id = claims.add(sheet, person.id(), input, dueBy);
+             log.record(sheet, user, id);
+             audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+-            if (periods.softClosedOn(sheet, input.date())) {
++            if (periods.softClosedOn(sheet, dueBy)) {
+                 claims.setLateEntry(sheet, id);
+                 audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+index c4aca602..f9215010 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
++++ b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+@@ -67,8 +67,8 @@ public class ValidatePaste {
+         } catch (DateTimeParseException e) {
+             throw new InvalidClaimException("Line " + at + ": not a valid date: " + date);
+         }
+-        if (periods.closedOn(sheet, on)) {
+-            throw new InvalidClaimException("Line " + at + ": a claim may not be dated inside a closed period");
++        if (periods.closedOn(sheet, person.dueBy(sheet, on, settings))) {
++            throw new InvalidClaimException("Line " + at + ": a claim may not be due inside a closed period");
+         }
+         if (person.retiredBefore(on)) {
+             throw new InvalidClaimException(
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 47ece7cf..d8d1eff3 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims dated in it
++ * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims whose due-by falls in it
+  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
+  * within its person's hold) (a
+  * claim with no rate adds nothing). Refuses a role the permission matrix does not let close, a period not on the sheet or one already closed.
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index e002eaa0..ea20c405 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -6,7 +6,7 @@ import java.util.Map;
+  * A period on a sheet: its name and its from and to date (yyyy-MM-dd), inclusive, whether it is closed, and its
+  * due-total fixed when closed (two decimals; null while open), and each person's due-total for it fixed then (by person
+  * id, two decimals; empty while open — a person added since has none), and whether it is soft-closed instead: its
+- * figures fixed the same way, but claims dated inside it may still be added, edited and change status.
++ * figures fixed the same way, but claims due inside it may still be added, edited and change status.
+  */
+ public record Period(String name, String from, String to, boolean closed, String closedTotal,
+         Map<Long, String> closedPeople, boolean soft) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index 7c01c5e0..cf343cfe 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -21,7 +21,7 @@ import net.officefloor.hq.app.sheet.SheetClock;
+ import org.springframework.stereotype.Service;
+ 
+ /**
+- * Closes a period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims dated in it
++ * Closes a period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims whose due-by falls in it
+  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
+  * within its person's hold) (a claim with no rate adds nothing). Shared by a close by hand and the auto close of a today change.
+  */
+@@ -67,7 +67,7 @@ public class PeriodCloser {
+         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+         byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
+         for (Claim claim : claims.list(sheet)) {
+-            LocalDate date = LocalDate.parse(claim.date());
++            LocalDate date = LocalDate.parse(claim.dueBy());
+             Person person = byId.get(claim.person());
+             if (person == null || !person.countsOn(claim, to) || date.isBefore(from) || date.isAfter(to)) {
+                 continue;
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+index 4ef49421..e8a5fa19 100644
+--- a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Soft-closes the period: its due-total and each person's are fixed now as a close fixes them, but claims dated in it
++ * Soft-closes the period: its due-total and each person's are fixed now as a close fixes them, but claims due in it
+  * may still be added, edited and change status (one added meanwhile is a late entry). Refuses a role the permission
+  * matrix does not let close, a period not on the sheet, or one already closed or soft-closed.
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+index 3f19b4de..01cf8cb2 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+@@ -1,11 +1,14 @@
+ package net.officefloor.hq.app.quickadd;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.claim.ClaimInput;
+ import net.officefloor.hq.app.claim.InvalidClaimException;
+ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -20,7 +23,7 @@ public class ValidateQuickAdd {
+     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheet") String sheet, @RequestBody QuickAddRequest request, Settings settings,
+-            Periods periods, Out<QuickAddRequest> body, Out<ClaimInput> claim)
++            Periods periods, People people, Out<QuickAddRequest> body, Out<ClaimInput> claim)
+             throws InvalidPersonException, InvalidClaimException {
+         String name = request == null || request.name() == null ? "" : request.name().trim();
+         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+@@ -31,8 +34,12 @@ public class ValidateQuickAdd {
+             throw new InvalidClaimException("The amount must be a number of 0.00 or more with up to two decimals");
+         }
+         ClaimInput input = new ClaimInput(new BigDecimal(amount), settings.entryDay(sheet), "");
+-        if (periods.closedOn(sheet, input.date())) {
+-            throw new InvalidClaimException("A claim may not be dated inside a closed period");
++        // The due-by it would be fixed with: from the person of the name, else from a new person of grade A.
++        Person person = people.findByName(sheet, name);
++        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings)
++                : input.date().plusDays(settings.terms(sheet, "A", input.date()));
++        if (periods.closedOn(sheet, dueBy)) {
++            throw new InvalidClaimException("A claim may not be due inside a closed period");
+         }
+         body.set(new QuickAddRequest(name, amount));
+         claim.set(input);
+diff --git a/tmp_e2e/e2e1.log b/tmp_e2e/e2e1.log
+new file mode 100644
+index 00000000..eeaf421a
+--- /dev/null
++++ b/tmp_e2e/e2e1.log
+@@ -0,0 +1,94 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✘  1 [chromium] › acceptance.spec.ts:6:7 › period by due by › period by due by (11.0s)
++  ✓  2 [chromium] › acceptance.spec.ts:164:7 › period by due by › period by due by scenario 1 (19.2s)
++  ✓  3 [chromium] › acceptance.spec.ts:710:7 › period by due by › period by due by scenario 2 (16.5s)
++  ✘  4 [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 (25.9s)
++
++
++  1) [chromium] › acceptance.spec.ts:6:7 › period by due by › period by due by ─────────────────────
++
++    Error: [31mTimed out 5000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m
++
++    Locator: getByTestId('person-row-1').getByTestId('person-period-P1-due-total')
++    Expected string: [32m"[7m0[27m.00"[39m
++    Received string: [31m"[7m1[27m.00"[39m
++    Call log:
++      [2m- expect.toHaveText with timeout 5000ms[22m
++    [2m  - waiting for getByTestId('person-row-1').getByTestId('person-period-P1-due-total')[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++    [2m  -   locator resolved to <td data-testid="person-period-P1-due-total">1.00</td>[22m
++    [2m  -   unexpected value "1.00"[22m
++
++
++      26 |     expect(await ui.claimAction(pg_uma, c_ada_2, "open")).toBe(true);
++      27 |     await ui.refresh(pg_uma);
++    > 28 |     await expect(pg_uma.getByTestId("person-row-" + p_ada).getByTestId("person-period-P1-due-total")).toHaveText("0.00");
++         |                                                                                                       ^
++      29 |     await expect(pg_uma.getByTestId("person-row-" + p_ada).getByTestId("person-period-P2-due-total")).toHaveText("4.00");
++      30 |     await expect(pg_uma.getByTestId("claim-row-" + c_ada_2).getByTestId("claim-period")).toHaveText("");
++      31 |     await expect(pg_uma.getByTestId("claim-row-" + c_ada_2).getByTestId("claim-number")).toHaveText("X-1");
++
++        at /home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/specs/acceptance.spec.ts:28:103
++
++  2) [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 ───────
++
++    Error: [31mTimed out 5000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m
++
++    Locator: getByTestId('claim-row-27').getByTestId('claim-period')
++    Expected string: [32m"P[7m2[27m"[39m
++    Received string: [31m"P[7m1[27m"[39m
++    Call log:
++      [2m- expect.toHaveText with timeout 5000ms[22m
++    [2m  - waiting for getByTestId('claim-row-27').getByTestId('claim-period')[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++    [2m  -   locator resolved to <span data-testid="claim-period">P1</span>[22m
++    [2m  -   unexpected value "P1"[22m
++
++
++      1276 |     await expect(pg_wes.getByTestId("claim-row-" + c_cam_1).getByTestId("claim-opened-by")).toHaveText("");
++      1277 |     await expect(pg_wes.getByTestId("claim-row-" + c_cam_1).getByTestId("claim-stated")).toHaveText("no");
++    > 1278 |     await expect(pg_wes.getByTestId("claim-row-" + c_cam_1).getByTestId("claim-period")).toHaveText("P2");
++           |                                                                                          ^
++      1279 |     await expect(pg_wes.getByTestId("claim-row-" + c_cam_1).getByTestId("claim-due-by")).toHaveText("2026-03-29");
++      1280 |     await expect(pg_wes.getByTestId("claim-row-" + c_cam_1).getByTestId("claim-overdue")).toHaveText("no");
++      1281 |     await expect(pg_wes.getByTestId("claim-row-" + c_cam_1).getByTestId("claim-corrects")).toHaveText("");
++
++        at /home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/specs/acceptance.spec.ts:1278:90
++
++  2 failed
++    [chromium] › acceptance.spec.ts:6:7 › period by due by › period by due by ──────────────────────
++    [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 ────────
++  2 passed (1.3m)
+diff --git a/tmp_e2e/e2e2.log b/tmp_e2e/e2e2.log
+new file mode 100644
+index 00000000..cabf5711
+--- /dev/null
++++ b/tmp_e2e/e2e2.log
+@@ -0,0 +1,55 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › period by due by › period by due by (11.6s)
++  ✓  2 [chromium] › acceptance.spec.ts:164:7 › period by due by › period by due by scenario 1 (24.1s)
++  ✓  3 [chromium] › acceptance.spec.ts:710:7 › period by due by › period by due by scenario 2 (21.5s)
++  ✘  4 [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 (31.4s)
++
++
++  1) [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 ───────
++
++    Error: [31mTimed out 5000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m
++
++    Locator: getByTestId('claim-row-29').getByTestId('claim-late-entry')
++    Expected string: [32m"yes"[39m
++    Received string: [31m"no"[39m
++    Call log:
++      [2m- expect.toHaveText with timeout 5000ms[22m
++    [2m  - waiting for getByTestId('claim-row-29').getByTestId('claim-late-entry')[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++    [2m  -   locator resolved to <span data-testid="claim-late-entry">no</span>[22m
++    [2m  -   unexpected value "no"[22m
++
++
++      1344 |     await expect(pg_wes.getByTestId("claim-row-" + c_ben_2).getByTestId("claim-proofs")).toHaveText("0");
++      1345 |     await expect(pg_wes.getByTestId("claim-row-" + c_ben_2).getByTestId("claim-split-from")).toHaveText("1");
++    > 1346 |     await expect(pg_wes.getByTestId("claim-row-" + c_ben_2).getByTestId("claim-late-entry")).toHaveText("yes");
++           |                                                                                              ^
++      1347 |     await expect(pg_wes.getByTestId("claim-row-" + c_ben_1).getByTestId("claim-amount")).toHaveText("0.99");
++      1348 |     await expect(pg_wes.getByTestId("claim-row-" + c_ben_1).getByTestId("claim-date")).toHaveText("2026-03-09");
++      1349 |     await expect(pg_wes.getByTestId("claim-row-" + c_ben_1).getByTestId("claim-note")).toHaveText("n");
++
++        at /home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/specs/acceptance.spec.ts:1346:94
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.5m)
++  Consider splitting slow test files to speed up parallel execution
++  1 failed
++    [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 ────────
++  3 passed (1.5m)
+diff --git a/tmp_e2e/e2e3.log b/tmp_e2e/e2e3.log
+new file mode 100644
+index 00000000..916793ac
+--- /dev/null
++++ b/tmp_e2e/e2e3.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › period by due by › period by due by (13.4s)
++  ✓  2 [chromium] › acceptance.spec.ts:164:7 › period by due by › period by due by scenario 1 (24.0s)
++  ✓  3 [chromium] › acceptance.spec.ts:710:7 › period by due by › period by due by scenario 2 (23.1s)
++  ✓  4 [chromium] › acceptance.spec.ts:1121:7 › period by due by › period by due by scenario 3 (25.6s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.4m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (1.5m)
