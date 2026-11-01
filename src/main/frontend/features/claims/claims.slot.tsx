@@ -111,7 +111,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle it).
+          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle it, and a clerk cannot settle a due above the clerk limit).
         </span>
       )}
     </li>

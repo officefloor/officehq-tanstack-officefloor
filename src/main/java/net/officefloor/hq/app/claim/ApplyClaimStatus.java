@@ -7,7 +7,10 @@ import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -16,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class ApplyClaimStatus {
     public void apply(@PathVariable("sheet") String sheet, @PathVariable("change") String change,
             @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Rates rates, Periods periods,
-            Audit audit, Rollup rollup)
+            Roles roles, Settings settings, Audit audit, Rollup rollup)
             throws InvalidClaimStatusChangeException {
         ClaimStatusChange requested = ClaimStatusChange.of(change);
         if (requested == null) {
@@ -28,6 +31,16 @@ public class ApplyClaimStatus {
         // Four eyes: the user who opened a claim may not settle it.
         if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
             throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
+        }
+        Person person = people.find(sheet, claim.person());
+        // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit);
+        // a steward settles anything.
+        if (requested == ClaimStatusChange.SETTLE && Role.CLERK.equals(roles.of(sheet, user))) {
+            BigDecimal limit = settings.clerkLimit(sheet);
+            BigDecimal due = claim.due(rates.list(sheet), person.grade());
+            if (limit != null && due != null && due.compareTo(limit) > 0) {
+                throw new InvalidClaimStatusChangeException("A clerk cannot settle a due above the clerk limit");
+            }
         }
         Rollup.Snapshot before = rollup.take(sheet);
         ClaimStatus next = claim.status().after(requested);
@@ -43,7 +56,6 @@ public class ApplyClaimStatus {
             claims.setNumber(sheet, claim.id(), changed.number());
             claims.setOpenedBy(sheet, claim.id(), user);
         }
-        Person person = people.find(sheet, claim.person());
         String fields = changed.statusAuditFields(person.name());
         // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
         // statement bound); with no rate there is nothing to fix, so it stays live.
