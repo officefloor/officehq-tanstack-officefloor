@@ -102,6 +102,11 @@ public class ClaimStatusChanger {
                 && user.equals(claim.openedBy())) {
             throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle or approve it");
         }
+        // Nor may the user who last edited it.
+        if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
+                && user.equals(claims.editedBy(sheet, claim.id()))) {
+            throw new InvalidClaimStatusChangeException("The user who last edited a claim cannot settle or approve it");
+        }
         // Only a steward approves or rejects a PENDING claim; a reject gives a reason.
         if ((requested == ClaimStatusChange.APPROVE || requested == ClaimStatusChange.REJECT)
                 && !Role.STEWARD.equals(roles.of(sheet, user))) {

@@ -199,16 +199,22 @@ public class Claims {
     }
 
     /**
-     * Edits a draft claim not locked by another user's editor, releasing any lock on it: false when it is no longer a
-     * draft, or another user's editor holds it. The tags it carried before stay among those it has ever carried.
+     * Edits a draft claim not locked by another user's editor, releasing any lock on it and recording the user as its
+     * last editor: false when it is no longer a draft, or another user's editor holds it. The tags it carried before stay among those it has ever carried.
      */
     public boolean update(String sheet, long id, ClaimInput input, List<String> tagsEver, String user) {
         List<String> ever = Stream.concat(tagsEver.stream(), input.tags().stream()).distinct().sorted().toList();
         return jdbc.update(
-                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ?, ref = ?, tags = ?, tags_ever = ?, locked_by = NULL"
+                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ?, ref = ?, tags = ?, tags_ever = ?, locked_by = NULL, edited_by = ?"
                         + " WHERE sheet = ? AND id = ? AND status = 'DRAFT' AND (locked_by IS NULL OR locked_by = ?)",
                 input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), input.ref(), kept(input.tags()),
-                kept(ever), sheet, id, user) == 1;
+                kept(ever), user, sheet, id, user) == 1;
+    }
+
+    /** The user who last edited the claim (through its form or its amount entry); null when never edited. */
+    public String editedBy(String sheet, long id) {
+        return jdbc.query("SELECT edited_by FROM claim WHERE sheet = ? AND id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, sheet, id);
     }
 
     /**
