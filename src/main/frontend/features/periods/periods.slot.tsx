@@ -19,7 +19,7 @@ import { CAP, DATE, fiscalYear, periodDue, periodsKey, usePeriods, YEAR, type Pe
  * its due-total is then the one it had when it was closed, whatever rates do later. A steward can
  * reopen a closed period, making its due-total live again. A period can instead be soft-closed: its
  * figures are fixed as by a close, but claims dated in it can still be changed; it can then be closed
- * (fixing them afresh) or reopened. Each period shows the fiscal year its from-date falls in; a fiscal
+ * (fixing them afresh) or reopened. A steward can lock a period, so it cannot be reopened, and unlock it. Each period shows the fiscal year its from-date falls in; a fiscal
  * year's twelve monthly periods can be generated as the monthly generator makes them.
  */
 function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
@@ -41,7 +41,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [genTo, setGenTo] = useState('');
   const [genInvalid, setGenInvalid] = useState<string | null>(null);
   const [fyYear, setFyYear] = useState('');
-  // The period whose last close or reopen was refused: its row shows the error.
+  // The period whose last close, reopen, lock or unlock was refused: its row shows the error.
   const [refused, setRefused] = useState<string | null>(null);
 
   const submitOnce = useSubmitOnce();
@@ -96,6 +96,14 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/reopen`, { user }),
     onMutate: () => setRefused(null),
     onError: (_e, name) => setRefused(name),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+
+  const lock = useMutation({
+    mutationFn: ({ name, action }: { name: string; action: 'lock' | 'unlock' }) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_e, { name }) => setRefused(name),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
 
@@ -293,6 +301,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th></th>
           </tr>
         </thead>
@@ -306,6 +315,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
               <td data-testid="period-fy">{fiscalYear(p.from, fiscalStart)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 <button
                   type="button"
@@ -330,6 +340,22 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
                   onClick={() => reopen.mutate(p.name)}
                 >
                   Reopen
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-lock"
+                  disabled={lock.isPending}
+                  onClick={() => lock.mutate({ name: p.name, action: 'lock' })}
+                >
+                  Lock
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-unlock"
+                  disabled={lock.isPending}
+                  onClick={() => lock.mutate({ name: p.name, action: 'unlock' })}
+                >
+                  Unlock
                 </button>
                 {refused === p.name && (
                   <span data-testid="period-error" role="alert">

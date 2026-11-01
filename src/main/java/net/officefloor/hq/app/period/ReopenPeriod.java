@@ -5,13 +5,14 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Reopens a closed period, making its due-total live again. Only the roles the permission matrix allows may reopen a period (a steward by default),
- *  and only a closed one can be reopened. Publishes the reopened period. */
+ *  and only a closed one, not locked, can be reopened. Publishes the reopened period. */
 public class ReopenPeriod {
     public void reopen(@Val Period period, @Val PeriodCloseRequest request, Periods periods, Settings settings,
             Out<ReopenedPeriod> reopened) throws PeriodClosedException {
         if (!settings.allows(period.sheetId(), "reopen", request.user())) {
             throw new PeriodClosedException("Your role may not reopen period " + period.name());
         }
+        if (period.locked()) throw new PeriodClosedException("Period " + period.name() + " is locked");
         if (!period.closed()) throw new PeriodClosedException("Period " + period.name() + " is not closed");
         periods.reopen(period);
         reopened.set(new ReopenedPeriod(new Period(period.sheetId(), period.name(), period.from(), period.to(), period.cap())));

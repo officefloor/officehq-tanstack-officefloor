@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Periods {
 
-    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft, cap FROM period";
+    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft, cap, locked FROM period";
 
     private final JdbcTemplate jdbc;
 
@@ -126,9 +126,15 @@ public class Periods {
                 period.sheetId(), period.name());
     }
 
+    /** Lock or unlock the period. */
+    public void setLocked(Period period, boolean locked) {
+        jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ?",
+                locked, period.sheetId(), period.name());
+    }
+
     private static Period period(ResultSet rs, int i) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getDate("from_date").toLocalDate(),
                 rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
-                rs.getBoolean("soft"), rs.getObject("cap", Integer.class));
+                rs.getBoolean("soft"), rs.getObject("cap", Integer.class), rs.getBoolean("locked"));
     }
 }

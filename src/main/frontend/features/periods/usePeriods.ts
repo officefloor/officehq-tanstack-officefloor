@@ -24,6 +24,8 @@ export type Period = {
   cap: number | null;
   /** Each person's opening balance for the period, by person id; a person with none is absent. */
   openings: Record<string, string>;
+  /** Whether a steward has locked the period: a locked period cannot be reopened. */
+  locked: boolean;
 };
 
 export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as const;

@@ -63,7 +63,7 @@ public class PeriodCloser {
         Map<Long, BigDecimal> personCarried = carried(period, personOf, atEnd);
         BigDecimal total = personTotals.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         periods.close(period, total, personTotals, personCarried, soft);
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft, period.cap());
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft, period.cap(), period.locked());
     }
 
     /** Each person's carried figure for the period as the screen shows it now, by person id. */
