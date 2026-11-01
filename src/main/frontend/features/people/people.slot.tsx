@@ -49,7 +49,7 @@ function People({ sheet }: { sheet: string; user: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save.reset();
-    // The server refuses an empty name; its refusal shows as the form's error.
+    // The server refuses an empty name or one already on the sheet; its refusal shows as the form's error.
     save.mutate({ id: editing, body: draft });
   };
 
@@ -85,7 +85,7 @@ function People({ sheet }: { sheet: string; user: string }) {
         )}
         {save.isError && (
           <span data-testid="person-form-error" role="alert">
-            {' '}A person needs a name and a grade of A, B or C.
+            {' '}A person needs a name not already on the sheet and a grade of A, B or C.
           </span>
         )}
       </form>

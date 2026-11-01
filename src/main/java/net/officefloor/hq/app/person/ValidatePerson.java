@@ -8,7 +8,7 @@ public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidPersonException {
-        String name = request == null || request.name() == null ? "" : request.name();
+        String name = request == null || request.name() == null ? "" : request.name().trim();
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         if (name.isBlank()) {
             throw new InvalidPersonException("A name is required");

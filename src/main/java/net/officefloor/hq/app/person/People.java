@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -30,8 +31,28 @@ public class People {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Person add(String sheet, String name, String grade) {
+    /** Whether someone on the sheet other than {@code except} has this name, ignoring case. */
+    private boolean nameTaken(String sheet, String name, Long except) {
+        Integer taken = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet = ? AND name_key = LOWER(?) AND (? IS NULL OR id <> ?)",
+                Integer.class, sheet, name, except, except);
+        return taken != null && taken > 0;
+    }
+
+    public Person add(String sheet, String name, String grade) throws DuplicatePersonNameException {
+        if (nameTaken(sheet, name, null)) {
+            throw new DuplicatePersonNameException(name);
+        }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        try {
+            insert(sheet, name, grade, keys);
+        } catch (DuplicateKeyException e) {
+            throw new DuplicatePersonNameException(name);
+        }
+        return new Person(keys.getKey().longValue(), name, grade);
+    }
+
+    private void insert(String sheet, String name, String grade, GeneratedKeyHolder keys) {
         jdbc.update(con -> {
             var ps = con.prepareStatement("INSERT INTO person (sheet, name, grade) VALUES (?, ?, ?)",
                     new String[] { "id" });
@@ -40,11 +61,17 @@ public class People {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), name, grade);
     }
 
-    public void update(String sheet, Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet = ? AND id = ?", person.name(),
-                person.grade(), sheet, person.id());
+    public void update(String sheet, Person person) throws DuplicatePersonNameException {
+        if (nameTaken(sheet, person.name(), person.id())) {
+            throw new DuplicatePersonNameException(person.name());
+        }
+        try {
+            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet = ? AND id = ?", person.name(),
+                    person.grade(), sheet, person.id());
+        } catch (DuplicateKeyException e) {
+            throw new DuplicatePersonNameException(person.name());
+        }
     }
 }
