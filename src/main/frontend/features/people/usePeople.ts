@@ -44,6 +44,8 @@ export type Person = {
   clashing: boolean;
   origin: string | null;
   tags: string[];
+  /** Snapshot lines, oldest first: `<day left> <due-total>` (n/a when it was n/a). */
+  snapshots: string[];
 };
 
 /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */

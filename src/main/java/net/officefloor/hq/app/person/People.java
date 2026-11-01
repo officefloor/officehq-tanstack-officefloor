@@ -50,6 +50,11 @@ public class People {
                 (ResultSet rs) -> {
                     holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(hold(rs));
                 }, sheetId);
+        Map<Long, List<String>> snapshots = new HashMap<>();
+        jdbc.query("SELECT person_id, left_day, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY id",
+                (ResultSet rs) -> {
+                    snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
+                }, sheetId);
         Map<Long, List<String>> aliases = new HashMap<>();
         jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY alias_key, id",
                 (ResultSet rs) -> {
@@ -59,6 +64,7 @@ public class People {
         for (Person person : people) {
             person.setAliases(aliases.getOrDefault(person.getId(), new ArrayList<>()));
             person.setHolds(holds.getOrDefault(person.getId(), new ArrayList<>()));
+            person.setSnapshots(snapshots.getOrDefault(person.getId(), new ArrayList<>()));
             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
             TreeMap<LocalDate, String> dated = grades.get(person.getId());
             if (dated != null) person.setGrades(dated);
@@ -371,7 +377,7 @@ public class People {
                 sheetId, fromId, sheetId, intoId);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
                 intoId, sheetId, fromId);
-        for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade")) {
+        for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade", "person_snapshot")) {
             jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", fromId);
         }
         jdbc.update("DELETE FROM person WHERE id = ?", fromId);
@@ -427,12 +433,28 @@ public class People {
             person.setHolds(new ArrayList<>(jdbc.query(
                     "SELECT from_date, to_date FROM person_hold WHERE person_id = ? ORDER BY id",
                     (rs, i) -> hold(rs), person.getId())));
+            person.setSnapshots(new ArrayList<>(jdbc.query(
+                    "SELECT left_day, due_total FROM person_snapshot WHERE person_id = ? ORDER BY id",
+                    (rs, i) -> snapshot(rs), person.getId())));
             person.setAliases(aliasesOf(person.getId()));
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
             person.setClashing(clashing(person));
         }
         return person;
+    }
+
+    /** A snapshot line as shown: the day being left and the due-total then (n/a when it was). */
+    private static String snapshot(ResultSet rs) throws SQLException {
+        java.math.BigDecimal due = rs.getBigDecimal("due_total");
+        return rs.getDate("left_day").toLocalDate() + " " + (due == null ? "n/a" : due.setScale(2).toPlainString());
+    }
+
+    /** Record a snapshot of the person: the day being left and their due-total then (null: n/a). Not an
+     *  edit: the person's version is untouched. */
+    public void addSnapshot(String sheetId, long personId, LocalDate leftDay, java.math.BigDecimal dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_day, due_total) VALUES (?, ?, ?, ?)",
+                sheetId, personId, Date.valueOf(leftDay), dueTotal == null ? null : dueTotal.setScale(2));
     }
 
     private static Hold hold(ResultSet rs) throws SQLException {
