@@ -6,6 +6,7 @@ import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
@@ -17,8 +18,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Takes a statement of the person: records their due-total now, binds each of their counting claims to the figure
- * it has now and unbinds the rest. The due-total is n/a when their grade has no rate on the sheet's today, unless a
+ * Takes a statement of the person: records their due-total now (late charges included), binds each of their
+ * counting claims to the figure it has now (without its late charge) and unbinds the rest. The due-total is n/a
+ * when their grade has no rate on the sheet's today, unless a
  * counting claim keeps a figure (settled or bound): then it is the figures there are.
  */
 public class TakeStatement {
@@ -29,15 +31,17 @@ public class TakeStatement {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
         BigDecimal floor = settings.floor(sheet);
+        Late late = settings.late(sheet, today);
         List<Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id()).toList();
         boolean na = Rate.on(sheetRates, person.grade(), today) == null
-                && mine.stream().noneMatch((c) -> c.counts() && c.fixed());
+                && mine.stream().noneMatch((c) -> c.counts(person.held()) && c.fixed());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         int count = 0;
         for (Claim claim : mine) {
-            if (claim.counts()) {
-                BigDecimal due = claim.due(sheetRates, person.grade(), floor);
-                claims.setStated(sheet, claim.id(), true, due);
+            if (claim.counts(person.held())) {
+                // The statement binds the figure; the late charge keeps following the sheet's today.
+                claims.setStated(sheet, claim.id(), true, claim.figure(sheetRates, person.grade(), floor));
+                BigDecimal due = claim.due(sheetRates, person.grade(), floor, late);
                 total = due == null ? total : total.add(due);
                 count++;
             } else if (claim.stated()) {

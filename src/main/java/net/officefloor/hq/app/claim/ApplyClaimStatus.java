@@ -11,6 +11,7 @@ import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class ApplyClaimStatus {
     public void apply(@PathVariable("sheet") String sheet, @PathVariable("change") String change,
             @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Rates rates, Periods periods,
-            Roles roles, Settings settings, Audit audit, Rollup rollup)
+            Roles roles, Settings settings, SheetClock clock, Audit audit, Rollup rollup)
             throws InvalidClaimStatusChangeException {
         ClaimStatusChange requested = ClaimStatusChange.of(change);
         if (requested == null) {
@@ -37,7 +38,8 @@ public class ApplyClaimStatus {
         // a steward settles anything.
         if (requested == ClaimStatusChange.SETTLE && Role.CLERK.equals(roles.of(sheet, user))) {
             BigDecimal limit = settings.clerkLimit(sheet);
-            BigDecimal due = claim.due(rates.list(sheet), person.grade(), settings.floor(sheet));
+            BigDecimal due = claim.due(rates.list(sheet), person.grade(), settings.floor(sheet),
+                    settings.late(sheet, clock.today(sheet)));
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 throw new InvalidClaimStatusChangeException("A clerk cannot settle a due above the clerk limit");
             }
@@ -58,9 +60,10 @@ public class ApplyClaimStatus {
         }
         String fields = changed.statusAuditFields(person.name());
         // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
-        // statement bound); with no rate there is nothing to fix, so it stays live.
+        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
         if (requested == ClaimStatusChange.SETTLE) {
-            BigDecimal due = claim.due(rates.list(sheet), person.grade(), settings.floor(sheet));
+            BigDecimal due = claim.due(rates.list(sheet), person.grade(), settings.floor(sheet),
+                    settings.late(sheet, clock.today(sheet)));
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
         }

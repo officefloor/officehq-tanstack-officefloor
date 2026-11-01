@@ -8,7 +8,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/people';
 import { rateOf, twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
-import { claimDueCents, counted, useClaims } from '../claims/claims';
+import { claimDueCents, counted, useClaims, useLate } from '../claims/claims';
 import { closePeriodPath, periodOf, periodsKey, periodsPath, usePeriods } from './periods';
 import type { Period } from './periods';
 
@@ -56,6 +56,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
   const { data: people = [] } = usePeople(sheet);
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
+  const late = useLate(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
 
   const save = useMutation({
@@ -83,7 +84,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
     const period = periodOf(periods, c.date);
     const grade = grades.get(c.person);
     if (period === undefined || grade === undefined) continue;
-    const due = claimDueCents(c, rateOf(rates, grade, c.date), floor) ?? 0n;
+    const due = claimDueCents(c, rateOf(rates, grade, c.date), floor, late) ?? 0n;
     totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
   }
 

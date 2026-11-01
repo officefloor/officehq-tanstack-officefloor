@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, type Rate } from '../rates/rates';
+import { useSheetToday } from '../sheet/sheet';
+import { useLatePctCents, useTerms } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
@@ -62,13 +64,46 @@ export function fixed(claim: Claim): boolean {
   return claim.settledDue !== null || (claim.stated && claim.statedDue !== null);
 }
 
-/** A claim's due: the one fixed when it was settled, else the one its statement bound, else its amount at the
+/** What makes an overdue claim's late charge: the sheet's late percent (in hundredths), its terms and its today.
+ *  The charge is never bound by a statement: it follows the sheet's today. */
+export type Late = { pct: bigint; terms: number; today: string | undefined };
+
+/** The sheet's late percent, terms and today. */
+export function useLate(sheet: string): Late {
+  return { pct: useLatePctCents(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
+}
+
+/** A claim's figure: the one fixed when it was settled, else the one its statement bound, else its amount at the
  *  grade's rate in force on its date, raised to at least the sheet's floor (in hundredths). */
-export function claimDueCents(claim: Claim, pct: string | undefined, floor: bigint): bigint | undefined {
+export function claimFigureCents(claim: Claim, pct: string | undefined, floor: bigint): bigint | undefined {
   if (claim.settledDue !== null) return hundredths(claim.settledDue);
   if (claim.stated) return claim.statedDue === null ? undefined : hundredths(claim.statedDue);
   const live = dueCents(claim.amount, pct);
   return live === undefined || live >= floor ? live : floor;
+}
+
+/** The whole days a claim is overdue: from its due-by to the sheet's today (0 when it is not overdue). */
+function daysOverdue(claim: Claim, late: Late): number {
+  if (!overdue(claim, late.terms, late.today)) return 0;
+  return Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim, late.terms)}T00:00:00Z`)) / 86_400_000);
+}
+
+/** A claim's late charge on its figure (in hundredths): the late percent of the figure for every full 30 days it is
+ *  overdue, rounded half to even. */
+export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
+  const periods = BigInt(Math.floor(daysOverdue(claim, late) / 30));
+  const product = figure * late.pct * periods;
+  const quotient = product / 10000n;
+  const remainder = product % 10000n;
+  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) return quotient + 1n;
+  return quotient;
+}
+
+/** A claim's due: its figure plus, while it is overdue, its late charge (settling fixes the charge in). */
+export function claimDueCents(claim: Claim, pct: string | undefined, floor: bigint, late: Late): bigint | undefined {
+  const figure = claimFigureCents(claim, pct, floor);
+  if (figure === undefined || claim.settledDue !== null) return figure;
+  return figure + lateCents(claim, figure, late);
 }
 
 
@@ -80,10 +115,11 @@ export function personDueCents(
   person: Person,
   today: string | undefined,
   floor: bigint,
+  late: Late,
 ): bigint | undefined {
   const mine = counted(claims.filter((c) => c.person === person.id), [person]);
   if (rateOf(rates, person.grade, today) === undefined && !mine.some(fixed)) return undefined;
-  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, person.grade, c.date), floor) ?? 0n), 0n);
+  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, person.grade, c.date), floor, late) ?? 0n), 0n);
 }
 
 /** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
@@ -104,15 +140,14 @@ export function overdueCents(
   claims: Claim[],
   people: Person[],
   rates: Rate[],
-  terms: number,
-  today: string | undefined,
+  late: Late,
   floor: bigint,
 ): { count: number; cents: bigint } {
   const grades = new Map(people.map((p) => [p.id, p.grade]));
-  const late = counted(claims, people).filter((c) => grades.has(c.person) && overdue(c, terms, today));
-  const cents = late.reduce(
-    (sum, c) => sum + (claimDueCents(c, rateOf(rates, grades.get(c.person)!, c.date), floor) ?? 0n),
+  const overdueClaims = counted(claims, people).filter((c) => grades.has(c.person) && overdue(c, late.terms, late.today));
+  const cents = overdueClaims.reduce(
+    (sum, c) => sum + (claimDueCents(c, rateOf(rates, grades.get(c.person)!, c.date), floor, late) ?? 0n),
     0n,
   );
-  return { count: late.length, cents };
+  return { count: overdueClaims.length, cents };
 }

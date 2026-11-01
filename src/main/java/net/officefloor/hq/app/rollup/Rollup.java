@@ -9,6 +9,7 @@ import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
@@ -55,6 +56,7 @@ public class Rollup {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
         BigDecimal floor = settings.floor(sheet);
+        Late late = settings.late(sheet, today);
         List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -65,7 +67,7 @@ public class Rollup {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             for (Claim claim : mine) {
                 claimed = claimed.add(new BigDecimal(claim.amount()));
-                BigDecimal d = claim.due(sheetRates, person.grade(), floor);
+                BigDecimal d = claim.due(sheetRates, person.grade(), floor, late);
                 due = d == null ? due : due.add(d);
             }
             // n/a when the grade has no rate on the sheet's today, unless a claim keeps a figure.

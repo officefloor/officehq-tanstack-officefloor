@@ -23,6 +23,7 @@ import {
   overdueCents,
   personDueCents,
   useClaims,
+  useLate,
 } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
@@ -64,6 +65,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   const floor = useFloorCents(sheet);
   const terms = useTerms(sheet);
   const today = useSheetToday(sheet);
+  const late = useLate(sheet);
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
       postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
@@ -79,7 +81,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
-      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor))}</span>{' '}
+      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor, late))}</span>{' '}
       due by <span data-testid="claim-due-by">{dueBy(claim, terms)}</span>{' '}
       overdue <span data-testid="claim-overdue">{overdue(claim, terms, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -146,8 +148,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
   const today = useSheetToday(sheet);
-  const terms = useTerms(sheet);
-  const late = overdueCents(claims, [person], rates, terms, today, floor);
+  const late = useLate(sheet);
+  const lateClaims = overdueCents(claims, [person], rates, late, floor);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -190,9 +192,9 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(counted(claims, [person]))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor))}</td>
-      <td data-testid="person-overdue-count">{late.count}</td>
-      <td data-testid="person-overdue-total">{twoDecimals(late.cents)}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor, late))}</td>
+      <td data-testid="person-overdue-count">{lateClaims.count}</td>
+      <td data-testid="person-overdue-total">{twoDecimals(lateClaims.cents)}</td>
       <td>
         <form onSubmit={submit}>
           <input

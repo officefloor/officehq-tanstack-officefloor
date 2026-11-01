@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.claim.Late;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +19,12 @@ public class Settings {
 
     /** The days after its date by which a claim is due (a whole number); blank: its default. */
     public static final String TERMS = "terms";
+
+    /** The percent of an overdue claim's figure charged for every full 30 days it is overdue (two decimals). */
+    public static final String LATE_PCT = "late-pct";
+
+    /** The late percent a sheet starts with. */
+    public static final String DEFAULT_LATE_PCT = "0.00";
 
     /** The terms a sheet starts with. */
     public static final String DEFAULT_TERMS = "14";
@@ -60,8 +68,19 @@ public class Settings {
         return Integer.parseInt(terms.isEmpty() ? DEFAULT_TERMS : terms);
     }
 
+    /** The sheet's late percent: charged on an overdue claim's figure for every full 30 days it is overdue. */
+    public BigDecimal latePct(String sheet) {
+        String pct = get(sheet, LATE_PCT);
+        return new BigDecimal(pct.isEmpty() ? DEFAULT_LATE_PCT : pct);
+    }
+
+    /** What makes the sheet's late charges on its today. */
+    public Late late(String sheet, LocalDate today) {
+        return new Late(latePct(sheet), terms(sheet), today);
+    }
+
     public SettingsResponse all(String sheet) {
         return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
-                Integer.toString(terms(sheet)));
+                Integer.toString(terms(sheet)), latePct(sheet).toPlainString());
     }
 }

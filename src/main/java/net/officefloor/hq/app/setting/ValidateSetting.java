@@ -13,7 +13,8 @@ public class ValidateSetting {
     public void validate(@RequestBody SettingRequest request, Out<SettingInput> body) throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
-        if (!Settings.CLERK_LIMIT.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)) {
+        if (!Settings.CLERK_LIMIT.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+                && !Settings.LATE_PCT.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         // The terms are a whole number of days; blank takes the default.
@@ -27,9 +28,12 @@ public class ValidateSetting {
         if (!value.isEmpty() && !LIMIT.matcher(value).matches()) {
             throw new InvalidSettingException("The " + key + " must be 0.00 or more with up to two decimals, or blank");
         }
-        // A blank floor takes its default: the floor always has a value.
+        // A blank floor or late percent takes its default: they always have a value.
         if (Settings.FLOOR.equals(key) && value.isEmpty()) {
             value = Settings.DEFAULT_FLOOR;
+        }
+        if (Settings.LATE_PCT.equals(key) && value.isEmpty()) {
+            value = Settings.DEFAULT_LATE_PCT;
         }
         body.set(new SettingInput(key,
                 value.isEmpty() ? "" : new BigDecimal(value).setScale(2, RoundingMode.UNNECESSARY).toPlainString()));

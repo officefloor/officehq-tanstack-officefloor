@@ -11,7 +11,8 @@ import type { SettingKey, Settings as SheetSettings } from './settings';
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
 // a clerk may settle (two decimals); blank means no limit. The floor is the least a claim's live due is (two
 // decimals); blank takes its default, 1.00. The terms are the whole days after its date by which a claim is due;
-// blank takes its default, 14. Saving sends each setting whose field was changed; with none changed it
+// blank takes its default, 14. The late percent (two decimals) is charged on an overdue claim's figure for every
+// full 30 days it is overdue; blank takes its default, 0.00. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -19,6 +20,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [latePct, setLatePct] = useState('');
   const [changed, setChanged] = useState<SettingKey[]>([]);
 
   const save = useMutation({
@@ -34,6 +36,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setClerkLimit('');
       setFloor('');
       setTerms('');
+      setLatePct('');
       setChanged([]);
     },
   });
@@ -47,7 +50,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     // The server refuses a value that is not 0.00 or more with up to two decimals.
-    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms };
+    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => ({ key, value: values[key] })));
   };
@@ -95,12 +98,25 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-terms-current">{data?.terms ?? ''}</span>{' '}
+        <label>
+          Late percent{' '}
+          <input
+            data-testid="setting-late-pct"
+            placeholder="0.00 (blank: 0.00)"
+            value={latePct}
+            onChange={(e) => {
+              setLatePct(e.target.value);
+              touch('late-pct');
+            }}
+          />
+        </label>{' '}
+        now <span data-testid="setting-late-pct-current">{data?.latePct ?? ''}</span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit and the floor must be 0.00 or more with up to two decimals, the terms a whole number of days, or blank.
+            {' '}The clerk limit, the floor and the late percent must be 0.00 or more with up to two decimals, the terms a whole number of days, or blank.
           </span>
         )}
       </form>

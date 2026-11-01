@@ -8,11 +8,13 @@ import java.util.stream.Collectors;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -24,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class ClosePeriod {
     public void close(@PathVariable("sheet") String sheet, @PathVariable("period") String period,
             @RequestParam("user") String user, Periods periods, Claims claims, People people, Rates rates, Settings settings,
-            Audit audit)
+            SheetClock clock, Audit audit)
             throws InvalidPeriodException {
         Period found = periods.find(sheet, period);
         if (found == null) {
@@ -38,6 +40,7 @@ public class ClosePeriod {
         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, (p) -> p));
         List<Rate> sheetRates = rates.list(sheet);
         BigDecimal floor = settings.floor(sheet);
+        Late late = settings.late(sheet, clock.today(sheet));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : claims.list(sheet)) {
             LocalDate date = LocalDate.parse(claim.date());
@@ -45,7 +48,7 @@ public class ClosePeriod {
             if (person == null || !claim.counts(person.held()) || date.isBefore(from) || date.isAfter(to)) {
                 continue;
             }
-            BigDecimal due = claim.due(sheetRates, person.grade(), floor);
+            BigDecimal due = claim.due(sheetRates, person.grade(), floor, late);
             total = due == null ? total : total.add(due);
         }
         if (!periods.close(sheet, period, total)) {

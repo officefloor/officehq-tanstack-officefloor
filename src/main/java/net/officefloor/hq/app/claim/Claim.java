@@ -53,10 +53,19 @@ public record Claim(long id, long person, String amount, String date, String not
     }
 
     /**
-     * This claim's due: the one fixed when settled, else the one its statement bound, else its amount at the
+     * This claim's due: its {@link #figure} plus, while it is overdue, its late charge (settling fixes the charge
+     * in); null when there is no figure.
+     */
+    public BigDecimal due(List<Rate> rates, String grade, BigDecimal floor, Late late) {
+        BigDecimal figure = figure(rates, grade, floor);
+        return figure == null || settledDue != null ? figure : figure.add(late.charge(this, figure));
+    }
+
+    /**
+     * This claim's figure: the due fixed when settled, else the one its statement bound, else its amount at the
      * grade's rate in force on its date, raised to at least the sheet's floor; null when there is none.
      */
-    public BigDecimal due(List<Rate> rates, String grade, BigDecimal floor) {
+    public BigDecimal figure(List<Rate> rates, String grade, BigDecimal floor) {
         if (settledDue != null) {
             return new BigDecimal(settledDue);
         }
