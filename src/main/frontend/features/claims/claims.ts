@@ -7,8 +7,17 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
 export type ClaimStatusChange = 'open' | 'settle' | 'void';
 
-/** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note and its status. */
-export type Claim = { id: number; person: number; amount: string; date: string; note: string; status: ClaimStatus };
+/** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
+ * the sheet (given when it is opened; null while a draft and once voided). */
+export type Claim = {
+  id: number;
+  person: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: number | null;
+};
 
 export const claimsKey = (sheet: string) => ['claims', sheet] as const;
 

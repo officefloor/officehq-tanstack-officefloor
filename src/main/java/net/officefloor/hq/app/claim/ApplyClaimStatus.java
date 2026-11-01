@@ -21,7 +21,15 @@ public class ApplyClaimStatus {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
+        // Opening gives the sheet's next number; voiding clears it (the line carries the number it had).
+        Claim changed = claim;
+        if (requested == ClaimStatusChange.OPEN) {
+            changed = claim.withNumber(claims.nextNumber(sheet));
+            claims.setNumber(sheet, claim.id(), changed.number());
+        } else if (requested == ClaimStatusChange.VOID && claim.number() != null) {
+            claims.setNumber(sheet, claim.id(), null);
+        }
         String person = people.find(sheet, claim.person()).name();
-        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + claim.auditFields(person));
+        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + changed.statusAuditFields(person));
     }
 }

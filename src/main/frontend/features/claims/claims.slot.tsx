@@ -59,6 +59,8 @@ function ClaimRow({ sheet, user, claim, rate, editing, onEdit, onCancel }: {
       <span data-testid="claim-note">{claim.note}</span>{' '}
       due <span data-testid="claim-due">{showDue(dueCents(claim.amount, rate))}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
+      {claim.number !== null && '#'}
+      <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       {CHANGES.map(({ change, label }) => (
         <button
           key={change}
