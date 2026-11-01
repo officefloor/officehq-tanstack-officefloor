@@ -12,6 +12,7 @@ import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
+import net.officefloor.hq.app.watch.Watches;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class ResettleClaim {
     public void resettle(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
             Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
-            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log) throws InvalidClaimStatusChangeException {
+            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log, Watches watches) throws InvalidClaimStatusChangeException {
         if (!Role.STEWARD.equals(roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("Only a steward re-settles a claim");
         }
@@ -46,6 +47,7 @@ public class ResettleClaim {
         audit.record("CLAIM_RESETTLED sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name())
                 + " old=" + (was == null ? "n/a" : was.toPlainString())
                 + " new=" + (due == null ? "n/a" : due.toPlainString()));
+        watches.notify(sheet, user, person.id(), person.name(), claim.shownNumber());
         rollup.record(sheet, user, before);
     }
 }

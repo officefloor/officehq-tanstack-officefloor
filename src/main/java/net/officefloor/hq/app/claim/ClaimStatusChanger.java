@@ -12,6 +12,7 @@ import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
+import net.officefloor.hq.app.watch.Watches;
 import org.springframework.stereotype.Service;
 
 /** Moves a claim to the status a change takes it to, refusing a change its status does not allow; shared by a
@@ -29,9 +30,10 @@ public class ClaimStatusChanger {
     private final Audit audit;
     private final Rollup rollup;
     private final ClaimLog log;
+    private final Watches watches;
 
     public ClaimStatusChanger(Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
-            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log) {
+            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log, Watches watches) {
         this.claims = claims;
         this.people = people;
         this.rates = rates;
@@ -42,6 +44,7 @@ public class ClaimStatusChanger {
         this.audit = audit;
         this.rollup = rollup;
         this.log = log;
+        this.watches = watches;
     }
 
     /** Applies the change to the claim, writing nothing when it is refused. */
@@ -134,6 +137,10 @@ public class ClaimStatusChanger {
         }
         log.record(sheet, user, claim.id());
         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+        // Settling or approving tells each user watching the person, before the rollup lines.
+        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+            watches.notify(sheet, user, person.id(), person.name(), changed.shownNumber());
+        }
         rollup.record(sheet, user, before);
     }
 
