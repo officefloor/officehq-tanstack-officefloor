@@ -10,7 +10,8 @@ import { downloadCsv, useSheetRead } from './csv';
  * Downloads the claims as a CSV file: a header line, then one line per claim, people in list order
  * (retired people included, shown or not) and each person's claims oldest first, with the number,
  * date, amount, due, status and period as each claim row shows them — while an as-of date is set,
- * as of that date (the button waits for those figures). Quoted and ended as the people export.
+ * as of that date, and while a preview date is set, with it standing in for the sheet's today (the
+ * button waits for those figures). Quoted and ended as the people export.
  */
 function ExportClaims({ sheet }: { user: string; sheet: string }) {
   const { data: people = [] } = usePeople(sheet);

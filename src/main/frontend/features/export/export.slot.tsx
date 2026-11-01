@@ -11,7 +11,8 @@ import { downloadCsv, useSheetRead } from './csv';
  * Downloads the people as a CSV file: a header line, then one line per person in list order,
  * retired people included, with the grade in force on the sheet's today, the retired-from date
  * (empty when not retired) and the due-total as the people list shows it — while an as-of date is
- * set, all as of that date (the button waits for those figures). Lines end with a line feed.
+ * set, all as of that date, and while a preview date is set, with it standing in for the sheet's
+ * today (the button waits for those figures). Lines end with a line feed.
  */
 function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const { data: people = [] } = usePeople(sheet);
