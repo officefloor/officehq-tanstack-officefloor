@@ -51,12 +51,12 @@ public class Rollup {
     public Snapshot take(String sheet) {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
-        List<Claim> counted = claims.list(sheet).stream().filter(Claim::counts).toList();
+        List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheet)) {
-            List<Claim> mine = counted.stream().filter((c) -> c.person() == person.id()).toList();
+            List<Claim> mine = all.stream().filter((c) -> c.person() == person.id() && c.counts(person.held())).toList();
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             for (Claim claim : mine) {

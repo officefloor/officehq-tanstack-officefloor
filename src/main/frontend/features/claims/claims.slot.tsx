@@ -167,8 +167,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(counted(claims))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person.grade, today))}</td>
+      <td data-testid="person-claimed">{claimed(counted(claims, [person]))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today))}</td>
       <td>
         <form onSubmit={submit}>
           <input

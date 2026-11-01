@@ -45,7 +45,7 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
 type Draft = { name: string; from: string; to: string };
 const EMPTY: Draft = { name: '', from: '', to: '' };
 
-// The sheet's periods, each with its due-total: the due of the counted (OPEN and SETTLED) claims whose date
+// The sheet's periods, each with its due-total: the due of the counted (OPEN and SETTLED, but not a held person's OPEN) claims whose date
 // falls in it (a claim with no rate adds nothing), fixed when the period is closed. The form adds one; the server refuses a name already on
 // the sheet, a bad date, a to-date before the from-date, or dates that overlap another period.
 function Periods({ sheet, user }: { sheet: string; user: string }) {
@@ -77,7 +77,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
 
   const grades = new Map(people.map((p) => [p.id, p.grade]));
   const totals = new Map<string, bigint>();
-  for (const c of counted(all)) {
+  for (const c of counted(all, people)) {
     const period = periodOf(periods, c.date);
     const grade = grades.get(c.person);
     if (period === undefined || grade === undefined) continue;

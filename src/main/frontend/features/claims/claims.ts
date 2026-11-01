@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import type { Grade } from '../people/people';
+import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, type Rate } from '../rates/rates';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. */
@@ -40,9 +40,11 @@ export function useClaims(sheet: string) {
   });
 }
 
-/** The claims that count toward claimed, due-total and every total: the OPEN and SETTLED ones. */
-export function counted(claims: Claim[]): Claim[] {
-  return claims.filter((c) => c.status === 'OPEN' || c.status === 'SETTLED');
+/** The claims that count toward claimed, due-total and every total: the OPEN and SETTLED ones, but not the OPEN
+ *  ones of a person on hold. */
+export function counted(claims: Claim[], people: Person[]): Claim[] {
+  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
+  return claims.filter((c) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held.has(c.person)));
 }
 
 /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
@@ -68,15 +70,15 @@ export function claimDueCents(claim: Claim, pct: string | undefined): bigint | u
 }
 
 
-/** A person's due-total: the sum of their counted claims' rounded figures. n/a (undefined) when their grade
+/** A person's due-total: the sum of their counted claims' rounded figures (the claims of others are skipped). n/a (undefined) when their grade
  *  has no rate on the sheet's today, unless a settled or stated claim keeps a figure: then the figures there are. */
 export function personDueCents(
   claims: Claim[],
   rates: Rate[],
-  grade: Grade,
+  person: Person,
   today: string | undefined,
 ): bigint | undefined {
-  const mine = counted(claims);
-  if (rateOf(rates, grade, today) === undefined && !mine.some(fixed)) return undefined;
-  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, grade, c.date)) ?? 0n), 0n);
+  const mine = counted(claims.filter((c) => c.person === person.id), [person]);
+  if (rateOf(rates, person.grade, today) === undefined && !mine.some(fixed)) return undefined;
+  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, person.grade, c.date)) ?? 0n), 0n);
 }

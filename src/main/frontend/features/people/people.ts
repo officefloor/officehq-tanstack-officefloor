@@ -6,7 +6,8 @@ export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
 // retiredFrom is null unless the person is retired; once set, they count as retired whatever the date.
-export type Person = { id: number; name: string; grade: Grade; version: number; retiredFrom: string | null };
+// While held, their OPEN claims count in no live total; their SETTLED ones still do.
+export type Person = { id: number; name: string; grade: Grade; version: number; retiredFrom: string | null; held: boolean };
 
 export const isRetired = (p: Person) => p.retiredFrom !== null;
 

@@ -16,7 +16,7 @@ public class SavePerson {
             throw new StalePersonException(person.id());
         }
         Rollup.Snapshot before = rollup.take(sheet);
-        Person saved = new Person(person.id(), request.name(), request.grade(), loaded, person.retiredFrom());
+        Person saved = new Person(person.id(), request.name(), request.grade(), loaded, person.retiredFrom(), person.held());
         people.update(sheet, saved);
         audit.record("PERSON_EDITED sheet=" + sheet + " by=" + user + " name=" + saved.name() + " grade="
                 + saved.grade());

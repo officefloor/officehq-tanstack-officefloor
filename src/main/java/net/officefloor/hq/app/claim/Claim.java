@@ -39,6 +39,11 @@ public record Claim(long id, long person, String amount, String date, String not
         return status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED;
     }
 
+    /** Whether this claim counts toward the live totals when its person is {@code held}: then only SETTLED does. */
+    public boolean counts(boolean held) {
+        return held ? status == ClaimStatus.SETTLED : counts();
+    }
+
     /** Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
     public boolean fixed() {
         return settledDue != null || stated;
