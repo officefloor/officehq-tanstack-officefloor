@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Refuses a member for a pool the sheet does not have, a person not on the sheet or already in the
- *  pool, a member pool the sheet does not have, already a member of a pool, that would contain itself
+ *  pool (a crew's pool takes its members from the crew), a member pool (or crew) the sheet does not have, already a member of a pool, that would contain itself
  *  or that would make a chain of pools more than three deep, or a share that is not a percent with up to two decimals, more than 0.00 and at most 100.00, or a
  *  from- or to-date that is not a date, or a to-date before the from-date. */
 public class ValidatePoolMember {
@@ -27,7 +27,7 @@ public class ValidatePoolMember {
                 : request.memberPool().trim();
         String name;
         if (memberPool != null) {
-            if (!pools.has(sheetId, memberPool)) {
+            if (!pools.has(sheetId, memberPool) && !pools.hasCrew(sheetId, memberPool)) {
                 throw new InvalidSheetRequestException("No such pool: " + memberPool);
             }
             name = memberPool;

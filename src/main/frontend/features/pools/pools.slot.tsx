@@ -158,6 +158,9 @@ function PoolRow({
         </ul>
       </td>
       <td>
+        {pool.crew ? (
+          'crew'
+        ) : (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -257,6 +260,7 @@ function PoolRow({
             </span>
           )}
         </form>
+        )}
       </td>
     </tr>
   );

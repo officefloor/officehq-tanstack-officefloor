@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Refuses a crew name that is blank, or already a crew on the sheet (its name trimmed), or a lead that
- *  is not a person of the sheet. */
+ *  is not a person of the sheet, or a name already a pool on the sheet (a crew is a pool too). */
 public class ValidateCrew {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CrewRequest request,
             Crews crews, Out<Crew> crew) throws InvalidSheetRequestException {
@@ -19,6 +19,9 @@ public class ValidateCrew {
         }
         if (crews.has(sheetId, name)) {
             throw new InvalidSheetRequestException("Already a crew: " + name);
+        }
+        if (crews.hasPool(sheetId, name)) {
+            throw new InvalidSheetRequestException("Already a pool: " + name);
         }
         String lead = request.leadId() == null ? null : crews.personName(sheetId, request.leadId());
         if (lead == null) {

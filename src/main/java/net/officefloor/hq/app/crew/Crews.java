@@ -44,6 +44,13 @@ public class Crews {
         return n != null && n > 0;
     }
 
+    /** Whether the sheet has a pool of that name. */
+    public boolean hasPool(String sheetId, String name) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?",
+                Integer.class, sheetId, name);
+        return n != null && n > 0;
+    }
+
     /** The lead of the crew, or null when the sheet has no such crew. */
     public Long leadOf(String sheetId, String crew) {
         List<Long> leads = jdbc.query("SELECT lead_id FROM crew WHERE sheet_id = ? AND name = ?",

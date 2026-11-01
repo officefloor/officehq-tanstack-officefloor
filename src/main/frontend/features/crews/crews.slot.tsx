@@ -5,14 +5,16 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { useSheetTotals } from '../claims/useSheetTotals';
 import { usePeople, type Person } from '../people/usePeople';
+import { poolsKey } from '../pools/usePools';
 import { totalDue } from '../rates/useRates';
 import { crewDues, crewsKey, useCrews, type Crew } from './useCrews';
 
 /**
  * The sheet's crews and a form to add one: a name (trimmed; a blank name, or one already a crew, is
- * refused) and a lead chosen from the people. Each crew's row adds a member chosen from the people;
+ * refused, and the server refuses one already a pool) and a lead chosen from the people. Each crew's row adds a member chosen from the people;
  * the crew's lead, or a person already in the crew, is refused. A crew shows its lead and its
- * due-total: the lead's and the members' due-totals added up, an n/a one skipped.
+ * due-total: the lead's and the members' due-totals added up, an n/a one skipped. A crew is also a
+ * pool of its name (see the pools panel), so a change here re-reads the pools.
  */
 function CrewsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -31,6 +33,8 @@ function CrewsPanel({ user, sheet }: { user: string; sheet: string }) {
       setName('');
       setLeadId('');
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
+      // A crew is a pool too.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
   });
 
@@ -137,6 +141,8 @@ function CrewRow({
     onSuccess: async () => {
       setPersonId('');
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
+      // A crew is a pool too.
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
   });
 

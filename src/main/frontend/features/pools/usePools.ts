@@ -23,8 +23,10 @@ export type PoolMember = {
 };
 
 /** A pool as the server sends it: its name, its members in the order added, the total of their
- *  shares (two decimals; a retired member's counts as given) and whether it is exactly 100.00. */
-export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+ *  shares (two decimals; a retired member's counts as given), whether it is exactly 100.00 and
+ *  whether it is a crew's (listed after the pools: the lead and the members at equal shares of
+ *  100.00, the remainder on the lead; its members come from the crew, not the pool's form). */
+export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean; crew: boolean };
 
 /** A share percent: up to two decimals. */
 export const SHARE = /^\d{1,3}(\.\d{1,2})?$/;
