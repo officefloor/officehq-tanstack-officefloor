@@ -1,0 +1,226 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index e47d193b..fa6ef0d0 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -202,7 +202,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+             {' '}
+             {save.error instanceof HttpError && save.error.status === 412
+               ? 'Someone else saved this person since you opened it; the form now shows their values.'
+-              : 'A person needs a name not already on the sheet, a grade of A, B or C, a from-date that is a valid date or blank, terms that are a whole number of days or blank, and a contact not already another person\'s on the sheet.'}
++              : 'A person needs a name not already on the sheet or its tree (and, when clashing, a new name and aliases that no longer clash), a grade of A, B or C, a from-date that is a valid date or blank, terms that are a whole number of days or blank, and a contact not already another person\'s on the sheet.'}
+           </span>
+         )}
+       </form>
+@@ -223,6 +223,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+             <th>Grade</th>
+             <th>Terms</th>
+             <th>Contact</th>
++            <th>Clashing</th>
+             <PersonColumnHeaders.Slot sheet={sheet} user={user} />
+             <th />
+           </tr>
+@@ -234,6 +235,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+               <td data-testid="person-grade">{p.grade}</td>
+               <td data-testid="person-terms">{termsText(p)}</td>
+               <td data-testid="person-contact">{p.contact ?? ''}</td>
++              <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
+               <PersonColumns.Slot sheet={sheet} user={user} person={p} />
+               <td>
+                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index cefed6eb..6a42377c 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -30,6 +30,9 @@ export type Person = {
+   retiredNow: boolean;
+   /** The person's contact, trimmed and lower-cased; null when they have none. */
+   contact: string | null;
++  /** Whether their name or an alias is already a name or alias on another sheet of the sheet's tree (its ancestors
++   *  and descendants): every edit of them is refused until it renames them out of the clash. */
++  clashing: boolean;
+ };
+ 
+ /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */
+diff --git a/src/main/java/net/officefloor/hq/app/alias/AddAlias.java b/src/main/java/net/officefloor/hq/app/alias/AddAlias.java
+index 4f02ce37..21d9ee61 100644
+--- a/src/main/java/net/officefloor/hq/app/alias/AddAlias.java
++++ b/src/main/java/net/officefloor/hq/app/alias/AddAlias.java
+@@ -8,7 +8,10 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Adds an alias (trimmed) to the person; refused when blank or equal, ignoring case, to any name or alias on the sheet. */
++/**
++ * Adds an alias (trimmed) to the person; refused when blank or equal, ignoring case, to any name or alias on the sheet
++ * or on another sheet of its tree (its ancestors and descendants).
++ */
+ public class AddAlias {
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
+             @RequestBody AliasRequest request, People people, Aliases aliases, Audit audit) throws InvalidAliasException {
+@@ -16,7 +19,8 @@ public class AddAlias {
+         if (alias.isEmpty()) {
+             throw new InvalidAliasException("An alias is required");
+         }
+-        if (people.nameTaken(sheet, alias, null) || aliases.taken(sheet, alias)) {
++        if (people.nameTaken(sheet, alias, null) || aliases.taken(sheet, alias)
++                || people.usedInTree(sheet, alias)) {
+             throw new InvalidAliasException("The name is already in use: " + alias);
+         }
+         aliases.add(sheet, person.id(), alias);
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index e05e3418..632c96a3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -6,7 +6,11 @@ import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
++import java.util.HashSet;
++import java.util.Locale;
++import java.util.Set;
+ import net.officefloor.hq.app.alias.Aliases;
++import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.SheetClock;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -25,11 +29,35 @@ public class People {
+     private final JdbcTemplate jdbc;
+     private final SheetClock clock;
+     private final Aliases aliases;
++    private final Settings settings;
+ 
+-    public People(JdbcTemplate jdbc, SheetClock clock, Aliases aliases) {
++    public People(JdbcTemplate jdbc, SheetClock clock, Aliases aliases, Settings settings) {
+         this.jdbc = jdbc;
+         this.clock = clock;
+         this.aliases = aliases;
++        this.settings = settings;
++    }
++
++    /** Every name and alias, lower-cased, on the other sheets of the sheet's tree (its ancestors and descendants). */
++    private Set<String> treeNames(String sheet) {
++        Set<String> names = new HashSet<>();
++        for (String other : settings.tree(sheet)) {
++            names.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet = ?", String.class, other));
++            names.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet = ?", String.class, other));
++        }
++        return names;
++    }
++
++    /** Whether the name is already a name or alias on another sheet of the sheet's tree, ignoring case. */
++    public boolean usedInTree(String sheet, String name) {
++        return treeNames(sheet).contains(name.toLowerCase(Locale.ROOT));
++    }
++
++    /** Whether an alias of the person is already a name or alias on another sheet of the sheet's tree. */
++    public boolean aliasClashes(String sheet, long id) {
++        Set<String> names = treeNames(sheet);
++        return jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet = ? AND person_id = ?", String.class,
++                sheet, id).stream().anyMatch(names::contains);
+     }
+ 
+     private List<Person> query(String sheet, String where, Object... args) {
+@@ -54,13 +82,20 @@ public class People {
+                             .add(new Hold(rs.getDate("from_date").toLocalDate().toString(),
+                                     rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString()));
+                 }, sheet);
++        Set<String> tree = treeNames(sheet);
++        Map<Long, List<String>> aliasKeys = new HashMap<>();
++        jdbc.query("SELECT person_id, alias_key FROM person_alias WHERE sheet = ?", (rs) -> {
++            aliasKeys.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias_key"));
++        }, sheet);
+         LocalDate today = clock.today(sheet);
+         List<Person> people = new ArrayList<>();
+         for (Row r : rows) {
+             List<GradeFrom> mine = List.copyOf(grades.getOrDefault(r.id(), List.of()));
+             people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(),
+                     List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms(),
+-                    Person.retiredOn(r.retiredFrom(), today), r.contact()));
++                    Person.retiredOn(r.retiredFrom(), today), r.contact(),
++                    tree.contains(r.name().toLowerCase(Locale.ROOT))
++                            || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains)));
+         }
+         return people;
+     }
+@@ -101,7 +136,7 @@ public class People {
+     /** Adds the person with their first grade, which applies from the beginning of time, their own terms and contact (null: none). */
+     public Person add(String sheet, String name, String grade, Integer terms, String contact)
+             throws DuplicatePersonNameException {
+-        if (nameTaken(sheet, name, null) || aliases.taken(sheet, name)) {
++        if (nameTaken(sheet, name, null) || aliases.taken(sheet, name) || usedInTree(sheet, name)) {
+             throw new DuplicatePersonNameException(name);
+         }
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index bd94aa39..cac912c1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -17,10 +17,11 @@ import net.officefloor.hq.app.setting.Settings;
+  * by a statement, count in no live total. Their own terms (days) are null when they have none. retiredNow is whether
+  * the sheet's today is on or after their retired-from date: from then their OPEN and PENDING claims, unless bound by a
+  * statement, count in no live total. Their contact (trimmed, lower-cased, not another's on the sheet) is null when they
+- * have none.
++ * have none. clashing is whether their name or one of their aliases is already a name or alias on another sheet of
++ * the sheet's tree (its ancestors and descendants): every edit of them is refused until it renames them out of it.
+  */
+ public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
+-        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact) {
++        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing) {
+ 
+     /**
+      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
+@@ -39,7 +40,7 @@ public record Person(long id, String name, String grade, long version, String re
+     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
+     public Person on(LocalDate today) {
+         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
+-                retiredOn(retiredFrom, today), contact);
++                retiredOn(retiredFrom, today), contact, clashing);
+     }
+ 
+     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index d41de272..dc91e0ca 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -12,6 +12,11 @@ public class SavePerson {
+     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
+             @Val PersonRequest request, People people, SheetClock clock, Audit audit, Rollup rollup)
+             throws DuplicatePersonNameException, StalePersonException, InvalidPersonException {
++        // Through the form, a name or alias of theirs used on another sheet of the tree refuses the edit: a clashing
++        // person may only be renamed out of the clash, and only when no alias of theirs clashes either.
++        if (people.usedInTree(sheet, request.name()) || people.aliasClashes(sheet, person.id())) {
++            throw new DuplicatePersonNameException(request.name());
++        }
+         apply(sheet, user, person, request, people, clock, audit, rollup);
+     }
+ 
+@@ -30,7 +35,7 @@ public class SavePerson {
+         }
+         Rollup.Snapshot before = rollup.take(sheet);
+         people.update(sheet, new Person(person.id(), request.name(), person.grade(), loaded, person.retiredFrom(),
+-                person.holds(), person.grades(), person.terms(), person.retiredNow(), person.contact()));
++                person.holds(), person.grades(), person.terms(), person.retiredNow(), person.contact(), person.clashing()));
+         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the ones already
+         // recorded; leaving the grade as the row showed it, with the from-date blank, records nothing.
+         if (request.gradeFrom() != null || !request.grade().equals(person.grade())) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 71e6b1c0..815dd516 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -311,6 +311,16 @@ public class Settings {
+         return List.copyOf(found);
+     }
+ 
++    /** The other sheets of the sheet's tree: its ancestors, then its descendants (theirs too), each once. */
++    public List<String> tree(String sheet) {
++        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
++        for (String up = parent(sheet); !up.isEmpty() && !up.equals(sheet) && found.add(up); up = parent(up)) {
++        }
++        found.addAll(family(sheet));
++        found.remove(sheet);
++        return List.copyOf(found);
++    }
++
+     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
+     public boolean permits(String sheet, String action, String role) {
+         String roles = get(sheet, perm(action));
