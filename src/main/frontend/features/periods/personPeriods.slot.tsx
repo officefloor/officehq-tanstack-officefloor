@@ -4,7 +4,7 @@ import { type Person } from '../people/usePeople';
 import { showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-import { personPeriodDueCents, usePeriods } from './usePeriods';
+import { personPeriodCarriedCents, personPeriodDueCents, usePeriods } from './usePeriods';
 
 /** One header per period on the sheet. */
 function PeriodColumns({ sheet }: { user: string; sheet: string }) {
@@ -21,7 +21,9 @@ function PeriodColumns({ sheet }: { user: string; sheet: string }) {
 /**
  * A person's due-total for every period on the sheet: the due of their claims dated in it that were
  * counted at the end of its last day (by their status log),
- * or, once the period is closed, the figure fixed then (0.00 for a person added since).
+ * or, once the period is closed, the figure fixed then (0.00 for a person added since); and beside it
+ * what they carried into it: the due of their counted claims belonging to an earlier period that were
+ * still OPEN or PENDING at the end of this one.
  */
 function PersonPeriods({ sheet, person }: { user: string; sheet: string; person: Person }) {
   const { data: periods = [] } = usePeriods(sheet);
@@ -33,8 +35,15 @@ function PersonPeriods({ sheet, person }: { user: string; sheet: string; person:
   return (
     <>
       {periods.map((p) => (
-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {showDue(personPeriodDueCents(p, person, claims, rates, floor, late, today))}
+        <td key={p.name}>
+          <span data-testid={`person-period-${p.name}-due-total`}>
+            {showDue(personPeriodDueCents(p, person, claims, rates, floor, late, today))}
+          </span>{' '}
+          (carried{' '}
+          <span data-testid={`person-period-${p.name}-carried`}>
+            {showDue(personPeriodCarriedCents(p, periods, person, claims, rates, floor, late, today))}
+          </span>
+          )
         </td>
       ))}
     </>

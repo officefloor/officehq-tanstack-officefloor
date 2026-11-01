@@ -77,7 +77,12 @@ export function statusAt(claim: Claim, date: string): ClaimStatus | null {
  *  their retirement date), unless a statement binds it. */
 function countsIn(period: Period, person: Person, claim: Claim, today: string, now: boolean): boolean {
   if (claim.personId !== person.id || periodOf([period], claim.dueBy) === undefined || claim.deferred) return false;
-  const status = now ? claim.status : statusAt(claim, period.to);
+  return countedAs(person, claim, now ? claim.status : statusAt(claim, period.to), today);
+}
+
+/** Whether a person's claim, with `status`, is counted: OPEN, PENDING or SETTLED, and not one open
+ *  and dated within the person's hold (or retirement), unless a statement binds it. */
+function countedAs(person: Person, claim: Claim, status: ClaimStatus | null, today: string): boolean {
   if (status !== 'OPEN' && status !== 'PENDING' && status !== 'SETTLED') return false;
   if (status === 'SETTLED' || !heldOn(person, claim.date, today)) return true;
   return claim.stated && status !== 'PENDING';
@@ -94,6 +99,20 @@ export function personPeriodDueCents(period: Period, person: Person, claims: Cla
   }
   return claims
     .filter((c) => countsIn(period, person, c, today, now))
+    .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), late) ?? 0n), 0n);
+}
+
+/** A person's carried figure for a period, in cents: the dues, as shown now, of their claims that
+ *  count (as in `countsIn`) which belong, by due-by, to a period ending before this one starts and
+ *  were still OPEN or PENDING at the end of this period's last day (by their status log). */
+export function personPeriodCarriedCents(period: Period, periods: Period[], person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late, today: string): bigint {
+  return claims
+    .filter((c) => {
+      const home = periodOf(periods, c.dueBy);
+      if (c.personId !== person.id || c.deferred || home === undefined || home.to >= period.from) return false;
+      const status = statusAt(c, period.to);
+      return (status === 'OPEN' || status === 'PENDING') && countedAs(person, c, status, today);
+    })
     .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), late) ?? 0n), 0n);
 }
 
