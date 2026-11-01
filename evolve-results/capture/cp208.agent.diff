@@ -1,0 +1,122 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java
+index a3a5473e..655ec979 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimReassign.java
+@@ -11,8 +11,9 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the permission matrix allows may (a steward by
+  *  default). The
+- *  claim keeps its date, takes the next number in its sequence (see {@link ClaimNumbers}; its old
+- *  number is never used again, and a draft has none to renumber), but loses any figure a statement bound it to: it is live again
++ *  claim keeps its date, has no number to keep (it gets one when settled; one numbered
++ *  before numbering moved to settlement takes the next number in its sequence, see {@link ClaimNumbers}, its old
++ *  number never used again), but loses any figure a statement bound it to: it is live again
+  *  until its new person's next statement. A SETTLED or VOID claim cannot move, nor a claim dated in
+  *  a closed period, nor one dated after its new person's retirement date. */
+ public class ApplyClaimReassign {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java
+index 9a3fbc25..30191515 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Splits an amount off an OPEN claim (not deferred, nor due by in a closed period), for a user whose
+  *  role may open a claim, and less than its amount: the claim keeps the rest, unbound from any
+- *  statement; the new OPEN claim has the amount split off, the same date, note and tags, the next number,
++ *  statement; the new OPEN claim has the amount split off, the same date, note and tags, no number (it gets one when settled),
+  *  is opened by the user, its due-by fixed from its date with the terms in force on the day it is split off (the sheet's today) (a late entry when a
+  *  soft-closed period contains it), and names the original's number as the one it was split from.
+  *  Whether a closed period refuses the split is judged by the original claim alone. */
+@@ -40,7 +40,6 @@ public class ApplyClaimSplit {
+         into.setLateEntry(closedPeriods.late(claim.getSheetId(), into.getDueBy()));
+         into.setSplitFrom(claim.getNumber());
+         into.setTags(claim.getTags());
+-        into.setNumber(numbers.next(into));
+         split.into(into);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 7511e351..8c578ad1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -12,7 +12,9 @@ import net.officefloor.hq.app.voidreason.VoidReasons;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Moves the claim to the action's status, refusing a change its current status does not allow.
+- *  Opening gives the claim its number (see {@link ClaimNumbers}); a voided claim keeps it (and it is never reused).
++ *  Settling (not left PENDING) or approving gives the claim its number when it has none yet (see {@link ClaimNumbers}:
++ *  the next in the sequence its due-by places it in then); an OPEN, PENDING or REVIEW claim has none (a claim
++ *  numbered before numbering moved to settlement keeps its number). A voided claim keeps its number (and it is never reused).
+  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. Settled as of a date, the figure is its due as it stood at the end of that date instead (see {@link ValidateClaimStatus}). The user who opened a claim, or last edited it, may not settle it.
+  *  When a clerk settles a claim whose due is over the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's) (a due of n/a is within any
+@@ -26,8 +28,7 @@ import net.officefloor.plugin.variable.Val;
+  *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
+  *  its note is empty.
+  *  A claim whose due is above the sheet's review threshold in force on its date goes to REVIEW when
+- *  opened instead of OPEN: it records who opened it but has no number yet. Only a steward reviews it,
+- *  which opens it (it gets its number then).
++ *  opened instead of OPEN: it records who opened it. Only a steward reviews it, which opens it.
+  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
+  *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
+  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
+@@ -171,14 +172,11 @@ public class ApplyClaimStatus {
+         // Settled one at a time: in no batch (a bulk settle sets its batch after this).
+         if (change.action() == ClaimAction.SETTLE) claim.setBatch(null);
+         if (change.action() == ClaimAction.VOID) claim.setVoidReason(voidReason);
+-        if (change.action() == ClaimAction.OPEN) {
+-            // A claim gone to REVIEW gets its number only once a steward reviews it.
+-            if (!review) claim.setNumber(numbers.next(claim));
+-            claim.setOpenedBy(change.user());
+-        }
+-        if (change.action() == ClaimAction.REVIEW) claim.setNumber(numbers.next(claim));
++        if (change.action() == ClaimAction.OPEN) claim.setOpenedBy(change.user());
+         if ((change.action() == ClaimAction.SETTLE && !pending) || change.action() == ClaimAction.APPROVE) {
+             claim.setDue(due);
++            // Numbered at settlement; a claim numbered already (before numbering moved here) keeps its number.
++            if (claim.getNumber() == null) claim.setNumber(numbers.next(claim));
+         }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 3c2c91aa..3f3e1590 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -67,7 +67,7 @@ public class Claim {
+     public void setNote(String note) { this.note = note; }
+     public ClaimStatus getStatus() { return status; }
+     public void setStatus(ClaimStatus status) { this.status = status; }
+-    /** The claim's number on its sheet, given when it is opened (sheet-wide "7", or within its period "P1-2" / "X-1"); null for a DRAFT, or a claim voided while a DRAFT. A voided claim keeps its number. */
++    /** The claim's number on its sheet, given when it is settled or approved (sheet-wide "7", or within its period "P1-2" / "X-1"); null until then (a claim numbered when opened, before numbering moved to settlement, keeps that number). A voided claim keeps its number. */
+     public String getNumber() { return number; }
+     public void setNumber(String number) { this.number = number; }
+     /** The due fixed when the claim was settled; null when it has none (not settled, or settled with no rate). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+index ea1d3e62..7337bf50 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import org.springframework.stereotype.Service;
+ 
+-/** The number a claim gets when it is opened. While the sheet's period numbering from is set and
++/** The number a claim gets when it is settled or approved. While the sheet's period numbering from is set and
+  *  the sheet's today is on or after it, the claim is numbered within the period its due-by falls in
+  *  (<period name>-<n>), or X-<n> when it falls in none; otherwise it takes the next number within
+  *  the fiscal year its due-by falls in (FY<yyyy>-<n>, counting from 1 each fiscal year, the sequence
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java
+index e418f423..32d9e2ce 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimSplit.java
+@@ -15,9 +15,9 @@ public class RecordClaimSplit {
+         audit.record("CLAIM_SPLIT sheet=" + claim.getSheetId() + " by=" + split.user()
+                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
+                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
+-                + " into=" + into.getNumber());
++                + " into=" + (into.getNumber() != null ? into.getNumber() : ""));
+         audit.record(ClaimAction.OPEN.event() + " sheet=" + into.getSheetId() + " by=" + split.user()
+                 + " person=" + person.getName() + " amount=" + into.getAmount().toPlainString()
+-                + " date=" + into.getDate() + " number=" + into.getNumber());
++                + " date=" + into.getDate() + (into.getNumber() != null ? " number=" + into.getNumber() : ""));
+     }
+ }
