@@ -10,6 +10,13 @@ export const ratesKey = (sheet: string) => ['rates', sheet] as const;
 
 export const ratesPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/rates`;
 
+/** What a candidate rate for a grade would do: how many OPEN and PENDING claims would show a different due, and the
+ *  sum of the differences (new due minus current due, two decimals; negative when lower). */
+export type RatePreview = { count: number; diff: string };
+
+export const ratePreviewPath = (sheet: string, grade: Grade, pct: string) =>
+  `${ratesPath(sheet)}/preview?grade=${encodeURIComponent(grade)}&pct=${encodeURIComponent(pct)}`;
+
 /** Every rate on the sheet, by grade then from-date (the one with none first); a grade with no rate is absent. */
 export function useRates(sheet: string) {
   return useQuery({

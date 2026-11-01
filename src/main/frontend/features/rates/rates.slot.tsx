@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { getJson, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import type { Grade } from '../people/people';
-import { rateOf, ratesKey, ratesPath, useRates } from './rates';
-import type { Rate } from './rates';
+import { rateOf, ratePreviewPath, ratesKey, ratesPath, useRates } from './rates';
+import type { Rate, RatePreview } from './rates';
 
 type Draft = { grade: Grade; pct: string; from: string; to: string };
 const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
@@ -41,6 +41,18 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
     e.preventDefault();
     // The server refuses a percent that is not 0.00 or more with up to two decimals, a bad from- or to-date, or a to-date before the from-date.
     send(draft);
+  };
+
+  // The preview of a candidate rate: read-only, it saves nothing and audits nothing.
+  const [previewGrade, setPreviewGrade] = useState<Grade>('A');
+  const [previewPct, setPreviewPct] = useState('');
+  const preview = useMutation({
+    mutationFn: ({ grade, pct }: { grade: Grade; pct: string }) =>
+      getJson<RatePreview>(ratePreviewPath(sheet, grade, pct)),
+  });
+  const runPreview = () => {
+    preview.reset();
+    preview.mutate({ grade: previewGrade, pct: previewPct });
   };
 
   return (
@@ -92,6 +104,50 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
           </span>
         )}
       </form>
+      <div>
+        <label>
+          Preview grade{' '}
+          <select
+            data-testid="rate-preview-grade"
+            value={previewGrade}
+            onChange={(e) => {
+              setPreviewGrade(e.target.value as Grade);
+              preview.reset();
+            }}
+          >
+            {GRADES.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        </label>{' '}
+        <label>
+          Candidate rate %{' '}
+          <input
+            data-testid="rate-preview-pct"
+            value={previewPct}
+            onChange={(e) => {
+              setPreviewPct(e.target.value);
+              preview.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="button" data-testid="rate-preview" disabled={preview.isPending} onClick={runPreview}>
+          Preview
+        </button>
+        {preview.data && (
+          <span>
+            {' '}Claims changed: <span data-testid="rate-preview-count">{preview.data.count}</span>, difference:{' '}
+            <span data-testid="rate-preview-diff">{preview.data.diff}</span>
+          </span>
+        )}
+        {preview.isError && (
+          <span data-testid="rate-preview-error" role="alert">
+            {' '}A preview needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals.
+          </span>
+        )}
+      </div>
       <table>
         <thead>
           <tr>
