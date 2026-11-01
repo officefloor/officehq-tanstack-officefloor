@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index cf15440a..ef92f8ea 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+-import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
++import { gradeOn, heldOn, retiredOut, usePeople, type Person } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate, useReviewLate } from '../settings/useSettings';
+@@ -18,6 +18,7 @@ import {
+   CLAIM_NUMBER,
+   claimDueCents,
+   claimed,
++  claimedLive,
+   claimsKey,
+   isOpen,
+   live,
+@@ -95,7 +96,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review',
+  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
+  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
+  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
+- * PENDING ones dated within one of the person's holds, unless a statement binds them; claimed leaves out
++ * PENDING ones dated within one of the person's holds, unless a statement binds them (claimed still counts held ones); claimed leaves out
+  * claims that correct another.
+  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
+  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
+@@ -112,7 +113,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review',
+  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
+  * charge from then on, whatever its overdue state.
+  * An OPEN or PENDING claim can be held, and released, with its hold toggle: it shows held yes or no, and while
+- * held it counts in no live total, as a held person's claims do, unless a statement binds it.
++ * held it counts in no live due figure, as a held person's claims do, unless a statement binds it; claimed still counts it.
+  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
+  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
+  * cannot be settled or approved while it has none. A proof's kind, receipt or photo, is chosen when it is added
+@@ -140,6 +141,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   // Their OPEN and PENDING claims dated within a hold, or all of them once today reaches their
+   // retirement date, count toward neither claimed nor the due-total, unless a statement binds them.
+   const liveClaims = live(claims, (_, date) => heldOn(person, date, today));
++  // A hold takes a claim out of the due figures only: claimed still counts it.
++  const claimedClaims = claimedLive(claims, () => retiredOut(person, today));
+   const { data: everyone = [] } = usePeople(sheet);
+   const others = everyone.filter((p) => p.id !== person.id);
+   const { data: rates = [] } = useRates(sheet);
+@@ -578,7 +581,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+ 
+   return (
+     <>
+-      <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(liveClaims)}</td></Col>
++      <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(claimedClaims)}</td></Col>
+       <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td></Col>
+       <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td></Col>
+       <td data-testid="person-settled-total">{showDue(settledSum ?? 0n)}</td>
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 61d4fefa..290c6d16 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -74,7 +74,7 @@ export type Claim = {
+   remindedOn: string | null;
+   /** Whether a steward has waived the claim's late charge: it bears none from then on. */
+   waived: boolean;
+-  /** Whether the claim is held: while OPEN or PENDING it counts in no live total, unless a statement binds it. */
++  /** Whether the claim is held: while OPEN or PENDING it counts in no live due figure (claimed still counts it), unless a statement binds it. */
+   held: boolean;
+   /** The claim's external reference, unique on the sheet without regard to case; null when it has none. */
+   ref: string | null;
+@@ -137,6 +137,13 @@ export function live(claims: Claim[], heldOn: (personId: number, date: string) =
+   );
+ }
+ 
++/** The claims that count toward claimed: as `live`, but a hold (the claim's or its person's) does not
++ *  take one out — only its due leaves the totals while held. `retiredOn` tells, by person id, whether
++ *  the person's retirement takes their OPEN or PENDING claims out, unless a statement binds them. */
++export function claimedLive(claims: Claim[], retiredOn: (personId: number) => boolean): Claim[] {
++  return counted(claims).filter((c) => !c.deferred && (!isOpen(c) || c.stated || !retiredOn(c.personId)));
++}
++
+ /** The sum of these claims' amounts, leaving out those that correct another, with two decimals.
+  *  Added up in cents, so it is exact. */
+ export function claimed(claims: Claim[]): string {
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+index 3e04cf50..ef2f679e 100644
+--- a/src/main/frontend/features/claims/useSheetTotals.ts
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -1,12 +1,12 @@
+-import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
++import { gradeOn, heldOnBy, retiredOut, usePeople } from '../people/usePeople';
+ import { claimRateOn, rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
++import { claimed, claimedLive, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
+ 
+ /**
+  * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
+- * (not OPEN ones dated within their person's hold, unless stated, nor those that correct another), and its due-total, everyone's due-total
++ * (held ones too, but not OPEN ones once their person retires, unless stated, nor those that correct another), and its due-total, everyone's due-total
+  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
+  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
+  * lowest person's figure when three or more people have one. Its settled-total and open-total are
+@@ -35,7 +35,7 @@ export function useSheetTotals(sheet: string) {
+   return {
+     /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */
+     perPerson: people.map((p, i) => ({ person: p, due: dues[i], overdue: over[i].cents })),
+-    claimedTotal: claimed(claims),
++    claimedTotal: claimed(claimedLive(all, (id) => people.some((p) => p.id === id && retiredOut(p, today)))),
+     dueTotal: trimmedTotal(dues),
+     settledTotal: totalDue(part((c) => c.status === 'SETTLED')),
+     openTotal: totalDue(part(isOpen)),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index fb6f65a5..fa175511 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -134,7 +134,7 @@ public class Claim {
+     /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
+     public boolean isWaived() { return waived; }
+     public void setWaived(boolean waived) { this.waived = waived; }
+-    /** Whether the claim is held: while OPEN or PENDING it counts in no live total, unless a statement binds it. */
++    /** Whether the claim is held: while OPEN or PENDING it counts in no live due figure (claimed still counts it), unless a statement binds it. */
+     public boolean isHeld() { return held; }
+     public void setHeld(boolean held) { this.held = held; }
+     /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 0d257be9..6d4b16fd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -214,6 +214,15 @@ public class Person {
+         return claim.isStated();
+     }
+ 
++    /** Whether a claim of the person's counts toward claimed: as `counts`, but a hold (the claim's
++     *  or the person's) does not take it out — only the due figures leave the totals while held. */
++    public boolean countsClaimed(Claim claim) {
++        ClaimStatus status = claim.getStatus();
++        if (status == null || !status.counts() || claim.isDeferred()) return false;
++        if (!status.isOpen() || !retiredOut()) return true;
++        return claim.isStated();
++    }
++
+     /** Refuses a claim dated after the person's retirement date, or after the from and before the
+      *  to of one of their past retirements. */
+     public void refuseRetired(LocalDate claimDate) throws PersonRetiredException {
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 4acce8a5..e7c2bbd2 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -49,8 +49,8 @@ public class Rollup {
+     }
+ 
+     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
+-     *  person's OPEN claims dated within a hold of theirs, or any once today reaches their retirement
+-     *  date, do not count, unless a statement binds them),
++     *  person's OPEN claims held or dated within a hold of theirs, or any once today reaches their retirement
++     *  date, do not count, unless a statement binds them); claimed still counts held ones,
+      *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
+      *  capped); the sheet's skips the n/a ones, and its due and overdue totals leave out the single
+      *  highest and lowest person's figure when three or more have one. */
+@@ -67,8 +67,9 @@ public class Rollup {
+             BigDecimal overdue = ZERO;
+             boolean any = false;
+             for (Claim claim : all) {
+-                if (claim.getPersonId() != person.getId() || !person.counts(claim)) continue;
+-                if (claim.getCorrects() == null) claimed = claimed.add(claim.getAmount());
++                if (claim.getPersonId() != person.getId()) continue;
++                if (person.countsClaimed(claim) && claim.getCorrects() == null) claimed = claimed.add(claim.getAmount());
++                if (!person.counts(claim)) continue;
+                 String grade = person.gradeOn(claim.getDate());
+                 BigDecimal figure = figures.due(claim, grade);
+                 if (figure != null) {
