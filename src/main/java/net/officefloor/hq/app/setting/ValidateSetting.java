@@ -5,18 +5,26 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.sheet.SheetRegistry;
 import net.officefloor.plugin.variable.Out;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateSetting {
     private static final Pattern LIMIT = Pattern.compile("\\d{1,7}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
-    public void validate(@RequestBody SettingRequest request, Out<SettingInput> body) throws InvalidSettingException {
+    public void validate(@PathVariable("sheet") String sheet, @RequestBody SettingRequest request, Settings settings,
+            SheetRegistry registry, Out<SettingInput> body) throws InvalidSettingException {
         SettingInput input = input(request);
+        if (Settings.PARENT.equals(input.key())) {
+            parent(sheet, input.value(), settings, registry);
+        }
         // A dated key may be given the date it is in force from; blank: the sheet's today.
         String from = request == null || request.from() == null ? "" : request.from().trim();
         if (Settings.dated(input.key()) && !from.isEmpty()) {
@@ -29,13 +37,33 @@ public class ValidateSetting {
         body.set(input);
     }
 
+    /** A parent must be a sheet that exists, not this sheet, nor one that has this sheet as an ancestor; blank: none. */
+    private static void parent(String sheet, String parent, Settings settings, SheetRegistry registry)
+            throws InvalidSettingException {
+        if (parent.isEmpty()) {
+            return;
+        }
+        if (parent.equals(sheet)) {
+            throw new InvalidSettingException("A sheet cannot be its own parent");
+        }
+        if (!registry.exists(parent)) {
+            throw new InvalidSettingException("No such sheet: " + parent);
+        }
+        Set<String> seen = new HashSet<>();
+        for (String up = settings.parent(parent); !up.isEmpty() && seen.add(up); up = settings.parent(up)) {
+            if (up.equals(sheet)) {
+                throw new InvalidSettingException("The sheet " + parent + " has this sheet as an ancestor");
+            }
+        }
+    }
+
     private SettingInput input(SettingRequest request) throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
-                && !Settings.POT.equals(key)
+                && !Settings.POT.equals(key) && !Settings.PARENT.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
@@ -87,6 +115,10 @@ public class ValidateSetting {
                     throw new InvalidSettingException("The entry date must be a date (yyyy-mm-dd), or blank");
                 }
             }
+            return new SettingInput(key, value);
+        }
+        // The parent is a sheet id, checked against the sheets by the caller; blank means none.
+        if (Settings.PARENT.equals(key)) {
             return new SettingInput(key, value);
         }
         // The grace days are a whole number of days; blank turns the auto close off.

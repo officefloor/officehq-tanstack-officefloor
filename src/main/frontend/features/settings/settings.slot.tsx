@@ -31,6 +31,8 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // A grade's grace (whole days, dated; blank means none): a claim whose person's grade in force on its date has a grace
 // in force on that date is overdue only once its due-by plus the grace is before the sheet's today.
 // The pot (two decimals, not dated; blank means none): what each balanced pool shares out among its members.
+// The parent (a sheet id, not dated; blank means none): where the sheet has no rate in force for a grade on a date,
+// the parent's is used, then its parent's, up to three levels up.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -46,6 +48,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [graceDays, setGraceDays] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
+  const [parent, setParent] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
@@ -62,9 +65,15 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       }
       return updated;
     },
-    onSuccess: () => {
+    onSuccess: (_updated, bodies) => {
       // The pot moves each balanced pool's cuts.
       void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+      // A new parent gives the sheet other rates, and every due follows them.
+      if (bodies.some((b) => b.key === 'parent')) {
+        void queryClient.invalidateQueries({
+          predicate: (q) => q.queryKey.includes(sheet) && q.queryKey[0] !== 'sheet' && q.queryKey[0] !== 'settings',
+        });
+      }
       setClerkLimit('');
       setCap('');
       setProofThreshold('');
@@ -77,6 +86,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setGraceDays('');
       setEntryDate('');
       setPot('');
+      setParent('');
       setGradeTerms({});
       setGradeGrace({});
       setGradeProofThreshold({});
@@ -118,7 +128,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
-      'grace-days': graceDays, 'entry-date': entryDate, pot, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -372,6 +382,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-pot-current">{data?.pot ?? ''}</span>{' '}
+        <label>
+          Parent sheet{' '}
+          <input
+            data-testid="setting-parent"
+            placeholder="sheet id (blank: none)"
+            value={parent}
+            onChange={(e) => {
+              setParent(e.target.value);
+              touch('parent');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('parent')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-parent-current">{data?.parent ?? ''}</span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>
@@ -397,7 +422,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank.
           </span>
         )}
       </form>

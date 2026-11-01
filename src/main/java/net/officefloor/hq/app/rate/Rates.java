@@ -2,12 +2,17 @@ package net.officefloor.hq.app.rate;
 
 import java.math.RoundingMode;
 import java.sql.Date;
+import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.setting.Settings;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/** The rates kept per sheet: per grade, one for each from-date (and at most one with none). */
+/**
+ * The rates kept per sheet: per grade, one for each from-date (and at most one with none). A sheet is given its
+ * parents' rates too, up to {@link Rate#LEVELS} up, each at its level.
+ */
 @Repository
 public class Rates {
 
@@ -18,12 +23,28 @@ public class Rates {
 
     private final JdbcTemplate jdbc;
 
-    public Rates(JdbcTemplate jdbc) {
+    private final Settings settings;
+
+    public Rates(JdbcTemplate jdbc, Settings settings) {
         this.jdbc = jdbc;
+        this.settings = settings;
     }
 
-    /** Every rate on the sheet, by grade then from-date (the one with none first). */
+    /** Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level. */
     public List<Rate> list(String sheet) {
+        List<Rate> all = new ArrayList<>(own(sheet));
+        String parent = settings.parent(sheet);
+        for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty(); level++) {
+            for (Rate rate : own(parent)) {
+                all.add(rate.up(level));
+            }
+            parent = settings.parent(parent);
+        }
+        return all;
+    }
+
+    /** The rates kept on the sheet itself, by grade then from-date (the one with none first). */
+    public List<Rate> own(String sheet) {
         return jdbc.query("SELECT grade, pct, from_date, to_date FROM rate WHERE sheet = ? ORDER BY grade, from_key", ROW,
                 sheet);
     }

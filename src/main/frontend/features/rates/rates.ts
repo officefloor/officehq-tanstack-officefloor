@@ -3,8 +3,12 @@ import { getJson } from '../../api/http';
 import type { Grade } from '../people/people';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
- *  applies from the beginning of time) through its to-date (null when it has no end). */
-export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null };
+ *  applies from the beginning of time) through its to-date (null when it has no end). Its level is the sheet it is
+ *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. */
+export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null; level: number };
+
+/** The most levels up a sheet's parents give it rates. */
+export const RATE_LEVELS = 3;
 
 export const ratesKey = (sheet: string) => ['rates', sheet] as const;
 
@@ -17,7 +21,8 @@ export type RatePreview = { count: number; diff: string };
 export const ratePreviewPath = (sheet: string, grade: Grade, pct: string) =>
   `${ratesPath(sheet)}/preview?grade=${encodeURIComponent(grade)}&pct=${encodeURIComponent(pct)}`;
 
-/** Every rate on the sheet, by grade then from-date (the one with none first); a grade with no rate is absent. */
+/** Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level;
+ *  a grade with no rate is absent. */
 export function useRates(sheet: string) {
   return useQuery({
     queryKey: ratesKey(sheet),
@@ -27,12 +32,20 @@ export function useRates(sheet: string) {
 
 /** The rate for a grade on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it, or
  *  undefined when the date is before every rate the grade has, or after the to-date of that one (or the date
- *  is not yet known). */
+ *  is not yet known). When the sheet's own rates give none, the next level up is used. */
 export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | undefined): string | undefined {
   if (date === undefined || grade === undefined) return undefined;
+  for (let level = 0; level <= RATE_LEVELS; level++) {
+    const pct = rateAt(rates, grade, date, level);
+    if (pct !== undefined) return pct;
+  }
+  return undefined;
+}
+
+function rateAt(rates: Rate[], grade: Grade, date: string, level: number): string | undefined {
   let found: Rate | undefined;
   for (const r of rates) {
-    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+    if (r.grade !== grade || (r.level ?? 0) !== level || (r.from !== null && r.from > date)) continue;
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
   if (found?.to != null && found.to < date) return undefined;

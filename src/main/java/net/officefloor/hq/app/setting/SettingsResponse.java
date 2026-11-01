@@ -10,11 +10,11 @@ import java.util.Map;
  * is the value in force on the sheet's today. And, for each dated key, its values as recorded, by from-date. And the grace days (a whole number), or "" for off. And the note threshold
  * with two decimals, or "" for none. And the entry date (yyyy-MM-dd), or "" for off. And each grade's grace (a whole number of days), or "" for none. And each grade's
  * own proof threshold with two decimals, or "" for none (the grade takes the sheet's). And the pot with two decimals,
- * or "" for none.
+ * or "" for none. And the parent sheet's id, or "" for none.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
         String proofThreshold, Map<String, String> perms, Map<String, List<DatedValue>> dated,
         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
-        String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot) {
+        String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent) {
 }

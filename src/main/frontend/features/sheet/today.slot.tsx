@@ -5,14 +5,16 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { byUser } from '../session/session';
+import { useSettings } from '../settings/settings';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
 // The sheet's today: shown, and changeable. It starts as the real date. A steward archives the sheet here too;
-// both share the sheet's error, and each action clears the other's.
+// both share the sheet's error, and each action clears the other's. The sheet's parent (from its settings) shows here.
 function SheetToday({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
+  const { data: settings } = useSettings(sheet);
   const [draft, setDraft] = useState('');
   const save = useMutation({
     mutationFn: (today: string) =>
@@ -54,6 +56,7 @@ function SheetToday({ sheet, user }: { sheet: string; user: string }) {
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
       </button>
+      {' '}Parent: <strong data-testid="sheet-parent">{settings?.parent ?? ''}</strong>{' '}
       {' '}Archived: <strong data-testid="sheet-archived">{data ? (data.archived ? 'yes' : 'no') : ''}</strong>{' '}
       <button
         type="button"

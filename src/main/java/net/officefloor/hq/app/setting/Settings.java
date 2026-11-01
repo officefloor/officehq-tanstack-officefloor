@@ -75,6 +75,10 @@ public class Settings {
     /** The sum a balanced pool shares out among its members (two decimals, not dated); blank: none. */
     public static final String POT = "pot";
 
+    /** The id of the sheet whose rates this sheet takes where it has none of its own (not dated, and kept apart from
+     *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
+    public static final String PARENT = "parent";
+
     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
     public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
@@ -97,10 +101,10 @@ public class Settings {
     /** The floor a sheet starts with. */
     public static final String DEFAULT_FLOOR = "1.00";
 
-    /** Whether the key is dated: every setting that carries a figure is but the pot; the policy, period numbering and entry dates and the grace days are not. */
+    /** Whether the key is dated: every setting that carries a figure is but the pot; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !key.startsWith("perm-");
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !key.startsWith("perm-");
     }
 
     /** The from-date an undated setting's one value is kept under. */
@@ -142,6 +146,13 @@ public class Settings {
 
     /** Records the key's value from the from-date (an undated key ignores it), replacing one already recorded from it. */
     public void set(String sheet, String key, LocalDate from, String value) {
+        if (PARENT.equals(key)) {
+            jdbc.update("DELETE FROM sheet_parent WHERE child = ?", sheet);
+            if (!value.isEmpty()) {
+                jdbc.update("INSERT INTO sheet_parent (child, parent) VALUES (?, ?)", sheet, value);
+            }
+            return;
+        }
         Date date = dated(key) && from != null ? Date.valueOf(from) : UNDATED;
         jdbc.update("MERGE INTO setting (sheet, setting_key, from_date, setting_value) KEY (sheet, setting_key, from_date)"
                 + " VALUES (?, ?, ?, ?)", sheet, key, date, value);
@@ -277,6 +288,12 @@ public class Settings {
         return pot.isEmpty() ? null : new BigDecimal(pot);
     }
 
+    /** The id of the sheet's parent, or "" when it has none. */
+    public String parent(String sheet) {
+        List<String> found = jdbc.queryForList("SELECT parent FROM sheet_parent WHERE child = ?", String.class, sheet);
+        return found.isEmpty() ? "" : found.get(0);
+    }
+
     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
     public boolean permits(String sheet, String action, String role) {
         String roles = get(sheet, perm(action));
@@ -301,6 +318,6 @@ public class Settings {
                 get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE),
                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
-                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT));
+                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet));
     }
 }
