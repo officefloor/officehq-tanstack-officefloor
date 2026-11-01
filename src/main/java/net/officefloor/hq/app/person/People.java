@@ -376,11 +376,29 @@ public class People {
      *  memberships move to into (shares added where into is already a member) and their closed
      *  periods' totals are added to into's; the crews they lead are led by into, and their crew
      *  memberships move to into (not where into leads or is already a member). From's holds, watchers, grades and contact go
-     *  with them, and they leave the sheet. Not an edit of into: their version is untouched. */
-    public void merge(Person from, Person into) {
+     *  with them, and they leave the sheet: parked (see {@link #parked}) with the merge kept, so the
+     *  user who made it can undo it that sheet-today (see {@link #undoMerge}). Not an edit of into:
+     *  their version is untouched. */
+    public void merge(Person from, Person into, String user, LocalDate today) {
         String sheetId = from.getSheetId();
         long fromId = from.getId();
         long intoId = into.getId();
+        GeneratedKeyHolder mergeKey = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement("INSERT INTO person_merge (sheet_id, from_id, into_id, merged_by, merged_on) "
+                    + "VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+            ps.setString(1, sheetId);
+            ps.setLong(2, fromId);
+            ps.setLong(3, intoId);
+            ps.setString(4, user);
+            ps.setDate(5, Date.valueOf(today));
+            return ps;
+        }, mergeKey);
+        long mergeId = mergeKey.getKey().longValue();
+        jdbc.update("INSERT INTO person_merge_claim (merge_id, claim_id) SELECT ?, id FROM claim WHERE person_id = ?",
+                mergeId, fromId);
+        jdbc.update("INSERT INTO person_merge_alias (merge_id, alias_id) SELECT ?, id FROM person_alias WHERE person_id = ?",
+                mergeId, fromId);
         jdbc.query("SELECT id FROM claim WHERE person_id = ? ORDER BY listed", (ResultSet rs) -> {
             jdbc.update("UPDATE claim SET person_id = ?, "
                     + "listed = NEXT VALUE FOR claim_listed WHERE id = ?", intoId, rs.getLong(1));
@@ -396,6 +414,8 @@ public class People {
         String name = from.getName().trim();
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) VALUES (?, ?, ?, LOWER(?))",
                 sheetId, intoId, name, name);
+        jdbc.update("UPDATE person_merge SET name_alias_id = (SELECT MAX(id) FROM person_alias WHERE person_id = ?) WHERE id = ?",
+                intoId, mergeId);
         for (Long patronId : from.getPatronIds()) {
             if (patronId != intoId && !into.getPatronIds().contains(patronId)) addPatron(into, find(sheetId, patronId));
         }
@@ -441,10 +461,72 @@ public class People {
                 sheetId, fromId, sheetId, intoId);
         jdbc.update("UPDATE period_opening SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
                 intoId, sheetId, fromId);
-        for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade", "person_snapshot")) {
-            jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", fromId);
+        String parked = parked(fromId);
+        for (String table : PARKED_WITH) {
+            jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE person_id = ?", parked, fromId);
         }
-        jdbc.update("DELETE FROM person WHERE id = ?", fromId);
+        jdbc.update("UPDATE person SET sheet_id = ? WHERE id = ?", parked, fromId);
+    }
+
+    /** What a merged person keeps while parked, and has again when the merge is undone. */
+    private static final List<String> PARKED_WITH = List.of("person_statement", "person_hold", "person_watch",
+            "person_grade", "person_snapshot");
+
+    /** The sheet id a merged person is parked on until the merge is undone: no screen loads it. */
+    static String parked(long personId) {
+        return "~merged-" + personId;
+    }
+
+    /** The last merge into the person on their sheet, or null when there is none or it was undone. */
+    public PersonMerge lastMergeInto(Person into) {
+        return jdbc.query("SELECT id, from_id, merged_by, merged_on, undone FROM person_merge "
+                + "WHERE sheet_id = ? AND into_id = ? ORDER BY id DESC LIMIT 1",
+                (rs, n) -> rs.getBoolean("undone") ? null
+                        : new PersonMerge(rs.getLong("id"), rs.getLong("from_id"), into.getId(),
+                                rs.getString("merged_by"), rs.getDate("merged_on").toLocalDate()),
+                into.getSheetId(), into.getId()).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+    }
+
+    /** The person a merge parked, as they were when merged, or null when they are no longer parked. */
+    public Person parkedBy(PersonMerge merge) {
+        return withPatrons(jdbc.query(COLUMNS + " WHERE sheet_id = ? AND id = ?", People::person,
+                parked(merge.fromId()), merge.fromId()).stream().findFirst().orElse(null));
+    }
+
+    /** Undo the merge: the merged person is back on the sheet at the end of the list, with what was
+     *  parked with them, the claims that came from them that into still has (numbers and status as
+     *  they are now, listed again in the order they were) and their own aliases, which leave into's,
+     *  as does the alias of their name. Patron, pool, crew, plan, share, period and statement changes
+     *  stay. Not an edit of either: their versions are untouched. */
+    public void undoMerge(PersonMerge merge, String sheetId) {
+        long fromId = merge.fromId();
+        long intoId = merge.intoId();
+        String parked = parked(fromId);
+        jdbc.update("UPDATE person SET sheet_id = ?, position = " + END_POSITION + " WHERE id = ? AND sheet_id = ?",
+                sheetId, sheetId, fromId, parked);
+        for (String table : PARKED_WITH) {
+            jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE person_id = ? AND sheet_id = ?", sheetId, fromId, parked);
+        }
+        jdbc.query("SELECT id FROM claim WHERE person_id = ? AND id IN (SELECT claim_id FROM person_merge_claim WHERE merge_id = ?) "
+                + "ORDER BY listed", (ResultSet rs) -> {
+                    jdbc.update("UPDATE claim SET person_id = ?, listed = NEXT VALUE FOR claim_listed WHERE id = ?",
+                            fromId, rs.getLong(1));
+                }, intoId, merge.id());
+        jdbc.update("DELETE FROM person_alias WHERE person_id = ? AND id = (SELECT name_alias_id FROM person_merge WHERE id = ?)",
+                intoId, merge.id());
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE person_id = ? AND id IN "
+                + "(SELECT alias_id FROM person_merge_alias WHERE merge_id = ?)", fromId, intoId, merge.id());
+        jdbc.update("UPDATE person_merge SET undone = TRUE WHERE id = ?", merge.id());
+    }
+
+    /** Whether the name is taken on the sheet but for the alias the merge gave into for it. */
+    public boolean nameTakenButMerge(String sheetId, String name, PersonMerge merge) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))",
+                Integer.class, sheetId, name);
+        Integer a = jdbc.queryForObject("SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?)) "
+                + "AND id <> COALESCE((SELECT name_alias_id FROM person_merge WHERE id = ?), -1)",
+                Integer.class, sheetId, name, merge.id());
+        return (n != null && n > 0) || (a != null && a > 0);
     }
 
     /** `into` takes `from`'s statements: into's count becomes their own plus from's, and their last
