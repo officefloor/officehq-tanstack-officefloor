@@ -160,6 +160,15 @@ public class Claims {
                 status.name()) == 1;
     }
 
+    /**
+     * Moves the claim of the status and date it was read with to another date, keeping its due-by and any figure its
+     * statement bound: false when it no longer has that status or date.
+     */
+    public boolean redate(String sheet, long id, ClaimStatus status, LocalDate was, LocalDate date) {
+        return jdbc.update("UPDATE claim SET claimed_on = ? WHERE sheet = ? AND id = ? AND status = ? AND claimed_on = ?",
+                Date.valueOf(date), sheet, id, status.name(), Date.valueOf(was)) == 1;
+    }
+
     /** Moves the claim from one status to another: false when it no longer has the status it was read with. */
     public boolean changeStatus(String sheet, long id, ClaimStatus from, ClaimStatus to) {
         return jdbc.update("UPDATE claim SET status = ? WHERE sheet = ? AND id = ? AND status = ?", to.name(), sheet,

@@ -45,6 +45,11 @@ public record Claim(long id, long person, String amount, String date, String not
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
     }
 
+    /** This claim with another date (yyyy-MM-dd), as once re-dated. */
+    public Claim withDate(String date) {
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+    }
+
     /** This claim with another amount (two decimals), as its remaining amount once split. */
     public Claim withAmount(String amount) {
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);

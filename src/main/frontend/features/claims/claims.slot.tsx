@@ -103,6 +103,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
     },
   });
   const defer = useSubmitOnce(deferMutation);
+  // A steward re-dates an OPEN or PENDING claim to a date typed beside the Re-date button.
+  const [redateTo, setRedateTo] = useState('');
+  const redateMutation = useMutation({
+    mutationFn: (date: string) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/redate`, user), { date }),
+    onSuccess: (updated) => {
+      setRedateTo('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const redate = useSubmitOnce(redateMutation);
   // A proof raises the claim's proofs count by one (not on a SETTLED or VOID claim, nor one in a closed period).
   const proofMutation = useMutation({
     mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/proof`, user), {}),
@@ -164,6 +174,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          redateMutation.reset();
           splitMutation.reset();
           addProof(undefined);
         }}
@@ -181,6 +192,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
             move.reset();
             resettleMutation.reset();
             deferMutation.reset();
+            redateMutation.reset();
             splitMutation.reset();
             proofMutation.reset();
             act(change);
@@ -209,6 +221,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          redateMutation.reset();
           splitMutation.reset();
           proofMutation.reset();
           act('reject');
@@ -224,6 +237,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          redateMutation.reset();
           splitMutation.reset();
           proofMutation.reset();
           if (claim.status !== 'DRAFT') {
@@ -263,6 +277,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          redateMutation.reset();
           splitMutation.reset();
           proofMutation.reset();
           reassign(Number(moveTo));
@@ -279,6 +294,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           move.reset();
           deferMutation.reset();
+          redateMutation.reset();
           splitMutation.reset();
           proofMutation.reset();
           resettle(undefined);
@@ -293,6 +309,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onChange={(e) => {
           setDeferTo(e.target.value);
           deferMutation.reset();
+          redateMutation.reset();
           splitMutation.reset();
         }}
       />{' '}
@@ -307,10 +324,37 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           resettleMutation.reset();
           proofMutation.reset();
           splitMutation.reset();
+          redateMutation.reset();
           defer(deferTo);
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-date-new"
+        placeholder="re-date yyyy-mm-dd"
+        value={redateTo}
+        onChange={(e) => {
+          setRedateTo(e.target.value);
+          redateMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-redate"
+        disabled={redateMutation.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          proofMutation.reset();
+          splitMutation.reset();
+          redate(redateTo);
+        }}
+      >
+        Re-date
       </button>{' '}
       <input
         data-testid="claim-split-amount"
@@ -331,6 +375,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          redateMutation.reset();
           proofMutation.reset();
           split(splitAmount);
         }}
@@ -367,6 +412,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {deferMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be deferred (only an OPEN claim outside a closed period, and only to a date after the sheet's today).
+        </span>
+      )}
+      {redateMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be re-dated (only a steward re-dates, only an OPEN or PENDING claim outside a closed period, and only to a date outside a closed period, on or before its person's retirement).
         </span>
       )}
       {proofMutation.isError && (
