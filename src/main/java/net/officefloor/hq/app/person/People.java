@@ -368,10 +368,12 @@ public class People {
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
         jdbc.update("UPDATE plan SET person_id = ? WHERE person_id = ?", intoId, fromId);
         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
+                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?), "
+                + "carried = carried + (SELECT f.carried FROM period_person_total f "
                 + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?) "
                 + "WHERE t.sheet_id = ? AND t.person_id = ? AND t.period_name IN "
                 + "(SELECT period_name FROM period_person_total WHERE sheet_id = ? AND person_id = ?)",
-                fromId, sheetId, intoId, sheetId, fromId);
+                fromId, fromId, sheetId, intoId, sheetId, fromId);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ? AND period_name IN "
                 + "(SELECT period_name FROM period_person_total WHERE sheet_id = ? AND person_id = ?)",
                 sheetId, fromId, sheetId, intoId);

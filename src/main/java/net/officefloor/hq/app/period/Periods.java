@@ -67,15 +67,17 @@ public class Periods {
     }
 
     /** Close (or, when `soft`, soft-close) the period, fixing its due-total and each person's (by
-     *  person id) afresh. */
-    public void close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals, boolean soft) {
+     *  person id) afresh, and each person's carried figure for it. */
+    public void close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals,
+            Map<Long, BigDecimal> personCarried, boolean soft) {
         jdbc.update("UPDATE period SET closed = TRUE, soft = ?, closed_total = ? WHERE sheet_id = ? AND name = ?",
                 soft, total, period.sheetId(), period.name());
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
                 period.sheetId(), period.name());
         personTotals.forEach((personId, personTotal) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
-                period.sheetId(), period.name(), personId, personTotal));
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                period.sheetId(), period.name(), personId, personTotal,
+                personCarried.getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
     }
 
     /** Each person's due-total fixed when the period was closed, by person id; empty while it is open. */
@@ -88,7 +90,17 @@ public class Periods {
         return totals;
     }
 
-    /** Reopen the period: its due-total, and each person's, is live again. */
+    /** Each person's carried figure fixed when the period was closed, by person id; empty while it is open. */
+    public Map<Long, BigDecimal> personCarried(Period period) {
+        Map<Long, BigDecimal> carried = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, carried FROM period_person_total WHERE sheet_id = ? AND period_name = ?"
+                + " ORDER BY person_id", rs -> {
+                    carried.put(rs.getLong("person_id"), rs.getBigDecimal("carried"));
+                }, period.sheetId(), period.name());
+        return carried;
+    }
+
+    /** Reopen the period: its due-total, and each person's due-total and carried figure, is live again. */
     public void reopen(Period period) {
         jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
                 period.sheetId(), period.name());

@@ -1,11 +1,4 @@
-import { createContext, useContext } from 'react';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-
-const Live = createContext(false);
-
-/** Wrap a part of the screen that always reads the sheet as it stands, whatever the as-of date: inside
- *  it `useAsOf` answers '' (the consolidated figures are live figures). */
-export const LiveReads = Live.Provider;
 
 /**
  * The date this user's screen shows the sheet as of (yyyy-mm-dd), or '' for the sheet as it stands.
@@ -14,7 +7,7 @@ export const LiveReads = Live.Provider;
  */
 export function useAsOf(): [string, (value: string | undefined) => void] {
   const [asOf, setAsOf] = useSearchParam('asof', asString);
-  return [useContext(Live) ? '' : asOf, setAsOf];
+  return [asOf, setAsOf];
 }
 
 /** A read's query key: the live key, or one apart from it for the sheet as of a date. It keeps the

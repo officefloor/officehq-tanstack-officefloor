@@ -2,6 +2,7 @@ package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Service;
  *  everyone's claims due by in it (by the due-by fixed when each was added) that were counted (OPEN, PENDING or SETTLED) by the status each had
  *  at the end of the period's last day, as its status log records it — not deferred ones, nor
  *  ones open then and dated within their person's hold, unless stated — n/a ones skipped. Each
- *  person's due-total for it is fixed too, and the period's is their sum. Used by a close by hand
+ *  person's due-total for it is fixed too, and the period's is their sum; and so is each person's
+ *  carried figure for it: the figures of their counted claims belonging, by due-by, to a period ending
+ *  before this one starts that were still OPEN or PENDING at the end of its last day. Used by a close by hand
  *  and by the auto close of a today change. */
 @Service
 public class PeriodCloser {
@@ -56,8 +59,26 @@ public class PeriodCloser {
             BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
             if (figure != null) personTotals.merge(person.getId(), figure, BigDecimal::add);
         }
+        Map<Long, BigDecimal> personCarried = carried(period, personOf, atEnd);
         BigDecimal total = personTotals.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
-        periods.close(period, total, personTotals, soft);
+        periods.close(period, total, personTotals, personCarried, soft);
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft, period.cap());
+    }
+
+    /** Each person's carried figure for the period as the screen shows it now, by person id. */
+    private Map<Long, BigDecimal> carried(Period period, Map<Long, Person> personOf, Map<Long, ClaimStatus> atEnd) {
+        Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
+        for (Long id : personOf.keySet()) personCarried.put(id, BigDecimal.ZERO.setScale(2));
+        List<Period> all = periods.onSheet(period.sheetId());
+        for (Claim claim : claims.onSheet(period.sheetId())) {
+            Period home = all.stream().filter(p -> p.contains(claim.getDueBy())).findFirst().orElse(null);
+            if (home == null || !home.to().isBefore(period.from())) continue;
+            Person person = personOf.get(claim.getPersonId());
+            ClaimStatus status = atEnd.containsKey(claim.getId()) ? atEnd.get(claim.getId()) : claim.getStatus();
+            if (person == null || status == null || !status.isOpen() || !person.counts(claim, status)) continue;
+            BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
+            if (figure != null) personCarried.merge(person.getId(), figure, BigDecimal::add);
+        }
+        return personCarried;
     }
 }

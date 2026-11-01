@@ -8,7 +8,8 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
- *  id; a person not in it, added since, has 0.00), and whether it is only soft-closed: its figures
+ *  id; a person not in it, added since, has 0.00) and each person's carried figure fixed then (alike),
+ *  and whether it is only soft-closed: its figures
  *  are fixed as by a close, but claims dated in it can still be changed; and its cap on each person's
  *  OPEN or PENDING claims due by in it (null for none). */
 export type Period = {
@@ -18,6 +19,7 @@ export type Period = {
   closed: boolean;
   closedTotal: string | null;
   closedPersonTotals: Record<string, string>;
+  closedPersonCarried: Record<string, string>;
   soft: boolean;
   cap: number | null;
 };
@@ -102,10 +104,15 @@ export function personPeriodDueCents(period: Period, person: Person, claims: Cla
     .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), late) ?? 0n), 0n);
 }
 
-/** A person's carried figure for a period, in cents: the dues, as shown now, of their claims that
+/** A person's carried figure for a period, in cents: the one fixed when the period was closed (0 for
+ *  a person added since), else the dues, as shown now, of their claims that
  *  count (as in `countsIn`) which belong, by due-by, to a period ending before this one starts and
  *  were still OPEN or PENDING at the end of this period's last day (by their status log). */
 export function personPeriodCarriedCents(period: Period, periods: Period[], person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late, today: string): bigint {
+  if (period.closed) {
+    const fixed = period.closedPersonCarried?.[String(person.id)];
+    return fixed === undefined ? 0n : hundredths(fixed);
+  }
   return claims
     .filter((c) => {
       const home = periodOf(periods, c.dueBy);

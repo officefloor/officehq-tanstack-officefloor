@@ -23,7 +23,7 @@ function PeriodColumns({ sheet }: { user: string; sheet: string }) {
  * counted at the end of its last day (by their status log),
  * or, once the period is closed, the figure fixed then (0.00 for a person added since); and beside it
  * what they carried into it: the due of their counted claims belonging to an earlier period that were
- * still OPEN or PENDING at the end of this one.
+ * still OPEN or PENDING at the end of this one, or, once the period is closed, the figure fixed then.
  */
 function PersonPeriods({ sheet, person }: { user: string; sheet: string; person: Person }) {
   const { data: periods = [] } = usePeriods(sheet);
