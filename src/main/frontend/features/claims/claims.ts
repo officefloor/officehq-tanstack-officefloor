@@ -237,6 +237,16 @@ export function uncappedPersonDueCents(
   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
 }
 
+/** A person's recent settled figure: the sum of their SETTLED claims' frozen figures dated within the 90 days up to
+ *  and including the sheet's today (today and the 89 days before it); a claim settled with no figure adds nothing. */
+export function recentSettledCents(claims: Claim[], person: Person, today: string | undefined): bigint {
+  if (today === undefined) return 0n;
+  const since = plusDays(today, -89);
+  return claims
+    .filter((c) => c.person === person.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
+    .reduce((sum, c) => sum + (c.settledDue === null ? 0n : hundredths(c.settledDue)), 0n);
+}
+
 /** Whether a person is active: they have an OPEN or PENDING claim that counts (see {@link counted}) dated within the
  *  30 days up to and including the sheet's today (today and the 29 days before it). */
 export function isActive(claims: Claim[], person: Person, today: string | undefined): boolean {

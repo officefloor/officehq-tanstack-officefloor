@@ -6,9 +6,8 @@ import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { personDueCents, useClaims, useLate } from '../claims/claims';
-import { twoDecimals, useRates } from '../rates/rates';
-import { useCapCents, useFloorCents } from '../settings/settings';
+import { recentSettledCents, useClaims } from '../claims/claims';
+import { twoDecimals } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, usePatrons } from './patrons';
 import type { Patron } from './patrons';
@@ -23,19 +22,15 @@ function PatronsHeader() {
   );
 }
 
-// A person's patrons (names sorted, comma separated) and their backing: the patrons' due-totals added up,
-// skipping those that are n/a. A patron is picked from the others on the sheet and named one at a time; the
+// A person's patrons (names sorted, comma separated) and their backing: the patrons' settled figures added up
+// over their SETTLED claims dated within the 90 days up to and including the sheet's today (0.00 with none). A patron is picked from the others on the sheet and named one at a time; the
 // server refuses a patron already named.
 function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: everyone = [] } = usePeople(sheet);
   const { data: patrons = [] } = usePatrons(sheet);
   const { data: claims = [] } = useClaims(sheet);
-  const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
-  const floor = useFloorCents(sheet);
-  const cap = useCapCents(sheet);
-  const late = useLate(sheet);
   const [picked, setPicked] = useState('');
 
   const mine = patrons
@@ -43,7 +38,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
     .map((p) => everyone.find((e) => e.id === p.patron))
     .filter((p): p is Person => p !== undefined);
   const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
-  const backing = mine.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
+  const backing = mine.reduce((sum, p) => sum + recentSettledCents(claims, p, today), 0n);
   const others = everyone.filter((p) => p.id !== person.id);
 
   const add = useMutation({
