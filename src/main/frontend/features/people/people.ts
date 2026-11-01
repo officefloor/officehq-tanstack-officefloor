@@ -30,6 +30,9 @@ export type Person = {
   retiredNow: boolean;
   /** The person's contact, trimmed and lower-cased; null when they have none. */
   contact: string | null;
+  /** Whether their name or an alias is already a name or alias on another sheet of the sheet's tree (its ancestors
+   *  and descendants): every edit of them is refused until it renames them out of the clash. */
+  clashing: boolean;
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */

@@ -12,6 +12,11 @@ public class SavePerson {
     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
             @Val PersonRequest request, People people, SheetClock clock, Audit audit, Rollup rollup)
             throws DuplicatePersonNameException, StalePersonException, InvalidPersonException {
+        // Through the form, a name or alias of theirs used on another sheet of the tree refuses the edit: a clashing
+        // person may only be renamed out of the clash, and only when no alias of theirs clashes either.
+        if (people.usedInTree(sheet, request.name()) || people.aliasClashes(sheet, person.id())) {
+            throw new DuplicatePersonNameException(request.name());
+        }
         apply(sheet, user, person, request, people, clock, audit, rollup);
     }
 
@@ -30,7 +35,7 @@ public class SavePerson {
         }
         Rollup.Snapshot before = rollup.take(sheet);
         people.update(sheet, new Person(person.id(), request.name(), person.grade(), loaded, person.retiredFrom(),
-                person.holds(), person.grades(), person.terms(), person.retiredNow(), person.contact()));
+                person.holds(), person.grades(), person.terms(), person.retiredNow(), person.contact(), person.clashing()));
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the ones already
         // recorded; leaving the grade as the row showed it, with the from-date blank, records nothing.
         if (request.gradeFrom() != null || !request.grade().equals(person.grade())) {

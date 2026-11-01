@@ -311,6 +311,16 @@ public class Settings {
         return List.copyOf(found);
     }
 
+    /** The other sheets of the sheet's tree: its ancestors, then its descendants (theirs too), each once. */
+    public List<String> tree(String sheet) {
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
+        for (String up = parent(sheet); !up.isEmpty() && !up.equals(sheet) && found.add(up); up = parent(up)) {
+        }
+        found.addAll(family(sheet));
+        found.remove(sheet);
+        return List.copyOf(found);
+    }
+
     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
     public boolean permits(String sheet, String action, String role) {
         String roles = get(sheet, perm(action));

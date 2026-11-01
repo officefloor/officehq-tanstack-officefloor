@@ -202,7 +202,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             {' '}
             {save.error instanceof HttpError && save.error.status === 412
               ? 'Someone else saved this person since you opened it; the form now shows their values.'
-              : 'A person needs a name not already on the sheet, a grade of A, B or C, a from-date that is a valid date or blank, terms that are a whole number of days or blank, and a contact not already another person\'s on the sheet.'}
+              : 'A person needs a name not already on the sheet or its tree (and, when clashing, a new name and aliases that no longer clash), a grade of A, B or C, a from-date that is a valid date or blank, terms that are a whole number of days or blank, and a contact not already another person\'s on the sheet.'}
           </span>
         )}
       </form>
@@ -223,6 +223,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>Clashing</th>
             <PersonColumnHeaders.Slot sheet={sheet} user={user} />
             <th />
           </tr>
@@ -234,6 +235,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{termsText(p)}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
               <PersonColumns.Slot sheet={sheet} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>

@@ -17,10 +17,11 @@ import net.officefloor.hq.app.setting.Settings;
  * by a statement, count in no live total. Their own terms (days) are null when they have none. retiredNow is whether
  * the sheet's today is on or after their retired-from date: from then their OPEN and PENDING claims, unless bound by a
  * statement, count in no live total. Their contact (trimmed, lower-cased, not another's on the sheet) is null when they
- * have none.
+ * have none. clashing is whether their name or one of their aliases is already a name or alias on another sheet of
+ * the sheet's tree (its ancestors and descendants): every edit of them is refused until it renames them out of it.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
-        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact) {
+        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing) {
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
@@ -39,7 +40,7 @@ public record Person(long id, String name, String grade, long version, String re
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
     public Person on(LocalDate today) {
         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
-                retiredOn(retiredFrom, today), contact);
+                retiredOn(retiredFrom, today), contact, clashing);
     }
 
     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */

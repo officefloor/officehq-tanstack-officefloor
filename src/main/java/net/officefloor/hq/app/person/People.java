@@ -6,7 +6,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
 import net.officefloor.hq.app.alias.Aliases;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,11 +29,35 @@ public class People {
     private final JdbcTemplate jdbc;
     private final SheetClock clock;
     private final Aliases aliases;
+    private final Settings settings;
 
-    public People(JdbcTemplate jdbc, SheetClock clock, Aliases aliases) {
+    public People(JdbcTemplate jdbc, SheetClock clock, Aliases aliases, Settings settings) {
         this.jdbc = jdbc;
         this.clock = clock;
         this.aliases = aliases;
+        this.settings = settings;
+    }
+
+    /** Every name and alias, lower-cased, on the other sheets of the sheet's tree (its ancestors and descendants). */
+    private Set<String> treeNames(String sheet) {
+        Set<String> names = new HashSet<>();
+        for (String other : settings.tree(sheet)) {
+            names.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet = ?", String.class, other));
+            names.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet = ?", String.class, other));
+        }
+        return names;
+    }
+
+    /** Whether the name is already a name or alias on another sheet of the sheet's tree, ignoring case. */
+    public boolean usedInTree(String sheet, String name) {
+        return treeNames(sheet).contains(name.toLowerCase(Locale.ROOT));
+    }
+
+    /** Whether an alias of the person is already a name or alias on another sheet of the sheet's tree. */
+    public boolean aliasClashes(String sheet, long id) {
+        Set<String> names = treeNames(sheet);
+        return jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet = ? AND person_id = ?", String.class,
+                sheet, id).stream().anyMatch(names::contains);
     }
 
     private List<Person> query(String sheet, String where, Object... args) {
@@ -54,13 +82,20 @@ public class People {
                             .add(new Hold(rs.getDate("from_date").toLocalDate().toString(),
                                     rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString()));
                 }, sheet);
+        Set<String> tree = treeNames(sheet);
+        Map<Long, List<String>> aliasKeys = new HashMap<>();
+        jdbc.query("SELECT person_id, alias_key FROM person_alias WHERE sheet = ?", (rs) -> {
+            aliasKeys.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(rs.getString("alias_key"));
+        }, sheet);
         LocalDate today = clock.today(sheet);
         List<Person> people = new ArrayList<>();
         for (Row r : rows) {
             List<GradeFrom> mine = List.copyOf(grades.getOrDefault(r.id(), List.of()));
             people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(),
                     List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms(),
-                    Person.retiredOn(r.retiredFrom(), today), r.contact()));
+                    Person.retiredOn(r.retiredFrom(), today), r.contact(),
+                    tree.contains(r.name().toLowerCase(Locale.ROOT))
+                            || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains)));
         }
         return people;
     }
@@ -101,7 +136,7 @@ public class People {
     /** Adds the person with their first grade, which applies from the beginning of time, their own terms and contact (null: none). */
     public Person add(String sheet, String name, String grade, Integer terms, String contact)
             throws DuplicatePersonNameException {
-        if (nameTaken(sheet, name, null) || aliases.taken(sheet, name)) {
+        if (nameTaken(sheet, name, null) || aliases.taken(sheet, name) || usedInTree(sheet, name)) {
             throw new DuplicatePersonNameException(name);
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
