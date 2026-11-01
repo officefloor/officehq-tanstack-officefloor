@@ -60,6 +60,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-note">{claim.note}</span>{' '}
       due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date)))}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
+      stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       {claim.number !== null && '#'}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       {claim.openedBy !== null && 'opened by '}

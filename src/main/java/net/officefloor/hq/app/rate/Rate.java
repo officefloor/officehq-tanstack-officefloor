@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.rate;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
@@ -19,5 +21,12 @@ public record Rate(String grade, String pct, String from) {
                 .filter((r) -> r.from() == null || !LocalDate.parse(r.from()).isAfter(date))
                 .max(Comparator.comparing((Rate r) -> r.from() == null ? LocalDate.MIN : LocalDate.parse(r.from())))
                 .map(Rate::pct).orElse(null);
+    }
+
+    /** An amount times a percent, divided by 100, in hundredths rounded half to even; null when there is no rate. */
+    public static BigDecimal due(String amount, String pct) {
+        return pct == null ? null
+                : new BigDecimal(amount).multiply(new BigDecimal(pct)).movePointLeft(2).setScale(2,
+                        RoundingMode.HALF_EVEN);
     }
 }

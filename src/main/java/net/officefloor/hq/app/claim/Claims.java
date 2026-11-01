@@ -19,9 +19,11 @@ public class Claims {
             ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number_on_sheet", Integer.class),
             rs.getBigDecimal("settled_due") == null ? null
                     : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"),
+            rs.getBigDecimal("stated_due") == null ? null
+                    : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString());
 
-    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by FROM claim";
+    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by, stated, stated_due FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -58,6 +60,11 @@ public class Claims {
     /** Fixes the claim's due as it is settled, or leaves none with null. */
     public void setSettledDue(String sheet, long id, BigDecimal due) {
         jdbc.update("UPDATE claim SET settled_due = ? WHERE sheet = ? AND id = ?", due, sheet, id);
+    }
+
+    /** Binds the claim to a statement's figure (null when its grade had no rate), or unbinds it when not stated. */
+    public void setStated(String sheet, long id, boolean stated, BigDecimal due) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet = ? AND id = ?", stated, due, sheet, id);
     }
 
     /** Records the user who opened the claim. */

@@ -1,12 +1,9 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
-import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,13 +39,10 @@ public class ApplyClaimStatus {
         }
         Person person = people.find(sheet, claim.person());
         String fields = changed.statusAuditFields(person.name());
-        // Settling fixes the due at the person's grade rate in force on the claim's date; with no rate there is
-        // nothing to fix, so it stays live.
+        // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
+        // statement bound); with no rate there is nothing to fix, so it stays live.
         if (requested == ClaimStatusChange.SETTLE) {
-            String pct = Rate.on(rates.list(sheet), person.grade(), LocalDate.parse(claim.date()));
-            BigDecimal due = pct == null ? null
-                    : new BigDecimal(claim.amount()).multiply(new BigDecimal(pct)).movePointLeft(2)
-                            .setScale(2, RoundingMode.HALF_EVEN);
+            BigDecimal due = claim.due(rates.list(sheet), person.grade());
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
         }

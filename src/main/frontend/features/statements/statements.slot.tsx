@@ -1,0 +1,61 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { byUser } from '../session/session';
+import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { peoplePath } from '../people/people';
+import type { Person } from '../people/people';
+import { claimsKey } from '../claims/claims';
+import { statementsKey, useStatements } from './statements';
+import type { StatementSummary } from './statements';
+
+function StatementHeader() {
+  return (
+    <>
+      <th>Statements</th>
+      <th>Stated total</th>
+      <th>Stated on</th>
+      <th />
+    </>
+  );
+}
+
+// A person's statements: how many, the last one's due-total and date, and the button that takes the next. Taking
+// one binds their counting claims to their figures now, so the claims are re-read before the count moves on.
+function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const { data: all = [] } = useStatements(sheet);
+  const mine = all.find((s) => s.person === person.id);
+  const take = useMutation({
+    mutationFn: () =>
+      postJson<StatementSummary[]>(byUser(`${peoplePath(sheet)}/${person.id}/statement`, user), {}),
+    onSuccess: async (updated) => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      queryClient.setQueryData(statementsKey(sheet), updated);
+    },
+  });
+  const act = useSubmitOnce(take);
+
+  return (
+    <>
+      <td data-testid="person-statement-count">{mine?.count ?? 0}</td>
+      <td data-testid="person-stated-total">{mine?.lastDueTotal ?? ''}</td>
+      <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>
+      <td>
+        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => act()}>
+          Statement
+        </button>
+        {take.isError && (
+          <span data-testid="person-error" role="alert">
+            {' '}The statement could not be taken.
+          </span>
+        )}
+      </td>
+    </>
+  );
+}
+
+export const contributions = [
+  PersonColumnHeaders.fill({ order: 20, Component: StatementHeader }),
+  PersonColumns.fill({ order: 20, Component: PersonStatements }),
+];

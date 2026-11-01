@@ -12,7 +12,8 @@ export type ClaimStatusChange = 'open' | 'settle' | 'void';
 /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
  * the sheet (given when it is opened; null while a draft and once voided), and its due fixed when it was
  * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
- * user who opened it (null until opened; that user may not settle it). */
+ * user who opened it (null until opened; that user may not settle it), and whether its person's last statement
+ * bound it, with the figure it bound (null when its grade had no rate then). */
 export type Claim = {
   id: number;
   person: number;
@@ -23,6 +24,8 @@ export type Claim = {
   number: number | null;
   settledDue: string | null;
   openedBy: string | null;
+  stated: boolean;
+  statedDue: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['claims', sheet] as const;
@@ -51,14 +54,22 @@ export function claimed(claims: Claim[]): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
-/** A claim's due: the one fixed when it was settled, else its amount at the grade's rate in force on its date. */
+/** Whether a claim keeps its figure whatever the rates: fixed when settled, or bound by a statement. */
+export function fixed(claim: Claim): boolean {
+  return claim.settledDue !== null || claim.stated;
+}
+
+/** A claim's due: the one fixed when it was settled, else the one its statement bound, else its amount at the
+ *  grade's rate in force on its date. */
 export function claimDueCents(claim: Claim, pct: string | undefined): bigint | undefined {
-  return claim.settledDue !== null ? hundredths(claim.settledDue) : dueCents(claim.amount, pct);
+  if (claim.settledDue !== null) return hundredths(claim.settledDue);
+  if (claim.stated) return claim.statedDue === null ? undefined : hundredths(claim.statedDue);
+  return dueCents(claim.amount, pct);
 }
 
 
 /** A person's due-total: the sum of their counted claims' rounded figures. n/a (undefined) when their grade
- *  has no rate on the sheet's today, unless a settled claim keeps a figure: then the figures there are. */
+ *  has no rate on the sheet's today, unless a settled or stated claim keeps a figure: then the figures there are. */
 export function personDueCents(
   claims: Claim[],
   rates: Rate[],
@@ -66,6 +77,6 @@ export function personDueCents(
   today: string | undefined,
 ): bigint | undefined {
   const mine = counted(claims);
-  if (rateOf(rates, grade, today) === undefined && !mine.some((c) => c.settledDue !== null)) return undefined;
+  if (rateOf(rates, grade, today) === undefined && !mine.some(fixed)) return undefined;
   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, grade, c.date)) ?? 0n), 0n);
 }
