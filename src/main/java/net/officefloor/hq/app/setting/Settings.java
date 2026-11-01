@@ -20,6 +20,14 @@ public class Settings {
     /** The days after its date by which a claim is due (a whole number); blank: its default. */
     public static final String TERMS = "terms";
 
+    /** The grades that may have terms of their own, each under the key terms-<grade>. */
+    public static final List<String> GRADES = List.of("A", "B", "C");
+
+    /** The key of a grade's own terms (a whole number of days); blank: the sheet's terms. */
+    public static String gradeTerms(String grade) {
+        return TERMS + "-" + grade;
+    }
+
     /** The percent of an overdue claim's figure charged for every full 30 days it is overdue (two decimals). */
     public static final String LATE_PCT = "late-pct";
 
@@ -74,6 +82,12 @@ public class Settings {
         return Integer.parseInt(terms.isEmpty() ? DEFAULT_TERMS : terms);
     }
 
+    /** The terms of the grade: its own when it has them, else the sheet's (a null grade takes the sheet's). */
+    public int terms(String sheet, String grade) {
+        String own = grade == null ? "" : get(sheet, gradeTerms(grade));
+        return own.isEmpty() ? terms(sheet) : Integer.parseInt(own);
+    }
+
     /** The sheet's late percent: charged on an overdue claim's figure for every full 30 days it is overdue. */
     public BigDecimal latePct(String sheet) {
         String pct = get(sheet, LATE_PCT);
@@ -83,7 +97,7 @@ public class Settings {
     /** What makes the sheet's late charges on its today. */
     public Late late(String sheet, LocalDate today) {
         String policy = get(sheet, POLICY_DATE);
-        return new Late(latePct(sheet), terms(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy));
+        return new Late(latePct(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy));
     }
 
     /** The date from which claims opened are numbered within their period, or null when they are not. */
@@ -95,6 +109,7 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
                 Integer.toString(terms(sheet)), latePct(sheet).toPlainString(), get(sheet, POLICY_DATE),
-                get(sheet, PERIOD_NUMBERING_FROM));
+                get(sheet, PERIOD_NUMBERING_FROM), get(sheet, gradeTerms("A")), get(sheet, gradeTerms("B")),
+                get(sheet, gradeTerms("C")));
     }
 }

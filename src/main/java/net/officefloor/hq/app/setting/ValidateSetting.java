@@ -17,7 +17,8 @@ public class ValidateSetting {
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
-                && !Settings.PERIOD_NUMBERING_FROM.equals(key)) {
+                && !Settings.PERIOD_NUMBERING_FROM.equals(key)
+                && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         // The policy date is a date; blank follows the sheet's today.
@@ -50,6 +51,14 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more, or blank");
             }
             body.set(new SettingInput(key, Integer.toString(Integer.parseInt(value.isEmpty() ? Settings.DEFAULT_TERMS : value))));
+            return;
+        }
+        // A grade's own terms are a whole number of days; blank clears them, so the grade takes the sheet's terms.
+        if (key.startsWith(Settings.TERMS + "-")) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The terms of a grade must be a whole number of days, 0 or more, or blank");
+            }
+            body.set(new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value))));
             return;
         }
         if (!value.isEmpty() && !LIMIT.matcher(value).matches()) {

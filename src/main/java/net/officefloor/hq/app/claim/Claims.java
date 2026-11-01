@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,12 +24,12 @@ public class Claims {
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
-            rs.getString("period_number"));
+            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString());
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
-            + " claim.period_number, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on FROM claim"
+            + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
 
@@ -58,10 +59,11 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public void add(String sheet, long person, ClaimInput input) {
-        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, "
+    /** Adds the claim with its due-by, fixed now and never moved after. */
+    public void add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
+        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, listed) VALUES (?, ?, ?, ?, ?, ?, ?, "
                 + NEXT_LISTED + ")", sheet, person, input.amount(), Date.valueOf(input.date()), input.note(),
-                input.corrects(), sheet);
+                input.corrects(), Date.valueOf(dueBy), sheet);
     }
 
     /** Edits a draft claim: false when it is no longer a draft. */

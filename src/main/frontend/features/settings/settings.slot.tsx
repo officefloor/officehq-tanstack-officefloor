@@ -5,7 +5,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { settingsKey, settingsPath, useSettings } from './settings';
+import { GRADE_TERMS, settingsKey, settingsPath, useSettings } from './settings';
 import type { SettingKey, Settings as SheetSettings } from './settings';
 
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
@@ -14,7 +14,8 @@ import type { SettingKey, Settings as SheetSettings } from './settings';
 // blank takes its default, 14. The late percent (two decimals) is charged on an overdue claim's figure for every
 // full 30 days it is overdue; blank takes its default, 0.00. A claim dated before the policy date rounds half up, on
 // or after it half to even; blank makes it the sheet's today. While the sheet's today is on or after the period
-// numbering from-date, a claim opened is numbered within its period; blank turns that off. Saving sends each setting whose field was changed; with none changed it
+// numbering from-date, a claim opened is numbered within its period; blank turns that off. A grade's own terms (whole
+// days) fix the due-by of a claim added for a person of that grade; blank makes the grade take the sheet's terms. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -25,6 +26,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
+  const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
 
   const save = useMutation({
@@ -43,6 +45,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
+      setGradeTerms({});
       setChanged([]);
     },
   });
@@ -57,7 +60,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     e.preventDefault();
     // The server refuses a value that is not 0.00 or more with up to two decimals.
     const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
-      'period-numbering-from': periodNumberingFrom };
+      'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
+      'terms-C': gradeTerms.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => ({ key, value: values[key] })));
   };
@@ -105,6 +109,26 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-terms-current">{data?.terms ?? ''}</span>{' '}
+        {GRADE_TERMS.map(({ grade, key, field }) => (
+          <span key={key}>
+            <label>
+              Terms for grade {grade}{' '}
+              <input
+                data-testid={`setting-${key}`}
+                placeholder="days (blank: the sheet's terms)"
+                value={gradeTerms[grade] ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setGradeTerms((terms) => ({ ...terms, [grade]: value }));
+                  touch(key);
+                }}
+                // As the policy date: clearing an already blank field must still send the blank.
+                onFocus={() => touch(key)}
+              />
+            </label>{' '}
+            now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input
@@ -154,7 +178,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the floor and the late percent must be 0.00 or more with up to two decimals, the terms a whole number of days, the policy date and the period numbering from-date dates, or blank.
+            {' '}The clerk limit, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date and the period numbering from-date dates, or blank.
           </span>
         )}
       </form>

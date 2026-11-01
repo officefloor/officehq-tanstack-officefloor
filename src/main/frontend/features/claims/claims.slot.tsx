@@ -11,14 +11,13 @@ import { useSheetToday } from '../sheet/sheet';
 import { rateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloorCents, useTerms } from '../settings/settings';
+import { useFloorCents } from '../settings/settings';
 import {
   claimDueCents,
   claimed,
   claimsKey,
   claimsPath,
   counted,
-  dueBy,
   overdue,
   overdueCents,
   personDueCents,
@@ -65,7 +64,6 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   const queryClient = useQueryClient();
   const { data: periods = [] } = usePeriods(sheet);
   const floor = useFloorCents(sheet);
-  const terms = useTerms(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
   const status = useMutation({
@@ -105,8 +103,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
       due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor, late))}</span>{' '}
-      due by <span data-testid="claim-due-by">{dueBy(claim, terms)}</span>{' '}
-      overdue <span data-testid="claim-overdue">{overdue(claim, terms, today) ? 'yes' : 'no'}</span>{' '}
+      due by <span data-testid="claim-due-by">{claim.dueBy}</span>{' '}
+      overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}

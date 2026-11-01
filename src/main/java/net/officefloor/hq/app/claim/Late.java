@@ -6,11 +6,11 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
 /**
- * What makes an overdue claim's late charge: the sheet's late percent (two decimals), its terms (days after a claim's
- * date by which it is due) and its today. The charge is never bound by a statement: it follows the sheet's today.
+ * What makes an overdue claim's late charge: the sheet's late percent (two decimals) and its today; a claim is due
+ * by the due-by fixed when it was added. The charge is never bound by a statement: it follows the sheet's today.
  * It also carries the sheet's policy date, which decides how a claim's live figures round.
  */
-public record Late(BigDecimal pct, int terms, LocalDate today, LocalDate policy) {
+public record Late(BigDecimal pct, LocalDate today, LocalDate policy) {
 
     /**
      * How the claim's live figures round: half up when it rounds on a date (its own, or for a correction the date of
@@ -20,9 +20,9 @@ public record Late(BigDecimal pct, int terms, LocalDate today, LocalDate policy)
         return LocalDate.parse(claim.roundsOn()).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether the claim is overdue: OPEN or PENDING with its due-by (its date plus the terms) before the sheet's today. */
+    /** Whether the claim is overdue: OPEN or PENDING with its due-by (fixed when it was added) before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING) && LocalDate.parse(claim.date()).plusDays(terms).isBefore(today);
+        return (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING) && LocalDate.parse(claim.dueBy()).isBefore(today);
     }
 
     /**
@@ -33,7 +33,7 @@ public record Late(BigDecimal pct, int terms, LocalDate today, LocalDate policy)
         if (figure == null || claim.correction() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
-        long days = ChronoUnit.DAYS.between(LocalDate.parse(claim.date()).plusDays(terms), today);
+        long days = ChronoUnit.DAYS.between(LocalDate.parse(claim.dueBy()), today);
         return figure.multiply(pct).multiply(BigDecimal.valueOf(days / 30)).movePointLeft(2).setScale(2,
                 rounding(claim));
     }
