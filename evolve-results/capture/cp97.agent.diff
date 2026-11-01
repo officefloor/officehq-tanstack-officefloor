@@ -1,0 +1,65 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index eaf3e66f..64a64c5e 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -419,3 +419,23 @@ export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[]
+   }
+   return [...totals].map(([tag, cents]) => ({ tag, cents }));
+ }
++
++/** The due-total of each calendar month (yyyy-mm) any claim on the sheet is dated in, sorted (in hundredths): the dues
++ *  of the claims that count (see {@link counted}) dated in it; a claim with no due adds nothing. */
++export function useMonthDueTotals(sheet: string): { month: string; cents: bigint }[] {
++  const { data: all = [] } = useClaims(sheet);
++  const { data: people = [] } = usePeople(sheet);
++  const { data: rates = [] } = useRates(sheet);
++  const floor = useFloorCents(sheet);
++  const late = useLate(sheet);
++  const byId = new Map(people.map((p) => [p.id, p]));
++  const totals = new Map([...new Set(all.map((c) => c.date.slice(0, 7)))].sort().map((m) => [m, 0n]));
++  for (const c of counted(all, people)) {
++    const person = byId.get(c.person);
++    if (person === undefined) continue;
++    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
++    const month = c.date.slice(0, 7);
++    totals.set(month, (totals.get(month) ?? 0n) + due);
++  }
++  return [...totals].map(([month, cents]) => ({ month, cents }));
++}
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index 85901972..ff9dfce7 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -1,12 +1,14 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { twoDecimals } from '../rates/rates';
+-import { useSheetTotals, useTagDueTotals } from './claims';
++import { useMonthDueTotals, useSheetTotals, useTagDueTotals } from './claims';
+ 
+ // The sheet's claimed-total, due-total, overdue count and total, and settled-total and open-total (see useSheetTotals),
+-// and the due-total of each tag ever used on the sheet (see useTagDueTotals).
++// the due-total of each tag ever used on the sheet (see useTagDueTotals), and the due-total of each month any claim
++// is dated in (see useMonthDueTotals).
+ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+   const { claimed, due, overdue, settled, open } = useSheetTotals(sheet);
+   const tags = useTagDueTotals(sheet);
++  const months = useMonthDueTotals(sheet);
+   return (
+     <>
+       <p>
+@@ -32,6 +34,15 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+           ))}
+         </ul>
+       )}
++      {months.length > 0 && (
++        <ul>
++          {months.map(({ month, cents }) => (
++            <li key={month}>
++              Month {month} due total: <strong data-testid={`month-${month}-due-total`}>{twoDecimals(cents)}</strong>
++            </li>
++          ))}
++        </ul>
++      )}
+     </>
+   );
+ }
