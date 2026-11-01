@@ -1,0 +1,75 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index b0984196..4982a432 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -20,6 +20,7 @@ import {
+   counted,
+   overdue,
+   overdueCents,
++  agedCents,
+   personDueCents,
+   uncappedPersonDueCents,
+   useClaims,
+@@ -39,6 +40,9 @@ function ClaimedHeader() {
+       <th>Excess</th>
+       <th>Overdue</th>
+       <th>Overdue total</th>
++      <th>Due 0-30 days</th>
++      <th>Due 31-60 days</th>
++      <th>Due 61+ days</th>
+       <th>Claims</th>
+     </>
+   );
+@@ -466,6 +470,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const uncapped = uncappedPersonDueCents(claims, rates, person, today, floor, late);
+   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
+   const lateClaims = overdueCents(claims, [person], rates, late, floor);
++  const aged = agedCents(claims, person, rates, late, floor);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
+   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
+@@ -526,6 +531,9 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+       <td data-testid="person-excess">{twoDecimals(excess)}</td>
+       <td data-testid="person-overdue-count">{lateClaims.count}</td>
+       <td data-testid="person-overdue-total">{twoDecimals(lateClaims.cents)}</td>
++      <td data-testid="person-aged-0-30">{twoDecimals(aged.upTo30)}</td>
++      <td data-testid="person-aged-31-60">{twoDecimals(aged.upTo60)}</td>
++      <td data-testid="person-aged-61">{twoDecimals(aged.over60)}</td>
+       <td>
+         <form onSubmit={submit}>
+           <input
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index e8fd9bab..e1aefb4e 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -285,6 +285,30 @@ export function overdueCents(
+   return { count: overdueClaims.length, cents };
+ }
+ 
++/** A person's dues by the age of the claim on the sheet's today (the whole days from its date): their OPEN and
++ *  PENDING claims that count (see {@link counted}) aged 0 to 30 days, 31 to 60, and 61 or more (in hundredths; a
++ *  claim dated after today is 0 to 30, and a claim with no due adds nothing). */
++export function agedCents(
++  claims: Claim[],
++  person: Person,
++  rates: Rate[],
++  late: Late,
++  floor: DatedCents,
++): { upTo30: bigint; upTo60: bigint; over60: bigint } {
++  const aged = { upTo30: 0n, upTo60: 0n, over60: 0n };
++  const today = late.today;
++  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
++    if (!isOpen(c)) continue;
++    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
++    const days =
++      today === undefined ? 0 : Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000);
++    if (days <= 30) aged.upTo30 += due;
++    else if (days <= 60) aged.upTo60 += due;
++    else aged.over60 += due;
++  }
++  return aged;
++}
++
+ /** Adds up the people's figures, leaving out the single highest and the single lowest when three or more people
+  *  have a figure. */
+ export function trimmedSum(figures: bigint[]): bigint {
