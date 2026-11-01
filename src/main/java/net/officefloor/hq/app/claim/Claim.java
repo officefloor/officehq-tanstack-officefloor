@@ -65,6 +65,17 @@ public record Claim(long id, long person, String amount, String date, String not
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
     }
 
+    /** The date it was last settled: its status log's last SETTLED line (null when the log has none). */
+    public LocalDate settledOn() {
+        LocalDate on = null;
+        for (ClaimLogLine line : log == null ? List.<ClaimLogLine>of() : log) {
+            if (line.status() == ClaimStatus.SETTLED) {
+                on = LocalDate.parse(line.on());
+            }
+        }
+        return on;
+    }
+
     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
     public String shownNumber() {
         return periodNumber != null ? periodNumber : number == null ? null : number.toString();

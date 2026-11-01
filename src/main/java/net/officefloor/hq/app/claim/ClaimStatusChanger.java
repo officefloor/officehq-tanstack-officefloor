@@ -21,6 +21,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class ClaimStatusChanger {
 
+    /** How many days after its settlement a steward may still void a SETTLED claim. */
+    public static final int VOID_SETTLED_DAYS = 7;
+
     private final Claims claims;
     private final People people;
     private final Rates rates;
@@ -73,6 +76,18 @@ public class ClaimStatusChanger {
         }
         if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
             throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
+        }
+        // A steward voids a SETTLED claim only within 7 days of its settlement (its status log's last SETTLED date).
+        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
+            if (!Role.STEWARD.equals(roles.of(sheet, user))) {
+                throw new InvalidClaimStatusChangeException("Only a steward voids a settled claim");
+            }
+            LocalDate settled = claim.settledOn();
+            LocalDate today = clock.today(sheet);
+            if (settled == null || today.isBefore(settled) || today.isAfter(settled.plusDays(VOID_SETTLED_DAYS))) {
+                throw new InvalidClaimStatusChangeException(
+                        "A settled claim may be voided only within " + VOID_SETTLED_DAYS + " days of its settlement");
+            }
         }
         if (requested == ClaimStatusChange.SETTLE && claim.deferred()) {
             throw new InvalidClaimStatusChangeException("A deferred claim cannot be settled until its date");
@@ -137,6 +152,10 @@ public class ClaimStatusChanger {
                     settings.late(sheet, clock.today(sheet)));
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+        }
+        // Voiding a SETTLED claim reverses its frozen figure out of every total.
+        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
+            fields += " reversed=" + (claim.settledDue() == null ? "n/a" : claim.settledDue());
         }
         if (requested == ClaimStatusChange.REJECT) {
             fields += " reason=" + reason.trim();

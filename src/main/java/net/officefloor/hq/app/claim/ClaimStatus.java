@@ -2,7 +2,8 @@ package net.officefloor.hq.app.claim;
 
 /**
  * Where a claim is in its life: only OPEN, PENDING and SETTLED claims count toward the totals. A clerk's settle of a
- * due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
+ * due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). A steward
+ * may void a SETTLED claim within 7 days of its settlement.
  */
 public enum ClaimStatus {
     DRAFT, OPEN, PENDING, SETTLED, VOID;
@@ -15,7 +16,7 @@ public enum ClaimStatus {
             case PEND -> this == OPEN ? PENDING : null;
             case APPROVE -> this == PENDING ? SETTLED : null;
             case REJECT -> this == PENDING ? OPEN : null;
-            case VOID -> this == DRAFT || this == OPEN || this == PENDING ? VOID : null;
+            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED ? VOID : null;
         };
     }
 }
