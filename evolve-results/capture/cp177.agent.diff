@@ -1,0 +1,631 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 9e9db98e..592414af 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -45,7 +45,7 @@ const NO_TARGET = 'Choose another person to reassign this claim to.';
+ const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
+ const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
+ const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
+-const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof.";
++const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof (one of each of the sheet's proof kinds, when set).";
+ const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
+ const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one due by in a closed period.';
+ const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor due by in a closed period) can be split, by a user whose role may open a claim.";
+@@ -112,7 +112,9 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review',
+  * charge from then on, whatever its overdue state.
+  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
+  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
+- * cannot be settled or approved while it has none.
++ * cannot be settled or approved while it has none. A proof's kind, receipt or photo, is chosen when it is added
++ * (a receipt when none is); the claim shows its count of each beside the total, and while the sheet's proof kinds
++ * are set, a claim above the proof threshold needs a proof of each listed kind before it can be settled or approved.
+  * One whose due is above the sheet's note threshold on its date cannot be opened, alone or in bulk,
+  * while its note is empty.
+  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
+@@ -175,6 +177,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
+   // The new date typed for re-dating each claim, by claim id.
+   const [redateTo, setRedateTo] = useState<Record<number, string>>({});
++  // The kind chosen for each claim's next proof ('' for none: a receipt).
++  const [proofKind, setProofKind] = useState<Record<number, string>>({});
+   // The person chosen to reassign each claim to, by claim id.
+   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
+   // The amount typed for splitting each claim, by claim id.
+@@ -326,10 +330,12 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
+ 
+-  // A proof raises the claim's proofs count by one.
++  // A proof raises the claim's proofs count by one, of the kind chosen (a receipt when none is).
+   const addProof = useMutation({
+-    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/proof`, { user }),
++    mutationFn: (c: { id: number; kind: string }) =>
++      postJson<Claim>(`${base}/claims/${c.id}/proof`, c.kind === '' ? { user } : { user, kind: c.kind }),
+     onMutate: () => setRefused(null),
++    onSuccess: (_, c) => setProofKind((k) => ({ ...k, [c.id]: '' })),
+     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_PROVE }),
+     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
+@@ -717,6 +723,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
+               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
++              (receipts <span data-testid="claim-proofs-receipt">{c.proofReceipts}</span>, photos{' '}
++              <span data-testid="claim-proofs-photo">{c.proofPhotos}</span>){' '}
+               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+@@ -739,11 +747,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               >
+                 Remind
+               </button>{' '}
++              <select
++                data-testid="claim-proof-kind"
++                aria-label="Proof kind"
++                value={proofKind[c.id] ?? ''}
++                onChange={(e) => {
++                  setProofKind({ ...proofKind, [c.id]: e.target.value });
++                  if (refused?.id === c.id) setRefused(null);
++                }}
++              >
++                <option value="">(kind)</option>
++                <option value="receipt">receipt</option>
++                <option value="photo">photo</option>
++              </select>{' '}
+               <button
+                 type="button"
+                 data-testid="claim-proof"
+                 disabled={addProof.isPending}
+-                onClick={() => addProof.mutate({ id: c.id })}
++                onClick={() => addProof.mutate({ id: c.id, kind: proofKind[c.id] ?? '' })}
+               >
+                 Add proof
+               </button>{' '}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 1edb93a6..9946ca53 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -58,8 +58,12 @@ export type Claim = {
+   /** The date (yyyy-mm-dd) the claim was last deferred until (kept once that date is reached); null when it never was. */
+   deferredUntil: string | null;
+   /** How many proofs the claim has: one whose due is above the sheet's proof threshold on its date
+-   *  cannot be settled or approved while it has none. */
++   *  cannot be settled or approved while it has none (nor while it lacks one of each of the sheet's proof kinds). */
+   proofs: number;
++  /** How many of its proofs are receipts (a proof added with no kind chosen is a receipt). */
++  proofReceipts: number;
++  /** How many of its proofs are photos. */
++  proofPhotos: number;
+   /** The number of the claim this one was split off; null when it was not split off one. */
+   splitFrom: string | null;
+   /** The user whose open editor locks the claim for everyone else; null when no editor holds it. */
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 986fa62c..025af2ae 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -6,10 +6,10 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimsKey } from '../claims/useClaims';
+ import { poolsKey } from '../pools/usePools';
+ import { ratesKey } from '../rates/useRates';
+-import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
++import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, PROOF_KINDS, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
+ 
+ /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
+-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
++type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
+ 
+ /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
+ type Froms = Record<string, string>;
+@@ -65,7 +65,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSettings(sheet);
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
++  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, proofKinds: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+   const [froms, setFroms] = useState<Froms>({});
+   const [limitInvalid, setLimitInvalid] = useState(false);
+   const [name, setName] = useState('');
+@@ -183,6 +183,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           const reviewThreshold = edit.reviewThreshold?.trim() ?? null;
+           const escalateAfter = edit.escalateAfter?.trim() ?? null;
+           const reviewSla = edit.reviewSla?.trim() ?? null;
++          const proofKinds = edit.proofKinds?.trim() ?? null;
+           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
+           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
+           const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
+@@ -205,6 +206,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             (graceDays !== null && !DAYS.test(graceDays)) ||
+             (escalateAfter !== null && !DAYS.test(escalateAfter)) ||
+             (reviewSla !== null && !DAYS.test(reviewSla)) ||
++            (proofKinds !== null && !PROOF_KINDS.test(proofKinds)) ||
+             (entryDate !== null && !POLICY_DATE.test(entryDate)) ||
+             (pot !== null && !LIMIT.test(pot)) ||
+             (alertThreshold !== null && !LIMIT.test(alertThreshold)) ||
+@@ -219,7 +221,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             return;
+           }
+           setLimitInvalid(false);
+-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, gradeTerms, gradeGrace, gradeProof, perms }, from }));
++          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, gradeTerms, gradeGrace, gradeProof, perms }, from }));
+         }}
+       >
+         {/* While a save is in flight the limit in force is not yet known: saving the same value again
+@@ -610,6 +612,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+             }}
+           />
+         </label>{' '}
++        Proof kinds:{' '}
++        <strong data-testid="setting-proof-kinds-current">
++          {saveSettings.isPending ? '' : (data?.proofKinds ?? '')}
++        </strong>{' '}
++        <label>
++          Set to{' '}
++          <input
++            data-testid="setting-proof-kinds"
++            placeholder="blank: none (e.g. receipt,photo)"
++            value={edit.proofKinds ?? (data?.proofKinds ?? '')}
++            onFocus={() => touch('proofKinds', data?.proofKinds ?? '')}
++            onChange={(e) => {
++              setEdit((was) => ({ ...was, proofKinds: e.target.value }));
++              clearSettingsError();
++            }}
++          />
++        </label>{' '}
+         Fiscal year starts in month:{' '}
+         <strong data-testid="setting-fiscal-start-month-current">
+           {saveSettings.isPending ? '' : String(data?.fiscalStartMonth ?? '')}
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index e1c853e5..1236d2fa 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -16,12 +16,12 @@ export type RoleEntry = { name: string; role: string };
+  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
+  *  terms, terms-<grade>, grace-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, rounding), oldest from-date first; and `proofThreshold` with
+  *  two decimals, or null for none, as in force on the sheet's today; and `perms`, the roles set for each
+- *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>); and `gradeProof`, the proof threshold set per grade with two decimals in force on the sheet's today (a grade not in it uses the sheet's; dated, under proof-threshold-<grade>); and `pot` with two decimals, or null for none: shared out among the members of each balanced pool (not dated); and `parent`, the parent sheet's id, or null for none: a grade with no rate in force on a date on this sheet takes the parent's then, up to three levels up (not dated); and `fiscalStartMonth`, the month (1 to 12) the sheet's fiscal year starts on: 1 unless set (not dated); and `rounding`, the rounding mode (half-up or half-even) in force on the sheet's today, or null for none: a claim dated when one is in force rounds its live figures by it, else by the policy date (dated); and `reviewThreshold` with two decimals, or null for none, as in force on the sheet's today: a claim whose due on its date is above the one then goes to REVIEW when opened (dated); and `escalateAfter`, the escalation gap in days, or null when off: reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim (not dated); and `reviewSla`, the review SLA in days, or null for none: a REVIEW claim whose review day plus it is before the sheet's today is review-late (not dated). */
++ *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>); and `gradeProof`, the proof threshold set per grade with two decimals in force on the sheet's today (a grade not in it uses the sheet's; dated, under proof-threshold-<grade>); and `pot` with two decimals, or null for none: shared out among the members of each balanced pool (not dated); and `parent`, the parent sheet's id, or null for none: a grade with no rate in force on a date on this sheet takes the parent's then, up to three levels up (not dated); and `fiscalStartMonth`, the month (1 to 12) the sheet's fiscal year starts on: 1 unless set (not dated); and `rounding`, the rounding mode (half-up or half-even) in force on the sheet's today, or null for none: a claim dated when one is in force rounds its live figures by it, else by the policy date (dated); and `reviewThreshold` with two decimals, or null for none, as in force on the sheet's today: a claim whose due on its date is above the one then goes to REVIEW when opened (dated); and `escalateAfter`, the escalation gap in days, or null when off: reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim (not dated); and `reviewSla`, the review SLA in days, or null for none: a REVIEW claim whose review day plus it is before the sheet's today is review-late (not dated); and `proofKinds`, the sheet's proof kinds, comma separated (receipt, photo), or null for none: while set, a claim above the proof threshold needs a proof of each before it can be settled or approved (not dated). */
+ /** A delegation of the steward role: the user acts as a steward while the sheet's today is from
+  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
+ export type DelegationEntry = { name: string; from: string; to: string; by: string };
+ 
+-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null };
++export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null };
+ 
+ /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
+ export type DatedValue = { from: string; value: string | null };
+@@ -144,3 +144,5 @@ export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reo
+ 
+ /** A permission the server accepts: a comma separated list of roles, or blank for the standing rule. */
+ export const PERM_ROLES = /^(\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*)?$/i;
++/** The proof kinds: a comma separated list of receipt and photo, or blank for none. */
++export const PROOF_KINDS = /^(\s*(receipt|photo)\s*(,\s*(receipt|photo)\s*)*)?$/i;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java
+index adbe9b6f..53a626de 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimProof.java
+@@ -4,7 +4,7 @@ import net.officefloor.hq.app.period.ClosedPeriods;
+ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Raises the claim's proofs count by one. A SETTLED, VOID or DELETED claim, or one dated in a closed period, is refused. */
++/** Raises the claim's proofs count by one, of the kind chosen (a receipt when none is). A SETTLED, VOID or DELETED claim, or one dated in a closed period, is refused. */
+ public class ApplyClaimProof {
+     public void apply(@Val ClaimProof change, @Val Claim claim, ClosedPeriods closedPeriods)
+             throws ClaimStatusRefusedException, PeriodClosedException {
+@@ -14,5 +14,6 @@ public class ApplyClaimProof {
+             throw new ClaimStatusRefusedException("A proof cannot be added to a " + claim.getStatus() + " claim");
+         }
+         claim.setProofs(claim.getProofs() + 1);
++        if (ProofKind.PHOTO.equals(change.kind())) claim.setProofPhotos(claim.getProofPhotos() + 1);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 80414f5d..4a6b7d46 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
+  *  statement if that bound it.
+  *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
+  *  one is set, else the sheet's) cannot be settled or
+- *  approved while it has no proofs (refused before the clerk limit is considered).
++ *  approved while it has no proofs, nor while it lacks a proof of each of the sheet's proof kinds (refused before the clerk limit is considered).
+  *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
+  *  its note is empty.
+  *  A claim whose due is above the sheet's review threshold in force on its date goes to REVIEW when
+@@ -135,6 +135,13 @@ public class ApplyClaimStatus {
+             if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
+                 throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof");
+             }
++            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
++                for (String kind : settings.proofKinds(claim.getSheetId())) {
++                    if (claim.proofsOf(kind) == 0) {
++                        throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof of each kind: " + kind);
++                    }
++                }
++            }
+             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
+                     && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 6688ef89..de20d7f8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -22,6 +22,7 @@ public class Claim {
+     private LocalDate deferredUntil;
+     private boolean deferred;
+     private int proofs;
++    private int proofPhotos;
+     private String splitFrom;
+     private String lockedBy;
+     private boolean lateEntry;
+@@ -104,6 +105,13 @@ public class Claim {
+      *  date cannot be settled or approved while it has none. */
+     public int getProofs() { return proofs; }
+     public void setProofs(int proofs) { this.proofs = proofs; }
++    /** How many of the claim's proofs are photos; the rest are receipts. */
++    public int getProofPhotos() { return proofPhotos; }
++    public void setProofPhotos(int proofPhotos) { this.proofPhotos = proofPhotos; }
++    /** How many of the claim's proofs are of this kind (receipt or photo). */
++    public int proofsOf(String kind) {
++        return ProofKind.PHOTO.equals(kind) ? proofPhotos : ProofKind.RECEIPT.equals(kind) ? proofs - proofPhotos : 0;
++    }
+     /** The number of the claim this one was split off; null when it was not split off one. */
+     public String getSplitFrom() { return splitFrom; }
+     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java b/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java
+index 909ac7a2..f9c1323b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A validated proof added to a claim: who adds it. */
+-public record ClaimProof(String user) {
++/** A validated proof added to a claim: who adds it, and the kind chosen (null when none was: a receipt). */
++public record ClaimProof(String user, String kind) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimProofRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimProofRequest.java
+index 0bc642b3..ccb8d9c4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimProofRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimProofRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** Body of adding a proof to a claim: who adds it. */
+-public record ClaimProofRequest(String user) {
++/** Body of adding a proof to a claim: who adds it, and its kind (receipt or photo; blank or left out for a receipt). */
++public record ClaimProofRequest(String user, String kind) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index dd1c1fc2..f3e557ec 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -10,10 +10,10 @@ import java.util.List;
+  *  and the figure it binds it to (two decimals; null when unbound or bound to n/a), and the number
+  *  of the claim a correction corrects (null when it is not a correction), and whether its live
+  *  figures round half up (else half to even), by the sheet's policy date, and the due-by fixed when it was added (yyyy-mm-dd), and its status log, oldest first (see {@link ClaimLog}),
+- *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count, and the number of the claim it was split off (null when it was not), and the user whose open editor locks it (null when none), and whether it was added while its period was soft-closed, and the last day it was reminded (yyyy-mm-dd; null when it never was), and whether its late charge is waived, and its external reference (null when none), and its tags (sorted, empty when none) and every tag it has ever carried, and the reason it was voided with (null when none), and its comments, oldest first (see {@link ClaimComments}), and its lines, in the order added (see {@link ClaimLines}), and the number of the bulk settle batch that settled it (null when none), and the sequence it was added in (see {@link Claim#seq}). */
++ *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count and how many of them are receipts and photos, and the number of the claim it was split off (null when it was not), and the user whose open editor locks it (null when none), and whether it was added while its period was soft-closed, and the last day it was reminded (yyyy-mm-dd; null when it never was), and whether its late charge is waived, and its external reference (null when none), and its tags (sorted, empty when none) and every tag it has ever carried, and the reason it was voided with (null when none), and its comments, oldest first (see {@link ClaimComments}), and its lines, in the order added (see {@link ClaimLines}), and the number of the bulk settle batch that settled it (null when none), and the sequence it was added in (see {@link Claim#seq}). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note,
+         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects, boolean halfUp, String dueBy, List<String> log,
+-        boolean deferred, String deferredUntil, int proofs, String splitFrom, String lockedBy,
++        boolean deferred, String deferredUntil, int proofs, int proofReceipts, int proofPhotos, String splitFrom, String lockedBy,
+         boolean lateEntry, String remindedOn, boolean waived, String ref, List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, List<String> lines, Integer batch, Long seq) {
+     public static ClaimResponse from(Claim claim, Figures figures, List<String> log, List<String> comments, List<String> lines) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
+@@ -22,7 +22,7 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.isStated(), claim.getStatedDue() != null ? claim.getStatedDue().toPlainString() : null,
+                 claim.getCorrects(), figures.rounding(claim) == RoundingMode.HALF_UP,
+                 claim.getDueBy().toString(), log, claim.isDeferred(),
+-                claim.getDeferredUntil() != null ? claim.getDeferredUntil().toString() : null, claim.getProofs(), claim.getSplitFrom(), claim.getLockedBy(),
++                claim.getDeferredUntil() != null ? claim.getDeferredUntil().toString() : null, claim.getProofs(), claim.proofsOf(ProofKind.RECEIPT), claim.getProofPhotos(), claim.getSplitFrom(), claim.getLockedBy(),
+                 claim.isLateEntry(), claim.getRemindedOn() != null ? claim.getRemindedOn().toString() : null, claim.isWaived(), claim.getRef(),
+                 split(claim.getTags()), split(claim.getTagsUsed()), claim.getVoidReason(), comments, lines, claim.getBatch(), claim.seq());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 141c4a46..259cc7ff 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Claims {
+ 
+-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
++    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
+             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
+ 
+     private final JdbcTemplate jdbc;
+@@ -121,10 +121,10 @@ public class Claims {
+     /** Insert a new claim (assigning its id) or update an existing one. */
+     public void save(Claim claim) {
+         if (claim.getId() != null) {
+-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, locked_by = ?, ref = ?, tags = ?, tags_used = ?, void_reason = ?, edited_by = ?, batch = ? WHERE id = ?",
++            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, proof_photos = ?, locked_by = ?, ref = ?, tags = ?, tags_used = ?, void_reason = ?, edited_by = ?, batch = ? WHERE id = ?",
+                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
+                     claim.getNumber(), claim.getDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
+-                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getLockedBy(), claim.getRef(), claim.getTags(), claim.getTagsUsed(), claim.getVoidReason(), claim.getEditedBy(), claim.getBatch(), claim.getId());
++                    claim.getDeferredUntil() != null ? Date.valueOf(claim.getDeferredUntil()) : null, claim.getProofs(), claim.getProofPhotos(), claim.getLockedBy(), claim.getRef(), claim.getTags(), claim.getTagsUsed(), claim.getVoidReason(), claim.getEditedBy(), claim.getBatch(), claim.getId());
+             return;
+         }
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+@@ -163,6 +163,7 @@ public class Claims {
+         claim.setCorrects(rs.getString("corrects"));
+         claim.setDueBy(rs.getDate("due_by").toLocalDate());
+         claim.setProofs(rs.getInt("proofs"));
++        claim.setProofPhotos(rs.getInt("proof_photos"));
+         claim.setSplitFrom(rs.getString("split_from"));
+         claim.setLockedBy(rs.getString("locked_by"));
+         claim.setLateEntry(rs.getBoolean("late_entry"));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ProofKind.java b/src/main/java/net/officefloor/hq/app/claim/ProofKind.java
+new file mode 100644
+index 00000000..7f4ee3e1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ProofKind.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** The kinds a proof can be: a receipt (the default when none is chosen) or a photo. */
++public final class ProofKind {
++    public static final String RECEIPT = "receipt", PHOTO = "photo";
++
++    /** Every kind, in the order the screen offers them. */
++    public static final List<String> ALL = List.of(RECEIPT, PHOTO);
++
++    private ProofKind() {
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimProofAdded.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimProofAdded.java
+index c2cb490a..4c543e42 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimProofAdded.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimProofAdded.java
+@@ -12,6 +12,6 @@ public class RecordClaimProofAdded {
+         audit.record("CLAIM_PROOF_ADDED sheet=" + claim.getSheetId() + " by=" + change.user()
+                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
+                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
+-                + " proofs=" + claim.getProofs());
++                + " proofs=" + claim.getProofs() + (change.kind() != null ? " kind=" + change.kind() : ""));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimProof.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimProof.java
+index 158da7b2..b779fb3d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimProof.java
+@@ -1,13 +1,20 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateClaimProof {
+-    public void validate(@RequestBody ClaimProofRequest request, Out<ClaimProof> body, Out<Actor> actor) {
++    public void validate(@RequestBody ClaimProofRequest request, Out<ClaimProof> body, Out<Actor> actor)
++            throws InvalidSheetRequestException {
+         String user = request == null ? null : request.user();
++        String kind = request == null || request.kind() == null ? null : request.kind().trim();
++        if (kind != null && kind.isEmpty()) kind = null;
++        if (kind != null && !ProofKind.ALL.contains(kind)) {
++            throw new InvalidSheetRequestException("A proof's kind must be receipt or photo");
++        }
+         actor.set(new Actor(user));
+-        body.set(new ClaimProof(user));
++        body.set(new ClaimProof(user, kind));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Transfers.java b/src/main/java/net/officefloor/hq/app/person/Transfers.java
+index ee56f17f..ca08262c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Transfers.java
++++ b/src/main/java/net/officefloor/hq/app/person/Transfers.java
+@@ -168,9 +168,9 @@ public class Transfers {
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
+                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
+-                    + "proofs, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
++                    + "proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
+                     + "edited_by, due_terms, batch) SELECT ?, ?, amount, claim_date, note, status, ?, due, opened_by, "
+-                    + "stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, NULL, late_entry, reminded_on, escalated, waived, "
++                    + "stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, NULL, late_entry, reminded_on, escalated, waived, "
+                     + "NULL, tags, tags_used, void_reason, edited_by, due_terms, NULL FROM claim WHERE id = ?",
+                     new String[] { "id" });
+             ps.setString(1, to);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+index 876d6b4a..582dfb44 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RecordSettingChanged.java
+@@ -91,6 +91,9 @@ public class RecordSettingChanged {
+         if (change.setsReviewSla()) {
+             audit.record(prefix + " key=review-sla value=" + (change.reviewSla() != null ? change.reviewSla() : ""));
+         }
++        if (change.setsProofKinds()) {
++            audit.record(prefix + " key=proof-kinds value=" + (change.proofKinds() != null ? change.proofKinds() : ""));
++        }
+     }
+ 
+     /** " from=<date>" when a from-date was given for the key, else nothing. */
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index bb81d439..cb94e8df 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -32,6 +32,7 @@ public class SaveSettings {
+         if (change.setsGraceDays()) settings.setGraceDays(sheetId, change.graceDays());
+         if (change.setsEscalateAfter()) settings.setEscalateAfter(sheetId, change.escalateAfter());
+         if (change.setsReviewSla()) settings.setReviewSla(sheetId, change.reviewSla());
++        if (change.setsProofKinds()) settings.setProofKinds(sheetId, change.proofKinds());
+         if (change.fiscalStartMonth() != null) settings.setFiscalStartMonth(sheetId, change.fiscalStartMonth());
+         if (change.setsAlertThreshold()) settings.setAlertThreshold(sheetId, change.alertThreshold());
+         change.perms().forEach((action, roles) -> settings.setPermission(sheetId, action, roles));
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 59678fb1..bad9bd81 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -379,6 +379,24 @@ public class Settings {
+         jdbc.update("MERGE INTO sheet_setting (sheet_id, review_sla) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
+     }
+ 
++    /** The sheet's proof kinds, in the order set: while set, a claim whose due is above its proof threshold
++     *  needs a proof of each before it can be settled or approved. Empty when unset. Not dated. */
++    public List<String> proofKinds(String sheetId) {
++        String kinds = proofKindsValue(sheetId);
++        return kinds == null ? List.of() : List.of(kinds.split(","));
++    }
++
++    /** The sheet's proof kinds as set, comma separated; null when unset. */
++    public String proofKindsValue(String sheetId) {
++        List<String> values = jdbc.query("SELECT proof_kinds FROM sheet_setting WHERE sheet_id = ?",
++                (rs, i) -> rs.getString("proof_kinds"), sheetId);
++        return values.isEmpty() ? null : values.get(0);
++    }
++
++    public void setProofKinds(String sheetId, String kinds) {
++        jdbc.update("MERGE INTO sheet_setting (sheet_id, proof_kinds) KEY (sheet_id) VALUES (?, ?)", sheetId, kinds);
++    }
++
+     /** The month of the year (1 to 12) the sheet's fiscal year starts on: 1 unless set. Not dated. */
+     public int fiscalStartMonth(String sheetId) {
+         List<Integer> values = jdbc.query("SELECT fiscal_start_month FROM sheet_setting WHERE sheet_id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+index d7223d3d..3d096303 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsChange.java
+@@ -6,6 +6,6 @@ import java.util.Map;
+ 
+ /** A validated settings change on a sheet: whether the clerk limit is set and to what (null for no
+  *  limit), the floor, the terms and the late percent, each null when it is not being set, and
+- *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off), and the terms set per grade, by grade (a null value clears the grade's own terms, so it uses the sheet's), and whether the cap is set and to what (null for no cap), and the from-date given for a dated setting, by its key (clerk-limit, floor, terms, terms-<grade>, late-pct, cap; one not in it is from the sheet's today), and whether the proof threshold is set and to what (null for none), and the permissions set, by action (roles comma separated; null for blank), and whether the grace days are set and to what (null for off), and whether the note threshold is set and to what (null for none), and whether the entry date is set and to what (null for blank: off), and the grace days set per grade, by grade (a null value clears them: none), and the proof threshold set per grade, by grade (a null value clears it, so it uses the sheet's), and whether the pot is set and to what (null for none), and whether the parent sheet is set and to what (null for none), and the fiscal year start month, null when it is not being set, and whether the alert threshold is set and to what (null for off), and whether the rounding mode is set and to what (half-up or half-even; null for none), and whether the review threshold is set and to what (null for none), and whether the escalation gap is set and to what (null for off). */
+-public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, String by, boolean setsCap, BigDecimal cap, Map<String, LocalDate> froms, boolean setsProofThreshold, BigDecimal proofThreshold, Map<String, String> perms, boolean setsGraceDays, Integer graceDays, boolean setsNoteThreshold, BigDecimal noteThreshold, boolean setsEntryDate, LocalDate entryDate, Map<String, Integer> gradeGrace, Map<String, BigDecimal> gradeProof, boolean setsPot, BigDecimal pot, boolean setsParent, String parent, Integer fiscalStartMonth, boolean setsAlertThreshold, BigDecimal alertThreshold, boolean setsRounding, String rounding, boolean setsReviewThreshold, BigDecimal reviewThreshold, boolean setsEscalateAfter, Integer escalateAfter, boolean setsReviewSla, Integer reviewSla) {
++ *  whether the policy date is set and to what (null for blank: the sheet's today), and whether the period numbering from is set and to what (null for blank: off), and the terms set per grade, by grade (a null value clears the grade's own terms, so it uses the sheet's), and whether the cap is set and to what (null for no cap), and the from-date given for a dated setting, by its key (clerk-limit, floor, terms, terms-<grade>, late-pct, cap; one not in it is from the sheet's today), and whether the proof threshold is set and to what (null for none), and the permissions set, by action (roles comma separated; null for blank), and whether the grace days are set and to what (null for off), and whether the note threshold is set and to what (null for none), and whether the entry date is set and to what (null for blank: off), and the grace days set per grade, by grade (a null value clears them: none), and the proof threshold set per grade, by grade (a null value clears it, so it uses the sheet's), and whether the pot is set and to what (null for none), and whether the parent sheet is set and to what (null for none), and the fiscal year start month, null when it is not being set, and whether the alert threshold is set and to what (null for off), and whether the rounding mode is set and to what (half-up or half-even; null for none), and whether the review threshold is set and to what (null for none), and whether the escalation gap is set and to what (null for off), and whether the proof kinds are set and to what (comma separated; null for none). */
++public record SettingsChange(String sheetId, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, String by, boolean setsCap, BigDecimal cap, Map<String, LocalDate> froms, boolean setsProofThreshold, BigDecimal proofThreshold, Map<String, String> perms, boolean setsGraceDays, Integer graceDays, boolean setsNoteThreshold, BigDecimal noteThreshold, boolean setsEntryDate, LocalDate entryDate, Map<String, Integer> gradeGrace, Map<String, BigDecimal> gradeProof, boolean setsPot, BigDecimal pot, boolean setsParent, String parent, Integer fiscalStartMonth, boolean setsAlertThreshold, BigDecimal alertThreshold, boolean setsRounding, String rounding, boolean setsReviewThreshold, BigDecimal reviewThreshold, boolean setsEscalateAfter, Integer escalateAfter, boolean setsReviewSla, Integer reviewSla, boolean setsProofKinds, String proofKinds) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index f66a255f..1d3c583f 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -4,6 +4,6 @@ import java.util.Map;
+ 
+ /** Body of a settings change: the settings being set, each left out (null) when it is not being
+  *  changed — the clerk limit (two decimals, blank for no limit), the floor (two decimals, blank for
+- *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00), the policy date (yyyy-mm-dd, blank for the sheet's today), the period numbering from (yyyy-mm-dd, blank for off), terms per grade (whole days by grade, blank for the sheet's terms) and the cap (two decimals, blank for no cap) — and who makes the change, and the from-date of a dated setting by its key (yyyy-mm-dd; left out or blank for the sheet's today), and the proof threshold (two decimals, blank for none), and the note threshold (two decimals, blank for none; dated), and the permission matrix: the roles that may take each action, by action (a comma separated list of clerk and steward, blank for the standing rule), and the grace days (whole days, blank for off; not dated), and the entry date (yyyy-mm-dd, blank for off; not dated), and the grace days per grade (whole days by grade, blank for none; dated under grace-<grade>), and the proof threshold per grade (two decimals by grade, blank for the sheet's; dated under proof-threshold-<grade>), and the pot (two decimals, blank for none; not dated), and the parent sheet (a sheet id, blank for none; not dated), and the fiscal year start month (1 to 12; not dated), and the alert threshold (two decimals, blank for off; not dated), and the rounding mode (half-up or half-even, blank for none; dated), and the review threshold (two decimals, blank for none; dated), and the escalation gap (whole days, blank for off; not dated). */
+-public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String user, String cap, Map<String, String> from, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold, String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
++ *  the default 1.00), the terms (whole days, blank for the default 14), the late percent (two decimals, blank for the default 0.00), the policy date (yyyy-mm-dd, blank for the sheet's today), the period numbering from (yyyy-mm-dd, blank for off), terms per grade (whole days by grade, blank for the sheet's terms) and the cap (two decimals, blank for no cap) — and who makes the change, and the from-date of a dated setting by its key (yyyy-mm-dd; left out or blank for the sheet's today), and the proof threshold (two decimals, blank for none), and the note threshold (two decimals, blank for none; dated), and the permission matrix: the roles that may take each action, by action (a comma separated list of clerk and steward, blank for the standing rule), and the grace days (whole days, blank for off; not dated), and the entry date (yyyy-mm-dd, blank for off; not dated), and the grace days per grade (whole days by grade, blank for none; dated under grace-<grade>), and the proof threshold per grade (two decimals by grade, blank for the sheet's; dated under proof-threshold-<grade>), and the pot (two decimals, blank for none; not dated), and the parent sheet (a sheet id, blank for none; not dated), and the fiscal year start month (1 to 12; not dated), and the alert threshold (two decimals, blank for off; not dated), and the rounding mode (half-up or half-even, blank for none; dated), and the review threshold (two decimals, blank for none; dated), and the escalation gap (whole days, blank for off; not dated), and the proof kinds (a comma separated list of receipt and photo, blank for none; not dated). */
++public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String user, String cap, Map<String, String> from, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold, String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProof, String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+index 2cf6f4db..db8bc342 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+@@ -8,10 +8,10 @@ import java.util.Map;
+ /** The sheet's settings as the screen sees them, each dated one as in force on the sheet's today:
+  *  the clerk limit with two decimals (null for no limit), the floor with two decimals, the terms in days, the late percent with two decimals, the policy date as set (yyyy-mm-dd, null when blank), the period numbering from (yyyy-mm-dd, null when off), the terms set per grade, by grade (a grade not in it uses the sheet's terms), the cap with two decimals (null for no cap), and the roles given, by user name;
+  *  and every value recorded for the dated settings, by key, oldest from-date first; and the proof threshold
+- *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off); and the grace days set per grade, by grade (a grade not in it has none); and the proof threshold set per grade with two decimals, by grade (a grade not in it uses the sheet's); and the pot with two decimals (null for none); and the parent sheet id (null for none); and the fiscal year start month (1 to 12); and the alert threshold with two decimals (null for off); and the rounding mode, half-up or half-even (null for none); and the review threshold with two decimals (null for none); and the escalation gap in days (null when off); and the review SLA in days (null for none). */
++ *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off); and the grace days set per grade, by grade (a grade not in it has none); and the proof threshold set per grade with two decimals, by grade (a grade not in it uses the sheet's); and the pot with two decimals (null for none); and the parent sheet id (null for none); and the fiscal year start month (1 to 12); and the alert threshold with two decimals (null for off); and the rounding mode, half-up or half-even (null for none); and the review threshold with two decimals (null for none); and the escalation gap in days (null when off); and the review SLA in days (null for none); and the proof kinds, comma separated (null for none). */
+ public record SettingsResponse(String clerkLimit, String floor, int terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, Integer> gradeTerms, String cap, List<RoleResponse> roles,
+         Map<String, List<Settings.DatedValue>> dated, String proofThreshold, Map<String, String> perms, Integer graceDays,
+-        List<DelegationResponse> delegations, String noteThreshold, String entryDate, Map<String, Integer> gradeGrace, Map<String, String> gradeProof, String pot, String parent, int fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, Integer escalateAfter, Integer reviewSla) {
++        List<DelegationResponse> delegations, String noteThreshold, String entryDate, Map<String, Integer> gradeGrace, Map<String, String> gradeProof, String pot, String parent, int fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, Integer escalateAfter, Integer reviewSla, String proofKinds) {
+     public static SettingsResponse of(String sheetId, LocalDate today, Settings settings) {
+         BigDecimal limit = settings.clerkLimit(sheetId);
+         LocalDate policyDate = settings.policyDate(sheetId);
+@@ -36,6 +36,6 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Strin
+                 pot != null ? pot.toPlainString() : null, settings.parent(sheetId),
+                 settings.fiscalStartMonth(sheetId), alert != null ? alert.toPlainString() : null,
+                 settings.roundingName(sheetId, today),
+-                reviewThreshold != null ? reviewThreshold.toPlainString() : null, settings.escalateAfter(sheetId), settings.reviewSla(sheetId));
++                reviewThreshold != null ? reviewThreshold.toPlainString() : null, settings.escalateAfter(sheetId), settings.reviewSla(sheetId), settings.proofKindsValue(sheetId));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index f974831b..7005d1b7 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -11,6 +11,7 @@ import java.util.Map;
+ import java.util.Set;
+ import java.util.TreeMap;
+ import java.util.regex.Pattern;
++import net.officefloor.hq.app.claim.ProofKind;
+ import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.sheet.Sheets;
+@@ -165,6 +166,21 @@ public class ValidateSettings {
+         if (sla != null && !sla.isEmpty() && !DAYS.matcher(sla).matches()) {
+             throw new InvalidSheetRequestException("The review SLA must be a whole number of days, or blank");
+         }
++        String proofKinds = null;
++        if (request != null && request.proofKinds() != null) {
++            List<String> kinds = new ArrayList<>();
++            String value = request.proofKinds().trim();
++            if (!value.isEmpty()) {
++                for (String k : value.split(",", -1)) {
++                    String kind = k.trim().toLowerCase(Locale.ROOT);
++                    if (!ProofKind.ALL.contains(kind)) {
++                        throw new InvalidSheetRequestException("The proof kinds are a comma separated list of kinds (receipt, photo), or blank");
++                    }
++                    if (!kinds.contains(kind)) kinds.add(kind);
++                }
++            }
++            proofKinds = String.join(",", kinds);
++        }
+         String fiscal = request == null || request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
+         if (fiscal != null && !MONTH.matcher(fiscal).matches()) {
+             throw new InvalidSheetRequestException("The fiscal year start month must be a month, 1 to 12");
+@@ -236,6 +252,7 @@ public class ValidateSettings {
+                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
+                 reviewThreshold != null, reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
+                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
+-                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla)));
++                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
++                proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Clones.java b/src/main/java/net/officefloor/hq/app/sheet/Clones.java
+index 251dd6c4..295adfbd 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Clones.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Clones.java
+@@ -51,9 +51,9 @@ public class Clones {
+         }
+ 
+         jdbc.update("INSERT INTO sheet_setting (sheet_id, clerk_limit, floor, terms, late_pct, policy_date, "
+-                + "period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, escalate_after) SELECT ?, clerk_limit, "
++                + "period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, escalate_after, proof_kinds) SELECT ?, clerk_limit, "
+                 + "floor, terms, late_pct, policy_date, period_numbering_from, cap, grace_days, entry_date, pot, parent_id, "
+-                + "fiscal_start_month, escalate_after "
++                + "fiscal_start_month, escalate_after, proof_kinds "
+                 + "FROM sheet_setting WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
+                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_dated WHERE sheet_id = ?", to, from);
+@@ -178,9 +178,9 @@ public class Clones {
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
+                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
+-                    + "proofs, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
++                    + "proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
+                     + "edited_by, due_terms, batch, added_seq) SELECT ?, ?, amount, claim_date, note, status, NULL, due, opened_by, "
+-                    + "FALSE, NULL, NULL, due_by, deferred_until, proofs, NULL, NULL, late_entry, reminded_on, escalated, waived, "
++                    + "FALSE, NULL, NULL, due_by, deferred_until, proofs, proof_photos, NULL, NULL, late_entry, reminded_on, escalated, waived, "
+                     + "ref, tags, tags_used, void_reason, edited_by, due_terms, batch, COALESCE(added_seq, id) FROM claim WHERE id = ?",
+                     new String[] { "id" });
+             ps.setString(1, to);
+diff --git a/src/main/resources/db/migration/V92__proof_kinds.sql b/src/main/resources/db/migration/V92__proof_kinds.sql
+new file mode 100644
+index 00000000..801c5e48
+--- /dev/null
++++ b/src/main/resources/db/migration/V92__proof_kinds.sql
+@@ -0,0 +1,15 @@
++-- How many of a claim's proofs are photos: the rest of its proofs are receipts (a proof added
++-- without a kind is a receipt).
++ALTER TABLE public.claim ADD COLUMN proof_photos INT DEFAULT 0 NOT NULL;
++ALTER TABLE asof.claim ADD COLUMN proof_photos INT DEFAULT 0 NOT NULL;
++ALTER TABLE asof_hist.claim ADD COLUMN proof_photos INT DEFAULT 0 NOT NULL;
++-- The history trigger keeps the column list it was created with: create it again to see the new one.
++DROP TRIGGER public.claim_history;
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON public.claim FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++-- The sheet's proof kinds: a comma separated list of kinds (receipt, photo); while set, a claim above
++-- the proof threshold needs a proof of each before it can be settled or approved. Null when unset. Not dated.
++ALTER TABLE public.sheet_setting ADD COLUMN proof_kinds VARCHAR(64);
++ALTER TABLE asof.sheet_setting ADD COLUMN proof_kinds VARCHAR(64);
++ALTER TABLE asof_hist.sheet_setting ADD COLUMN proof_kinds VARCHAR(64);
++DROP TRIGGER public.sheet_setting_history;
++CREATE TRIGGER sheet_setting_history AFTER INSERT, UPDATE, DELETE ON public.sheet_setting FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
