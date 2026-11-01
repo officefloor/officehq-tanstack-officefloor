@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { claimsKey } from '../claims/useClaims';
-import { peopleKey, type Person } from '../people/usePeople';
+import { claimDueCents, claimsKey, useClaims } from '../claims/useClaims';
+import { downloadCsv, useSheetRead } from '../export/csv';
+import { gradeOn, peopleKey, type Person } from '../people/usePeople';
+import { claimRateOn, showDue, useRates } from '../rates/useRates';
+import { useFloor, useLate } from '../settings/useSettings';
 import { useRowAction } from '../people/useRowAction';
 import { Col } from '../columns/useColumns';
 
@@ -16,6 +19,9 @@ import { Col } from '../columns/useColumns';
  * cancel the last statement: the claims it bound become live again, and the row shows the one
  * before it (or nothing). Each statement still standing shows as a line, in the order taken:
  * `<statement date> <due-total>`.
+ * The export button downloads the statement as a CSV file: a header line, then one line per claim
+ * the last statement binds, oldest first, with the number, date, amount, bound figure and status as
+ * the claim row shows them (the button waits for the sheet's reads, as the other exports do).
  */
 function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -46,6 +52,25 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
     cancel.reset();
   });
   const taken = person.statementCount > 0;
+  const { data: all = [] } = useClaims(sheet);
+  const { data: rates = [] } = useRates(sheet);
+  const floor = useFloor(sheet);
+  const lateBy = useLate(sheet);
+  const read = useSheetRead(sheet);
+  const exportStatement = () => {
+    const lines = [['number', 'date', 'amount', 'figure', 'status']];
+    // Claims come newest first: reversed, oldest first.
+    for (const c of all.filter((c) => c.personId === person.id && c.stated).reverse()) {
+      lines.push([
+        c.number ?? '',
+        c.date,
+        c.amount,
+        showDue(claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy)),
+        c.status,
+      ]);
+    }
+    downloadCsv(lines, `statement-${sheet}-${person.id}.csv`);
+  };
   return (
     <>
       <Col user={user} id="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
@@ -82,6 +107,9 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
             cancel.mutate();
           }}>
           Cancel statement
+        </button>
+        <button type="button" data-testid="person-export-statement" disabled={!read} onClick={exportStatement}>
+          Export statement (CSV)
         </button>
         {take.isError && (
           <span data-testid="person-error" role="alert">
