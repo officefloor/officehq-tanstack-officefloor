@@ -1,0 +1,241 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index ef92f8ea..f34e27c1 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -51,6 +51,7 @@ const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot
+ const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one due by in a closed period.';
+ const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor due by in a closed period) can be split, by a user whose role may open a claim.";
+ const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the claim's amount, with up to two decimals.";
++const CANNOT_SETTLE_PART = "Only an OPEN claim can be part-settled, when its part can be split off and settled by you: never by the user who opened or last edited it, nor while it lacks the proofs its due needs.";
+ const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
+ const LOCKED = 'Another user is editing this claim: it is locked until they save or cancel their editor.';
+ const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
+@@ -124,6 +125,10 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review',
+  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
+  * OPEN claim with the same date and note, the next number, opened by the user, which shows the
+  * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
++ * An OPEN claim can be part-settled: an amount is split off it as the split button does, and the new
++ * claim settled at once by the user as the settle button does (PENDING over the clerk limit); a split or
++ * settle that would be refused refuses the whole action. Who opened or last edited it, and its proofs,
++ * are judged on the original claim.
+  * A DRAFT claim (not one due by in a closed period) can be deleted: it shows DELETED, counts nowhere and
+  * cannot be edited, opened or voided; on the sheet's today it was deleted it can be restored to DRAFT.
+  * A claim can be commented: each comment shows on it, oldest first, as "<user> on <date>: <text>"
+@@ -189,6 +194,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
+   // The amount typed for splitting each claim, by claim id.
+   const [splitOff, setSplitOff] = useState<Record<number, string>>({});
++  // The amount typed for part-settling each claim, by claim id.
++  const [settleOff, setSettleOff] = useState<Record<number, string>>({});
+   // The comment typed for each claim, by claim id.
+   const [commentText, setCommentText] = useState<Record<number, string>>({});
+   // The line typed for each claim, by claim id.
+@@ -433,6 +440,28 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
+ 
++  // An amount split off an OPEN claim and settled at once.
++  const settlePart = useMutation({
++    mutationFn: (c: { id: number; amount: string }) =>
++      postJson<Claim>(`${base}/claims/${c.id}/settle-part`, { amount: c.amount, user }),
++    onMutate: () => setRefused(null),
++    onSuccess: (_, c) => setSettleOff((s) => ({ ...s, [c.id]: '' })),
++    onError: (e, c) =>
++      setRefused({
++        id: c.id,
++        message: !(e instanceof HttpError)
++          ? CANNOT_SETTLE_PART
++          : e.status === 400 || e.body.includes('less than')
++            ? BAD_SPLIT
++            : e.body.includes('proof threshold')
++              ? NEEDS_PROOF
++              : e.body.includes('deferred')
++                ? DEFERRED
++                : CANNOT_SETTLE_PART,
++      }),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++  });
++
+   // A DRAFT claim's amount changed in its row: the claim form's edit, with the claim's other values as they are.
+   const editAmount = useMutation({
+     mutationFn: (c: { claim: Claim; amount: string }) =>
+@@ -978,6 +1007,32 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               >
+                 Split
+               </button>{' '}
++              <input
++                data-testid="claim-settle-part-amount"
++                aria-label="Amount to settle"
++                placeholder="0.00"
++                value={settleOff[c.id] ?? ''}
++                onChange={(e) => {
++                  setSettleOff({ ...settleOff, [c.id]: e.target.value });
++                  if (refused?.id === c.id) setRefused(null);
++                }}
++              />{' '}
++              <button
++                type="button"
++                data-testid="claim-settle-part"
++                disabled={settlePart.isPending}
++                onClick={() => {
++                  const amount = (settleOff[c.id] ?? '').trim();
++                  if (!/^\d+(\.\d{1,2})?$/.test(amount)) {
++                    // Refused here, before anything is sent: the store is untouched.
++                    setRefused({ id: c.id, message: BAD_SPLIT });
++                    return;
++                  }
++                  settlePart.mutate({ id: c.id, amount });
++                }}
++              >
++                Settle part
++              </button>{' '}
+               <select
+                 data-testid="claim-reassign-to"
+                 aria-label="Reassign to"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6dca988f..46e76f20 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -48,6 +48,16 @@ public class ApplyClaimStatus {
+             Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets,
+             VoidReasons voidReasons)
+             throws ClaimStatusRefusedException, PeriodClosedException {
++        apply(change, claim, claim, numbers, people, figures, closedPeriods, settings, log, sheets, voidReasons);
++    }
++
++    /** As {@link #apply}, but with the four-eyes rules (who opened or last edited it) and the proof rule
++     *  judged on {@code judged} rather than on the claim itself (a part-settle judges them on the
++     *  claim the part was split off, as it stood before the split). */
++    void apply(ClaimStatusChange change, Claim claim, Claim judged, ClaimNumbers numbers, People people,
++            Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets,
++            VoidReasons voidReasons)
++            throws ClaimStatusRefusedException, PeriodClosedException {
+         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
+         if (!change.action().allowedFrom(claim.getStatus())) {
+             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
+@@ -99,11 +109,11 @@ public class ApplyClaimStatus {
+         if (change.action() == ClaimAction.SETTLE && claim.isDeferred()) {
+             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+         }
+-        if (change.action() == ClaimAction.SETTLE && claim.getOpenedBy() != null
+-                && claim.getOpenedBy().equals(change.user())) {
++        if (change.action() == ClaimAction.SETTLE && judged.getOpenedBy() != null
++                && judged.getOpenedBy().equals(change.user())) {
+             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
+         }
+-        if (change.action() == ClaimAction.SETTLE && change.user().equals(claim.getEditedBy())) {
++        if (change.action() == ClaimAction.SETTLE && change.user().equals(judged.getEditedBy())) {
+             throw new ClaimStatusRefusedException("The user who last edited a claim cannot settle it");
+         }
+         if (change.action() == ClaimAction.APPROVE) {
+@@ -136,13 +146,15 @@ public class ApplyClaimStatus {
+             // Figures.due: from the bound figure when a statement binds the claim (OPEN or PENDING), else live.
+             due = figures.due(claim, grade);
+             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
+-            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
+-            if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
++            String judgedGrade = people.find(judged.getSheetId(), judged.getPersonId()).gradeOn(judged.getDate());
++            BigDecimal judgedDue = judged == claim ? due : figures.due(judged, judgedGrade);
++            BigDecimal threshold = settings.proofThreshold(judged.getSheetId(), judgedGrade, judged.getDate());
++            if (threshold != null && judgedDue != null && judgedDue.compareTo(threshold) > 0 && judged.getProofs() == 0) {
+                 throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof");
+             }
+-            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+-                for (String kind : settings.proofKinds(claim.getSheetId())) {
+-                    if (claim.proofsOf(kind) == 0) {
++            if (threshold != null && judgedDue != null && judgedDue.compareTo(threshold) > 0) {
++                for (String kind : settings.proofKinds(judged.getSheetId())) {
++                    if (judged.proofsOf(kind) == 0) {
+                         throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof of each kind: " + kind);
+                     }
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaimPart.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaimPart.java
+new file mode 100644
+index 00000000..bc9cdb94
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaimPart.java
+@@ -0,0 +1,65 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.holiday.Holidays;
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Watches;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Snapshot;
++import net.officefloor.hq.app.settings.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.hq.app.voidreason.VoidReasons;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Part-settles an OPEN claim: the amount is split off it exactly as the split button does (CLAIM_SPLIT,
++ *  the new claim's CLAIM_OPENED, then the figures it moved), then the new claim is settled by the user
++ *  exactly as the settle button does (CLAIM_SETTLED, or CLAIM_PENDING over the clerk limit, then the
++ *  figures it moved). The four-eyes rules and the proof rule are judged on the original claim as it
++ *  stood before the split (the new claim's opener is the user, who may still part-settle). A split or a
++ *  settle that would be refused refuses the whole action: its own transaction is rolled back and the
++ *  held audit lines are never written. */
++public class SettleClaimPart {
++    public void settle(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") long claimId,
++            @Val ClaimSplit split, Claims claims, ClaimNumbers numbers, People people, Figures figures,
++            ClosedPeriods closedPeriods, Settings settings, Holidays holidays, ClaimLog log, Sheets sheets,
++            VoidReasons voidReasons, Watches watches, Rollup rollup, Audit audit,
++            PlatformTransactionManager transactionManager)
++            throws ClaimNotFoundException, ClaimStatusRefusedException, PeriodClosedException {
++        BufferedAudit held = new BufferedAudit(settings);
++        // In a transaction of its own, rolled back when the split or the settle is refused: nothing is kept.
++        Exception refused = new TransactionTemplate(transactionManager).execute(status -> {
++            try {
++                Claim judged = claims.find(sheetId, claimId);
++                if (judged == null) throw new ClaimNotFoundException(claimId);
++                Claim claim = claims.find(sheetId, claimId);
++                Snapshot before = rollup.snapshot(sheetId);
++                new ApplyClaimSplit().apply(split, claim, numbers, people, closedPeriods, settings, holidays);
++                new SaveClaimSplit().save(split, claim, claims);
++                new RecordClaimSplit().record(split, claim, people, log, held);
++                rollup.record(sheetId, before, split.user(), held);
++
++                Claim into = split.into();
++                ClaimStatusChange settle = new ClaimStatusChange(ClaimAction.SETTLE, split.user());
++                before = rollup.snapshot(sheetId);
++                new ApplyClaimStatus().apply(settle, into, judged, numbers, people, figures, closedPeriods, settings,
++                        log, sheets, voidReasons);
++                claims.save(into);
++                new RecordClaimStatusChanged().record(settle, into, people, log, watches, held);
++                rollup.record(sheetId, before, split.user(), held);
++                return null;
++            } catch (ClaimNotFoundException | ClaimStatusRefusedException | PeriodClosedException e) {
++                status.setRollbackOnly();
++                return e;
++            }
++        });
++        if (refused instanceof ClaimNotFoundException e) throw e;
++        if (refused instanceof ClaimStatusRefusedException e) throw e;
++        if (refused instanceof PeriodClosedException e) throw e;
++        held.flush(audit);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 00000000..aaa07974
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,13 @@
++# Part-settle an OPEN claim: split an amount off it as the split button does, then settle the new
++# claim as the settle button does. Validate before Load so a bad amount is a 400, not a 404; a split
++# or a settle that would be refused refuses the whole action (a 409) and writes nothing.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateClaimSplit
++  next: settle
++# Runs in a transaction of its own (not governed), so a refused settle rolls back the split before it;
++# audits the split, the settle and the figures each moved only once the whole action went through.
++settle:
++  class: net.officefloor.hq.app.claim.SettleClaimPart
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimSplit
