@@ -9,19 +9,20 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { poolMembersPath, poolsKey, poolsPath, usePools, type Pool } from './pools';
 
 // One pool's row: its members with their shares and cuts of the pot, its total share and whether it is balanced, and a form that adds
-// a member chosen from the sheet's people.
-function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Pool }) {
+// a member chosen from the sheet's people or its other pools (pool:<name>).
+function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; pool: Pool; pools: Pool[] }) {
   const queryClient = useQueryClient();
   const { data: people = [] } = usePeople(sheet);
-  const [person, setPerson] = useState('');
+  // A person's id, or pool:<name> for another pool.
+  const [member, setMember] = useState('');
   const [share, setShare] = useState('');
 
   const add = useMutation({
-    mutationFn: (body: { pool: string; person: number | null; share: string }) =>
+    mutationFn: (body: { pool: string; person: number | null; memberPool: string | null; share: string }) =>
       postJson<Pool[]>(byUser(poolMembersPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(poolsKey(sheet), updated);
-      setPerson('');
+      setMember('');
       setShare('');
     },
   });
@@ -29,8 +30,11 @@ function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Poo
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    // The server refuses a person already in the pool or a bad share.
-    send({ pool: pool.name, person: person === '' ? null : Number(person), share });
+    // The server refuses a person already in the pool, a bad share, or a pool already in one, that would contain
+    // itself, or would make a chain more than three deep.
+    const memberPool = member.startsWith('pool:') ? member.slice('pool:'.length) : null;
+    const person = memberPool !== null || member === '' ? null : Number(member);
+    send({ pool: pool.name, person, memberPool, share });
   };
 
   return (
@@ -39,7 +43,10 @@ function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Poo
       balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
-          <li key={m.person} data-testid={`pool-member-${pool.name}-${m.person}`}>
+          <li
+            key={m.memberPool !== null ? `pool:${m.memberPool}` : m.person}
+            data-testid={`pool-member-${pool.name}-${m.memberPool !== null ? `pool-${m.memberPool}` : m.person}`}
+          >
             {m.name} <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}, cut{' '}
             <span data-testid="pool-cut">{m.cut}</span>
           </li>
@@ -48,16 +55,21 @@ function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Poo
       <form onSubmit={submit}>
         <select
           data-testid="pool-member-select"
-          value={person}
+          value={member}
           onChange={(e) => {
-            setPerson(e.target.value);
+            setMember(e.target.value);
             add.reset();
           }}
         >
-          <option value="">Choose a person</option>
+          <option value="">Choose a member</option>
           {people.map((p) => (
             <option key={p.id} value={String(p.id)}>
               {p.name}
+            </option>
+          ))}
+          {pools.map((p) => (
+            <option key={`pool:${p.name}`} value={`pool:${p.name}`}>
+              {`pool:${p.name}`}
             </option>
           ))}
         </select>{' '}
@@ -77,7 +89,9 @@ function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Poo
         </button>
         {add.isError && (
           <span data-testid="pool-error" role="alert">
-            {' '}A member must not already be in the pool, and a share has two decimals, above 0.00 and at most 100.00.
+            {' '}A member must not already be in the pool, and a share has two decimals, above 0.00 and at most
+            100.00. A pool may be in at most one pool, never contain itself, and a chain of pools is at most three
+            deep.
           </span>
         )}
       </form>
@@ -129,7 +143,7 @@ function Pools({ sheet, user }: { sheet: string; user: string }) {
       </form>
       <ul>
         {pools.map((p) => (
-          <PoolRow key={p.name} sheet={sheet} user={user} pool={p} />
+          <PoolRow key={p.name} sheet={sheet} user={user} pool={p} pools={pools} />
         ))}
       </ul>
     </section>

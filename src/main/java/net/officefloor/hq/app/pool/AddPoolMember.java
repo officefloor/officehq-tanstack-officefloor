@@ -10,12 +10,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Adds a person to a pool with a share percent (at most two decimals, above 0.00 and at most 100.00); refused for an
- * unknown pool or person, a person already in the pool, or a bad share.
+ * Adds a member to a pool, a person or another pool, with a share percent (at most two decimals, above 0.00 and at
+ * most 100.00); refused for an unknown pool or person, a person already in the pool, or a bad share. A pool member is
+ * also refused when it is already a member of a pool, when the pool would contain itself through any chain, or when
+ * the chain of pools would be more than three deep.
  */
 public class AddPoolMember {
 
     private static final Pattern SHARE = Pattern.compile("\\d{1,3}(\\.\\d{1,2})?");
+
+    private static final int MAX_DEPTH = 3;
 
     private static final BigDecimal FULL = new BigDecimal("100.00");
 
@@ -25,9 +29,10 @@ public class AddPoolMember {
         if (request == null || request.pool() == null || !pools.has(sheet, request.pool())) {
             throw new InvalidPoolException("No such pool");
         }
-        Person person = request.person() == null ? null : people.find(sheet, request.person());
-        if (person == null) {
-            throw new InvalidPoolException("Choose a person");
+        String sub = request.memberPool() == null ? null : request.memberPool().trim();
+        Person person = sub != null || request.person() == null ? null : people.find(sheet, request.person());
+        if (sub != null ? !pools.has(sheet, sub) : person == null) {
+            throw new InvalidPoolException("Choose a person or a pool");
         }
         String raw = request.share() == null ? "" : request.share().trim();
         if (!SHARE.matcher(raw).matches()) {
@@ -37,11 +42,44 @@ public class AddPoolMember {
         if (share.signum() <= 0 || share.compareTo(FULL) > 0) {
             throw new InvalidPoolException("A share must be more than 0.00 and at most 100.00");
         }
+        if (sub != null) {
+            checkSubPool(sheet, request.pool(), sub, pools);
+            pools.addSubPool(sheet, request.pool(), sub, share);
+            audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
+                    + sub + " share=" + share.toPlainString());
+            return;
+        }
         if (pools.isMember(sheet, request.pool(), person.id())) {
             throw new InvalidPoolException(person.name() + " is already in " + request.pool());
         }
         pools.addMember(sheet, request.pool(), person.id(), share);
         audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
                 + person.name() + " share=" + share.toPlainString());
+    }
+
+    /** Refuses a pool already in a pool, one that would contain itself, or a chain more than three deep. */
+    private static void checkSubPool(String sheet, String pool, String sub, Pools pools) throws InvalidPoolException {
+        if (pools.parentOf(sheet, sub) != null) {
+            throw new InvalidPoolException(sub + " is already a member of a pool");
+        }
+        int above = 0;
+        for (String p = pool; p != null; p = pools.parentOf(sheet, p)) {
+            if (p.equals(sub)) {
+                throw new InvalidPoolException(pool + " cannot contain itself");
+            }
+            above++;
+        }
+        if (above + depth(sheet, sub, pools) > MAX_DEPTH) {
+            throw new InvalidPoolException("A chain of pools is at most " + MAX_DEPTH + " deep");
+        }
+    }
+
+    /** How many pools deep the chain below and including this pool goes. */
+    private static int depth(String sheet, String pool, Pools pools) {
+        int below = 0;
+        for (String sub : pools.subPools(sheet, pool)) {
+            below = Math.max(below, depth(sheet, sub, pools));
+        }
+        return below + 1;
     }
 }
