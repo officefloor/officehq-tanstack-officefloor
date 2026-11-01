@@ -1,0 +1,127 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 105e643b..9553e9be 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -21,6 +21,7 @@ import {
+   overdue,
+   overdueCents,
+   agedCents,
++  splitDueCents,
+   personDueCents,
+   uncappedPersonDueCents,
+   useClaims,
+@@ -43,6 +44,8 @@ function ClaimedHeader() {
+       <th>Due 0-30 days</th>
+       <th>Due 31-60 days</th>
+       <th>Due 61+ days</th>
++      <th>Settled total</th>
++      <th>Open total</th>
+       <th>Claims</th>
+     </>
+   );
+@@ -512,6 +515,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
+   const lateClaims = overdueCents(claims, [person], rates, late, floor);
+   const aged = agedCents(claims, person, rates, late, floor);
++  const split = splitDueCents(claims, rates, person, floor, late);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
+   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
+@@ -575,6 +579,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+       <td data-testid="person-aged-0-30">{twoDecimals(aged.upTo30)}</td>
+       <td data-testid="person-aged-31-60">{twoDecimals(aged.upTo60)}</td>
+       <td data-testid="person-aged-61">{twoDecimals(aged.over60)}</td>
++      <td data-testid="person-settled-total">{twoDecimals(split.settled)}</td>
++      <td data-testid="person-open-total">{twoDecimals(split.open)}</td>
+       <td>
+         <form onSubmit={submit}>
+           <input
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 753d4b5e..2c3e1780 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -244,6 +244,25 @@ export function uncappedPersonDueCents(
+   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
+ }
+ 
++/** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
++ *  frozen figures, corrections included) and of their OPEN and PENDING ones that count (see {@link counted}). Together
++ *  they make the due-total before the cap; a claim with no due adds nothing. */
++export function splitDueCents(
++  claims: Claim[],
++  rates: Rate[],
++  person: Person,
++  floor: DatedCents,
++  late: Late,
++): { settled: bigint; open: bigint } {
++  const split = { settled: 0n, open: 0n };
++  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
++    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
++    if (c.status === 'SETTLED') split.settled += due;
++    else if (isOpen(c)) split.open += due;
++  }
++  return split;
++}
++
+ /** A person's recent settled figure: the sum of their SETTLED claims' frozen figures dated within the 90 days up to
+  *  and including the sheet's today (today and the 89 days before it); a claim settled with no figure adds nothing. */
+ export function recentSettledCents(claims: Claim[], person: Person, today: string | undefined): bigint {
+@@ -323,8 +342,14 @@ export function trimmedSum(figures: bigint[]): bigint {
+ 
+ /** The sheet's totals: its claimed-total (everyone's counted claims added up), its due-total (everyone's due-total
+  *  added up, skipping the people whose due-total is n/a, trimmed — see trimmedSum), and how many of the counted claims
+- *  are overdue, with their total (each person's overdue-total, trimmed). */
+-export function useSheetTotals(sheet: string): { claimed: string; due: bigint; overdue: { count: number; cents: bigint } } {
++ *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total and open-total. */
++export function useSheetTotals(sheet: string): {
++  claimed: string;
++  due: bigint;
++  overdue: { count: number; cents: bigint };
++  settled: bigint;
++  open: bigint;
++} {
+   const { data: all = [] } = useClaims(sheet);
+   const { data: people = [] } = usePeople(sheet);
+   const { data: rates = [] } = useRates(sheet);
+@@ -339,5 +364,13 @@ export function useSheetTotals(sheet: string): { claimed: string; due: bigint; o
+   );
+   const overdue = overdueCents(all, people, rates, late, floor);
+   const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
+-  return { claimed: claimed(counted(all, people)), due, overdue: { count: overdue.count, cents: trimmedSum(perPerson) } };
++  // The settled-total and open-total: everyone's added up, not trimmed.
++  const split = people.map((p) => splitDueCents(all, rates, p, floor, late));
++  return {
++    claimed: claimed(counted(all, people)),
++    due,
++    overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
++    settled: split.reduce((s, x) => s + x.settled, 0n),
++    open: split.reduce((s, x) => s + x.open, 0n),
++  };
+ }
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index 24d254d6..5102ced7 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -2,9 +2,9 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { twoDecimals } from '../rates/rates';
+ import { useSheetTotals } from './claims';
+ 
+-// The sheet's claimed-total, due-total, and overdue count and total (see useSheetTotals).
++// The sheet's claimed-total, due-total, overdue count and total, and settled-total and open-total (see useSheetTotals).
+ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+-  const { claimed, due, overdue } = useSheetTotals(sheet);
++  const { claimed, due, overdue, settled, open } = useSheetTotals(sheet);
+   return (
+     <>
+       <p>
+@@ -17,6 +17,10 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+         Overdue: <strong data-testid="rollup-overdue-count">{overdue.count}</strong>, total{' '}
+         <strong data-testid="rollup-overdue-total">{twoDecimals(overdue.cents)}</strong>
+       </p>
++      <p>
++        Settled total: <strong data-testid="rollup-settled-total">{twoDecimals(settled)}</strong>, open total{' '}
++        <strong data-testid="rollup-open-total">{twoDecimals(open)}</strong>
++      </p>
+     </>
+   );
+ }
