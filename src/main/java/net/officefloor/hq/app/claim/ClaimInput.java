@@ -3,21 +3,39 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * A validated claim body: a blank date already defaulted to the sheet's entry date (none set: its today); a negative amount (a correction) with
  * the number the claim it corrects shows (on the sheet, or within its period), which is null for any other claim; and its
- * external reference, trimmed (null when blank).
+ * external reference, trimmed (null when blank); and its tags, each trimmed and lower-cased, repeats dropped, sorted.
  */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref, List<String> tags) {
 
     public ClaimInput(BigDecimal amount, LocalDate date, String note) {
         this(amount, date, note, null, null);
     }
 
-    /** The audit fields of the claim as added: {@link #auditFields} then ref=<reference> when it has one. */
+    public ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+        this(amount, date, note, corrects, ref, List.of());
+    }
+
+    /** The tags of a comma separated text: each trimmed and lower-cased, blanks and repeats dropped, sorted. */
+    public static List<String> tagsOf(String text) {
+        return text == null ? List.of()
+                : Arrays.stream(text.split(",")).map(t -> t.trim().toLowerCase(Locale.ROOT)).filter(t -> !t.isEmpty())
+                        .distinct().sorted().toList();
+    }
+
+    /**
+     * The audit fields of the claim as added: {@link #auditFields} then ref=<reference> when it has one, then
+     * tags=<comma separated, sorted> when it has any.
+     */
     public String addedAuditFields(String person) {
-        return auditFields(person) + (ref == null ? "" : " ref=" + ref);
+        return auditFields(person) + (ref == null ? "" : " ref=" + ref)
+                + (tags.isEmpty() ? "" : " tags=" + String.join(",", tags));
     }
 
     /** Refuses a reference another claim on the sheet (any but the one excluded, null for none) already has, ignoring case. */

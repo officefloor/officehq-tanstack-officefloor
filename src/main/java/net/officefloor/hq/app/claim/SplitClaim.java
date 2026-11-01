@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor due inside a
  * closed period; only a role that may open a claim may, as the new claim is theirs to open. The claim keeps the rest
- * and loses any figure a statement bound it to; the new OPEN claim has the same date and note, the next number,
+ * and loses any figure a statement bound it to; the new OPEN claim has the same date, note and tags, the next number,
  * the user as its opener, a due-by fixed now from the terms in force on its date, and the claim's number as split-from.
  */
 public class SplitClaim {
@@ -52,7 +52,7 @@ public class SplitClaim {
             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
         }
         LocalDate dueBy = person.dueBy(sheet, date, settings, holidays);
-        long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), dueBy, claim.shownNumber(), user);
+        long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), claim.tags(), dueBy, claim.shownNumber(), user);
         // Judged by the claim split alone: the new claim is a late entry when that claim is one.
         if (claim.lateEntry()) {
             claims.setLateEntry(sheet, id);

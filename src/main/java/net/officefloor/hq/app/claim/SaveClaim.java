@@ -34,7 +34,7 @@ public class SaveClaim {
         }
         // Conditional on the claim still being a draft and not locked by another user's editor, so one another user
         // opened or locked meanwhile is refused; the save releases the lock.
-        if (!claims.update(sheet, claim.id(), input, user)) {
+        if (!claims.update(sheet, claim.id(), input, claim.tagsEver(), user)) {
             throw new InvalidClaimException("The claim is no longer a DRAFT, or another user is editing it");
         }
         audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(owner.name()));

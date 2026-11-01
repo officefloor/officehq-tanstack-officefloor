@@ -73,6 +73,10 @@ export type Claim = {
   remindedOn: string | null;
   /** Its external reference, trimmed (null for none): no two claims on the sheet share one, ignoring case. */
   ref: string | null;
+  /** Its tags: each trimmed and lower-cased, repeats dropped, sorted (a claim split off another carries its tags). */
+  tags: string[];
+  /** Every tag it has ever carried, sorted: the sheet lists a due-total for each tag any of its claims ever carried. */
+  tagsEver: string[];
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
@@ -385,4 +389,28 @@ export function useSheetTotals(sheet: string): {
     settled: split.reduce((s, x) => s + x.settled, 0n),
     open: split.reduce((s, x) => s + x.open, 0n),
   };
+}
+
+/** Every tag ever carried by a claim on the sheet, sorted. */
+export function sheetTags(claims: Claim[]): string[] {
+  return [...new Set(claims.flatMap((c) => [...c.tagsEver, ...c.tags]))].sort();
+}
+
+/** The due-total of each tag ever used on the sheet (in hundredths): the dues of the claims that count (see
+ *  {@link counted}) which carry it, a claim with two tags counting in both; a claim with no due adds nothing. */
+export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[] {
+  const { data: all = [] } = useClaims(sheet);
+  const { data: people = [] } = usePeople(sheet);
+  const { data: rates = [] } = useRates(sheet);
+  const floor = useFloorCents(sheet);
+  const late = useLate(sheet);
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const totals = new Map(sheetTags(all).map((t) => [t, 0n]));
+  for (const c of counted(all, people)) {
+    const person = byId.get(c.person);
+    if (person === undefined || c.tags.length === 0) continue;
+    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    for (const t of c.tags) totals.set(t, (totals.get(t) ?? 0n) + due);
+  }
+  return [...totals].map(([tag, cents]) => ({ tag, cents }));
 }

@@ -30,8 +30,8 @@ import {
 import type { Claim, ClaimStatusChange } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 
-type Draft = { amount: string; date: string; note: string; corrects: string; ref: string };
-const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '' };
+type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
 function ClaimedHeader() {
   return (
@@ -156,7 +156,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     setEditRefused(false);
     lockMutation.reset();
   };
-  // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note, corrects and reference kept),
+  // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note, corrects, reference and tags kept),
   // so the server refuses it by the same rules (the amount's form, a claim that is not a DRAFT, one due inside a
   // closed period, one another user's editor holds, a viewer).
   const [inlineAmount, setInlineAmount] = useState('');
@@ -168,6 +168,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         note: claim.note,
         corrects: claim.corrects ?? '',
         ref: claim.ref ?? '',
+        tags: claim.tags.join(','),
       }),
     onSuccess: (updated) => {
       setInlineAmount('');
@@ -203,6 +204,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
       {claim.ref !== null && 'ref '}
       <span data-testid="claim-ref">{claim.ref ?? ''}</span>{' '}
+      {claim.tags.length > 0 && 'tags '}
+      <span data-testid="claim-tags">{claim.tags.join(', ')}</span>{' '}
       deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
       {claim.deferredUntil !== null && (claim.deferred ? 'until ' : 'last until ')}
       <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
@@ -609,7 +612,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
     setDraft(
       locked === undefined
         ? EMPTY
-        : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '', ref: locked.ref ?? '' },
+        : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '', ref: locked.ref ?? '', tags: locked.tags.join(', ') },
     );
     save.reset();
     // Only a move to another claim (or none) refills the form; the draft typed meanwhile is the user's.
@@ -682,6 +685,12 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
             placeholder="reference"
             value={draft.ref}
             onChange={(e) => change({ ref: e.target.value })}
+          />{' '}
+          <input
+            data-testid="claim-form-tags"
+            placeholder="tags, comma separated"
+            value={draft.tags}
+            onChange={(e) => change({ tags: e.target.value })}
           />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}

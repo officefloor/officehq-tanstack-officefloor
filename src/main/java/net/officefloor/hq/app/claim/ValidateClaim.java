@@ -39,7 +39,7 @@ public class ValidateClaim {
             throw new InvalidClaimException("Not a valid date: " + date);
         }
         body.set(new ClaimInput(value, on, note, value.signum() < 0 ? numbered(corrects) : null,
-                ref.isEmpty() ? null : ref));
+                ref.isEmpty() ? null : ref, ClaimInput.tagsOf(request == null ? null : request.tags())));
     }
 
     /** The number as a claim shows it: a number on the sheet without leading zeros, a period number as given. */
