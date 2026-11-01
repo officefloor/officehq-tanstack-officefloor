@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/export/csv.ts b/src/main/frontend/features/export/csv.ts
+index d84820f3..8d73c3e5 100644
+--- a/src/main/frontend/features/export/csv.ts
++++ b/src/main/frontend/features/export/csv.ts
+@@ -1,3 +1,5 @@
++import { useIsFetching } from '@tanstack/react-query';
++
+ /** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote
+  *  or a line break. */
+ export function csvValue(v: string): string {
+@@ -17,3 +19,9 @@ export function downloadCsv(lines: string[][], filename: string): void {
+   a.remove();
+   setTimeout(() => URL.revokeObjectURL(url), 0);
+ }
++
++/** Whether the sheet's reads are all in: false while any is in flight (as when the sheet is loaded,
++ *  or its as-of date set or cleared), so an export holds the figures the screen is about to show. */
++export function useSheetRead(sheet: string): boolean {
++  return useIsFetching({ queryKey: ['sheet', sheet] }) === 0;
++}
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 45e16279..4b72c05c 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -4,12 +4,13 @@ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+ import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { downloadCsv } from './csv';
++import { downloadCsv, useSheetRead } from './csv';
+ 
+ /**
+  * Downloads the people as a CSV file: a header line, then one line per person in list order,
+  * retired people included, with the grade in force on the sheet's today, the retired-from date
+- * (empty when not retired) and the due-total as the people list shows it. Lines end with a line feed.
++ * (empty when not retired) and the due-total as the people list shows it — while an as-of date is
++ * set, all as of that date (the button waits for those figures). Lines end with a line feed.
+  */
+ function ExportPeople({ sheet }: { user: string; sheet: string }) {
+   const { data: people = [] } = usePeople(sheet);
+@@ -20,6 +21,8 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
+   const late = useLate(sheet);
+   const cap = useCap(sheet);
+ 
++  const read = useSheetRead(sheet);
++
+   const download = () => {
+     const claims = live(all, heldOnBy(people, today));
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+@@ -39,7 +42,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
+ 
+   return (
+     <p>
+-      <button type="button" data-testid="export-people" onClick={download}>
++      <button type="button" data-testid="export-people" disabled={!read} onClick={download}>
+         Export people (CSV)
+       </button>
+     </p>
+diff --git a/src/main/frontend/features/export/exportClaims.slot.tsx b/src/main/frontend/features/export/exportClaims.slot.tsx
+index cc07d5c7..7ff19e54 100644
+--- a/src/main/frontend/features/export/exportClaims.slot.tsx
++++ b/src/main/frontend/features/export/exportClaims.slot.tsx
+@@ -4,13 +4,13 @@ import { gradeOn, usePeople } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { claimRateOn, showDue, useRates } from '../rates/useRates';
+ import { useFloor, useLate } from '../settings/useSettings';
+-import { downloadCsv } from './csv';
++import { downloadCsv, useSheetRead } from './csv';
+ 
+ /**
+  * Downloads the claims as a CSV file: a header line, then one line per claim, people in list order
+  * (retired people included, shown or not) and each person's claims oldest first, with the number,
+- * date, amount, due, status and period as each claim row shows them. Quoted and ended as the people
+- * export.
++ * date, amount, due, status and period as each claim row shows them — while an as-of date is set,
++ * as of that date (the button waits for those figures). Quoted and ended as the people export.
+  */
+ function ExportClaims({ sheet }: { user: string; sheet: string }) {
+   const { data: people = [] } = usePeople(sheet);
+@@ -20,6 +20,8 @@ function ExportClaims({ sheet }: { user: string; sheet: string }) {
+   const floor = useFloor(sheet);
+   const lateBy = useLate(sheet);
+ 
++  const read = useSheetRead(sheet);
++
+   const download = () => {
+     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
+     for (const p of people) {
+@@ -42,7 +44,7 @@ function ExportClaims({ sheet }: { user: string; sheet: string }) {
+ 
+   return (
+     <p>
+-      <button type="button" data-testid="export-claims" onClick={download}>
++      <button type="button" data-testid="export-claims" disabled={!read} onClick={download}>
+         Export claims (CSV)
+       </button>
+     </p>
