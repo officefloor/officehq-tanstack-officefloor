@@ -1,0 +1,128 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 8de4179b..19f50e4a 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -7,9 +7,9 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { peoplePath } from '../people/people';
+ import type { Grade, Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+-import { dueCents, rateOf, showDue, useRates } from '../rates/rates';
++import { rateOf, showDue, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+-import { claimDueCents, claimed, claimsKey, claimsPath, counted, useClaims } from './claims';
++import { claimDueCents, claimed, claimsKey, claimsPath, counted, personDueCents, useClaims } from './claims';
+ import type { Claim, ClaimStatusChange } from './claims';
+ 
+ type Draft = { amount: string; date: string; note: string };
+@@ -107,7 +107,6 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const claims = all.filter((c) => c.person === person.id);
+   const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+-  const rate = rateOf(rates, person.grade, today);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   const [editing, setEditing] = useState<number | null>(null);
+ 
+@@ -150,7 +149,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   return (
+     <>
+       <td data-testid="person-claimed">{claimed(counted(claims))}</td>
+-      <td data-testid="person-due-total">{showDue(dueCents(claimed(counted(claims)), rate))}</td>
++      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person.grade, today))}</td>
+       <td>
+         <form onSubmit={submit}>
+           <input
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 4a4d7a27..e248bbe2 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { dueCents, hundredths } from '../rates/rates';
++import type { Grade } from '../people/people';
++import { dueCents, hundredths, rateOf, type Rate } from '../rates/rates';
+ 
+ /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+@@ -53,3 +54,16 @@ export function claimDueCents(claim: Claim, pct: string | undefined): bigint | u
+   return claim.settledDue !== null ? hundredths(claim.settledDue) : dueCents(claim.amount, pct);
+ }
+ 
++
++/** A person's due-total: the sum of their counted claims' rounded figures. n/a (undefined) when their grade
++ *  has no rate on the sheet's today, unless a settled claim keeps a figure: then the figures there are. */
++export function personDueCents(
++  claims: Claim[],
++  rates: Rate[],
++  grade: Grade,
++  today: string | undefined,
++): bigint | undefined {
++  const mine = counted(claims);
++  if (rateOf(rates, grade, today) === undefined && !mine.some((c) => c.settledDue !== null)) return undefined;
++  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, grade, c.date)) ?? 0n), 0n);
++}
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index aa56f8ad..8ef1b63b 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -1,11 +1,11 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { usePeople } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+-import { dueCents, rateOf, twoDecimals, useRates } from '../rates/rates';
+-import { claimed, counted, useClaims } from './claims';
++import { twoDecimals, useRates } from '../rates/rates';
++import { claimed, counted, personDueCents, useClaims } from './claims';
+ 
+ // The sheet's claimed-total: everyone's counted (OPEN and SETTLED) claims added up; and its due-total: everyone's due-total
+-// added up, skipping the people whose grade has no rate in force on the sheet's today.
++// added up, skipping the people whose due-total is n/a.
+ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+   const { data: all = [] } = useClaims(sheet);
+   const claims = counted(all);
+@@ -13,7 +13,7 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+   const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const due = people.reduce((sum, p) => {
+-    const cents = dueCents(claimed(claims.filter((c) => c.person === p.id)), rateOf(rates, p.grade, today));
++    const cents = personDueCents(claims.filter((c) => c.person === p.id), rates, p.grade, today);
+     return cents === undefined ? sum : sum + cents;
+   }, 0n);
+   return (
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 732d9b6f..c9b69afa 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -41,12 +41,15 @@ export function twoDecimals(cents: bigint): string {
+   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+ }
+ 
+-/** An amount times a percent, divided by 100, in hundredths rounded half up (amounts and rates are
+- *  never negative, so half up is half away from zero); undefined when there is no rate. Worked in
+- *  whole numbers so no float error shows. */
++/** An amount times a percent, divided by 100, in hundredths rounded half to even (1.025 -> 1.02,
++ *  1.035 -> 1.04); undefined when there is no rate. Worked in whole numbers so no float error shows. */
+ export function dueCents(amount: string, pct: string | undefined): bigint | undefined {
+   if (pct === undefined) return undefined;
+-  return (hundredths(amount) * hundredths(pct) + 5000n) / 10000n;
++  const product = hundredths(amount) * hundredths(pct);
++  const quotient = product / 10000n;
++  const remainder = product % 10000n;
++  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) return quotient + 1n;
++  return quotient;
+ }
+ 
+ /** A due as the screen shows it: two decimals, or n/a when there is no rate. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 4d6007ea..583c532b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -43,7 +43,7 @@ public class ApplyClaimStatus {
+             String pct = Rate.on(rates.list(sheet), person.grade(), LocalDate.parse(claim.date()));
+             BigDecimal due = pct == null ? null
+                     : new BigDecimal(claim.amount()).multiply(new BigDecimal(pct)).movePointLeft(2)
+-                            .setScale(2, RoundingMode.HALF_UP);
++                            .setScale(2, RoundingMode.HALF_EVEN);
+             claims.setSettledDue(sheet, claim.id(), due);
+             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+         }
