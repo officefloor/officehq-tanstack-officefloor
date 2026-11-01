@@ -1,0 +1,119 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 3cc36090..8c535a87 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -4,9 +4,10 @@ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { useSheetTotals } from '../claims/useSheetTotals';
+-import { usePeople, type Person } from '../people/usePeople';
++import { shownName, usePeople, type Person } from '../people/usePeople';
+ import { poolsKey } from '../pools/usePools';
+ import { totalDue } from '../rates/useRates';
++import { useSheetToday } from '../sheet/useSheet';
+ import { crewDues, crewsKey, useCrews, type Crew } from './useCrews';
+ 
+ /**
+@@ -131,6 +132,8 @@ function CrewRow({
+   dueTotal: string;
+ }) {
+   const queryClient = useQueryClient();
++  const today = useSheetToday(sheet);
++  const leadPerson = people.find((p) => p.id === crew.leadId);
+   const [personId, setPersonId] = useState('');
+   const [invalid, setInvalid] = useState(false);
+ 
+@@ -155,7 +158,7 @@ function CrewRow({
+     <tr data-testid={`crew-row-${crew.name}`}>
+       <td data-testid="crew-name">{crew.name}</td>
+       <td>
+-        lead <span data-testid="crew-lead">{crew.lead ?? ''}</span>
++        lead <span data-testid="crew-lead">{crew.lead === null ? '' : leadPerson ? shownName(leadPerson, today) : crew.lead}</span>
+       </td>
+       <td>
+         due-total <span data-testid="crew-due-total">{dueTotal}</span>
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 8874d202..77abf9b0 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { useClaims } from '../claims/useClaims';
+-import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { peopleKey, shownName, usePeople, type Person } from '../people/usePeople';
+ import { hundredths, totalDue } from '../rates/useRates';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { Col } from '../columns/useColumns';
+@@ -55,7 +55,7 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
+   const shareOf = new Map(named.map((id, i) => [id, split[i]]));
+   const labels = people
+     .filter((p) => shareOf.has(p.id))
+-    .map((p) => ({ name: p.name, label: `${p.name} ${totalDue([shareOf.get(p.id)!])}` }))
++    .map((p) => ({ name: p.name, label: `${shownName(p, today)} ${totalDue([shareOf.get(p.id)!])}` }))
+     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+     .map((p) => p.label);
+   const since = backingSince(today);
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 5ab6b0bc..758ecd5d 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -8,7 +8,7 @@ import { QuickAddBar } from './QuickAddBar';
+ import { ShowRetired, useShowRetired } from './ShowRetired';
+ import { SortBy, useSortedPeople } from './SortBy';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
++import { GRADES, gradeOn, peopleKey, shownName, usePeople, type Person } from './usePeople';
+ import { Col } from '../columns/useColumns';
+ 
+ /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
+@@ -259,7 +259,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+         <tbody>
+           {people.map((p) => (
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+-              <td data-testid="person-name">{p.name}</td>
++              <td data-testid="person-name">{shownName(p, today)}</td>
+               <td data-testid="person-grade">{gradeOn(p, today)}</td>
+               <Col user={user} id="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></Col>
+               <Col user={user} id="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></Col>
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index e50742a8..6a89fed8 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -99,3 +99,8 @@ export function gradeOn(person: Person, date: string): string {
+   for (const g of person.grades) if (g.from === null || g.from <= date) found = g.grade;
+   return found;
+ }
++
++/** How the screen shows a person's name: `<name> (<grade in force on date>)`. */
++export function shownName(person: Person, date: string): string {
++  return `${person.name} (${gradeOn(person, date)})`;
++}
+diff --git a/src/main/frontend/features/search/search.slot.tsx b/src/main/frontend/features/search/search.slot.tsx
+index e69e590a..b33a25be 100644
+--- a/src/main/frontend/features/search/search.slot.tsx
++++ b/src/main/frontend/features/search/search.slot.tsx
+@@ -3,12 +3,12 @@ import { getJson } from '../../api/http';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { useClaims } from '../claims/useClaims';
+ import { useSheetTotals } from '../claims/useSheetTotals';
+-import { usePeople } from '../people/usePeople';
++import { shownName, usePeople } from '../people/usePeople';
+ import { showDue, useRates } from '../rates/useRates';
+ import { useSettings } from '../settings/useSettings';
+ import { useSheet } from '../sheet/useSheet';
+ 
+-/** One result line: `<sheet id> <name> <due-total>`. */
++/** One result line: `<sheet id> <name> (<grade>) <due-total>`. */
+ type Found = string[];
+ 
+ /** One sheet's people whose name or an alias contains `text` (case ignored), in list order, each with
+@@ -26,7 +26,7 @@ function SheetMatches({ sheet, text, report }: { sheet: string; text: string; re
+   const needle = text.toLowerCase();
+   const lines = perPerson
+     .filter(({ person }) => [person.name, ...person.aliases].some((n) => n.toLowerCase().includes(needle)))
+-    .map(({ person, due }) => `${sheet} ${person.name} ${showDue(due)}`);
++    .map(({ person, due }) => `${sheet} ${shownName(person, today.data?.today ?? '')} ${showDue(due)}`);
+   const key = lines.join('\n');
+   useEffect(() => {
+     report(sheet, ready ? key.split('\n').filter((l) => l !== '') : null);
