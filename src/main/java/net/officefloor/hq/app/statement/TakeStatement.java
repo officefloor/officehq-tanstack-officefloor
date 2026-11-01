@@ -10,6 +10,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,10 +23,12 @@ import org.springframework.web.bind.annotation.RequestParam;
  */
 public class TakeStatement {
     public void take(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
-            Claims claims, Rates rates, Statements statements, SheetClock clock, Audit audit, Rollup rollup) {
+            Claims claims, Rates rates, Statements statements, SheetClock clock, Settings settings, Audit audit,
+            Rollup rollup) {
         Rollup.Snapshot before = rollup.take(sheet);
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
+        BigDecimal floor = settings.floor(sheet);
         List<Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id()).toList();
         boolean na = Rate.on(sheetRates, person.grade(), today) == null
                 && mine.stream().noneMatch((c) -> c.counts() && c.fixed());
@@ -33,7 +36,7 @@ public class TakeStatement {
         int count = 0;
         for (Claim claim : mine) {
             if (claim.counts()) {
-                BigDecimal due = claim.due(sheetRates, person.grade());
+                BigDecimal due = claim.due(sheetRates, person.grade(), floor);
                 claims.setStated(sheet, claim.id(), true, due);
                 total = due == null ? total : total.add(due);
                 count++;

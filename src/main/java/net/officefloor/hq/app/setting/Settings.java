@@ -12,6 +12,12 @@ public class Settings {
     /** The due a clerk may settle at most (two decimals); blank: no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The least a claim's live due is (two decimals); blank: its default. */
+    public static final String FLOOR = "floor";
+
+    /** The floor a sheet starts with. */
+    public static final String DEFAULT_FLOOR = "1.00";
+
     private final JdbcTemplate jdbc;
 
     public Settings(JdbcTemplate jdbc) {
@@ -36,7 +42,13 @@ public class Settings {
         return limit.isEmpty() ? null : new BigDecimal(limit);
     }
 
+    /** The sheet's floor: the least a claim's live due is. */
+    public BigDecimal floor(String sheet) {
+        String floor = get(sheet, FLOOR);
+        return new BigDecimal(floor.isEmpty() ? DEFAULT_FLOOR : floor);
+    }
+
     public SettingsResponse all(String sheet) {
-        return new SettingsResponse(get(sheet, CLERK_LIMIT));
+        return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString());
     }
 }

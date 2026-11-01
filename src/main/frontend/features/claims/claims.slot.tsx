@@ -11,6 +11,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { rateOf, showDue, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
+import { useFloorCents } from '../settings/settings';
 import { claimDueCents, claimed, claimsKey, claimsPath, counted, personDueCents, useClaims } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
@@ -47,6 +48,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
 }) {
   const queryClient = useQueryClient();
   const { data: periods = [] } = usePeriods(sheet);
+  const floor = useFloorCents(sheet);
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
       postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
@@ -62,7 +64,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
-      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date)))}</span>{' '}
+      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor))}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
@@ -125,6 +127,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.person === person.id);
   const { data: rates = [] } = useRates(sheet);
+  const floor = useFloorCents(sheet);
   const today = useSheetToday(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
@@ -168,7 +171,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(counted(claims, [person]))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor))}</td>
       <td>
         <form onSubmit={submit}>
           <input

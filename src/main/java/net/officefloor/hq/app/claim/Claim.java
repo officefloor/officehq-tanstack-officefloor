@@ -44,22 +44,26 @@ public record Claim(long id, long person, String amount, String date, String not
         return held ? status == ClaimStatus.SETTLED : counts();
     }
 
-    /** Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
+    /**
+     * Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement (a claim
+     * settled or bound when its grade had no rate keeps none).
+     */
     public boolean fixed() {
-        return settledDue != null || stated;
+        return settledDue != null || (stated && statedDue != null);
     }
 
     /**
      * This claim's due: the one fixed when settled, else the one its statement bound, else its amount at the
-     * grade's rate in force on its date; null when there is none.
+     * grade's rate in force on its date, raised to at least the sheet's floor; null when there is none.
      */
-    public BigDecimal due(List<Rate> rates, String grade) {
+    public BigDecimal due(List<Rate> rates, String grade, BigDecimal floor) {
         if (settledDue != null) {
             return new BigDecimal(settledDue);
         }
         if (stated) {
             return statedDue == null ? null : new BigDecimal(statedDue);
         }
-        return Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)));
+        BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)));
+        return live == null ? null : live.max(floor);
     }
 }

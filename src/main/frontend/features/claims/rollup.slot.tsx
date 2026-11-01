@@ -2,6 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { twoDecimals, useRates } from '../rates/rates';
+import { useFloorCents } from '../settings/settings';
 import { claimed, counted, personDueCents, useClaims } from './claims';
 
 // The sheet's claimed-total: everyone's counted (OPEN and SETTLED, but not a held person's OPEN) claims added up; and its due-total: everyone's due-total
@@ -12,8 +13,9 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
   const claims = counted(all, people);
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
+  const floor = useFloorCents(sheet);
   const due = people.reduce((sum, p) => {
-    const cents = personDueCents(all, rates, p, today);
+    const cents = personDueCents(all, rates, p, today, floor);
     return cents === undefined ? sum : sum + cents;
   }, 0n);
   return (

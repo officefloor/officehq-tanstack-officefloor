@@ -13,6 +13,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
 
@@ -37,13 +38,15 @@ public class Rollup {
     private final Claims claims;
     private final Rates rates;
     private final SheetClock clock;
+    private final Settings settings;
     private final Audit audit;
 
-    public Rollup(People people, Claims claims, Rates rates, SheetClock clock, Audit audit) {
+    public Rollup(People people, Claims claims, Rates rates, SheetClock clock, Settings settings, Audit audit) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.clock = clock;
+        this.settings = settings;
         this.audit = audit;
     }
 
@@ -51,6 +54,7 @@ public class Rollup {
     public Snapshot take(String sheet) {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
+        BigDecimal floor = settings.floor(sheet);
         List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -61,7 +65,7 @@ public class Rollup {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             for (Claim claim : mine) {
                 claimed = claimed.add(new BigDecimal(claim.amount()));
-                BigDecimal d = claim.due(sheetRates, person.grade());
+                BigDecimal d = claim.due(sheetRates, person.grade(), floor);
                 due = d == null ? due : due.add(d);
             }
             // n/a when the grade has no rate on the sheet's today, unless a claim keeps a figure.
