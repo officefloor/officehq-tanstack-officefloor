@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 public class People {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
-            rs.getString("grade"));
+            rs.getString("grade"), rs.getLong("version"));
 
     private final JdbcTemplate jdbc;
 
@@ -22,11 +22,11 @@ public class People {
 
     /** Everyone on the sheet, in the order they were added. */
     public List<Person> list(String sheet) {
-        return jdbc.query("SELECT id, name, grade FROM person WHERE sheet = ? ORDER BY id", ROW, sheet);
+        return jdbc.query("SELECT id, name, grade, version FROM person WHERE sheet = ? ORDER BY id", ROW, sheet);
     }
 
     public Person find(String sheet, long id) {
-        List<Person> found = jdbc.query("SELECT id, name, grade FROM person WHERE sheet = ? AND id = ?", ROW,
+        List<Person> found = jdbc.query("SELECT id, name, grade, version FROM person WHERE sheet = ? AND id = ?", ROW,
                 sheet, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -49,7 +49,7 @@ public class People {
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(name);
         }
-        return new Person(keys.getKey().longValue(), name, grade);
+        return new Person(keys.getKey().longValue(), name, grade, 0);
     }
 
     private void insert(String sheet, String name, String grade, GeneratedKeyHolder keys) {
@@ -63,15 +63,21 @@ public class People {
         }, keys);
     }
 
-    public void update(String sheet, Person person) throws DuplicatePersonNameException {
+    /** Save the person over the version it carries, raising the version; refused when it has moved on. */
+    public void update(String sheet, Person person) throws DuplicatePersonNameException, StalePersonException {
         if (nameTaken(sheet, person.name(), person.id())) {
             throw new DuplicatePersonNameException(person.name());
         }
+        int updated;
         try {
-            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet = ? AND id = ?", person.name(),
-                    person.grade(), sheet, person.id());
+            updated = jdbc.update(
+                    "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet = ? AND id = ? AND version = ?",
+                    person.name(), person.grade(), sheet, person.id(), person.version());
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(person.name());
+        }
+        if (updated == 0) {
+            throw new StalePersonException(person.id());
         }
     }
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
@@ -50,10 +51,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
 
-  const act = (change: ClaimStatusChange) => {
-    status.reset();
-    status.mutate(change);
-  };
+  const act = useSubmitOnce(status);
 
   return (
     <li data-testid={`claim-row-${claim.id}`}>
@@ -123,6 +121,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
       setEditing(null);
     },
   });
+  const send = useSubmitOnce(save);
 
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
@@ -143,9 +142,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    save.reset();
     // The server refuses an amount that is not 0.00 or more with up to two decimals, or a bad date.
-    save.mutate({ id: editing, body: draft });
+    send({ id: editing, body: draft });
   };
 
   return (

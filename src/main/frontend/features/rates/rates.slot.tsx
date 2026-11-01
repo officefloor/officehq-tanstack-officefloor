@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES } from '../people/people';
@@ -29,6 +30,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
       setDraft((d) => ({ ...d, pct: '', from: '' }));
     },
   });
+  const send = useSubmitOnce(save);
 
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
@@ -37,9 +39,8 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    save.reset();
     // The server refuses a percent that is not 0.00 or more with up to two decimals, or a bad from-date.
-    save.mutate(draft);
+    send(draft);
   };
 
   return (

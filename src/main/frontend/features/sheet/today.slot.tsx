@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
@@ -22,10 +23,11 @@ function SheetToday({ sheet }: { sheet: string; user: string }) {
       });
     },
   });
+  const send = useSubmitOnce(save);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    save.mutate(draft.trim());
+    send(draft.trim());
   };
 
   return (

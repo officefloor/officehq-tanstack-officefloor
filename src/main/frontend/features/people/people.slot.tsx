@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
@@ -12,24 +13,36 @@ type Draft = { name: string; grade: Grade };
 const EMPTY: Draft = { name: '', grade: 'A' };
 
 // The sheet's people: listed in the order they were added, with one form that adds a person or,
-// once a person's editor is opened, edits them.
+// once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
+// when someone else has saved them since, the save is refused and the form shows their current values.
 function People({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: people = [] } = usePeople(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [editing, setEditing] = useState<number | null>(null);
+  const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
 
   const save = useMutation({
-    mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
-      id === null
+    mutationFn: ({ edit, body }: { edit: { id: number; version: number } | null; body: Draft }) =>
+      edit === null
         ? postJson<Person[]>(byUser(peoplePath(sheet), user), body)
-        : putJson<Person[]>(byUser(`${peoplePath(sheet)}/${id}`, user), body),
+        : putJson<Person[]>(byUser(`${peoplePath(sheet)}/${edit.id}`, user), { ...body, version: edit.version }),
     onSuccess: (updated) => {
       queryClient.setQueryData(peopleKey(sheet), updated);
       setDraft(EMPTY);
       setEditing(null);
     },
+    onError: async (error, { edit }) => {
+      if (edit === null || !(error instanceof HttpError) || error.status !== 412) return;
+      // Someone else saved the person: show what is stored now, and edit from that version.
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      const p = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((c) => c.id === edit.id);
+      if (p) {
+        setDraft({ name: p.name, grade: p.grade });
+        setEditing({ id: p.id, version: p.version });
+      }
+    },
   });
+  const send = useSubmitOnce(save);
 
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
@@ -37,7 +50,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
   };
 
   const open = (p: Person) => {
-    setEditing(p.id);
+    setEditing({ id: p.id, version: p.version });
     setDraft({ name: p.name, grade: p.grade });
     save.reset();
   };
@@ -50,9 +63,9 @@ function People({ sheet, user }: { sheet: string; user: string }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    save.reset();
-    // The server refuses an empty name or one already on the sheet; its refusal shows as the form's error.
-    save.mutate({ id: editing, body: draft });
+    // The server refuses an empty name, one already on the sheet, or a save over someone else's;
+    // its refusal shows as the form's error.
+    send({ edit: editing, body: draft });
   };
 
   return (
@@ -87,7 +100,10 @@ function People({ sheet, user }: { sheet: string; user: string }) {
         )}
         {save.isError && (
           <span data-testid="person-form-error" role="alert">
-            {' '}A person needs a name not already on the sheet and a grade of A, B or C.
+            {' '}
+            {save.error instanceof HttpError && save.error.status === 412
+              ? 'Someone else saved this person since you opened it; the form now shows their values.'
+              : 'A person needs a name not already on the sheet and a grade of A, B or C.'}
           </span>
         )}
       </form>

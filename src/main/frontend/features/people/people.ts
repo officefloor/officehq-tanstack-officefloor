@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
-export type Person = { id: number; name: string; grade: Grade };
+export type Person = { id: number; name: string; grade: Grade; version: number };
 
 export const peopleKey = (sheet: string) => ['people', sheet] as const;
 
