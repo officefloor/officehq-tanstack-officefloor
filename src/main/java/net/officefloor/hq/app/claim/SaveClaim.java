@@ -17,8 +17,15 @@ public class SaveClaim {
         if (periods.closedOn(sheet, LocalDate.parse(claim.date())) || periods.closedOn(sheet, input.date())) {
             throw new InvalidClaimException("A claim dated inside a closed period may not be edited");
         }
+        // Only a draft may be edited: an open claim is voided and a new one added instead.
+        if (claim.status() != ClaimStatus.DRAFT) {
+            throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can");
+        }
         Rollup.Snapshot before = rollup.take(sheet);
-        claims.update(sheet, claim.id(), input);
+        // Conditional on the claim still being a draft, so one another user opened meanwhile is refused.
+        if (!claims.update(sheet, claim.id(), input)) {
+            throw new InvalidClaimException("The claim is no longer a DRAFT and cannot be edited");
+        }
         String person = people.find(sheet, claim.person()).name();
         audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(person));
         rollup.record(sheet, user, before);

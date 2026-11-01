@@ -54,6 +54,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   });
 
   const act = useSubmitOnce(status);
+  // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
+  const [editRefused, setEditRefused] = useState(false);
 
   return (
     <li data-testid={`claim-row-${claim.id}`}>
@@ -74,7 +76,10 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           type="button"
           data-testid={`claim-${change}`}
           disabled={status.isPending}
-          onClick={() => act(change)}
+          onClick={() => {
+            setEditRefused(false);
+            act(change);
+          }}
         >
           {label}
         </button>
@@ -84,6 +89,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-edit"
         onClick={() => {
           status.reset();
+          if (claim.status !== 'DRAFT') {
+            setEditRefused(true);
+            return;
+          }
+          setEditRefused(false);
           onEdit();
         }}
       >
@@ -93,6 +103,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
           Cancel
         </button>
+      )}
+      {editRefused && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be edited; only a DRAFT can (void it and add a new one).
+        </span>
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
@@ -179,7 +194,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
           </button>
           {save.isError && (
             <span data-testid="claim-form-error" role="alert">
-              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date.
+              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date; only a DRAFT claim can be edited.
             </span>
           )}
         </form>

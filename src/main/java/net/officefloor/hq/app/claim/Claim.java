@@ -7,7 +7,7 @@ import net.officefloor.hq.app.rate.Rate;
 
 /**
  * A claim as the screen shows it: amount with two decimals, date (ISO yyyy-MM-dd), note, status and its number on
- * the sheet (given when opened; null while a draft and once voided), and its due fixed when settled (two decimals;
+ * the sheet (given when opened and kept once voided; null while a draft), and its due fixed when settled (two decimals;
  * null until settled, and when the grade had no rate then), and the user who opened it (null until opened), and
  * whether its person's last statement bound it, with the figure it bound (null when the grade had no rate then).
  */

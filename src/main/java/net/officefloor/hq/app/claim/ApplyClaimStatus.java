@@ -36,14 +36,12 @@ public class ApplyClaimStatus {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
-        // Opening gives the sheet's next number; voiding clears it (the line carries the number it had).
+        // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
         Claim changed = claim;
         if (requested == ClaimStatusChange.OPEN) {
             changed = claim.withNumber(claims.nextNumber(sheet));
             claims.setNumber(sheet, claim.id(), changed.number());
             claims.setOpenedBy(sheet, claim.id(), user);
-        } else if (requested == ClaimStatusChange.VOID && claim.number() != null) {
-            claims.setNumber(sheet, claim.id(), null);
         }
         Person person = people.find(sheet, claim.person());
         String fields = changed.statusAuditFields(person.name());

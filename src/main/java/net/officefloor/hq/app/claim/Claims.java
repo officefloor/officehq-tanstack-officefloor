@@ -46,9 +46,11 @@ public class Claims {
                 input.amount(), Date.valueOf(input.date()), input.note());
     }
 
-    public void update(String sheet, long id, ClaimInput input) {
-        jdbc.update("UPDATE claim SET amount = ?, claimed_on = ?, note = ? WHERE sheet = ? AND id = ?", input.amount(),
-                Date.valueOf(input.date()), input.note(), sheet, id);
+    /** Edits a draft claim: false when it is no longer a draft. */
+    public boolean update(String sheet, long id, ClaimInput input) {
+        return jdbc.update(
+                "UPDATE claim SET amount = ?, claimed_on = ?, note = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'",
+                input.amount(), Date.valueOf(input.date()), input.note(), sheet, id) == 1;
     }
 
     /** Moves the claim from one status to another: false when it no longer has the status it was read with. */

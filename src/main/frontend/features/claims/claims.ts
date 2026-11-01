@@ -10,7 +10,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type ClaimStatusChange = 'open' | 'settle' | 'void';
 
 /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
- * the sheet (given when it is opened; null while a draft and once voided), and its due fixed when it was
+ * the sheet (given when it is opened; null while a draft; kept once voided), and its due fixed when it was
  * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
  * user who opened it (null until opened; that user may not settle it), and whether its person's last statement
  * bound it, with the figure it bound (null when its grade had no rate then). */
