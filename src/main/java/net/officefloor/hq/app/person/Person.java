@@ -214,6 +214,15 @@ public class Person {
         return claim.isStated();
     }
 
+    /** Whether a claim of the person's counts toward claimed: as `counts`, but a hold (the claim's
+     *  or the person's) does not take it out — only the due figures leave the totals while held. */
+    public boolean countsClaimed(Claim claim) {
+        ClaimStatus status = claim.getStatus();
+        if (status == null || !status.counts() || claim.isDeferred()) return false;
+        if (!status.isOpen() || !retiredOut()) return true;
+        return claim.isStated();
+    }
+
     /** Refuses a claim dated after the person's retirement date, or after the from and before the
      *  to of one of their past retirements. */
     public void refuseRetired(LocalDate claimDate) throws PersonRetiredException {

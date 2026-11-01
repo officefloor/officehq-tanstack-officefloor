@@ -1,12 +1,12 @@
-import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+import { gradeOn, heldOnBy, retiredOut, usePeople } from '../people/usePeople';
 import { claimRateOn, rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
+import { claimed, claimedLive, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
 
 /**
  * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
- * (not OPEN ones dated within their person's hold, unless stated, nor those that correct another), and its due-total, everyone's due-total
+ * (held ones too, but not OPEN ones once their person retires, unless stated, nor those that correct another), and its due-total, everyone's due-total
  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
  * lowest person's figure when three or more people have one. Its settled-total and open-total are
@@ -35,7 +35,7 @@ export function useSheetTotals(sheet: string) {
   return {
     /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */
     perPerson: people.map((p, i) => ({ person: p, due: dues[i], overdue: over[i].cents })),
-    claimedTotal: claimed(claims),
+    claimedTotal: claimed(claimedLive(all, (id) => people.some((p) => p.id === id && retiredOut(p, today)))),
     dueTotal: trimmedTotal(dues),
     settledTotal: totalDue(part((c) => c.status === 'SETTLED')),
     openTotal: totalDue(part(isOpen)),

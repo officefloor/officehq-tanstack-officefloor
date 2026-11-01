@@ -49,8 +49,8 @@ public class Rollup {
     }
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures (a
-     *  person's OPEN claims dated within a hold of theirs, or any once today reaches their retirement
-     *  date, do not count, unless a statement binds them),
+     *  person's OPEN claims held or dated within a hold of theirs, or any once today reaches their retirement
+     *  date, do not count, unless a statement binds them); claimed still counts held ones,
      *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
      *  capped); the sheet's skips the n/a ones, and its due and overdue totals leave out the single
      *  highest and lowest person's figure when three or more have one. */
@@ -67,8 +67,9 @@ public class Rollup {
             BigDecimal overdue = ZERO;
             boolean any = false;
             for (Claim claim : all) {
-                if (claim.getPersonId() != person.getId() || !person.counts(claim)) continue;
-                if (claim.getCorrects() == null) claimed = claimed.add(claim.getAmount());
+                if (claim.getPersonId() != person.getId()) continue;
+                if (person.countsClaimed(claim) && claim.getCorrects() == null) claimed = claimed.add(claim.getAmount());
+                if (!person.counts(claim)) continue;
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = figures.due(claim, grade);
                 if (figure != null) {

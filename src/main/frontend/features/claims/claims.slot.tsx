@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
+import { gradeOn, heldOn, retiredOut, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate, useReviewLate } from '../settings/useSettings';
@@ -18,6 +18,7 @@ import {
   CLAIM_NUMBER,
   claimDueCents,
   claimed,
+  claimedLive,
   claimsKey,
   isOpen,
   live,
@@ -95,7 +96,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
- * PENDING ones dated within one of the person's holds, unless a statement binds them; claimed leaves out
+ * PENDING ones dated within one of the person's holds, unless a statement binds them (claimed still counts held ones); claimed leaves out
  * claims that correct another.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
@@ -112,7 +113,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
  * charge from then on, whatever its overdue state.
  * An OPEN or PENDING claim can be held, and released, with its hold toggle: it shows held yes or no, and while
- * held it counts in no live total, as a held person's claims do, unless a statement binds it.
+ * held it counts in no live due figure, as a held person's claims do, unless a statement binds it; claimed still counts it.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
  * cannot be settled or approved while it has none. A proof's kind, receipt or photo, is chosen when it is added
@@ -140,6 +141,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   // Their OPEN and PENDING claims dated within a hold, or all of them once today reaches their
   // retirement date, count toward neither claimed nor the due-total, unless a statement binds them.
   const liveClaims = live(claims, (_, date) => heldOn(person, date, today));
+  // A hold takes a claim out of the due figures only: claimed still counts it.
+  const claimedClaims = claimedLive(claims, () => retiredOut(person, today));
   const { data: everyone = [] } = usePeople(sheet);
   const others = everyone.filter((p) => p.id !== person.id);
   const { data: rates = [] } = useRates(sheet);
@@ -578,7 +581,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
 
   return (
     <>
-      <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(liveClaims)}</td></Col>
+      <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(claimedClaims)}</td></Col>
       <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td></Col>
       <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td></Col>
       <td data-testid="person-settled-total">{showDue(settledSum ?? 0n)}</td>
