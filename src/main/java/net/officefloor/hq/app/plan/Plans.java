@@ -3,11 +3,14 @@ package net.officefloor.hq.app.plan;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The plans of each sheet, in the order added, and the plan dates each has made its claim for. */
+/** The plans of each sheet, in the order added, the plan dates each has made its claim for, and its pauses. */
 @Repository
 public class Plans {
 
@@ -17,14 +20,22 @@ public class Plans {
         this.jdbc = jdbc;
     }
 
-    /** Every plan on the sheet, in the order added, with how many claims it has made so far. */
+    /** Every plan on the sheet, in the order added, with how many claims it has made so far and its pauses. */
     public List<Plan> onSheet(String sheetId) {
+        Map<Long, List<PlanPause>> pauses = new HashMap<>();
+        jdbc.query("SELECT plan_id, paused_on, resumed_on FROM plan_pause WHERE sheet_id = ? ORDER BY id",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> pauses
+                        .computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                        .add(new PlanPause(rs.getDate(2).toLocalDate(),
+                                rs.getDate(3) == null ? null : rs.getDate(3).toLocalDate())),
+                sheetId);
         return jdbc.query("SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, "
                 + "(SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) "
                 + "FROM plan p WHERE p.sheet_id = ? ORDER BY p.id",
                 (rs, i) -> new Plan(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getBigDecimal(4).setScale(2),
                         rs.getDate(5).toLocalDate(), rs.getObject(6, Integer.class), rs.getObject(7, Integer.class),
-                        rs.getDate(8).toLocalDate(), rs.getInt(9)),
+                        rs.getDate(8).toLocalDate(), rs.getInt(9),
+                        pauses.getOrDefault(rs.getLong(1), List.of())),
                 sheetId);
     }
 
@@ -49,5 +60,22 @@ public class Plans {
     public void markMade(String sheetId, long planId, LocalDate date) {
         jdbc.update("INSERT INTO plan_claim (sheet_id, plan_id, on_date) VALUES (?, ?, ?)", sheetId, planId,
                 Date.valueOf(date));
+    }
+
+    /** The plan on the sheet with that id, or null when there is none. */
+    public Plan find(String sheetId, long planId) {
+        return onSheet(sheetId).stream().filter(p -> p.id() == planId).findFirst().orElse(null);
+    }
+
+    /** Opens a pause of the plan from that day. */
+    public void pause(String sheetId, long planId, LocalDate on) {
+        jdbc.update("INSERT INTO plan_pause (sheet_id, plan_id, paused_on) VALUES (?, ?, ?)", sheetId, planId,
+                Date.valueOf(on));
+    }
+
+    /** Ends the plan's open pause on that day. */
+    public void resume(long planId, LocalDate on) {
+        jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(on),
+                planId);
     }
 }

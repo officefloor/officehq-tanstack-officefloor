@@ -12,7 +12,9 @@ import { plansKey, usePlans, type Plan } from './usePlans';
  * A person's plans: an amount, a start date (blank for the sheet's today), every N days (a whole
  * number, at least 1) or instead monthly on a day of the month (1 to 31), and an end date. A bad amount or interval, or an end before the start, is
  * refused. Each plan shows how many claims it has made so far
- * and its next five plan dates after the sheet's today, up to its end.
+ * and its next five plan dates after the sheet's today, up to its end. A plan can be paused and
+ * resumed (pausing a paused plan or resuming a running one is refused); a plan date on or after the
+ * day paused and before the day resumed is skipped, so it is left out of the next dates.
  */
 function PersonPlans({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -43,9 +45,15 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
       await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
     },
   });
+  const pause = useMutation({
+    mutationFn: ({ planId, on }: { planId: number; on: boolean }) =>
+      postJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${planId}/${on ? 'pause' : 'resume'}`, { user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheet) }),
+  });
   const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     add.reset();
+    pause.reset();
   };
 
   return (
@@ -68,7 +76,38 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
               )}{' '}
               to <span data-testid="plan-end">{p.end}</span>; made{' '}
               <span data-testid="plan-generated">{p.generated}</span>; next{' '}
-              <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
+              <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>; paused{' '}
+              <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+              <button
+                type="button"
+                data-testid="plan-pause"
+                disabled={pause.isPending}
+                onClick={() => {
+                  pause.reset();
+                  pause.mutate({ planId: p.id, on: true });
+                }}
+              >
+                Pause
+              </button>{' '}
+              <button
+                type="button"
+                data-testid="plan-resume"
+                disabled={pause.isPending}
+                onClick={() => {
+                  pause.reset();
+                  pause.mutate({ planId: p.id, on: false });
+                }}
+              >
+                Resume
+              </button>
+              {pause.isError && pause.variables?.planId === p.id && (
+                <span data-testid="plan-error" role="alert">
+                  {' '}
+                  {pause.error instanceof HttpError && pause.error.body
+                    ? pause.error.body
+                    : 'Could not pause or resume this plan (a paused plan cannot be paused, a running one cannot be resumed).'}
+                </span>
+              )}
             </li>
           ))}
       </ul>
@@ -77,6 +116,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
         onSubmit={(e) => {
           e.preventDefault();
           add.reset();
+          pause.reset();
           submitOnce(() => add.mutateAsync());
         }}
       >
