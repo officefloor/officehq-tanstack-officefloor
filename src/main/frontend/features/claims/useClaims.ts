@@ -153,16 +153,16 @@ export function claimed(claims: Claim[]): string {
 
 /** What is due on one claim, in cents: the due fixed when it was settled, or else the due its person's
  *  last statement bound it to (as shown then, late charge and floor included), or else the greater of the
- *  sheet's `floor` on the claim's date and its figure live at `pct` plus its late charge (null, n/a, when there is no rate). A correction has
+ *  sheet's `floor` on the claim's date and its figure live at `pct`, plus the late charge on that floored figure (null, n/a, when there is no rate). A correction has
  *  neither floor nor charge. */
 export function claimDueCents(claim: Claim, floor: FloorOn, pct: string | undefined, late?: Late): bigint | null {
   if (claim.due !== null) return hundredths(claim.due);
   const figure = claimFigureCents(claim, pct);
   // A bound due already holds the late charge and floor it had when the statement was taken.
   if (figure === null || claim.stated || isCorrection(claim)) return figure;
-  const due = late === undefined ? figure : figure + lateChargeCents(claim, figure, late);
   const least = hundredths(floor(claim.date));
-  return due < least ? least : due;
+  const floored = figure < least ? least : figure;
+  return late === undefined ? floored : floored + lateChargeCents(claim, floored, late);
 }
 
 /** A claim's figure, in cents: the due its person's last statement bound it to, or else live at `pct` (null, n/a, when there is no rate).

@@ -10,7 +10,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
 /** The figure a claim shows and totals: the due fixed when it was settled, else the greater of the
- *  sheet's floor in force on the claim's date and its figure plus its late charge, where its figure is
+ *  sheet's floor in force on the claim's date and its figure, plus the late charge on that, where its figure is
  *  the one its person's last statement bound it to, else live at its person's grade's rate in force on
  *  the claim's date (null, n/a, when there is no rate). A correction has neither floor nor charge. Every rounding of a claim's live figures follows
  *  the sheet's rounding mode in force on the claim's date, else the sheet's policy date: half up for a claim dated before it, half to even on or after it. */
@@ -51,14 +51,15 @@ public class Figures {
         return corrected != null ? corrected : claim.getDate();
     }
 
-    /** The claim's due as the screen shows and totals it: its figure plus its late charge while it
-     *  is overdue, raised to the sheet's floor in force on the claim's date when it is below it (a
-     *  correction has neither). A settled claim's fixed due already holds the charge and floor it had then;
+    /** The claim's due as the screen shows and totals it: its figure raised to the sheet's floor in
+     *  force on the claim's date when it is below it, plus the late charge on that floored figure while
+     *  it is overdue (a correction has neither). A settled claim's fixed due already holds the charge and floor it had then;
      *  a claim bound by a statement shows the due bound then, its late charge no longer following today. */
     public BigDecimal due(Claim claim, String grade) {
         BigDecimal figure = figure(claim, grade);
         if (figure == null || claim.getDue() != null || claim.isStated() || claim.isCorrection()) return figure;
-        return figure.add(charge(claim, grade, figure)).max(settings.floor(claim.getSheetId(), claim.getDate()));
+        BigDecimal floored = figure.max(settings.floor(claim.getSheetId(), claim.getDate()));
+        return floored.add(charge(claim, grade, floored));
     }
 
     /** The claim's figure: the fixed due, else the bound due (with the late charge and floor it had when

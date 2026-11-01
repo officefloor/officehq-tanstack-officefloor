@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
- *  with any late charges, each at least the floor (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
+ *  each raised to the floor before its late charge (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
  *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its due as shown now, late charge and floor included (one bound already keeps its bound due); every other one is unbound.
  *  Taken as of a date (on or before the sheet's today), all of it is worked out on the sheet as it
  *  stood at the end of that date (see {@link AsOf}): the claims that counted then are bound to their
