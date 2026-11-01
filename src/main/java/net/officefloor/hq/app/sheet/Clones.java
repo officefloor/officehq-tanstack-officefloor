@@ -51,9 +51,9 @@ public class Clones {
         }
 
         jdbc.update("INSERT INTO sheet_setting (sheet_id, clerk_limit, floor, terms, late_pct, policy_date, "
-                + "period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, escalate_after) SELECT ?, clerk_limit, "
+                + "period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, escalate_after, proof_kinds) SELECT ?, clerk_limit, "
                 + "floor, terms, late_pct, policy_date, period_numbering_from, cap, grace_days, entry_date, pot, parent_id, "
-                + "fiscal_start_month, escalate_after "
+                + "fiscal_start_month, escalate_after, proof_kinds "
                 + "FROM sheet_setting WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_dated WHERE sheet_id = ?", to, from);
@@ -178,9 +178,9 @@ public class Clones {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
-                    + "proofs, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
+                    + "proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
                     + "edited_by, due_terms, batch, added_seq) SELECT ?, ?, amount, claim_date, note, status, NULL, due, opened_by, "
-                    + "FALSE, NULL, NULL, due_by, deferred_until, proofs, NULL, NULL, late_entry, reminded_on, escalated, waived, "
+                    + "FALSE, NULL, NULL, due_by, deferred_until, proofs, proof_photos, NULL, NULL, late_entry, reminded_on, escalated, waived, "
                     + "ref, tags, tags_used, void_reason, edited_by, due_terms, batch, COALESCE(added_seq, id) FROM claim WHERE id = ?",
                     new String[] { "id" });
             ps.setString(1, to);

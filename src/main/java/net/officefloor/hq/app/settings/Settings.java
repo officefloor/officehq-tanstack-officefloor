@@ -379,6 +379,24 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, review_sla) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
     }
 
+    /** The sheet's proof kinds, in the order set: while set, a claim whose due is above its proof threshold
+     *  needs a proof of each before it can be settled or approved. Empty when unset. Not dated. */
+    public List<String> proofKinds(String sheetId) {
+        String kinds = proofKindsValue(sheetId);
+        return kinds == null ? List.of() : List.of(kinds.split(","));
+    }
+
+    /** The sheet's proof kinds as set, comma separated; null when unset. */
+    public String proofKindsValue(String sheetId) {
+        List<String> values = jdbc.query("SELECT proof_kinds FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getString("proof_kinds"), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setProofKinds(String sheetId, String kinds) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, proof_kinds) KEY (sheet_id) VALUES (?, ?)", sheetId, kinds);
+    }
+
     /** The month of the year (1 to 12) the sheet's fiscal year starts on: 1 unless set. Not dated. */
     public int fiscalStartMonth(String sheetId) {
         List<Integer> values = jdbc.query("SELECT fiscal_start_month FROM sheet_setting WHERE sheet_id = ?",

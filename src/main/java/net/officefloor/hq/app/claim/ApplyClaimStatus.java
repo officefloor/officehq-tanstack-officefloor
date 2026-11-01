@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
  *  statement if that bound it.
  *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
  *  one is set, else the sheet's) cannot be settled or
- *  approved while it has no proofs (refused before the clerk limit is considered).
+ *  approved while it has no proofs, nor while it lacks a proof of each of the sheet's proof kinds (refused before the clerk limit is considered).
  *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
  *  its note is empty.
  *  A claim whose due is above the sheet's review threshold in force on its date goes to REVIEW when
@@ -134,6 +134,13 @@ public class ApplyClaimStatus {
             BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
             if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
                 throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof");
+            }
+            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                for (String kind : settings.proofKinds(claim.getSheetId())) {
+                    if (claim.proofsOf(kind) == 0) {
+                        throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof of each kind: " + kind);
+                    }
+                }
             }
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0

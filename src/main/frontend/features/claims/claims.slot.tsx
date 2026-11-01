@@ -45,7 +45,7 @@ const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
 const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
-const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof.";
+const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof (one of each of the sheet's proof kinds, when set).";
 const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
 const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one due by in a closed period.';
 const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor due by in a closed period) can be split, by a user whose role may open a claim.";
@@ -112,7 +112,9 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * charge from then on, whatever its overdue state.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
- * cannot be settled or approved while it has none.
+ * cannot be settled or approved while it has none. A proof's kind, receipt or photo, is chosen when it is added
+ * (a receipt when none is); the claim shows its count of each beside the total, and while the sheet's proof kinds
+ * are set, a claim above the proof threshold needs a proof of each listed kind before it can be settled or approved.
  * One whose due is above the sheet's note threshold on its date cannot be opened, alone or in bulk,
  * while its note is empty.
  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
@@ -175,6 +177,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The new date typed for re-dating each claim, by claim id.
   const [redateTo, setRedateTo] = useState<Record<number, string>>({});
+  // The kind chosen for each claim's next proof ('' for none: a receipt).
+  const [proofKind, setProofKind] = useState<Record<number, string>>({});
   // The person chosen to reassign each claim to, by claim id.
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   // The amount typed for splitting each claim, by claim id.
@@ -326,10 +330,12 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
-  // A proof raises the claim's proofs count by one.
+  // A proof raises the claim's proofs count by one, of the kind chosen (a receipt when none is).
   const addProof = useMutation({
-    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/proof`, { user }),
+    mutationFn: (c: { id: number; kind: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/proof`, c.kind === '' ? { user } : { user, kind: c.kind }),
     onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setProofKind((k) => ({ ...k, [c.id]: '' })),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_PROVE }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
@@ -717,6 +723,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+              (receipts <span data-testid="claim-proofs-receipt">{c.proofReceipts}</span>, photos{' '}
+              <span data-testid="claim-proofs-photo">{c.proofPhotos}</span>){' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
@@ -739,11 +747,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               >
                 Remind
               </button>{' '}
+              <select
+                data-testid="claim-proof-kind"
+                aria-label="Proof kind"
+                value={proofKind[c.id] ?? ''}
+                onChange={(e) => {
+                  setProofKind({ ...proofKind, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              >
+                <option value="">(kind)</option>
+                <option value="receipt">receipt</option>
+                <option value="photo">photo</option>
+              </select>{' '}
               <button
                 type="button"
                 data-testid="claim-proof"
                 disabled={addProof.isPending}
-                onClick={() => addProof.mutate({ id: c.id })}
+                onClick={() => addProof.mutate({ id: c.id, kind: proofKind[c.id] ?? '' })}
               >
                 Add proof
               </button>{' '}

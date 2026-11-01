@@ -91,6 +91,9 @@ public class RecordSettingChanged {
         if (change.setsReviewSla()) {
             audit.record(prefix + " key=review-sla value=" + (change.reviewSla() != null ? change.reviewSla() : ""));
         }
+        if (change.setsProofKinds()) {
+            audit.record(prefix + " key=proof-kinds value=" + (change.proofKinds() != null ? change.proofKinds() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

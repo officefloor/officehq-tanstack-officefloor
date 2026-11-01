@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.claim.ProofKind;
 import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
@@ -165,6 +166,21 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && !DAYS.matcher(sla).matches()) {
             throw new InvalidSheetRequestException("The review SLA must be a whole number of days, or blank");
         }
+        String proofKinds = null;
+        if (request != null && request.proofKinds() != null) {
+            List<String> kinds = new ArrayList<>();
+            String value = request.proofKinds().trim();
+            if (!value.isEmpty()) {
+                for (String k : value.split(",", -1)) {
+                    String kind = k.trim().toLowerCase(Locale.ROOT);
+                    if (!ProofKind.ALL.contains(kind)) {
+                        throw new InvalidSheetRequestException("The proof kinds are a comma separated list of kinds (receipt, photo), or blank");
+                    }
+                    if (!kinds.contains(kind)) kinds.add(kind);
+                }
+            }
+            proofKinds = String.join(",", kinds);
+        }
         String fiscal = request == null || request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
         if (fiscal != null && !MONTH.matcher(fiscal).matches()) {
             throw new InvalidSheetRequestException("The fiscal year start month must be a month, 1 to 12");
@@ -236,6 +252,7 @@ public class ValidateSettings {
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
                 reviewThreshold != null, reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
-                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla)));
+                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
+                proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds));
     }
 }

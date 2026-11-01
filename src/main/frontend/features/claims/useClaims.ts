@@ -58,8 +58,12 @@ export type Claim = {
   /** The date (yyyy-mm-dd) the claim was last deferred until (kept once that date is reached); null when it never was. */
   deferredUntil: string | null;
   /** How many proofs the claim has: one whose due is above the sheet's proof threshold on its date
-   *  cannot be settled or approved while it has none. */
+   *  cannot be settled or approved while it has none (nor while it lacks one of each of the sheet's proof kinds). */
   proofs: number;
+  /** How many of its proofs are receipts (a proof added with no kind chosen is a receipt). */
+  proofReceipts: number;
+  /** How many of its proofs are photos. */
+  proofPhotos: number;
   /** The number of the claim this one was split off; null when it was not split off one. */
   splitFrom: string | null;
   /** The user whose open editor locks the claim for everyone else; null when no editor holds it. */

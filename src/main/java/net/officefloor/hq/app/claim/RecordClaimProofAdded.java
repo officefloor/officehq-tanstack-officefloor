@@ -12,6 +12,6 @@ public class RecordClaimProofAdded {
         audit.record("CLAIM_PROOF_ADDED sheet=" + claim.getSheetId() + " by=" + change.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
-                + " proofs=" + claim.getProofs());
+                + " proofs=" + claim.getProofs() + (change.kind() != null ? " kind=" + change.kind() : ""));
     }
 }

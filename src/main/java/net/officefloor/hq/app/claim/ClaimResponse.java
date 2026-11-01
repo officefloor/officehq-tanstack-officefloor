@@ -10,10 +10,10 @@ import java.util.List;
  *  and the figure it binds it to (two decimals; null when unbound or bound to n/a), and the number
  *  of the claim a correction corrects (null when it is not a correction), and whether its live
  *  figures round half up (else half to even), by the sheet's policy date, and the due-by fixed when it was added (yyyy-mm-dd), and its status log, oldest first (see {@link ClaimLog}),
- *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count, and the number of the claim it was split off (null when it was not), and the user whose open editor locks it (null when none), and whether it was added while its period was soft-closed, and the last day it was reminded (yyyy-mm-dd; null when it never was), and whether its late charge is waived, and its external reference (null when none), and its tags (sorted, empty when none) and every tag it has ever carried, and the reason it was voided with (null when none), and its comments, oldest first (see {@link ClaimComments}), and its lines, in the order added (see {@link ClaimLines}), and the number of the bulk settle batch that settled it (null when none), and the sequence it was added in (see {@link Claim#seq}). */
+ *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count and how many of them are receipts and photos, and the number of the claim it was split off (null when it was not), and the user whose open editor locks it (null when none), and whether it was added while its period was soft-closed, and the last day it was reminded (yyyy-mm-dd; null when it never was), and whether its late charge is waived, and its external reference (null when none), and its tags (sorted, empty when none) and every tag it has ever carried, and the reason it was voided with (null when none), and its comments, oldest first (see {@link ClaimComments}), and its lines, in the order added (see {@link ClaimLines}), and the number of the bulk settle batch that settled it (null when none), and the sequence it was added in (see {@link Claim#seq}). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects, boolean halfUp, String dueBy, List<String> log,
-        boolean deferred, String deferredUntil, int proofs, String splitFrom, String lockedBy,
+        boolean deferred, String deferredUntil, int proofs, int proofReceipts, int proofPhotos, String splitFrom, String lockedBy,
         boolean lateEntry, String remindedOn, boolean waived, String ref, List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, List<String> lines, Integer batch, Long seq) {
     public static ClaimResponse from(Claim claim, Figures figures, List<String> log, List<String> comments, List<String> lines) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
@@ -22,7 +22,7 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 claim.isStated(), claim.getStatedDue() != null ? claim.getStatedDue().toPlainString() : null,
                 claim.getCorrects(), figures.rounding(claim) == RoundingMode.HALF_UP,
                 claim.getDueBy().toString(), log, claim.isDeferred(),
-                claim.getDeferredUntil() != null ? claim.getDeferredUntil().toString() : null, claim.getProofs(), claim.getSplitFrom(), claim.getLockedBy(),
+                claim.getDeferredUntil() != null ? claim.getDeferredUntil().toString() : null, claim.getProofs(), claim.proofsOf(ProofKind.RECEIPT), claim.getProofPhotos(), claim.getSplitFrom(), claim.getLockedBy(),
                 claim.isLateEntry(), claim.getRemindedOn() != null ? claim.getRemindedOn().toString() : null, claim.isWaived(), claim.getRef(),
                 split(claim.getTags()), split(claim.getTagsUsed()), claim.getVoidReason(), comments, lines, claim.getBatch(), claim.seq());
     }

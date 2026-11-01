@@ -6,10 +6,10 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
 import { poolsKey } from '../pools/usePools';
 import { ratesKey } from '../rates/useRates';
-import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
+import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, PROOF_KINDS, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -65,7 +65,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, proofKinds: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -183,6 +183,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const reviewThreshold = edit.reviewThreshold?.trim() ?? null;
           const escalateAfter = edit.escalateAfter?.trim() ?? null;
           const reviewSla = edit.reviewSla?.trim() ?? null;
+          const proofKinds = edit.proofKinds?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
           const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
@@ -205,6 +206,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (graceDays !== null && !DAYS.test(graceDays)) ||
             (escalateAfter !== null && !DAYS.test(escalateAfter)) ||
             (reviewSla !== null && !DAYS.test(reviewSla)) ||
+            (proofKinds !== null && !PROOF_KINDS.test(proofKinds)) ||
             (entryDate !== null && !POLICY_DATE.test(entryDate)) ||
             (pot !== null && !LIMIT.test(pot)) ||
             (alertThreshold !== null && !LIMIT.test(alertThreshold)) ||
@@ -219,7 +221,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, gradeTerms, gradeGrace, gradeProof, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, gradeTerms, gradeGrace, gradeProof, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -606,6 +608,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             onFocus={() => touch('reviewSla', String(data?.reviewSla ?? ''))}
             onChange={(e) => {
               setEdit((was) => ({ ...was, reviewSla: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
+        Proof kinds:{' '}
+        <strong data-testid="setting-proof-kinds-current">
+          {saveSettings.isPending ? '' : (data?.proofKinds ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-proof-kinds"
+            placeholder="blank: none (e.g. receipt,photo)"
+            value={edit.proofKinds ?? (data?.proofKinds ?? '')}
+            onFocus={() => touch('proofKinds', data?.proofKinds ?? '')}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, proofKinds: e.target.value }));
               clearSettingsError();
             }}
           />
