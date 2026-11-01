@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.ClosedPeriods;
@@ -28,7 +29,7 @@ public class BuildClaim {
         LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), date, terms);
         closedPeriods.refuse(person.getSheetId(), dueBy);
         person.refuseRetired(date);
-        refuseUncorrected(values, person.getSheetId(), person.getId(), claims);
+        refuseUncorrected(values, person.getSheetId(), person.getId(), null, claims);
         refuseUsedRef(values.ref(), person.getSheetId(), null, claims);
         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
                 ClaimStatus.DRAFT, null, null, null);
@@ -48,11 +49,19 @@ public class BuildClaim {
         }
     }
 
-    /** Refuses a correction whose number is not a SETTLED claim of the same person. */
-    static void refuseUncorrected(ClaimValues values, String sheetId, long personId, Claims claims)
+    /** Refuses a correction whose number is not a SETTLED claim of the same person, or that exceeds what
+     *  remains of that claim after the other corrections (not `ownId`) already made against it. */
+    static void refuseUncorrected(ClaimValues values, String sheetId, long personId, Long ownId, Claims claims)
             throws InvalidSheetRequestException {
         if (values.corrects() != null && !claims.settled(sheetId, personId, values.corrects())) {
             throw new InvalidSheetRequestException("A correction must name a settled claim of the same person: " + values.corrects());
+        }
+        if (values.corrects() != null) {
+            BigDecimal remaining = claims.remaining(sheetId, personId, values.corrects(), ownId);
+            if (values.amount().negate().compareTo(remaining) > 0) {
+                throw new InvalidSheetRequestException("A correction may not exceed what remains of " + values.corrects()
+                        + ": " + remaining.toPlainString());
+            }
         }
     }
 }

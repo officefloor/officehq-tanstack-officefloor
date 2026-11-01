@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -52,6 +53,16 @@ public class Claims {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
                 Integer.class, sheetId, personId, number);
         return n != null && n > 0;
+    }
+
+    /** What remains of the person's SETTLED claim with this number: its amount less the corrections
+     *  already made against it (VOID or DELETED ones, and the claim `ownId` (null: none), left out). */
+    public BigDecimal remaining(String sheetId, long personId, String number, Long ownId) {
+        BigDecimal amount = jdbc.query("SELECT amount FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
+                (rs, i) -> rs.getBigDecimal("amount"), sheetId, personId, number).stream().findFirst().orElse(BigDecimal.ZERO);
+        BigDecimal corrections = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ? AND corrects = ? "
+                + "AND status NOT IN ('VOID', 'DELETED') AND id <> ?", BigDecimal.class, sheetId, personId, number, ownId != null ? ownId : -1L);
+        return amount.add(corrections);
     }
 
     /** Whether a claim on the sheet other than `ownId` (null: any) has this reference, without regard to case. */

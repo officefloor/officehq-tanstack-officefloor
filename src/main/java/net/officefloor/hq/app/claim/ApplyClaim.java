@@ -12,7 +12,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is due by in a closed period (its due-by, fixed when it was added, stays as it is),
  *  or types another amount than its lines add up to (a claim with lines takes its amount from them),
- *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person.
+ *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person
+ *  or exceed what remains of it.
  *  The editing user becomes the claim's last editor, who may not settle or approve it. */
 public class ApplyClaim {
     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods,
@@ -29,7 +30,7 @@ public class ApplyClaim {
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         if (person != null) person.refuseRetired(date);
-        BuildClaim.refuseUncorrected(values, claim.getSheetId(), claim.getPersonId(), claims);
+        BuildClaim.refuseUncorrected(values, claim.getSheetId(), claim.getPersonId(), claim.getId(), claims);
         BuildClaim.refuseUsedRef(values.ref(), claim.getSheetId(), claim.getId(), claims);
         claim.setAmount(values.amount());
         claim.setDate(date);
