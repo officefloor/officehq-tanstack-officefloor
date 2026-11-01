@@ -4,6 +4,7 @@ import { STATUSES, useClaims } from '../claims/useClaims';
 import { useSheetTotals } from '../claims/useSheetTotals';
 import { useGradeCodes } from '../grades/useGrades';
 import { usePeople } from '../people/usePeople';
+import { usePools } from '../pools/usePools';
 import { hundredths, totalDue, trimmedTotal, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheet } from '../sheet/useSheet';
@@ -16,6 +17,10 @@ type Figures = {
   /** Each person's due-total and overdue-total in cents (null: n/a), in the people's order. */
   dues: (string | null)[];
   overdues: (string | null)[];
+  /** Each person's settled-total, open-total and cut total in cents, in the people's order. */
+  settleds: string[];
+  opens: string[];
+  cuts: string[];
   /** Per grade, the due-totals of the people not retired on it, added up. */
   grades: Record<string, string>;
   /** Per status, how many of the sheet's claims have it. */
@@ -32,15 +37,19 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const settings = useSettings(sheet);
+  const pools = usePools(sheet);
   const today = useSheet(sheet);
   const { perPerson } = useSheetTotals(sheet);
   const byGrade = useGradeDues(sheet);
-  const ready = people.isSuccess && claims.isSuccess && rates.isSuccess && settings.isSuccess && today.isSuccess;
+  const ready = people.isSuccess && claims.isSuccess && rates.isSuccess && settings.isSuccess && pools.isSuccess && today.isSuccess;
   const key = (n: string) => n.trim().toLowerCase();
   const names = JSON.stringify((people.data ?? []).map((p) => [p.name, ...p.aliases].map(key)));
   const cents = (c: bigint | null) => (c === null ? null : c.toString());
   const dues = JSON.stringify(perPerson.map((p) => cents(p.due)));
   const overdues = JSON.stringify(perPerson.map((p) => cents(p.overdue)));
+  const settleds = JSON.stringify(perPerson.map((p) => p.settled.toString()));
+  const opens = JSON.stringify(perPerson.map((p) => p.open.toString()));
+  const cuts = JSON.stringify(perPerson.map((p) => p.cut.toString()));
   const grades = JSON.stringify(Object.fromEntries(Object.entries(byGrade).map(([g, on]) => [g, totalDue(on.map((d) => d.due))])));
   const all = claims.data ?? [];
   const statuses = JSON.stringify(Object.fromEntries(STATUSES.map((s) => [s, all.filter((c) => c.status === s).length])));
@@ -48,10 +57,19 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
     report(
       sheet,
       ready
-        ? { names: JSON.parse(names), dues: JSON.parse(dues), overdues: JSON.parse(overdues), grades: JSON.parse(grades), statuses: JSON.parse(statuses) }
+        ? {
+            names: JSON.parse(names),
+            dues: JSON.parse(dues),
+            overdues: JSON.parse(overdues),
+            settleds: JSON.parse(settleds),
+            opens: JSON.parse(opens),
+            cuts: JSON.parse(cuts),
+            grades: JSON.parse(grades),
+            statuses: JSON.parse(statuses),
+          }
         : null,
     );
-  }, [sheet, ready, names, dues, overdues, grades, statuses, report]);
+  }, [sheet, ready, names, dues, overdues, settleds, opens, cuts, grades, statuses, report]);
   useEffect(() => () => report(sheet, null), [sheet, report]);
   return null;
 }
@@ -76,8 +94,8 @@ const toCents = (c: string | null) => (c === null ? null : BigInt(c));
 
 /**
  * The consolidated figures over the sheet and all its descendants (see useDescendants): how many
- * people (counting once those whose names or aliases match, as names are compared), and the due-total
- * and overdue-total over every person of the tree, leaving out the single highest and lowest person's
+ * people (counting once those whose names or aliases match, as names are compared), and the due-total,
+ * overdue-total, settled-total, open-total and cut total over every person of the tree, leaving out the single highest and lowest person's
  * figure over the whole tree when three or more have one; per grade of any sheet of the tree,
  * each sheet's due-totals of the people not retired on it (as its summary shows them), added up; and
  * per status, how many claims have it over the tree. While the
@@ -107,6 +125,11 @@ function Consolidated({ sheet }: { user: string; sheet: string }) {
         Consolidated: people <strong data-testid="consolidated-people-count">{ready ? distinctPeople(loaded.flatMap((f) => f.names)) : ''}</strong>
         , due <strong data-testid="consolidated-due-total">{ready ? trimmedTotal(loaded.flatMap((f) => f.dues.map(toCents))) : ''}</strong>
         , overdue <strong data-testid="consolidated-overdue-total">{ready ? trimmedTotal(loaded.flatMap((f) => f.overdues.map(toCents))) : ''}</strong>
+      </p>
+      <p>
+        Consolidated settled <strong data-testid="consolidated-settled-total">{ready ? trimmedTotal(loaded.flatMap((f) => f.settleds.map(toCents))) : ''}</strong>
+        , open <strong data-testid="consolidated-open-total">{ready ? trimmedTotal(loaded.flatMap((f) => f.opens.map(toCents))) : ''}</strong>
+        , cuts <strong data-testid="consolidated-cut-total">{ready ? trimmedTotal(loaded.flatMap((f) => f.cuts.map(toCents))) : ''}</strong>
       </p>
       <p>
         Due by grade:

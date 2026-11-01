@@ -1,5 +1,5 @@
 import { gradeOn, heldOnBy, retiredOut, usePeople } from '../people/usePeople';
-import { claimRateOn, rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
+import { claimRateOn, rateOn, trimmedTotal, useRates } from '../rates/useRates';
 import { useCutTotal } from '../pools/usePools';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
@@ -11,7 +11,9 @@ import { carried, claimed, claimedLive, isOpen, live, overdueFigures, personDueC
  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
  * lowest person's figure when three or more people have one. Its settled-total and open-total are
- * everyone's due-total before the cap split into SETTLED and OPEN-or-PENDING claims, simply added up.
+ * everyone's due-total before the cap split into SETTLED and OPEN-or-PENDING claims (0 for a person
+ * with none, as their row shows it), and its cut total everyone's cut total, each added up leaving out
+ * the single highest and lowest person's figure the same way.
  * A person's figures carry their parts of the claims shared with them, and their own claims less the holders' parts. Each person's own figures too. One place, so every screen repeating a total shows the same figure.
  */
 export function useSheetTotals(sheet: string) {
@@ -40,19 +42,25 @@ export function useSheetTotals(sheet: string) {
   );
   // Everyone's due-total before the cap, split into its SETTLED and its OPEN-and-PENDING part.
   const part = (keep: (c: (typeof claims)[number]) => boolean) =>
-    people.map((p) =>
-      personDueCents(carried(claims, p.id).filter(keep), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, undefined, p.id, undefined, holderRate),
+    people.map(
+      (p) =>
+        personDueCents(carried(claims, p.id).filter(keep), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, undefined, p.id, undefined, holderRate) ?? 0n,
     );
+  const settled = part((c) => c.status === 'SETTLED');
+  const open = part(isOpen);
+  const cuts = people.map((p) => cutOf(p.id));
   const over = people.map((p) =>
     overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (c) => claimRateOn(rates, gradeOn(p, c.date), c)),
   );
   return {
-    /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */
-    perPerson: people.map((p, i) => ({ person: p, due: dues[i], overdue: over[i].cents })),
+    /** Each person's own due-total (capped), overdue-total, settled-total, open-total and cut total,
+     *  in cents, in the people's order. */
+    perPerson: people.map((p, i) => ({ person: p, due: dues[i], overdue: over[i].cents, settled: settled[i], open: open[i], cut: cuts[i] })),
     claimedTotal: claimed(claimedLive(all, (id) => people.some((p) => p.id === id && retiredOut(p, today)))),
     dueTotal: trimmedTotal(dues),
-    settledTotal: totalDue(part((c) => c.status === 'SETTLED')),
-    openTotal: totalDue(part(isOpen)),
+    settledTotal: trimmedTotal(settled),
+    openTotal: trimmedTotal(open),
+    cutTotal: trimmedTotal(cuts),
     overdueCount: over.reduce((n, o) => n + o.count, 0),
     overdueTotal: trimmedTotal(over.map((o) => o.cents)),
   };
