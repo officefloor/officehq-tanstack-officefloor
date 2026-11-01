@@ -132,7 +132,7 @@ export function fixed(claim: Claim): boolean {
 }
 
 /** What makes an overdue claim's late charge: the sheet's late percent (in hundredths) by date, the one in force on
- *  the claim's date, and its today.
+ *  each 30-day boundary after the claim's due-by, and its today.
  *  The charge is never bound by a statement: it follows the sheet's today. It also carries the sheet's policy date
  *  (yyyy-MM-dd; undefined: its today), which decides how a claim's live figures round. */
 export type Late = { pct: DatedCents; today: string | undefined; policy: string | undefined };
@@ -166,16 +166,28 @@ function daysOverdue(claim: Claim, late: Late): number {
   return Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${claim.dueBy}T00:00:00Z`)) / 86_400_000);
 }
 
-/** A claim's late charge on its figure (in hundredths): the late percent of the figure for every full 30 days it is
- *  overdue, rounded as the claim's live figures are (see {@link roundsHalfUp}); a correction has none. */
+/** The day (yyyy-MM-dd) the given number of days after a day. */
+function plusDays(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** A claim's late charge on its figure (in hundredths): for each full 30 days it is overdue, the late percent in
+ *  force on that boundary (its due-by plus 30, 60, 90 ... days) of the figure, rounded as the claim's live figures
+ *  are (see {@link roundsHalfUp}), the charges added up; a correction has none. */
 export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
   if (correction(claim)) return 0n;
-  const periods = BigInt(Math.floor(daysOverdue(claim, late) / 30));
-  const product = figure * late.pct(claim.date) * periods;
-  const quotient = product / 10000n;
-  const remainder = product % 10000n;
-  if (remainder > 5000n || (remainder === 5000n && (roundsHalfUp(claim, late) || quotient % 2n === 1n))) return quotient + 1n;
-  return quotient;
+  const periods = Math.floor(daysOverdue(claim, late) / 30);
+  let total = 0n;
+  for (let k = 1; k <= periods; k++) {
+    const pct = late.pct(plusDays(claim.dueBy, 30 * k));
+    if (pct === 0n) continue;
+    const product = figure * pct;
+    const quotient = product / 10000n;
+    const remainder = product % 10000n;
+    const up = remainder > 5000n || (remainder === 5000n && (roundsHalfUp(claim, late) || quotient % 2n === 1n));
+    total += up ? quotient + 1n : quotient;
+  }
+  return total;
 }
 
 /** A claim's due: its figure plus, while it is overdue, its late charge (settling fixes the charge in). */

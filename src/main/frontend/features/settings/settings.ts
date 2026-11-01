@@ -98,7 +98,7 @@ export function useCapCents(sheet: string): bigint | undefined {
 }
 
 /** The sheet's late percent in hundredths by date: charged on an overdue claim's figure for every full 30 days it is
- *  overdue, the one in force on the claim's date. */
+ *  overdue, the one in force on each 30-day boundary after its due-by. */
 export function useLatePctCents(sheet: string): DatedCents {
   const { data } = useSettings(sheet);
   return datedCents(data?.dated?.['late-pct'], DEFAULT_LATE_PCT);

@@ -181,7 +181,7 @@ public class Settings {
 
     /**
      * The sheet's late percent by date: charged on an overdue claim's figure for every full 30 days it is overdue, the
-     * one in force on the claim's date.
+     * one in force on each 30-day boundary after its due-by.
      */
     public Dated latePct(String sheet) {
         return figure(sheet, LATE_PCT, new BigDecimal(DEFAULT_LATE_PCT));

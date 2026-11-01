@@ -7,7 +7,7 @@ import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.setting.Dated;
 
 /**
- * What makes an overdue claim's late charge: the sheet's late percent (two decimals) by date, the one in force on the claim's date, and its today; a claim is due
+ * What makes an overdue claim's late charge: the sheet's late percent (two decimals) by date, the one in force on each 30-day boundary after the claim's due-by, and its today; a claim is due
  * by the due-by fixed when it was added. The charge is never bound by a statement: it follows the sheet's today.
  * It also carries the sheet's policy date, which decides how a claim's live figures round.
  */
@@ -27,15 +27,23 @@ public record Late(Dated pct, LocalDate today, LocalDate policy) {
     }
 
     /**
-     * The claim's late charge on its figure: the late percent in force on its date of the figure for every full 30 days it is overdue,
-     * rounded in hundredths by the claim's {@link #rounding}; 0.00 when it is not overdue, and always for a correction.
+     * The claim's late charge on its figure: for each full 30 days it is overdue, the late percent in force on that
+     * boundary (its due-by plus 30, 60, 90 ... days) of the figure, rounded in hundredths by the claim's {@link #rounding},
+     * the charges added up (a boundary at 0.00 adds nothing); 0.00 when it is not overdue, and always for a correction.
      */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
         if (figure == null || claim.correction() || !overdue(claim)) {
-            return BigDecimal.ZERO.setScale(2);
+            return total;
         }
-        long days = ChronoUnit.DAYS.between(LocalDate.parse(claim.dueBy()), today);
-        return figure.multiply(pct.on(claim.date())).multiply(BigDecimal.valueOf(days / 30)).movePointLeft(2).setScale(2,
-                rounding(claim));
+        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        long periods = ChronoUnit.DAYS.between(dueBy, today) / 30;
+        for (long k = 1; k <= periods; k++) {
+            BigDecimal boundaryPct = pct.on(dueBy.plusDays(30 * k));
+            if (boundaryPct.signum() != 0) {
+                total = total.add(figure.multiply(boundaryPct).movePointLeft(2).setScale(2, rounding(claim)));
+            }
+        }
+        return total;
     }
 }
