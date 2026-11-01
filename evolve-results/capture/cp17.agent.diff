@@ -1,0 +1,439 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index aac65c46..67657010 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -10,6 +10,7 @@ import type { Grade, Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+ import { rateOf, showDue, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
++import { periodOf, usePeriods } from '../periods/periods';
+ import { claimDueCents, claimed, claimsKey, claimsPath, counted, personDueCents, useClaims } from './claims';
+ import type { Claim, ClaimStatusChange } from './claims';
+ 
+@@ -45,6 +46,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+   onCancel: () => void;
+ }) {
+   const queryClient = useQueryClient();
++  const { data: periods = [] } = usePeriods(sheet);
+   const status = useMutation({
+     mutationFn: (change: ClaimStatusChange) =>
+       postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
+@@ -61,6 +63,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+       due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date)))}</span>{' '}
+       <span data-testid="claim-status">{claim.status}</span>{' '}
+       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
++      period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
+       {claim.number !== null && '#'}
+       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
+       {claim.openedBy !== null && 'opened by '}
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+new file mode 100644
+index 00000000..43472413
+--- /dev/null
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -0,0 +1,116 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { byUser } from '../session/session';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { usePeople } from '../people/people';
++import { rateOf, twoDecimals, useRates } from '../rates/rates';
++import { claimDueCents, counted, useClaims } from '../claims/claims';
++import { periodOf, periodsKey, periodsPath, usePeriods } from './periods';
++import type { Period } from './periods';
++
++type Draft = { name: string; from: string; to: string };
++const EMPTY: Draft = { name: '', from: '', to: '' };
++
++// The sheet's periods, each with its due-total: the due of the counted (OPEN and SETTLED) claims whose date
++// falls in it (a claim with no rate adds nothing). The form adds one; the server refuses a name already on
++// the sheet, a bad date, a to-date before the from-date, or dates that overlap another period.
++function Periods({ sheet, user }: { sheet: string; user: string }) {
++  const queryClient = useQueryClient();
++  const { data: periods = [] } = usePeriods(sheet);
++  const { data: all = [] } = useClaims(sheet);
++  const { data: people = [] } = usePeople(sheet);
++  const { data: rates = [] } = useRates(sheet);
++  const [draft, setDraft] = useState<Draft>(EMPTY);
++
++  const save = useMutation({
++    mutationFn: (body: Draft) => postJson<Period[]>(byUser(periodsPath(sheet), user), body),
++    onSuccess: (updated) => {
++      queryClient.setQueryData(periodsKey(sheet), updated);
++      setDraft(EMPTY);
++    },
++  });
++  const send = useSubmitOnce(save);
++
++  const change = (next: Partial<Draft>) => {
++    setDraft((d) => ({ ...d, ...next }));
++    save.reset();
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    send(draft);
++  };
++
++  const grades = new Map(people.map((p) => [p.id, p.grade]));
++  const totals = new Map<string, bigint>();
++  for (const c of counted(all)) {
++    const period = periodOf(periods, c.date);
++    const grade = grades.get(c.person);
++    if (period === undefined || grade === undefined) continue;
++    const due = claimDueCents(c, rateOf(rates, grade, c.date)) ?? 0n;
++    totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
++  }
++
++  return (
++    <section>
++      <h2>Periods</h2>
++      <form onSubmit={submit}>
++        <label>
++          Name{' '}
++          <input data-testid="period-form-name" value={draft.name} onChange={(e) => change({ name: e.target.value })} />
++        </label>{' '}
++        <label>
++          From{' '}
++          <input
++            data-testid="period-form-from"
++            placeholder="yyyy-mm-dd (blank: today)"
++            value={draft.from}
++            onChange={(e) => change({ from: e.target.value })}
++          />
++        </label>{' '}
++        <label>
++          To{' '}
++          <input
++            data-testid="period-form-to"
++            placeholder="yyyy-mm-dd"
++            value={draft.to}
++            onChange={(e) => change({ to: e.target.value })}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
++          Add period
++        </button>
++        {save.isError && (
++          <span data-testid="period-form-error" role="alert">
++            {' '}A period needs a name not already on the sheet and valid from and to dates, the to on or after the from, that overlap no other period.
++          </span>
++        )}
++      </form>
++      <table>
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>From</th>
++            <th>To</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name} data-testid={`period-row-${p.name}`}>
++              <td data-testid="period-name">{p.name}</td>
++              <td data-testid="period-from">{p.from}</td>
++              <td data-testid="period-to">{p.to}</td>
++              <td data-testid="period-due-total">{twoDecimals(totals.get(p.name) ?? 0n)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 25, Component: Periods });
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+new file mode 100644
+index 00000000..0f5da569
+--- /dev/null
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -0,0 +1,22 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A period on the sheet: its name (unique on the sheet) and its from and to date (yyyy-MM-dd), inclusive. */
++export type Period = { name: string; from: string; to: string };
++
++export const periodsKey = (sheet: string) => ['periods', sheet] as const;
++
++export const periodsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/periods`;
++
++/** Every period on the sheet, by from-date; no two overlap. */
++export function usePeriods(sheet: string) {
++  return useQuery({
++    queryKey: periodsKey(sheet),
++    queryFn: () => getJson<Period[]>(periodsPath(sheet)),
++  });
++}
++
++/** The period whose dates contain the date (yyyy-MM-dd), or undefined when none does. */
++export function periodOf(periods: Period[], date: string): Period | undefined {
++  return periods.find((p) => p.from <= date && date <= p.to);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/HandleInvalidPeriod.java b/src/main/java/net/officefloor/hq/app/period/HandleInvalidPeriod.java
+new file mode 100644
+index 00000000..7b40da3b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/HandleInvalidPeriod.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidPeriod {
++    public void handle(@Parameter InvalidPeriodException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java b/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java
+new file mode 100644
+index 00000000..154812b7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.period;
++
++/** The period has no name or a name already on the sheet, a bad date, a to-date before its from-date, or overlaps another period. */
++public class InvalidPeriodException extends Exception {
++    public InvalidPeriodException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+new file mode 100644
+index 00000000..5b577a50
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** A period on a sheet: its name and its from and to date (yyyy-MM-dd), inclusive. */
++public record Period(String name, String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodInput.java b/src/main/java/net/officefloor/hq/app/period/PeriodInput.java
+new file mode 100644
+index 00000000..1de67836
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++
++/** A validated period body: a name and a from and to date, inclusive, the from on or before the to. */
++public record PeriodInput(String name, LocalDate from, LocalDate to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java b/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java
+new file mode 100644
+index 00000000..5346f42d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** Body of POST /api/sheets/{sheet}/periods; a blank from-date is the sheet's today. */
++public record PeriodRequest(String name, String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+new file mode 100644
+index 00000000..fde6f669
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -0,0 +1,47 @@
++package net.officefloor.hq.app.period;
++
++import java.sql.Date;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The periods kept per sheet. */
++@Repository
++public class Periods {
++
++    private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getString("name"),
++            rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString());
++
++    private final JdbcTemplate jdbc;
++
++    public Periods(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Every period on the sheet, by from-date. */
++    public List<Period> list(String sheet) {
++        return jdbc.query("SELECT name, from_date, to_date FROM period WHERE sheet = ? ORDER BY from_date", ROW,
++                sheet);
++    }
++
++    /** Whether the sheet has a period of the name. */
++    public boolean named(String sheet, String name) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet = ? AND name = ?", Integer.class,
++                sheet, name);
++        return n != null && n > 0;
++    }
++
++    /** Whether any period on the sheet shares a date with the inclusive range. */
++    public boolean overlaps(String sheet, PeriodInput input) {
++        Integer n = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM period WHERE sheet = ? AND from_date <= ? AND to_date >= ?", Integer.class,
++                sheet, Date.valueOf(input.to()), Date.valueOf(input.from()));
++        return n != null && n > 0;
++    }
++
++    public void add(String sheet, PeriodInput input) {
++        jdbc.update("INSERT INTO period (sheet, name, from_date, to_date) VALUES (?, ?, ?, ?)", sheet, input.name(),
++                Date.valueOf(input.from()), Date.valueOf(input.to()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+new file mode 100644
+index 00000000..0aab7bb8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.period;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Responds with every period on the sheet. */
++public class RespondWithPeriods {
++    public void respond(@PathVariable("sheet") String sheet, Periods periods, ObjectResponse<List<Period>> response) {
++        response.send(periods.list(sheet));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/SavePeriod.java b/src/main/java/net/officefloor/hq/app/period/SavePeriod.java
+new file mode 100644
+index 00000000..af576d49
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/SavePeriod.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Adds the period, refusing a name already on the sheet or dates that overlap another period. */
++public class SavePeriod {
++    public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val PeriodInput input,
++            Periods periods, Audit audit) throws InvalidPeriodException {
++        if (periods.named(sheet, input.name())) {
++            throw new InvalidPeriodException("There is already a period named " + input.name());
++        }
++        if (periods.overlaps(sheet, input)) {
++            throw new InvalidPeriodException("A period may not overlap another period");
++        }
++        periods.add(sheet, input);
++        audit.record("PERIOD_ADDED sheet=" + sheet + " by=" + user + " period=" + input.name() + " from="
++                + input.from() + " to=" + input.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+new file mode 100644
+index 00000000..bc7130e9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.sheet.SheetClock;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidatePeriod {
++    public void validate(@PathVariable("sheet") String sheet, @RequestBody PeriodRequest request, SheetClock clock,
++            Out<PeriodInput> body) throws InvalidPeriodException {
++        String name = request == null || request.name() == null ? "" : request.name().trim();
++        String from = request == null || request.from() == null ? "" : request.from().trim();
++        String to = request == null || request.to() == null ? "" : request.to().trim();
++        if (name.isEmpty()) {
++            throw new InvalidPeriodException("A period needs a name");
++        }
++        if (name.length() > 200) {
++            throw new InvalidPeriodException("A period's name is at most 200 characters");
++        }
++        LocalDate start;
++        LocalDate end;
++        try {
++            start = from.isEmpty() ? clock.today(sheet) : LocalDate.parse(from);
++        } catch (DateTimeParseException e) {
++            throw new InvalidPeriodException("Not a valid from-date: " + from);
++        }
++        try {
++            end = LocalDate.parse(to);
++        } catch (DateTimeParseException e) {
++            throw new InvalidPeriodException("Not a valid to-date: " + to);
++        }
++        if (end.isBefore(start)) {
++            throw new InvalidPeriodException("A period's to-date may not be before its from-date");
++        }
++        body.set(new PeriodInput(name, start, end));
++    }
++}
+diff --git a/src/main/resources/db/migration/V13__period.sql b/src/main/resources/db/migration/V13__period.sql
+new file mode 100644
+index 00000000..b14afa0a
+--- /dev/null
++++ b/src/main/resources/db/migration/V13__period.sql
+@@ -0,0 +1,9 @@
++-- The sheet's periods: a name unique on the sheet and a from and to date, inclusive. No two periods of a
++-- sheet overlap; a claim belongs to the period whose dates contain its date, or to none.
++CREATE TABLE period (
++    sheet     VARCHAR(200) NOT NULL,
++    name      VARCHAR(200) NOT NULL,
++    from_date DATE         NOT NULL,
++    to_date   DATE         NOT NULL,
++    PRIMARY KEY (sheet, name)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.period.InvalidPeriodException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.period.InvalidPeriodException.yml
+new file mode 100644
+index 00000000..3d0320ea
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.period.InvalidPeriodException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.period.HandleInvalidPeriod
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods.GET.yml
+new file mode 100644
+index 00000000..e1f7d26f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods.GET.yml
+@@ -0,0 +1,3 @@
++respond:
++  class: net.officefloor.hq.app.period.RespondWithPeriods
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods.POST.yml
+new file mode 100644
+index 00000000..7f7b45e6
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods.POST.yml
+@@ -0,0 +1,12 @@
++# Validate first so a bad name or date is a 400; Save refuses a duplicate name or an overlap before writing.
++# Responds with the sheet's periods.
++validate:
++  class: net.officefloor.hq.app.period.ValidatePeriod
++  next: save
++save:
++  class: net.officefloor.hq.app.period.SavePeriod
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithPeriods
++  govern: [ transaction ]
