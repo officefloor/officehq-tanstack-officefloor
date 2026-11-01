@@ -99,6 +99,11 @@ public class Rollup {
 
     /** Audit the figures that moved between `before` and the sheet now. */
     public void record(String sheetId, Snapshot before, String user) {
+        record(sheetId, before, user, audit);
+    }
+
+    /** Audit the figures that moved between `before` and the sheet now, to the given audit. */
+    public void record(String sheetId, Snapshot before, String user, Audit audit) {
         Snapshot after = snapshot(sheetId);
         String prefix = " sheet=" + sheetId + " by=" + user;
         after.people().forEach((id, now) -> {
