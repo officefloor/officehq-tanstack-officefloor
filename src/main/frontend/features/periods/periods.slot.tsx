@@ -20,7 +20,8 @@ import { CAP, DATE, fiscalYear, periodDue, periodsKey, usePeriods, YEAR, type Pe
  * reopen a closed period, making its due-total live again. A period can instead be soft-closed: its
  * figures are fixed as by a close, but claims dated in it can still be changed; it can then be closed
  * (fixing them afresh) or reopened. A steward can lock a period, so it cannot be reopened, and unlock it. Each period shows the fiscal year its from-date falls in; a fiscal
- * year's twelve monthly periods can be generated as the monthly generator makes them.
+ * year's twelve monthly periods can be generated as the monthly generator makes them, and a calendar
+ * year's four quarters (yyyy-Q1 to yyyy-Q4) likewise.
  */
 function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -41,6 +42,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [genTo, setGenTo] = useState('');
   const [genInvalid, setGenInvalid] = useState<string | null>(null);
   const [fyYear, setFyYear] = useState('');
+  const [qYear, setQYear] = useState('');
   // The period whose last close, reopen, lock or unlock was refused: its row shows the error.
   const [refused, setRefused] = useState<string | null>(null);
 
@@ -60,13 +62,11 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   // One period per calendar month from the from-date's month to the to-date's, named yyyy-mm; a
   // month already named or overlapping a period is left out. Answers how many were made.
   // A fiscal year generate makes the same periods for the fiscal year's twelve months; either shows
-  // its count in the one place.
+  // its count in the one place. A quarters generate makes a calendar year's four quarters, named
+  // yyyy-Q1 to yyyy-Q4, the same way, and shows its count there too.
   const generate = useMutation({
-    mutationFn: (g: { from: string; to: string } | { year: string }) =>
-      postJson<{ generated: number }>(
-        `/api/sheets/${encodeURIComponent(sheet)}/${'year' in g ? 'generate-fiscal-year' : 'generate-periods'}`,
-        { ...g, user },
-      ),
+    mutationFn: ({ kind, ...g }: { kind: 'periods' | 'fiscal-year' | 'quarters'; from?: string; to?: string; year?: string }) =>
+      postJson<{ generated: number }>(`/api/sheets/${encodeURIComponent(sheet)}/generate-${kind}`, { ...g, user }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
 
@@ -218,7 +218,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             setGenInvalid('The to-date must not be before the from-date.');
             return;
           }
-          generate.mutate({ from: f, to: t });
+          generate.mutate({ kind: 'periods', from: f, to: t });
         }}
       >
         <label>
@@ -271,7 +271,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             setGenInvalid('The fiscal year must be a year, yyyy.');
             return;
           }
-          generate.mutate({ year: y });
+          generate.mutate({ kind: 'fiscal-year', year: y });
         }}
       >
         <label>
@@ -289,6 +289,36 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
         </label>{' '}
         <button type="submit" data-testid="period-generate-fy" disabled={generate.isPending}>
           Generate fiscal year
+        </button>
+      </form>
+      <form
+        data-testid="period-generate-quarters-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          clearGenerate();
+          const y = qYear.trim();
+          if (!YEAR.test(y)) {
+            setGenInvalid('The year must be yyyy.');
+            return;
+          }
+          generate.mutate({ kind: 'quarters', year: y });
+        }}
+      >
+        <label>
+          Year{' '}
+          <input
+            data-testid="period-generate-quarters-year"
+            placeholder="yyyy"
+            size={6}
+            value={qYear}
+            onChange={(e) => {
+              setQYear(e.target.value);
+              clearGenerate();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-quarters" disabled={generate.isPending}>
+          Generate quarters
         </button>
       </form>
       <table data-testid="period-list">
