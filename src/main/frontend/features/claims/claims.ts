@@ -11,7 +11,8 @@ export type ClaimStatusChange = 'open' | 'settle' | 'void';
 
 /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
  * the sheet (given when it is opened; null while a draft and once voided), and its due fixed when it was
- * settled (two decimals; null while live: until settled, and when its grade had no rate then). */
+ * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
+ * user who opened it (null until opened; that user may not settle it). */
 export type Claim = {
   id: number;
   person: number;
@@ -21,6 +22,7 @@ export type Claim = {
   status: ClaimStatus;
   number: number | null;
   settledDue: string | null;
+  openedBy: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['claims', sheet] as const;

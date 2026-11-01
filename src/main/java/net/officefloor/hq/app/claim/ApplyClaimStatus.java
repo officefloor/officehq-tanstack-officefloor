@@ -21,6 +21,10 @@ public class ApplyClaimStatus {
         if (requested == null) {
             throw new InvalidClaimStatusChangeException("No such status change: " + change);
         }
+        // Four eyes: the user who opened a claim may not settle it.
+        if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
+            throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
+        }
         ClaimStatus next = claim.status().after(requested);
         // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
         if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
@@ -32,6 +36,7 @@ public class ApplyClaimStatus {
         if (requested == ClaimStatusChange.OPEN) {
             changed = claim.withNumber(claims.nextNumber(sheet));
             claims.setNumber(sheet, claim.id(), changed.number());
+            claims.setOpenedBy(sheet, claim.id(), user);
         } else if (requested == ClaimStatusChange.VOID && claim.number() != null) {
             claims.setNumber(sheet, claim.id(), null);
         }

@@ -18,9 +18,10 @@ public class Claims {
             rs.getDate("claimed_on").toLocalDate().toString(), rs.getString("note"),
             ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number_on_sheet", Integer.class),
             rs.getBigDecimal("settled_due") == null ? null
-                    : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString());
+                    : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
+            rs.getString("opened_by"));
 
-    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due FROM claim";
+    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -57,6 +58,11 @@ public class Claims {
     /** Fixes the claim's due as it is settled, or leaves none with null. */
     public void setSettledDue(String sheet, long id, BigDecimal due) {
         jdbc.update("UPDATE claim SET settled_due = ? WHERE sheet = ? AND id = ?", due, sheet, id);
+    }
+
+    /** Records the user who opened the claim. */
+    public void setOpenedBy(String sheet, long id, String user) {
+        jdbc.update("UPDATE claim SET opened_by = ? WHERE sheet = ? AND id = ?", user, sheet, id);
     }
 
     /** Sets the claim's number on the sheet, or clears it with null. */

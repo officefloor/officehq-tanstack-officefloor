@@ -64,6 +64,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-status">{claim.status}</span>{' '}
       {claim.number !== null && '#'}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
+      {claim.openedBy !== null && 'opened by '}
+      <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       {CHANGES.map(({ change, label }) => (
         <button
           key={change}
@@ -92,7 +94,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way.
+          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle it).
         </span>
       )}
     </li>
