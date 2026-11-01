@@ -21,7 +21,7 @@ export type RoleEntry = { name: string; role: string };
  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
 export type DelegationEntry = { name: string; from: string; to: string; by: string };
 
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string> };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: number | null; scoreHigh: number | null };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };
@@ -82,6 +82,19 @@ export function useReviewLate(sheet: string): (claim: { status: string; log: str
     const due = new Date(`${day}T00:00:00Z`);
     due.setUTCDate(due.getUTCDate() + sla);
     return due.toISOString().slice(0, 10) < today;
+  };
+}
+
+/** A person's band by their score while both the sheet's score thresholds are set: HIGH at or above the
+ *  high one, MID at or above the mid one, else LOW. Empty while either is blank (not dated). */
+export function useScoreBand(sheet: string): (score: string) => string {
+  const settings = useSettings(sheet).data;
+  const mid = settings?.scoreMid ?? null;
+  const high = settings?.scoreHigh ?? null;
+  return (score) => {
+    if (mid === null || high === null) return '';
+    const n = Number(score);
+    return n >= high ? 'HIGH' : n >= mid ? 'MID' : 'LOW';
   };
 }
 
@@ -147,6 +160,9 @@ export const MONTH = /^(0?[1-9]|1[0-2])$/;
 export const ROUNDING = /^(half-up|half-even)?$/;
 
 export const DAYS = /^(\d{1,4})?$/;
+
+/** A score threshold: a whole number, or blank. */
+export const SCORE = /^(-?\d{1,6})?$/;
 
 /** A from-date the server accepts: yyyy-mm-dd (a blank one is not sent: the sheet's today). */
 export const FROM_DATE = /^\d{4}-\d{2}-\d{2}$/;

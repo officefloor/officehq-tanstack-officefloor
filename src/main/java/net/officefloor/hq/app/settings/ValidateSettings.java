@@ -25,6 +25,7 @@ public class ValidateSettings {
 
     /** Terms: a whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+    private static final Pattern SCORE = Pattern.compile("-?\\d{1,6}");
 
     /** The grades terms can be set for. */
     private static final Set<String> GRADES = Set.of("A", "B", "C");
@@ -180,6 +181,14 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && !DAYS.matcher(sla).matches()) {
             throw new InvalidSheetRequestException("The review SLA must be a whole number of days, or blank");
         }
+        String scoreMid = request == null || request.scoreMid() == null ? null : request.scoreMid().trim();
+        if (scoreMid != null && !scoreMid.isEmpty() && !SCORE.matcher(scoreMid).matches()) {
+            throw new InvalidSheetRequestException("The mid score threshold must be a whole number, or blank");
+        }
+        String scoreHigh = request == null || request.scoreHigh() == null ? null : request.scoreHigh().trim();
+        if (scoreHigh != null && !scoreHigh.isEmpty() && !SCORE.matcher(scoreHigh).matches()) {
+            throw new InvalidSheetRequestException("The high score threshold must be a whole number, or blank");
+        }
         String proofKinds = null;
         if (request != null && request.proofKinds() != null) {
             List<String> kinds = new ArrayList<>();
@@ -272,6 +281,8 @@ public class ValidateSettings {
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
                 sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
                 proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
-                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade, gradeClerkLimit));
+                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade, gradeClerkLimit,
+                scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
+                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh)));
     }
 }

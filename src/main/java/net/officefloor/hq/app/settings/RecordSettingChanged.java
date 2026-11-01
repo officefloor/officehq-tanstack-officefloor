@@ -94,6 +94,12 @@ public class RecordSettingChanged {
         if (change.setsReviewSla()) {
             audit.record(prefix + " key=review-sla value=" + (change.reviewSla() != null ? change.reviewSla() : ""));
         }
+        if (change.setsScoreMid()) {
+            audit.record(prefix + " key=score-mid value=" + (change.scoreMid() != null ? change.scoreMid() : ""));
+        }
+        if (change.setsScoreHigh()) {
+            audit.record(prefix + " key=score-high value=" + (change.scoreHigh() != null ? change.scoreHigh() : ""));
+        }
         if (change.setsProofKinds()) {
             audit.record(prefix + " key=proof-kinds value=" + (change.proofKinds() != null ? change.proofKinds() : ""));
         }

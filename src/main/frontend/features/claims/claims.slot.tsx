@@ -6,7 +6,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { gradeOn, heldOn, retiredOut, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLate, useReviewLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate, useReviewLate, useScoreBand } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
@@ -176,6 +176,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
   // Their score: their settled figures over 100, less 5 for each overdue claim, rounded half to even.
   const score = scoreOf(settledSum ?? 0n, late.count);
+  // Their band by that score, while both the sheet's score thresholds are set.
+  const band = useScoreBand(sheet)(score);
   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
   const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
   const editing = editingClaim?.id ?? null;
@@ -637,6 +639,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
       <Col user={user} id="overdue-count"><td data-testid="person-overdue-count">{late.count}</td></Col>
       <Col user={user} id="overdue-total"><td data-testid="person-overdue-total">{showDue(late.cents)}</td></Col>
       <td data-testid="person-score">{score}</td>
+      <td data-testid="person-band">{band}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -1188,6 +1191,7 @@ export const contributions = [
         <Col user={user} id="overdue-count"><th>Overdue</th></Col>
         <Col user={user} id="overdue-total"><th>Overdue due</th></Col>
         <th>Score</th>
+        <th>Band</th>
         <th>Claims</th>
       </>
     ),

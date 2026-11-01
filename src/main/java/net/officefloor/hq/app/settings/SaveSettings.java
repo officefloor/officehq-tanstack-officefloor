@@ -33,6 +33,8 @@ public class SaveSettings {
         if (change.setsGraceDays()) settings.setGraceDays(sheetId, change.graceDays());
         if (change.setsEscalateAfter()) settings.setEscalateAfter(sheetId, change.escalateAfter());
         if (change.setsReviewSla()) settings.setReviewSla(sheetId, change.reviewSla());
+        if (change.setsScoreMid()) settings.setScoreMid(sheetId, change.scoreMid());
+        if (change.setsScoreHigh()) settings.setScoreHigh(sheetId, change.scoreHigh());
         if (change.setsProofKinds()) settings.setProofKinds(sheetId, change.proofKinds());
         if (change.setsDefaultGrade()) settings.setDefaultGrade(sheetId, change.defaultGrade());
         if (change.fiscalStartMonth() != null) settings.setFiscalStartMonth(sheetId, change.fiscalStartMonth());

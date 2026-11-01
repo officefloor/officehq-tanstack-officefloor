@@ -407,6 +407,30 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, review_sla) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
     }
 
+    /** The sheet's mid score threshold: while both thresholds are set, a person whose score is at or above it
+     *  (and below the high one) is in the MID band. Null when unset. Not dated. */
+    public Integer scoreMid(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT score_mid FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("score_mid", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setScoreMid(String sheetId, Integer score) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, score_mid) KEY (sheet_id) VALUES (?, ?)", sheetId, score);
+    }
+
+    /** The sheet's high score threshold: while both thresholds are set, a person whose score is at or above it
+     *  is in the HIGH band. Null when unset. Not dated. */
+    public Integer scoreHigh(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT score_high FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("score_high", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setScoreHigh(String sheetId, Integer score) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, score_high) KEY (sheet_id) VALUES (?, ?)", sheetId, score);
+    }
+
     /** The sheet's proof kinds, in the order set: while set, a claim whose due is above its proof threshold
      *  needs a proof of each before it can be settled or approved. Empty when unset. Not dated. */
     public List<String> proofKinds(String sheetId) {
