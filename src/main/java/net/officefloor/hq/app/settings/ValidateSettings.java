@@ -189,6 +189,10 @@ public class ValidateSettings {
         if (scoreHigh != null && !scoreHigh.isEmpty() && !SCORE.matcher(scoreHigh).matches()) {
             throw new InvalidSheetRequestException("The high score threshold must be a whole number, or blank");
         }
+        String scoreLog = request == null || request.scoreLog() == null ? null : request.scoreLog().trim();
+        if (scoreLog != null && !scoreLog.isEmpty() && !scoreLog.equals("on")) {
+            throw new InvalidSheetRequestException("The score log must be on, or blank");
+        }
         String proofKinds = null;
         if (request != null && request.proofKinds() != null) {
             List<String> kinds = new ArrayList<>();
@@ -283,6 +287,7 @@ public class ValidateSettings {
                 proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade, gradeClerkLimit,
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
-                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh)));
+                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh),
+                scoreLog != null, "on".equals(scoreLog)));
     }
 }

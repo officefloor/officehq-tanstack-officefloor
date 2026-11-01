@@ -431,6 +431,18 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, score_high) KEY (sheet_id) VALUES (?, ?)", sheetId, score);
     }
 
+    /** The sheet's score log switch: while on, a change of the sheet's today writes each person's score on
+     *  the day being left. Off when unset. Not dated. */
+    public boolean scoreLog(String sheetId) {
+        List<Boolean> values = jdbc.query("SELECT score_log FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getBoolean("score_log"), sheetId);
+        return !values.isEmpty() && values.get(0);
+    }
+
+    public void setScoreLog(String sheetId, boolean on) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, score_log) KEY (sheet_id) VALUES (?, ?)", sheetId, on);
+    }
+
     /** The sheet's proof kinds, in the order set: while set, a claim whose due is above its proof threshold
      *  needs a proof of each before it can be settled or approved. Empty when unset. Not dated. */
     public List<String> proofKinds(String sheetId) {

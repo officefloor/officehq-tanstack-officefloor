@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -9,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.person.People;
@@ -29,6 +31,7 @@ import org.springframework.stereotype.Service;
 public class Rollup {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2);
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     private final People people;
     private final Claims claims;
@@ -65,6 +68,8 @@ public class Rollup {
             BigDecimal claimed = ZERO;
             BigDecimal due = ZERO;
             BigDecimal overdue = ZERO;
+            BigDecimal settled = ZERO;
+            int overdueCount = 0;
             boolean any = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()) continue;
@@ -72,6 +77,8 @@ public class Rollup {
                 if (!person.counts(claim)) continue;
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = figures.due(claim, grade);
+                if (figures.overdue(claim, grade)) overdueCount++;
+                if (figure != null && claim.getStatus() == ClaimStatus.SETTLED) settled = settled.add(figure);
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;
@@ -82,7 +89,8 @@ public class Rollup {
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
             due = settings.capped(sheetId, due);
-            figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue));
+            figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue,
+                    settled.subtract(BigDecimal.valueOf(500L * overdueCount)).divide(HUNDRED, 0, RoundingMode.HALF_EVEN)));
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) dues.add(due);
             overdues.add(overdue);
