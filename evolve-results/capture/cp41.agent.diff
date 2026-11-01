@@ -1,0 +1,164 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 9b518962..c8bdb8a9 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,15 +1,23 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { gradeOn, heldOn } from '../people/people';
++import { gradeOn, heldOn, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+-import { dueCents, hundredths, rateOf, twoDecimals, type Rate } from '../rates/rates';
++import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+-import { useLatePctCents, usePolicyDate } from '../settings/settings';
++import { useFloorCents, useLatePctCents, usePolicyDate } from '../settings/settings';
+ 
+ /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
+  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ 
++/** Every status, in the order the screen lists them. */
++export const CLAIM_STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
++/** How many of the claims have the status (every claim, whoever's). */
++export function statusCount(claims: Claim[], status: ClaimStatus): number {
++  return claims.filter((c) => c.status === status).length;
++}
++
+ /** A status change a claim's row offers; the server refuses one its status does not allow. */
+ export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+ 
+@@ -192,3 +200,20 @@ export function overdueCents(
+   );
+   return { count: overdueClaims.length, cents };
+ }
++
++/** The sheet's totals: its claimed-total (everyone's counted claims added up), its due-total (everyone's due-total
++ *  added up, skipping the people whose due-total is n/a), and how many of the counted claims are overdue, with their
++ *  dues (late charges included) added up. */
++export function useSheetTotals(sheet: string): { claimed: string; due: bigint; overdue: { count: number; cents: bigint } } {
++  const { data: all = [] } = useClaims(sheet);
++  const { data: people = [] } = usePeople(sheet);
++  const { data: rates = [] } = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const floor = useFloorCents(sheet);
++  const late = useLate(sheet);
++  const due = people.reduce((sum, p) => {
++    const cents = personDueCents(all, rates, p, today, floor, late);
++    return cents === undefined ? sum : sum + cents;
++  }, 0n);
++  return { claimed: claimed(counted(all, people)), due, overdue: overdueCents(all, people, rates, late, floor) };
++}
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index b6b0db32..24d254d6 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -1,30 +1,14 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+-import { usePeople } from '../people/people';
+-import { useSheetToday } from '../sheet/sheet';
+-import { twoDecimals, useRates } from '../rates/rates';
+-import { useFloorCents } from '../settings/settings';
+-import { claimed, counted, overdueCents, personDueCents, useClaims, useLate } from './claims';
++import { twoDecimals } from '../rates/rates';
++import { useSheetTotals } from './claims';
+ 
+-// The sheet's claimed-total: everyone's counted (OPEN and SETTLED, but not an unbound OPEN one within its person's hold) claims added up; and its due-total: everyone's due-total
+-// added up, skipping the people whose due-total is n/a; and how many of the counted claims are overdue, with their
+-// dues (late charges included) added up.
++// The sheet's claimed-total, due-total, and overdue count and total (see useSheetTotals).
+ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+-  const { data: all = [] } = useClaims(sheet);
+-  const { data: people = [] } = usePeople(sheet);
+-  const claims = counted(all, people);
+-  const { data: rates = [] } = useRates(sheet);
+-  const today = useSheetToday(sheet);
+-  const floor = useFloorCents(sheet);
+-  const late = useLate(sheet);
+-  const due = people.reduce((sum, p) => {
+-    const cents = personDueCents(all, rates, p, today, floor, late);
+-    return cents === undefined ? sum : sum + cents;
+-  }, 0n);
+-  const overdue = overdueCents(all, people, rates, late, floor);
++  const { claimed, due, overdue } = useSheetTotals(sheet);
+   return (
+     <>
+       <p>
+-        Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims)}</strong>
++        Claimed total: <strong data-testid="rollup-claimed-total">{claimed}</strong>
+       </p>
+       <p>
+         Due total: <strong data-testid="rollup-due-total">{twoDecimals(due)}</strong>
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+new file mode 100644
+index 00000000..5df8b9a9
+--- /dev/null
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -0,0 +1,36 @@
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { usePeople } from '../people/people';
++import { twoDecimals } from '../rates/rates';
++import { CLAIM_STATUSES, statusCount, useClaims, useSheetTotals } from '../claims/claims';
++
++// The sheet's counters, shown at all times above everything else. Each repeats a figure figured elsewhere, from the
++// same helpers: the people on the sheet (retired ones included), the claims per status (as the summary counts them),
++// and the sheet's due-total and overdue-total (as the rollup shows them).
++function Header({ sheet }: { sheet: string; user: string }) {
++  const { data: people = [] } = usePeople(sheet);
++  const { data: claims = [] } = useClaims(sheet);
++  const { due, overdue } = useSheetTotals(sheet);
++  return (
++    <header>
++      <span>
++        People: <strong data-testid="header-people-count">{people.length}</strong>
++      </span>
++      {CLAIM_STATUSES.map((s) => (
++        <span key={s}>
++          {' '}
++          {s}: <strong data-testid={`header-claims-${s}-count`}>{statusCount(claims, s)}</strong>
++        </span>
++      ))}
++      <span>
++        {' '}
++        Due total: <strong data-testid="header-due-total">{twoDecimals(due)}</strong>
++      </span>
++      <span>
++        {' '}
++        Overdue total: <strong data-testid="header-overdue-total">{twoDecimals(overdue.cents)}</strong>
++      </span>
++    </header>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: -10, Component: Header });
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 9b7b61e6..f26042e4 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -3,11 +3,9 @@ import { GRADES, isRetired, usePeople } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+ import { twoDecimals, useRates } from '../rates/rates';
+ import { useFloorCents } from '../settings/settings';
+-import { personDueCents, useClaims, useLate } from '../claims/claims';
++import { CLAIM_STATUSES, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
+ import { periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
+ 
+-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+-
+ // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
+ // excluded) and their due-totals added up (an n/a due-total adds nothing). Per period: its due-total, as its row shows
+ // it. Per status: how many of the sheet's claims have it (every claim, whoever's).
+@@ -72,10 +70,10 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {STATUSES.map((s) => (
++          {CLAIM_STATUSES.map((s) => (
+             <tr key={s}>
+               <td>{s}</td>
+-              <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => (c.status as string) === s).length}</td>
++              <td data-testid={`summary-status-${s}-count`}>{statusCount(claims, s)}</td>
+             </tr>
+           ))}
+         </tbody>
