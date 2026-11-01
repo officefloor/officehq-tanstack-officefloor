@@ -13,12 +13,17 @@ import net.officefloor.hq.app.setting.Settings;
  * from-date; grade is the one in force on the sheet's today. The version is raised by one on every save. The
  * retired-from date (yyyy-mm-dd) is null unless they are retired; once it is set they count as retired, whatever
  * the date. Their holds are listed in the order they were added; their OPEN claims dated within a hold, unless bound
- * by a statement, count in no live total. Their own terms (days) are null when they have none.
+ * by a statement, count in no live total. Their own terms (days) are null when they have none. retiredNow is whether
+ * the sheet's today is on or after their retired-from date: from then their OPEN and PENDING claims, unless bound by a
+ * statement, count in no live total.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
-        List<GradeFrom> grades, Integer terms) {
+        List<GradeFrom> grades, Integer terms, boolean retiredNow) {
 
-    /** Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement, and dated within one of their holds. */
+    /**
+     * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
+     * and dated within one of their holds or their retirement date is reached.
+     */
     public boolean counts(Claim claim) {
         if (!claim.counts()) {
             return false;
@@ -26,13 +31,18 @@ public record Person(long id, String name, String grade, long version, String re
         if (claim.status() == ClaimStatus.SETTLED || claim.bound()) {
             return true;
         }
-        return holds.stream().noneMatch((h) -> h.covers(claim.date()));
+        return !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date()));
+    }
+
+    /** Whether the sheet's today is on or after the retired-from date (null: never retired). */
+    static boolean retiredOn(String retiredFrom, LocalDate today) {
+        return retiredFrom != null && !today.isBefore(LocalDate.parse(retiredFrom));
     }
 
     /**
      * Whether the claim, theirs, counts toward a period ending on the date: by the status it had at the end of that
      * day (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open now, not bound by a statement
-     * and dated within one of their holds.
+     * and dated within one of their holds or their retirement date is reached.
      */
     public boolean countsOn(Claim claim, LocalDate end) {
         ClaimStatus then = claim.statusOn(end);
@@ -46,7 +56,7 @@ public record Person(long id, String name, String grade, long version, String re
             return false;
         }
         return (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING) || claim.bound()
-                || holds.stream().noneMatch((h) -> h.covers(claim.date()));
+                || (!retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date())));
     }
 
     /** Whether a claim dated {@code date} is after this person's retirement, and so refused. */

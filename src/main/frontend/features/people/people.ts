@@ -25,6 +25,9 @@ export type Person = {
   grades: GradeFrom[];
   /** The person's own terms in days, ahead of their grade's and the sheet's; null when they have none. */
   terms: number | null;
+  /** Whether the sheet's today is on or after retiredFrom: from then their OPEN and PENDING claims, unless bound by a
+   *  statement, count in no live total. */
+  retiredNow: boolean;
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */
@@ -45,6 +48,10 @@ export const heldOn = (p: Person, date: string) =>
   p.holds.some((h) => date >= h.from && (h.to === null || date <= h.to));
 
 export const isRetired = (p: Person) => p.retiredFrom !== null;
+
+/** Whether a claim of the person's dated on the day (yyyy-MM-dd), open and not bound by a statement, is kept out of
+ *  every live total: it is dated within one of their holds, or their retirement date is reached. */
+export const setAsideOn = (p: Person, date: string) => p.retiredNow || heldOn(p, date);
 
 export const peopleKey = (sheet: string) => ['people', sheet] as const;
 

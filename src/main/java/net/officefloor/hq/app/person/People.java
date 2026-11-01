@@ -56,7 +56,8 @@ public class People {
         for (Row r : rows) {
             List<GradeFrom> mine = List.copyOf(grades.getOrDefault(r.id(), List.of()));
             people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(),
-                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms()));
+                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms(),
+                    Person.retiredOn(r.retiredFrom(), today)));
         }
         return people;
     }
