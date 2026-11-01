@@ -1,29 +1,63 @@
+import { useCallback, useEffect, useState } from 'react';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { useClaims } from '../claims/useClaims';
 import { useSheetTotals } from '../claims/useSheetTotals';
+import { useDescendants } from '../consolidated/useDescendants';
 import { useRoleOf } from '../settings/useSettings';
 
+type Counts = { pending: number; review: number; overdue: number };
+
+/** One sheet's dashboard counts, reported once its claims have loaded. Renders nothing. */
+function SheetCounts({ sheet, report }: { sheet: string; report: (sheet: string, counts: Counts | null) => void }) {
+  const claims = useClaims(sheet);
+  const { overdueCount } = useSheetTotals(sheet);
+  const all = claims.data ?? [];
+  const ready = claims.isSuccess;
+  const pending = all.filter((c) => c.status === 'PENDING').length;
+  const review = all.filter((c) => c.status === 'REVIEW').length;
+  useEffect(() => {
+    report(sheet, ready ? { pending, review, overdue: overdueCount } : null);
+  }, [sheet, ready, pending, review, overdueCount, report]);
+  useEffect(() => () => report(sheet, null), [sheet, report]);
+  return null;
+}
+
 /**
- * A steward's dashboard: how many of the sheet's claims are PENDING, how many are in REVIEW, and how
- * many of the claims that count are overdue (as the totals count them). Empty for a user who is not
- * a steward. Under an as-of date, the counts as they stood then, for the role the user had then.
+ * A steward's dashboard: how many claims are PENDING, how many are in REVIEW, and how many of the
+ * claims that count are overdue (as each sheet's totals count them), over the sheet and all its
+ * descendants (see useDescendants). Empty for a user who is not a steward of the sheet. Under an
+ * as-of date, the counts as they stood then, for the role the user had then.
  */
 function StewardDashboard({ user, sheet }: { user: string; sheet: string }) {
-  const { data: all = [] } = useClaims(sheet);
-  const { overdueCount } = useSheetTotals(sheet);
+  const { data: descendants } = useDescendants(sheet);
+  const sheets = descendants === undefined ? [] : [sheet, ...descendants];
+  const [counts, setCounts] = useState<Record<string, Counts | null>>({});
+  const report = useCallback((id: string, c: Counts | null) => {
+    setCounts((was) => {
+      const old = was[id] ?? null;
+      const same = old === c || (old !== null && c !== null && old.pending === c.pending && old.review === c.review && old.overdue === c.overdue);
+      return same ? was : { ...was, [id]: c };
+    });
+  }, []);
+  const all = sheets.map((id) => counts[id] ?? null);
+  const ready = sheets.length > 0 && all.every((c) => c !== null);
+  const sum = (k: keyof Counts) => all.reduce((n, c) => n + (c?.[k] ?? 0), 0);
   const steward = useRoleOf(sheet, user) === 'steward';
-  const count = (n: number) => (steward ? String(n) : '');
+  const count = (k: keyof Counts) => (steward && ready ? String(sum(k)) : '');
   return (
     <section data-testid="steward-dashboard">
+      {sheets.map((id) => (
+        <SheetCounts key={id} sheet={id} report={report} />
+      ))}
       <h2>Steward dashboard</h2>
       <span>
-        Pending: <strong data-testid="dash-pending-count">{count(all.filter((c) => c.status === 'PENDING').length)}</strong>
+        Pending: <strong data-testid="dash-pending-count">{count('pending')}</strong>
       </span>{' '}
       <span>
-        Review: <strong data-testid="dash-review-count">{count(all.filter((c) => c.status === 'REVIEW').length)}</strong>
+        Review: <strong data-testid="dash-review-count">{count('review')}</strong>
       </span>{' '}
       <span>
-        Overdue: <strong data-testid="dash-overdue-count">{count(overdueCount)}</strong>
+        Overdue: <strong data-testid="dash-overdue-count">{count('overdue')}</strong>
       </span>
     </section>
   );
