@@ -75,9 +75,9 @@ export function statusAt(claim: Claim, date: string): ClaimStatus | null {
  *  or SETTLED) by the status it had at the end of the period's last day — not a deferred one, nor
  *  one open then and dated within the person's hold (or the person's once the sheet's today reaches
  *  their retirement date), unless a statement binds it. */
-function countsIn(period: Period, person: Person, claim: Claim, today: string): boolean {
+function countsIn(period: Period, person: Person, claim: Claim, today: string, now: boolean): boolean {
   if (claim.personId !== person.id || periodOf([period], claim.dueBy) === undefined || claim.deferred) return false;
-  const status = statusAt(claim, period.to);
+  const status = now ? claim.status : statusAt(claim, period.to);
   if (status !== 'OPEN' && status !== 'PENDING' && status !== 'SETTLED') return false;
   if (status === 'SETTLED' || !heldOn(person, claim.date, today)) return true;
   return claim.stated && status !== 'PENDING';
@@ -85,18 +85,20 @@ function countsIn(period: Period, person: Person, claim: Claim, today: string): 
 
 /** A person's due-total for a period, in cents: the one fixed when the period was closed (0 for a
  *  person added since), else the dues, as shown now, of their claims that count in it (see
- *  `countsIn`: by the status each had at the period's end), n/a ones skipped. */
-export function personPeriodDueCents(period: Period, person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late, today: string): bigint {
+ *  `countsIn`: by the status each had at the period's end, or with `now` by its status now), n/a
+ *  ones skipped. */
+export function personPeriodDueCents(period: Period, person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late, today: string, now = false): bigint {
   if (period.closed) {
     const fixed = period.closedPersonTotals?.[String(person.id)];
     return fixed === undefined ? 0n : hundredths(fixed);
   }
   return claims
-    .filter((c) => countsIn(period, person, c, today))
+    .filter((c) => countsIn(period, person, c, today, now))
     .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), late) ?? 0n), 0n);
 }
 
-/** A period's due-total: everyone's due-total for it added up. */
-export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: FloorOn, late: Late, today: string): string {
-  return totalDue(people.map((p) => personPeriodDueCents(period, p, claims, rates, floor, late, today)));
+/** A period's due-total: everyone's due-total for it added up (with `now`, each claim counted by its
+ *  status now rather than at the period's end). */
+export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: FloorOn, late: Late, today: string, now = false): string {
+  return totalDue(people.map((p) => personPeriodDueCents(period, p, claims, rates, floor, late, today, now)));
 }
