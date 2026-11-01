@@ -4,17 +4,18 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { byUser } from '../session/session';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
 // The sheet's today: shown, and changeable. It starts as the real date.
-function SheetToday({ sheet }: { sheet: string; user: string }) {
+function SheetToday({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
   const [draft, setDraft] = useState('');
   const save = useMutation({
     mutationFn: (today: string) =>
-      postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today }),
+      postJson<Sheet>(byUser(`/api/sheets/${encodeURIComponent(sheet)}/today`, user), { today }),
     onSuccess: (updated) => {
       queryClient.setQueryData(sheetKey(sheet), updated);
       // Everything on the sheet may depend on its today: re-read it all.

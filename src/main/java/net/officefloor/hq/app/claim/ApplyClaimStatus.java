@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -12,7 +13,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Moves the claim to the status the change takes it to, refusing a change its status does not allow. */
 public class ApplyClaimStatus {
     public void apply(@PathVariable("sheet") String sheet, @PathVariable("change") String change,
-            @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Rates rates, Audit audit)
+            @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Rates rates, Audit audit,
+            Rollup rollup)
             throws InvalidClaimStatusChangeException {
         ClaimStatusChange requested = ClaimStatusChange.of(change);
         if (requested == null) {
@@ -22,6 +24,7 @@ public class ApplyClaimStatus {
         if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
             throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
         }
+        Rollup.Snapshot before = rollup.take(sheet);
         ClaimStatus next = claim.status().after(requested);
         // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
         if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
@@ -47,5 +50,6 @@ public class ApplyClaimStatus {
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
         }
         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+        rollup.record(sheet, user, before);
     }
 }

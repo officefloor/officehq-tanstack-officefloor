@@ -9,6 +9,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  */
 public class TakeStatement {
     public void take(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
-            Claims claims, Rates rates, Statements statements, SheetClock clock, Audit audit) {
+            Claims claims, Rates rates, Statements statements, SheetClock clock, Audit audit, Rollup rollup) {
+        Rollup.Snapshot before = rollup.take(sheet);
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
         List<Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id()).toList();
@@ -43,5 +45,6 @@ public class TakeStatement {
         statements.add(sheet, person.id(), dueTotal, today);
         audit.record("STATEMENT sheet=" + sheet + " by=" + user + " name=" + person.name() + " due-total="
                 + (dueTotal == null ? "n/a" : dueTotal.toPlainString()) + " claims=" + count);
+        rollup.record(sheet, user, before);
     }
 }
