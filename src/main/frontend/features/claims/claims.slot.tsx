@@ -30,6 +30,7 @@ import {
 
 const STATUS_REFUSED = "This claim's status cannot change that way (whoever opened a claim cannot settle it).";
 const OVER_LIMIT = "A clerk cannot settle a claim whose due is over the sheet's clerk limit.";
+const NOT_REVIEWER = 'Only a steward can review a claim in REVIEW, which opens it.';
 const NOT_STEWARD = 'Only a steward can approve a pending claim, and never the user who opened it.';
 const NOT_ALLOWED = "Your role may not do that: the sheet's permission matrix decides who opens, settles and voids claims.";
 const CANNOT_VOID_SETTLED = 'Only a steward can void a SETTLED claim, and only within 7 days of its settlement (never one due by in a closed period).';
@@ -77,9 +78,9 @@ class LockRefused extends Error {
   }
 }
 
-const ACTIONS = ['open', 'settle', 'approve', 'reject', 'void', 'delete', 'restore'] as const;
+const ACTIONS = ['open', 'review', 'settle', 'approve', 'reject', 'void', 'delete', 'restore'] as const;
 type Action = (typeof ACTIONS)[number];
-const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void', delete: 'Delete', restore: 'Restore' };
+const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void', delete: 'Delete', restore: 'Restore' };
 
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
@@ -258,6 +259,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               ? NOT_ALLOWED
             : e.body.includes('approve')
               ? NOT_STEWARD
+            : c.action === 'review'
+              ? NOT_REVIEWER
               : e.body.includes('reason')
                 ? NO_REASON
                 : STATUS_REFUSED,

@@ -19,7 +19,7 @@ public class ValidateClaimStatus {
             }
             body.set(new ClaimStatusChange(parsed, request.user(), parsed == ClaimAction.REJECT || (parsed == ClaimAction.VOID && !reason.isEmpty()) ? reason : null));
         } catch (IllegalArgumentException e) {
-            throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject, void, delete or restore): " + action);
+            throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject, review, void, delete or restore): " + action);
         }
     }
 }

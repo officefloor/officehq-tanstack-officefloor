@@ -16,7 +16,15 @@ public class RecordClaimStatusChanged {
         boolean fixesDue = !pending && (change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE);
         // Only a claim that was SETTLED has a SETTLED log line, so a void of one reverses its frozen due.
         boolean voidsSettled = change.action() == ClaimAction.VOID && log.settledOn(claim) != null;
-        audit.record((pending ? "CLAIM_PENDING" : change.action().event()) + " sheet=" + claim.getSheetId() + " by=" + change.user()
+        // An open over the review threshold leaves the claim in REVIEW: it is not opened yet.
+        boolean review = change.action() == ClaimAction.OPEN && claim.getStatus() == ClaimStatus.REVIEW;
+        // A review opens the claim: its own line, then the open's, with its number.
+        if (change.action() == ClaimAction.REVIEW) {
+            audit.record(change.action().event() + " sheet=" + claim.getSheetId() + " by=" + change.user()
+                    + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
+                    + " date=" + claim.getDate());
+        }
+        audit.record((pending ? "CLAIM_PENDING" : review ? "CLAIM_REVIEW" : change.action() == ClaimAction.REVIEW ? ClaimAction.OPEN.event() : change.action().event()) + " sheet=" + claim.getSheetId() + " by=" + change.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
                 + (fixesDue ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")

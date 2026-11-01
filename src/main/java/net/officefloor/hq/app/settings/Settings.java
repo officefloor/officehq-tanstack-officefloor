@@ -34,7 +34,8 @@ public class Settings {
     /** The keys of the dated settings. */
     public static final String CLERK_LIMIT = "clerk-limit", FLOOR = "floor", TERMS = "terms",
             LATE_PCT = "late-pct", CAP = "cap",
-            PROOF_THRESHOLD = "proof-threshold", NOTE_THRESHOLD = "note-threshold", ROUNDING = "rounding";
+            PROOF_THRESHOLD = "proof-threshold", NOTE_THRESHOLD = "note-threshold", ROUNDING = "rounding",
+            REVIEW_THRESHOLD = "review-threshold";
 
     /** The actions of the permission matrix, in order. */
     public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
@@ -403,6 +404,12 @@ public class Settings {
      *  cannot be opened while its note is empty. Null for none. */
     public BigDecimal noteThreshold(String sheetId, LocalDate date) {
         return valueOn(sheetId, NOTE_THRESHOLD, date, null);
+    }
+
+    /** The sheet's review threshold in force on `date`: a claim dated then whose due is above it
+     *  goes to REVIEW when opened, instead of OPEN. Null for none. */
+    public BigDecimal reviewThreshold(String sheetId, LocalDate date) {
+        return valueOn(sheetId, REVIEW_THRESHOLD, date, null);
     }
 
     /** A person's due-total at most the sheet's cap; n/a (null) is not capped. */

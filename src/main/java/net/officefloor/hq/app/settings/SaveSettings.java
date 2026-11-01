@@ -23,6 +23,7 @@ public class SaveSettings {
         if (change.setsProofThreshold()) setDated(settings, change, today, Settings.PROOF_THRESHOLD, change.proofThreshold());
         change.gradeProof().forEach((grade, threshold) -> setDated(settings, change, today, Settings.proofKey(grade), threshold));
         if (change.setsNoteThreshold()) setDated(settings, change, today, Settings.NOTE_THRESHOLD, change.noteThreshold());
+        if (change.setsReviewThreshold()) setDated(settings, change, today, Settings.REVIEW_THRESHOLD, change.reviewThreshold());
         if (change.setsRounding()) setDated(settings, change, today, Settings.ROUNDING, Settings.roundingCode(change.rounding()));
         if (change.setsPeriodNumberingFrom()) settings.setPeriodNumberingFrom(sheetId, change.periodNumberingFrom());
         if (change.setsEntryDate()) settings.setEntryDate(sheetId, change.entryDate());

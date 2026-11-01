@@ -80,6 +80,11 @@ public class RecordSettingChanged {
             audit.record(prefix + " key=rounding value=" + (change.rounding() != null ? change.rounding() : "")
                     + from(change, Settings.ROUNDING));
         }
+        if (change.setsReviewThreshold()) {
+            audit.record(prefix + " key=review-threshold value="
+                    + (change.reviewThreshold() != null ? change.reviewThreshold().toPlainString() : "")
+                    + from(change, Settings.REVIEW_THRESHOLD));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

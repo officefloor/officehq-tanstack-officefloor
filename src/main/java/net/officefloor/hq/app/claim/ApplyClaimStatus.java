@@ -25,6 +25,9 @@ import net.officefloor.plugin.variable.Val;
  *  approved while it has no proofs (refused before the clerk limit is considered).
  *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
  *  its note is empty.
+ *  A claim whose due is above the sheet's review threshold in force on its date goes to REVIEW when
+ *  opened instead of OPEN: it records who opened it but has no number yet. Only a steward reviews it,
+ *  which opens it (it gets its number then).
  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
  *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
@@ -109,6 +112,18 @@ public class ApplyClaimStatus {
                 throw new ClaimStatusRefusedException("Only a steward can approve a pending claim");
             }
         }
+        if (change.action() == ClaimAction.REVIEW && settings.role(claim.getSheetId(), change.user()) != Role.STEWARD) {
+            throw new ClaimStatusRefusedException("Only a steward can review a claim");
+        }
+        boolean review = false;
+        if (change.action() == ClaimAction.OPEN) {
+            BigDecimal threshold = settings.reviewThreshold(claim.getSheetId(), claim.getDate());
+            if (threshold != null) {
+                String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+                BigDecimal due = figures.due(claim, grade);
+                review = due != null && due.compareTo(threshold) > 0;
+            }
+        }
         BigDecimal due = null;
         boolean pending = false;
         if (change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) {
@@ -124,14 +139,16 @@ public class ApplyClaimStatus {
             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
                     && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
         }
-        claim.setStatus(pending ? ClaimStatus.PENDING : change.action().to());
+        claim.setStatus(pending ? ClaimStatus.PENDING : review ? ClaimStatus.REVIEW : change.action().to());
         // Settled one at a time: in no batch (a bulk settle sets its batch after this).
         if (change.action() == ClaimAction.SETTLE) claim.setBatch(null);
         if (change.action() == ClaimAction.VOID) claim.setVoidReason(voidReason);
         if (change.action() == ClaimAction.OPEN) {
-            claim.setNumber(numbers.next(claim));
+            // A claim gone to REVIEW gets its number only once a steward reviews it.
+            if (!review) claim.setNumber(numbers.next(claim));
             claim.setOpenedBy(change.user());
         }
+        if (change.action() == ClaimAction.REVIEW) claim.setNumber(numbers.next(claim));
         if ((change.action() == ClaimAction.SETTLE && !pending) || change.action() == ClaimAction.APPROVE) {
             claim.setDue(due);
         }
