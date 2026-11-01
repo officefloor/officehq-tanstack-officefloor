@@ -1,0 +1,93 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index c8483286..2e954e2b 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -6,7 +6,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { useSheetTotals } from '../claims/useSheetTotals';
+ import { usePeople, type Person } from '../people/usePeople';
+ import { totalDue } from '../rates/useRates';
+-import { crewsKey, useCrews, type Crew } from './useCrews';
++import { crewDues, crewsKey, useCrews, type Crew } from './useCrews';
+ 
+ /**
+  * The sheet's crews and a form to add one: a name (trimmed; a blank name, or one already a crew, is
+@@ -40,9 +40,6 @@ function CrewsPanel({ user, sheet }: { user: string; sheet: string }) {
+     setInvalid(false);
+   };
+ 
+-  // A person's due-total in cents (null for n/a, or not on the sheet).
+-  const dueOf = (personId: number) => perPerson.find((p) => p.person.id === personId)?.due ?? null;
+-
+   return (
+     <section data-testid="crews-panel">
+       <h2>Crews</h2>
+@@ -106,7 +103,7 @@ function CrewsPanel({ user, sheet }: { user: string; sheet: string }) {
+               sheet={sheet}
+               crew={c}
+               people={people}
+-              dueTotal={totalDue([dueOf(c.leadId), ...c.members.map((m) => dueOf(m.personId))])}
++              dueTotal={totalDue(crewDues(c, perPerson))}
+             />
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/crews/useCrews.ts b/src/main/frontend/features/crews/useCrews.ts
+index f45a9610..8d3c154a 100644
+--- a/src/main/frontend/features/crews/useCrews.ts
++++ b/src/main/frontend/features/crews/useCrews.ts
+@@ -18,3 +18,9 @@ export function useCrews(sheet: string) {
+     gcTime: 0,
+   });
+ }
++
++/** A crew's dues in cents: its lead's and its members' (null for n/a, or not on the sheet). */
++export function crewDues(crew: Crew, perPerson: { person: { id: number }; due: bigint | null }[]) {
++  const dueOf = (personId: number) => perPerson.find((p) => p.person.id === personId)?.due ?? null;
++  return [dueOf(crew.leadId), ...crew.members.map((m) => dueOf(m.personId))];
++}
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index 338084be..5edb1878 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -1,6 +1,7 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { STATUSES, useClaims } from '../claims/useClaims';
+-import { showDue } from '../rates/useRates';
++import { showDue, totalDue } from '../rates/useRates';
++import { crewDues, useCrews } from '../crews/useCrews';
+ import { useSheetTotals } from '../claims/useSheetTotals';
+ import { usePeople } from '../people/usePeople';
+ 
+@@ -9,14 +10,20 @@ import { usePeople } from '../people/usePeople';
+  * included), how many claims have each status (as the summary counts them), and the sheet's
+  * due-total and overdue-total (as the totals work them out). And the signed-in user's own figures:
+  * the due-total and overdue-total of the person whose name or an alias is the user's name (as names
+- * are compared: case and the spaces around it ignored); blank when there is no such person.
++ * are compared: case and the spaces around it ignored); blank when there is no such person. And the
++ * user's crew total: the due-totals of the crews led by a person with the user's name, added up
++ * (n/a ones skipped); blank when no such person leads a crew.
+  */
+ function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
+   const { data: all = [] } = useClaims(sheet);
+   const { data: everyone = [] } = usePeople(sheet);
+   const { dueTotal, overdueTotal, perPerson } = useSheetTotals(sheet);
+   const key = (n: string) => n.trim().toLowerCase();
+-  const me = perPerson.find(({ person }) => [person.name, ...person.aliases].some((n) => key(n) === key(user)));
++  const { data: crews = [] } = useCrews(sheet);
++  const isMine = (p: { name: string; aliases: string[] }) => [p.name, ...p.aliases].some((n) => key(n) === key(user));
++  const me = perPerson.find(({ person }) => isMine(person));
++  const myIds = new Set(perPerson.filter(({ person }) => isMine(person)).map(({ person }) => person.id));
++  const ledCrews = crews.filter((c) => myIds.has(c.leadId));
+   return (
+     <header data-testid="sheet-header">
+       <span>
+@@ -44,6 +51,10 @@ function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
+         {' '}
+         My overdue: <strong data-testid="my-overdue-total">{me ? showDue(me.overdue) : ''}</strong>
+       </span>
++      <span>
++        {' '}
++        My crew due: <strong data-testid="my-crew-due-total">{ledCrews.length > 0 ? totalDue(ledCrews.flatMap((c) => crewDues(c, perPerson))) : ''}</strong>
++      </span>
+     </header>
+   );
+ }
