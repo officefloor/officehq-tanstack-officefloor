@@ -46,6 +46,7 @@ const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to an
 const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
 const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
+const CANNOT_SET_DUE_BY = "Only a steward can set a claim's due-by, only a DRAFT, OPEN or PENDING one's, never into or out of a closed period.";
 const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
 const SETTLE_ASOF = "A claim can be settled as of a date only on or before the sheet's today, and only one that existed then.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
@@ -223,6 +224,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The new date typed for re-dating each claim, by claim id.
   const [redateTo, setRedateTo] = useState<Record<number, string>>({});
+  // The due-by typed for setting each claim's due-by directly, by claim id.
+  const [dueByTo, setDueByTo] = useState<Record<number, string>>({});
   // The user typed for assigning each claim's review, by claim id.
   const [reviewTo, setReviewTo] = useState<Record<number, string>>({});
   // The kind chosen for each claim's next proof ('' for none: a receipt).
@@ -399,6 +402,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => setRedateTo((d) => ({ ...d, [c.id]: '' })),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_REDATE }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A steward sets a DRAFT, OPEN or PENDING claim's due-by directly: a holiday added later leaves it.
+  const setDueBy = useMutation({
+    mutationFn: (c: { id: number; dueBy: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/due-by`, { dueBy: c.dueBy, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setDueByTo((d) => ({ ...d, [c.id]: '' })),
+    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_SET_DUE_BY }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -1127,6 +1140,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => redate.mutate({ id: c.id, date: (redateTo[c.id] ?? '').trim() })}
               >
                 Re-date
+              </button>{' '}
+              <input
+                data-testid="claim-due-by-new"
+                aria-label="New due-by"
+                placeholder="yyyy-mm-dd"
+                value={dueByTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setDueByTo({ ...dueByTo, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-set-due-by"
+                disabled={setDueBy.isPending}
+                onClick={() => setDueBy.mutate({ id: c.id, dueBy: (dueByTo[c.id] ?? '').trim() })}
+              >
+                Set due-by
               </button>{' '}
               Review: <span data-testid="claim-review-assigned">{c.reviewAssigned ?? ''}</span>{' '}
               <input

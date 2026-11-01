@@ -102,6 +102,12 @@ public class Claims {
         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(claim.getDueBy()), claim.getId());
     }
 
+    /** Record a due-by set directly, and that it keeps no terms (so a holiday added does not re-fix it). */
+    public void setDueBy(Claim claim) {
+        jdbc.update("UPDATE claim SET due_by = ?, due_terms = ? WHERE id = ?", Date.valueOf(claim.getDueBy()),
+                claim.getDueTerms(), claim.getId());
+    }
+
     /** Record whether the claim is held. */
     public void hold(Claim claim) {
         jdbc.update("UPDATE claim SET held = ? WHERE id = ?", claim.isHeld(), claim.getId());
