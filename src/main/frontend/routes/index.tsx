@@ -1,4 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { LocaleFigures } from '../features/locale/LocaleFigures';
+import { LocalePicker } from '../features/locale/LocalePicker';
 import { CurrentUser, SignIn } from '../features/session/SignIn';
 import { useCurrentSheet, useCurrentUser } from '../features/session/useSession';
 import { SheetPicker } from '../features/sheet/SheetPicker';
@@ -17,6 +19,8 @@ function Home() {
   return (
     <>
       <CurrentUser user={user} />
+      <LocalePicker user={user} />
+      <LocaleFigures user={user} />
       <SheetPicker />
       {sheet === '' ? (
         <p data-testid="home-empty">Nothing here yet.</p>
