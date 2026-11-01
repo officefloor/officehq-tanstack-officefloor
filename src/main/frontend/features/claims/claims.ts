@@ -95,6 +95,26 @@ export function counted(claims: Claim[], people: Person[]): Claim[] {
   });
 }
 
+/** The status a claim had at the end of the day (yyyy-MM-dd), as its status log records it (the last line on or before
+ *  it); undefined when it was not yet added then. A claim kept from before the log (no lines) has its status now. */
+export function statusOn(claim: Claim, end: string): ClaimStatus | undefined {
+  if (claim.log.length === 0) return claim.status;
+  let then: ClaimStatus | undefined;
+  for (const line of claim.log) if (line.on <= end) then = line.status;
+  return then;
+}
+
+/** Whether a claim counts toward a period ending on the day (yyyy-MM-dd): by the status it had at the end of it
+ *  (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open then, unbound and dated within a hold of
+ *  its person. */
+export function countedOn(claim: Claim, person: Person | undefined, end: string): boolean {
+  const then = statusOn(claim, end);
+  if (claim.deferred || then === undefined) return false;
+  if (then === 'SETTLED') return true;
+  if (then !== 'OPEN' && then !== 'PENDING') return false;
+  return bound(claim) || person === undefined || !heldOn(person, claim.date);
+}
+
 /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
 export function claimed(claims: Claim[]): string {
   return twoDecimals(claims.reduce((sum, c) => sum + hundredths(c.amount), 0n));

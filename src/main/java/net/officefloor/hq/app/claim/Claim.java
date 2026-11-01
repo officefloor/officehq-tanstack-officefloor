@@ -74,6 +74,23 @@ public record Claim(long id, long person, String amount, String date, String not
         return !deferred && (status == ClaimStatus.OPEN || status == ClaimStatus.PENDING || status == ClaimStatus.SETTLED);
     }
 
+    /**
+     * The status this claim had at the end of the day, as its status log records it (the last line on or before it);
+     * null when it was not yet added then. A claim kept from before the log (no lines) has its status now.
+     */
+    public ClaimStatus statusOn(LocalDate end) {
+        if (log == null || log.isEmpty()) {
+            return status;
+        }
+        ClaimStatus then = null;
+        for (ClaimLogLine line : log) {
+            if (!LocalDate.parse(line.on()).isAfter(end)) {
+                then = line.status();
+            }
+        }
+        return then;
+    }
+
     /** Whether this claim's statement binds its figure: it is stated, and not PENDING (which shows its live figure). */
     public boolean bound() {
         return stated && status != ClaimStatus.PENDING;

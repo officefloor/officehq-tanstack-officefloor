@@ -76,7 +76,7 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
 type Draft = { name: string; from: string; to: string };
 const EMPTY: Draft = { name: '', from: '', to: '' };
 
-// The sheet's periods, each with its due-total: the due of the counted (OPEN and SETTLED, but not an unbound OPEN one within its person's hold) claims whose date
+// The sheet's periods, each with its due-total: the due now of the claims that counted at the end of its last day (see countedOn) whose date
 // falls in it (a claim with no rate adds nothing), fixed when the period is closed. The form adds one; the server refuses a name already on
 // the sheet, a bad date, a to-date before the from-date, or dates that overlap another period.
 function Periods({ sheet, user }: { sheet: string; user: string }) {

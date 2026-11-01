@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { claimDueCents, counted } from '../claims/claims';
+import { claimDueCents, countedOn } from '../claims/claims';
 import type { Claim, Late } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
@@ -45,8 +45,9 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-/** Each period's live due-total (in hundredths, by name): the due of the counted (OPEN and SETTLED, but not an unbound
- *  OPEN one within its person's hold) claims whose date falls in it (a claim with no rate adds nothing). */
+/** Each period's live due-total (in hundredths, by name): the due now of the claims whose date falls in it that counted
+ *  at the end of its last day (see {@link countedOn}: OPEN, PENDING or SETTLED then by their status log, but not a
+ *  deferred one, nor an unbound open one within its person's hold); a claim with no rate adds nothing. */
 export function periodDueCents(
   periods: Period[],
   claims: Claim[],
@@ -74,10 +75,10 @@ export function personPeriodDueCents(
 ): Map<string, Map<number, bigint>> {
   const byId = new Map(people.map((p) => [p.id, p]));
   const totals = new Map<string, Map<number, bigint>>();
-  for (const c of counted(claims, people)) {
+  for (const c of claims) {
     const period = periodOf(periods, c.date);
     const person = byId.get(c.person);
-    if (period === undefined || person === undefined) continue;
+    if (period === undefined || person === undefined || !countedOn(c, person, period.to)) continue;
     const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
     const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
     byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
