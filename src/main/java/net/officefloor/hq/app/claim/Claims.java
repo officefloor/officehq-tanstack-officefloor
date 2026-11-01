@@ -30,14 +30,15 @@ public class Claims {
             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
             rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of(),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
-            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"));
+            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
+            rs.getString("locked_by"));
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     // It is deferred while OPEN with its deferred-until after the sheet's today (the real date until one is set).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -143,11 +144,38 @@ public class Claims {
                 rest, sheet, id, was) == 1;
     }
 
-    /** Edits a draft claim: false when it is no longer a draft. */
-    public boolean update(String sheet, long id, ClaimInput input) {
+    /**
+     * Edits a draft claim not locked by another user's editor, releasing any lock on it: false when it is no longer a
+     * draft, or another user's editor holds it.
+     */
+    public boolean update(String sheet, long id, ClaimInput input, String user) {
         return jdbc.update(
-                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'",
-                input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), sheet, id) == 1;
+                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet = ? AND id = ?"
+                        + " AND status = 'DRAFT' AND (locked_by IS NULL OR locked_by = ?)",
+                input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), sheet, id, user) == 1;
+    }
+
+    /**
+     * Locks a draft claim for the user's editor, releasing any other claim the user's editor held on the sheet:
+     * false when it is no longer a draft, or another user's editor holds it.
+     */
+    public boolean lock(String sheet, long id, String user) {
+        if (jdbc.update("UPDATE claim SET locked_by = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'"
+                + " AND (locked_by IS NULL OR locked_by = ?)", user, sheet, id, user) != 1) {
+            return false;
+        }
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet = ? AND id <> ? AND locked_by = ?", sheet, id, user);
+        return true;
+    }
+
+    /** Releases the claim's lock when the user's editor holds it. */
+    public void unlock(String sheet, long id, String user) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet = ? AND id = ? AND locked_by = ?", sheet, id, user);
+    }
+
+    /** Releases every lock on the sheet's claims, as when its today changes. */
+    public void unlockAll(String sheet) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet = ? AND locked_by IS NOT NULL", sheet);
     }
 
     /**

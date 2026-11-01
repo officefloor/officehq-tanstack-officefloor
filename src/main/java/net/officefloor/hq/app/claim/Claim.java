@@ -18,12 +18,12 @@ import net.officefloor.hq.app.setting.Dated;
  * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date,
  * and its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
  * deferred now: OPEN with that date after the sheet's today, and its proofs count, and the number (as it shows) of
- * the claim it was split off (null unless it was).
+ * the claim it was split off (null unless it was), and the user whose open editor locks it (null when none does).
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
         String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log, String deferredUntil, boolean deferred, int proofs,
-        String splitFrom) {
+        String splitFrom, String lockedBy) {
 
     /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
     public boolean correction() {
@@ -37,37 +37,37 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
     public Claim withNumber(Integer number) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** This claim, numbered within its period: its audit fields end with number=<period number>. */
     public Claim withPeriodNumber(String periodNumber) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** This claim with another date (yyyy-MM-dd), as once re-dated. */
     public Claim withDate(String date) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** This claim with another amount (two decimals), as its remaining amount once split. */
     public Claim withAmount(String amount) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** This claim, settled with its due fixed (null when its grade had no rate). */
     public Claim withSettledDue(String settledDue) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** This claim as an OPEN claim bound by no statement and with no due fixed: the figure it would have live. */
     public Claim asOpenUnbound() {
-        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** This claim, with its status log (oldest first). */
     public Claim withLog(List<ClaimLogLine> log) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy);
     }
 
     /** The date it was last settled: its status log's last SETTLED line (null when the log has none). */

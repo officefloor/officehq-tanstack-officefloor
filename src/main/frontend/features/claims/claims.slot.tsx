@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
@@ -53,14 +53,13 @@ const CHANGES: { change: ClaimStatusChange; label: string }[] = [
 
 // One claim with its status and the buttons that change it. Every button is offered; the server
 // refuses a change the claim's status does not allow, and the row shows that error until its next action.
-function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel }: {
+function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   sheet: string;
   user: string;
   claim: Claim;
   rates: Rate[];
   grade: Grade | undefined;
   editing: boolean;
-  onEdit: () => void;
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -130,8 +129,20 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   });
   const split = useSubmitOnce(splitMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
-  // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
+  // Edit opens the claim's editor by locking it for this user: the server refuses a claim that is not a DRAFT, one
+  // dated inside a closed period, or one another user's editor holds, and the row shows the error instead.
+  const lockMutation = useMutation({
+    mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/lock`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
+  const lock = useSubmitOnce(lockMutation);
+  // What the screen already knows refuses at once (the server refuses the rest): a claim that is not a DRAFT, one
+  // dated inside a closed period, or one another user's editor holds.
   const [editRefused, setEditRefused] = useState(false);
+  const clearEditError = () => {
+    setEditRefused(false);
+    lockMutation.reset();
+  };
   // A steward rejects a PENDING claim with a reason, typed beside the Reject button.
   const [reason, setReason] = useState('');
 
@@ -169,7 +180,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-proof"
         disabled={proofMutation.isPending}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           status.reset();
           move.reset();
           resettleMutation.reset();
@@ -188,7 +199,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           data-testid={`claim-${change}`}
           disabled={status.isPending}
           onClick={() => {
-            setEditRefused(false);
+            clearEditError();
             move.reset();
             resettleMutation.reset();
             deferMutation.reset();
@@ -217,7 +228,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-reject"
         disabled={status.isPending}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
@@ -240,12 +251,12 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           redateMutation.reset();
           splitMutation.reset();
           proofMutation.reset();
-          if (claim.status !== 'DRAFT') {
+          clearEditError();
+          if (claim.status !== 'DRAFT' || periodOf(periods, claim.date)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
             setEditRefused(true);
             return;
           }
-          setEditRefused(false);
-          onEdit();
+          lock(undefined);
         }}
       >
         Edit
@@ -273,7 +284,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-reassign"
         disabled={move.isPending || moveTo === ''}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           status.reset();
           resettleMutation.reset();
           deferMutation.reset();
@@ -290,7 +301,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-resettle"
         disabled={resettleMutation.isPending}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           status.reset();
           move.reset();
           deferMutation.reset();
@@ -318,7 +329,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-defer"
         disabled={deferMutation.isPending}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           status.reset();
           move.reset();
           resettleMutation.reset();
@@ -344,7 +355,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-redate"
         disabled={redateMutation.isPending}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           status.reset();
           move.reset();
           resettleMutation.reset();
@@ -370,7 +381,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-split"
         disabled={splitMutation.isPending}
         onClick={() => {
-          setEditRefused(false);
+          clearEditError();
           status.reset();
           move.reset();
           resettleMutation.reset();
@@ -394,9 +405,10 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           </li>
         ))}
       </ol>
-      {editRefused && (
+      {(editRefused || lockMutation.isError) && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be edited; only a DRAFT can (void it and add a new one).
+          {' '}This claim cannot be edited: only a DRAFT outside a closed period can (void it and add a new one), and
+          not while another user has its editor open.
         </span>
       )}
       {status.isError && (
@@ -454,8 +466,10 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
   const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [editing, setEditing] = useState<number | null>(null);
-
+  // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
+  // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
+  const locked = claims.find((c) => c.lockedBy === user);
+  const editing = locked?.id ?? null;
   const save = useMutation({
     mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
       id === null
@@ -464,26 +478,37 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
     onSuccess: (updated) => {
       queryClient.setQueryData(claimsKey(sheet), updated);
       setDraft(EMPTY);
-      setEditing(null);
     },
   });
   const send = useSubmitOnce(save);
+
+  const filled = useRef<number | null>(null);
+  useEffect(() => {
+    if (filled.current === editing) return;
+    filled.current = editing;
+    setDraft(
+      locked === undefined
+        ? EMPTY
+        : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '' },
+    );
+    save.reset();
+    // Only a move to another claim (or none) refills the form; the draft typed meanwhile is the user's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
 
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
     save.reset();
   };
 
-  const open = (c: Claim) => {
-    setEditing(c.id);
-    setDraft({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
-    save.reset();
-  };
-
+  // Cancel releases this user's lock; the form goes back to adding once the claims show it released.
+  const unlock = useMutation({
+    mutationFn: (id: number) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${id}/unlock`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
   const cancel = () => {
-    setEditing(null);
-    setDraft(EMPTY);
     save.reset();
+    if (editing !== null) unlock.mutate(editing);
   };
 
   const submit = (e: FormEvent) => {
@@ -545,7 +570,6 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
               rates={rates}
               grade={gradeOn(person, c.date)}
               editing={editing === c.id}
-              onEdit={() => open(c)}
               onCancel={cancel}
             />
           ))}

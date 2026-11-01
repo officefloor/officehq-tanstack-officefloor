@@ -28,9 +28,13 @@ public class SaveClaim {
         }
         input.checkCorrects(sheet, owner.id(), claims);
         Rollup.Snapshot before = rollup.take(sheet);
-        // Conditional on the claim still being a draft, so one another user opened meanwhile is refused.
-        if (!claims.update(sheet, claim.id(), input)) {
-            throw new InvalidClaimException("The claim is no longer a DRAFT and cannot be edited");
+        if (claim.lockedBy() != null && !claim.lockedBy().equals(user)) {
+            throw new InvalidClaimException("The claim is being edited by " + claim.lockedBy());
+        }
+        // Conditional on the claim still being a draft and not locked by another user's editor, so one another user
+        // opened or locked meanwhile is refused; the save releases the lock.
+        if (!claims.update(sheet, claim.id(), input, user)) {
+            throw new InvalidClaimException("The claim is no longer a DRAFT, or another user is editing it");
         }
         audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(owner.name()));
         rollup.record(sheet, user, before);
