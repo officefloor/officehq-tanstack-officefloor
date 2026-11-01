@@ -6,12 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A share of a claim held by another person on its sheet: a percent (two decimals, more than 0.00)
- *  of the claim's due, which counts in their figures in place of the claim's own person's. */
+ *  of the claim, whose part (see {@link Figures#part}) counts in their figures in place of the claim's
+ *  own person's. */
 public record ClaimShare(long personId, BigDecimal share) {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
-    /** The holder's part of a due: the due times the share divided by 100, rounded half to even. */
+    /** The holder's part of a settled claim's fixed due, frozen with it: the due times the share divided by 100, rounded half to even. */
     public BigDecimal partOf(BigDecimal due) {
         return due.multiply(share).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
     }

@@ -24,19 +24,24 @@ export function useSheetTotals(sheet: string) {
   const late = useLate(sheet);
   const cap = useCap(sheet);
   const cutOf = useCutTotal(sheet);
-  // A claim's rate by its own person's grade on its date (a share holder's part is of that due).
+  // A claim's rate by its own person's grade on its date.
   const byId = new Map(people.map((p) => [p.id, p]));
   const ownRate = (c: (typeof claims)[number]) => {
     const owner = byId.get(c.personId);
     return owner === undefined ? undefined : claimRateOn(rates, gradeOn(owner, c.date), c);
   };
+  // A share holder's part is at the rate of their own grade on the claim's date.
+  const holderRate = (c: (typeof claims)[number], id: number) => {
+    const holder = byId.get(id);
+    return holder === undefined ? undefined : claimRateOn(rates, gradeOn(holder, c.date), c);
+  };
   const dues = people.map((p) =>
-    personDueCents(carried(claims, p.id), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, cap, p.id, cutOf(p.id)),
+    personDueCents(carried(claims, p.id), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, cap, p.id, cutOf(p.id), holderRate),
   );
   // Everyone's due-total before the cap, split into its SETTLED and its OPEN-and-PENDING part.
   const part = (keep: (c: (typeof claims)[number]) => boolean) =>
     people.map((p) =>
-      personDueCents(carried(claims, p.id).filter(keep), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, undefined, p.id),
+      personDueCents(carried(claims, p.id).filter(keep), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, undefined, p.id, undefined, holderRate),
     );
   const over = people.map((p) =>
     overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (c) => claimRateOn(rates, gradeOn(p, c.date), c)),

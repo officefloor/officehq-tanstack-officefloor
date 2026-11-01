@@ -125,11 +125,12 @@ export function dueCents(amount: string, pct: string | undefined, halfUp = false
   return product < 0n ? -rounded : rounded;
 }
 
-/** A size in ten-thousandths of a cent, rounded to whole cents: half up with `halfUp`, else half to even. */
-export function roundTenThousandths(abs: bigint, halfUp: boolean): bigint {
+/** A size in ten-thousandths of a cent, rounded to whole cents: half up with `halfUp`, else half to even.
+ *  `beyond` is any finer remainder below the ten-thousandths (more than 0 breaks a half upwards). */
+export function roundTenThousandths(abs: bigint, halfUp: boolean, beyond = 0n): bigint {
   const whole = abs / 10000n;
   const rest = abs % 10000n;
-  return rest > 5000n || (rest === 5000n && (halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
+  return rest > 5000n || (rest === 5000n && (beyond > 0n || halfUp || whole % 2n === 1n)) ? whole + 1n : whole;
 }
 
 /** A due in cents as shown: two decimals, or n/a when there is no rate. */

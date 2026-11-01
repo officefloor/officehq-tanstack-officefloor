@@ -179,18 +179,23 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const cap = useCap(sheet);
   const cut = useCutTotal(sheet)(person.id);
   // The claims they carry: their own less the holders' parts, and their parts of those shared with them
-  // (each live by its own person, at its own person's rate).
+  // (each live by its own person, at its own person's rate; a holder's part at their own grade's rate).
   const carriedClaims = carried(live(all, heldOnBy(everyone, today)), person.id);
   const ownRate = (c: Claim) => {
     const owner = everyone.find((p) => p.id === c.personId);
     return owner === undefined ? undefined : claimRateOn(rates, gradeOn(owner, c.date), c);
   };
+  // A share holder's part is at the rate of their own grade on the claim's date.
+  const holderRate = (c: Claim, id: number) => {
+    const holder = everyone.find((p) => p.id === id);
+    return holder === undefined ? undefined : claimRateOn(rates, gradeOn(holder, c.date), c);
+  };
   // The sum of their figures; their due-total is at most the cap less their cut total, and their excess
   // what that sum plus their cut total is over the cap.
-  const dueSum = personDueCents(carriedClaims, floor, pct, ownRate, lateBy, undefined, person.id);
+  const dueSum = personDueCents(carriedClaims, floor, pct, ownRate, lateBy, undefined, person.id, undefined, holderRate);
   // The due-total before the cap, split (an n/a part shows 0.00): their SETTLED claims' figures, and their OPEN and PENDING ones'.
-  const settledSum = personDueCents(carriedClaims.filter((c) => c.status === 'SETTLED'), floor, pct, ownRate, lateBy, undefined, person.id);
-  const openSum = personDueCents(carriedClaims.filter(isOpen), floor, pct, ownRate, lateBy, undefined, person.id);
+  const settledSum = personDueCents(carriedClaims.filter((c) => c.status === 'SETTLED'), floor, pct, ownRate, lateBy, undefined, person.id, undefined, holderRate);
+  const openSum = personDueCents(carriedClaims.filter(isOpen), floor, pct, ownRate, lateBy, undefined, person.id, undefined, holderRate);
   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
   // Their score: their settled figures, corrections left out, over 100, less 5 for each overdue claim, rounded half to even.
   const scoredSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED' && !c.corrects), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);

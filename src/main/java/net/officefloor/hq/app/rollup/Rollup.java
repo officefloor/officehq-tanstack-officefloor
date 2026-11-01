@@ -56,7 +56,8 @@ public class Rollup {
     }
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures, less
-     *  the parts their share holders carry, plus their parts of the counting claims shared with them (a
+     *  the parts their share holders carry, plus their parts of the counting claims shared with them (see
+     *  {@link Figures#part}; a
      *  person's OPEN claims once today reaches their retirement date do not count, unless a statement
      *  binds them; a hold takes nothing out),
      *  n/a when there is no rate today and none has a figure, at most the sheet's cap less their cut total (not below 0.00; n/a is not
@@ -71,14 +72,21 @@ public class Rollup {
         List<BigDecimal> overdues = new ArrayList<>();
         List<Person> everyone = people.onSheet(sheetId);
         Map<Long, BigDecimal> cuts = pools.cutTotals(sheetId);
-        // Each counting claim's figure (by its own person's grade), for the parts its share holders carry.
-        Map<Long, BigDecimal> shared = new java.util.HashMap<>();
+        // Each counting shared claim's holders' parts (each by the holder's own grade), by claim and holder;
+        // a holder whose grade has no rate holds none (a part of 0.00).
+        Map<Long, Map<Long, BigDecimal>> parts = new java.util.HashMap<>();
         for (Claim claim : all) {
             if (claim.getShares().isEmpty()) continue;
             Person owner = everyone.stream().filter(p -> p.getId() == claim.getPersonId()).findFirst().orElse(null);
             if (owner == null || !owner.counts(claim)) continue;
-            BigDecimal figure = figures.due(claim, owner.gradeOn(claim.getDate()));
-            if (figure != null) shared.put(claim.getId(), figure);
+            Map<Long, BigDecimal> held = new java.util.HashMap<>();
+            for (ClaimShare share : claim.getShares()) {
+                Person holder = everyone.stream().filter(p -> p.getId() == share.personId()).findFirst().orElse(null);
+                if (holder == null) continue;
+                BigDecimal part = figures.part(claim, share, holder.gradeOn(claim.getDate()));
+                if (part != null) held.put(share.personId(), part);
+            }
+            parts.put(claim.getId(), held);
         }
         for (Person person : everyone) {
             BigDecimal claimed = ZERO;
@@ -99,7 +107,7 @@ public class Rollup {
                 if (figure != null) {
                     // Less the parts its share holders carry.
                     BigDecimal kept = figure;
-                    for (ClaimShare share : claim.getShares()) kept = kept.subtract(share.partOf(figure));
+                    for (BigDecimal part : parts.getOrDefault(claim.getId(), Map.of()).values()) kept = kept.subtract(part);
                     due = due.add(kept);
                     any = true;
                     if (figures.overdue(claim, grade)) {
@@ -109,13 +117,10 @@ public class Rollup {
             }
             // Their parts of the claims shared with them.
             for (Claim claim : all) {
-                BigDecimal figure = shared.get(claim.getId());
-                if (figure == null) continue;
-                for (ClaimShare share : claim.getShares()) {
-                    if (share.personId() != person.getId()) continue;
-                    due = due.add(share.partOf(figure));
-                    any = true;
-                }
+                BigDecimal part = parts.getOrDefault(claim.getId(), Map.of()).get(person.getId());
+                if (part == null) continue;
+                due = due.add(part);
+                any = true;
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
             due = settings.capped(sheetId, due, cuts.get(person.getId()));

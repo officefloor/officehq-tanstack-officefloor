@@ -105,6 +105,19 @@ public class Figures {
         return total;
     }
 
+    /** A share holder's part of the claim, `grade` the holder's own grade in force on the claim's date:
+     *  for a settled claim the part frozen with its fixed due (see {@link ClaimShare#partOf}), else the
+     *  claim's amount times the share divided by 100, times the rate of that grade in force on the
+     *  claim's date divided by 100, rounded by the claim's rounding to two decimals; null (a part of
+     *  0.00) when that grade has no rate. */
+    public BigDecimal part(Claim claim, ClaimShare share, String grade) {
+        if (claim.getDue() != null) return share.partOf(claim.getDue());
+        BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate(), claim.seq());
+        if (pct == null) return null;
+        return claim.getAmount().multiply(share.share()).multiply(pct).divide(BigDecimal.valueOf(10000))
+                .setScale(2, rounding(claim));
+    }
+
     /** The claim's due at its person's grade's rate in force on the claim's date (passing over a
      *  forward-only rate saved after the claim was added, see {@link Rates#ownPct}): amount times the
      *  rate divided by 100, rounded by the claim's rounding to two decimals, before any late charge or
