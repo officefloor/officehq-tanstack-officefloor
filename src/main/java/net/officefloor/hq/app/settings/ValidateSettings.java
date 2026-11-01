@@ -33,7 +33,7 @@ public class ValidateSettings {
             Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"),
             Settings.graceKey("A"), Settings.graceKey("B"), Settings.graceKey("C"), Settings.LATE_PCT, Settings.CAP,
             Settings.PROOF_THRESHOLD, Settings.proofKey("A"), Settings.proofKey("B"), Settings.proofKey("C"),
-            Settings.NOTE_THRESHOLD);
+            Settings.NOTE_THRESHOLD, Settings.ROUNDING);
 
     /** A month of the year: 1 to 12. */
     private static final Pattern MONTH = Pattern.compile("0?[1-9]|1[0-2]");
@@ -137,6 +137,10 @@ public class ValidateSettings {
         if (noteThreshold != null && !noteThreshold.isEmpty() && !AMOUNT.matcher(noteThreshold).matches()) {
             throw new InvalidSheetRequestException("The note threshold must be an amount with up to two decimals, or blank");
         }
+        String rounding = request == null || request.rounding() == null ? null : request.rounding().trim();
+        if (rounding != null && !rounding.isEmpty() && Settings.roundingCode(rounding) == null) {
+            throw new InvalidSheetRequestException("The rounding mode must be half-up or half-even, or blank");
+        }
         String pot = request == null || request.pot() == null ? null : request.pot().trim();
         if (pot != null && !pot.isEmpty() && !AMOUNT.matcher(pot).matches()) {
             throw new InvalidSheetRequestException("The pot must be an amount with up to two decimals, or blank");
@@ -216,6 +220,7 @@ public class ValidateSettings {
                 pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
                 parent != null, parent == null || parent.isEmpty() ? null : parent,
                 fiscal == null ? null : Integer.parseInt(fiscal),
-                alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2)));
+                alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
+                rounding != null, rounding == null || rounding.isEmpty() ? null : rounding));
     }
 }

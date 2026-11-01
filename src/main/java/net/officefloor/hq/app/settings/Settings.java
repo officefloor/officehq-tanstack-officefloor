@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.settings;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Repository;
 
 /** Each sheet's settings: the roles given to user names, its policy date, its period numbering from,
  *  and its dated settings — its clerk limit, its floor, its terms (and any per grade), its late percent
- *  its cap, its proof threshold and its note threshold — each recorded from from-dates. */
+ *  its cap, its proof threshold, its note threshold and its rounding mode — each recorded from from-dates. */
 @Repository
 public class Settings {
 
@@ -33,7 +34,7 @@ public class Settings {
     /** The keys of the dated settings. */
     public static final String CLERK_LIMIT = "clerk-limit", FLOOR = "floor", TERMS = "terms",
             LATE_PCT = "late-pct", CAP = "cap",
-            PROOF_THRESHOLD = "proof-threshold", NOTE_THRESHOLD = "note-threshold";
+            PROOF_THRESHOLD = "proof-threshold", NOTE_THRESHOLD = "note-threshold", ROUNDING = "rounding";
 
     /** The actions of the permission matrix, in order. */
     public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
@@ -176,6 +177,36 @@ public class Settings {
                 sheetId, key, Date.valueOf(from), value);
     }
 
+    /** The rounding modes a sheet can set, by the name the screen and audit show; stored as a code. */
+    private static final Map<String, RoundingMode> ROUNDING_MODES = Map.of("half-up", RoundingMode.HALF_UP,
+            "half-even", RoundingMode.HALF_EVEN);
+
+    /** The stored code of a rounding mode's name (1 half-up, 2 half-even); null when not a mode. */
+    public static BigDecimal roundingCode(String name) {
+        if (name == null) return null;
+        return switch (name) {
+            case "half-up" -> BigDecimal.ONE;
+            case "half-even" -> BigDecimal.valueOf(2);
+            default -> null;
+        };
+    }
+
+    private static String roundingName(BigDecimal code) {
+        return code.intValue() == 1 ? "half-up" : "half-even";
+    }
+
+    /** The rounding mode in force on `date`; null when none (the policy date decides). */
+    public RoundingMode rounding(String sheetId, LocalDate date) {
+        BigDecimal code = valueOn(sheetId, ROUNDING, date, null);
+        return code == null ? null : ROUNDING_MODES.get(roundingName(code));
+    }
+
+    /** The name of the rounding mode in force on `date` (half-up or half-even); null when none. */
+    public String roundingName(String sheetId, LocalDate date) {
+        BigDecimal code = valueOn(sheetId, ROUNDING, date, null);
+        return code == null ? null : roundingName(code);
+    }
+
     /** Every value recorded for the sheet's dated settings, by key, oldest from-date first. */
     public Map<String, List<DatedValue>> dated(String sheetId) {
         Map<String, List<DatedValue>> dated = new TreeMap<>();
@@ -183,9 +214,10 @@ public class Settings {
                 + "ORDER BY setting_key, from_date",
                 (RowCallbackHandler) rs -> {
                     BigDecimal value = rs.getBigDecimal("setting_value");
-                    dated.computeIfAbsent(rs.getString("setting_key"), k -> new ArrayList<>())
+                    String key = rs.getString("setting_key");
+                    dated.computeIfAbsent(key, k -> new ArrayList<>())
                             .add(new DatedValue(rs.getDate("from_date").toLocalDate().toString(),
-                                    value != null ? value.toPlainString() : null));
+                                    value == null ? null : ROUNDING.equals(key) ? roundingName(value) : value.toPlainString()));
                 }, sheetId);
         return dated;
     }

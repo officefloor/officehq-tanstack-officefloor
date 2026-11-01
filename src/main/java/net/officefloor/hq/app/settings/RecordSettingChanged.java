@@ -76,6 +76,10 @@ public class RecordSettingChanged {
             audit.record(prefix + " key=alert-threshold value="
                     + (change.alertThreshold() != null ? change.alertThreshold().toPlainString() : ""));
         }
+        if (change.setsRounding()) {
+            audit.record(prefix + " key=rounding value=" + (change.rounding() != null ? change.rounding() : "")
+                    + from(change, Settings.ROUNDING));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

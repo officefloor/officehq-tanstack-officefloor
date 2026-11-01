@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
  *  sheet's floor in force on the claim's date and its figure plus its late charge, where its figure is
  *  the one its person's last statement bound it to, else live at its person's grade's rate in force on
  *  the claim's date (null, n/a, when there is no rate). A correction has neither floor nor charge. Every rounding of a claim's live figures follows
- *  the sheet's policy date: half up for a claim dated before it, half to even on or after it. */
+ *  the sheet's rounding mode in force on the claim's date, else the sheet's policy date: half up for a claim dated before it, half to even on or after it. */
 @Service
 public class Figures {
 
@@ -35,9 +35,12 @@ public class Figures {
         return set != null ? set : sheets.today(sheetId);
     }
 
-    /** How the claim's live figures round: half up when the claim is dated before the sheet's policy
+    /** How the claim's live figures round: by the sheet's rounding mode in force on the claim's
+     *  (rounding) date when one is; else half up when the claim is dated before the sheet's policy
      *  date, half to even on or after it. A correction rounds by the date of the claim it corrects. */
     public RoundingMode rounding(Claim claim) {
+        RoundingMode set = settings.rounding(claim.getSheetId(), roundingDate(claim));
+        if (set != null) return set;
         return roundingDate(claim).isBefore(policyDate(claim.getSheetId())) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 

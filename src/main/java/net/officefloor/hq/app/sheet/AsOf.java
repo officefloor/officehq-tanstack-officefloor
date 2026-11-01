@@ -88,6 +88,15 @@ public class AsOf {
                         for (int i = 1; i <= cols.size(); i++) row.add(rs.getObject(i));
                         rows.merge(row, "I".equals(rs.getString(cols.size() + 1)) ? 1 : -1, Integer::sum);
                     }, sheetId, Date.valueOf(date));
+            // A snapshot of a day is written as the day is left: it is not part of the sheet at the end of it.
+            if (table.equals("PERSON_SNAPSHOT")) {
+                int leftDay = cols.indexOf("LEFT_DAY");
+                rows.keySet().removeIf(row -> {
+                    Object left = row.get(leftDay);
+                    LocalDate day = left instanceof Date d ? d.toLocalDate() : (LocalDate) left;
+                    return !day.isBefore(date);
+                });
+            }
             jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheetId);
             String insert = "INSERT INTO ASOF.\"" + table + "\" (" + names + ") VALUES ("
                     + "?, ".repeat(cols.size() - 1) + "?)";
