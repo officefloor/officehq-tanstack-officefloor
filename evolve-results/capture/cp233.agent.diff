@@ -1,0 +1,290 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 66aae8ed..114a1887 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -46,6 +46,7 @@ const CANNOT_MOVE = 'Only a DRAFT, OPEN or PENDING claim can be reassigned to an
+ const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLED one dated outside a closed period.';
+ const NO_TARGET = 'Choose another person to reassign this claim to.';
+ const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
++const CANNOT_SET_DUE_BY = "Only a steward can set a claim's due-by, only a DRAFT, OPEN or PENDING one's, never into or out of a closed period.";
+ const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
+ const SETTLE_ASOF = "A claim can be settled as of a date only on or before the sheet's today, and only one that existed then.";
+ const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
+@@ -223,6 +224,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
+   // The new date typed for re-dating each claim, by claim id.
+   const [redateTo, setRedateTo] = useState<Record<number, string>>({});
++  // The due-by typed for setting each claim's due-by directly, by claim id.
++  const [dueByTo, setDueByTo] = useState<Record<number, string>>({});
+   // The user typed for assigning each claim's review, by claim id.
+   const [reviewTo, setReviewTo] = useState<Record<number, string>>({});
+   // The kind chosen for each claim's next proof ('' for none: a receipt).
+@@ -402,6 +405,16 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
+ 
++  // A steward sets a DRAFT, OPEN or PENDING claim's due-by directly: a holiday added later leaves it.
++  const setDueBy = useMutation({
++    mutationFn: (c: { id: number; dueBy: string }) =>
++      postJson<Claim>(`${base}/claims/${c.id}/due-by`, { dueBy: c.dueBy, user }),
++    onMutate: () => setRefused(null),
++    onSuccess: (_, c) => setDueByTo((d) => ({ ...d, [c.id]: '' })),
++    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_SET_DUE_BY }),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++  });
++
+   // A steward assigns a REVIEW claim's review to a user.
+   const assignReview = useMutation({
+     mutationFn: (c: { id: number; assignee: string }) =>
+@@ -1128,6 +1141,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               >
+                 Re-date
+               </button>{' '}
++              <input
++                data-testid="claim-due-by-new"
++                aria-label="New due-by"
++                placeholder="yyyy-mm-dd"
++                value={dueByTo[c.id] ?? ''}
++                onChange={(e) => {
++                  setDueByTo({ ...dueByTo, [c.id]: e.target.value });
++                  if (refused?.id === c.id) setRefused(null);
++                }}
++              />{' '}
++              <button
++                type="button"
++                data-testid="claim-set-due-by"
++                disabled={setDueBy.isPending}
++                onClick={() => setDueBy.mutate({ id: c.id, dueBy: (dueByTo[c.id] ?? '').trim() })}
++              >
++                Set due-by
++              </button>{' '}
+               Review: <span data-testid="claim-review-assigned">{c.reviewAssigned ?? ''}</span>{' '}
+               <input
+                 data-testid="claim-review-user"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimDueBySet.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimDueBySet.java
+new file mode 100644
+index 00000000..6778d216
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimDueBySet.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.period.ClosedPeriods;
++import net.officefloor.hq.app.period.PeriodClosedException;
++import net.officefloor.hq.app.settings.Role;
++import net.officefloor.hq.app.settings.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Val;
++
++/** A steward sets the due-by of a DRAFT, OPEN or PENDING claim directly. It stays as set: the claim
++ *  keeps no terms, so a holiday added later does not re-fix it. Overdue, the late charge, grace and
++ *  the claim's period follow the set date. Refused: anyone but a steward, a claim in any other
++ *  status, or a claim due by (now or as set) in a closed period. */
++public class ApplyClaimDueBySet {
++    public void apply(@Val ClaimDueBySet change, @Val Claim claim, Settings settings, Sheets sheets,
++            ClosedPeriods closedPeriods) throws ClaimStatusRefusedException, PeriodClosedException {
++        String sheetId = claim.getSheetId();
++        if (sheets.archived(sheetId) || settings.role(sheetId, change.user()) != Role.STEWARD) {
++            throw new ClaimStatusRefusedException("Only a steward can set a claim's due-by");
++        }
++        if (claim.getStatus() != ClaimStatus.DRAFT && !claim.getStatus().isOpen()) {
++            throw new ClaimStatusRefusedException("Only a DRAFT, OPEN or PENDING claim's due-by can be set");
++        }
++        closedPeriods.refuse(sheetId, claim.getDueBy());
++        closedPeriods.refuse(sheetId, change.dueBy());
++        change.set(claim.getDueBy());
++        claim.setDueBy(change.dueBy());
++        claim.setDueTerms(null);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 41aa3605..b4381b7b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -90,10 +90,12 @@ public class Claim {
+     public void setCorrects(String corrects) { this.corrects = corrects; }
+     /** The date the claim is due by, fixed when it was added: its date then plus the terms of its
+      *  person's grade in force on that date. Later changes to the terms or the claim's date leave it;
+-     *  a holiday added on or before it re-fixes it (unless SETTLED or VOID) from its date, with the same terms. */
++     *  a holiday added on or before it re-fixes it (unless SETTLED or VOID) from its date, with the same terms.
++     *  A steward may set it directly; it then keeps no terms and stays as set. */
+     public LocalDate getDueBy() { return dueBy; }
+     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+-    /** The terms (business days) the claim's due-by was fixed with; a holiday added re-fixes it with these. */
++    /** The terms (business days) the claim's due-by was fixed with; a holiday added re-fixes it with these;
++     *  null when its due-by was set directly, so it is never re-fixed. */
+     public Integer getDueTerms() { return dueTerms; }
+     public void setDueTerms(Integer dueTerms) { this.dueTerms = dueTerms; }
+     /** The date the claim was last deferred until; null when it never was. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDueBySet.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDueBySet.java
+new file mode 100644
+index 00000000..e63c6ed6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDueBySet.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++
++/** A validated due-by setting: the claim's new due-by and who sets it; `old` is the due-by it had, set once it is applied. */
++public class ClaimDueBySet {
++    private final LocalDate dueBy;
++    private final String user;
++    private LocalDate old;
++
++    public ClaimDueBySet(LocalDate dueBy, String user) {
++        this.dueBy = dueBy;
++        this.user = user;
++    }
++
++    public LocalDate dueBy() {
++        return dueBy;
++    }
++
++    public String user() {
++        return user;
++    }
++
++    public LocalDate old() {
++        return old;
++    }
++
++    public void set(LocalDate old) {
++        this.old = old;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDueBySetRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDueBySetRequest.java
+new file mode 100644
+index 00000000..c4742147
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDueBySetRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Body of setting a claim's due-by directly: the new due-by (yyyy-mm-dd), and who sets it. */
++public record ClaimDueBySetRequest(String dueBy, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 4ad70b5b..1b197cd8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -102,6 +102,12 @@ public class Claims {
+         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(claim.getDueBy()), claim.getId());
+     }
+ 
++    /** Record a due-by set directly, and that it keeps no terms (so a holiday added does not re-fix it). */
++    public void setDueBy(Claim claim) {
++        jdbc.update("UPDATE claim SET due_by = ?, due_terms = ? WHERE id = ?", Date.valueOf(claim.getDueBy()),
++                claim.getDueTerms(), claim.getId());
++    }
++
+     /** Record whether the claim is held. */
+     public void hold(Claim claim) {
+         jdbc.update("UPDATE claim SET held = ? WHERE id = ?", claim.isHeld(), claim.getId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimDueBySet.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimDueBySet.java
+new file mode 100644
+index 00000000..b6a30940
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimDueBySet.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the claim is saved, so a refused due-by setting writes no audit line. */
++public class RecordClaimDueBySet {
++    public void record(@Val ClaimDueBySet change, @Val Claim claim, People people, Audit audit) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        audit.record("CLAIM_DUE_BY_SET sheet=" + claim.getSheetId() + " by=" + change.user()
++                + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
++                + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
++                + " old=" + change.old() + " new=" + change.dueBy());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimDueBySet.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimDueBySet.java
+new file mode 100644
+index 00000000..6c84489f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimDueBySet.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SaveClaimDueBySet {
++    public void save(@Val Claim claim, Claims claims) {
++        claims.setDueBy(claim);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimDueBySet.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimDueBySet.java
+new file mode 100644
+index 00000000..9f4845b5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimDueBySet.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateClaimDueBySet {
++    public void validate(@RequestBody ClaimDueBySetRequest request, Out<ClaimDueBySet> body, Out<Actor> actor)
++            throws InvalidSheetRequestException {
++        String raw = request == null || request.dueBy() == null ? "" : request.dueBy().trim();
++        try {
++            actor.set(new Actor(request.user()));
++            body.set(new ClaimDueBySet(LocalDate.parse(raw), request.user()));
++        } catch (DateTimeParseException e) {
++            throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + raw);
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.POST.yml
+new file mode 100644
+index 00000000..1212d438
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/due-by.POST.yml
+@@ -0,0 +1,36 @@
++# A steward sets a DRAFT, OPEN or PENDING claim's due-by directly. Validate before Load so a bad
++# date is a 400, not a 404; anyone but a steward, any other status or a closed period is a 409 (or
++# the period's refusal) and writes nothing.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateClaimDueBySet
++  next: snapshot
++# Keep the figures as they were, so the change can audit the ones it moves.
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyClaimDueBySet
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaimDueBySet
++  govern: [ transaction ]
++  next: record
++# Audit only once the change is saved: a refused change writes no line.
++record:
++  class: net.officefloor.hq.app.claim.RecordClaimDueBySet
++  govern: [ transaction ]
++  next: rollup
++# After the change's own lines: a line per person whose figures moved, then the totals if they did.
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
