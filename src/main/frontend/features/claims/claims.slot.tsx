@@ -194,7 +194,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
           </button>
           {save.isError && (
             <span data-testid="claim-form-error" role="alert">
-              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date; only a DRAFT claim can be edited.
+              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date not after the person's retirement date; only a DRAFT claim can be edited.
             </span>
           )}
         </form>

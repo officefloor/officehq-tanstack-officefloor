@@ -15,6 +15,9 @@ public class BuildClaim {
         if (periods.closedOn(sheet, input.date())) {
             throw new InvalidClaimException("A claim may not be dated inside a closed period");
         }
+        if (person.retiredBefore(input.date())) {
+            throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
+        }
         Rollup.Snapshot before = rollup.take(sheet);
         claims.add(sheet, person.id(), input);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));

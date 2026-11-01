@@ -1,10 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { asFlag, useSearchParam } from '../../url/useSearchParam';
 
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
-export type Person = { id: number; name: string; grade: Grade; version: number };
+// retiredFrom is null unless the person is retired; once set, they count as retired whatever the date.
+export type Person = { id: number; name: string; grade: Grade; version: number; retiredFrom: string | null };
+
+export const isRetired = (p: Person) => p.retiredFrom !== null;
 
 export const peopleKey = (sheet: string) => ['people', sheet] as const;
 
@@ -17,3 +21,6 @@ export function usePeople(sheet: string) {
     queryFn: () => getJson<Person[]>(peoplePath(sheet)),
   });
 }
+
+/** Whether retired people are listed: off until turned on, and kept in the URL so loading a sheet leaves it be. */
+export const useShowRetired = () => useSearchParam('retired', asFlag);

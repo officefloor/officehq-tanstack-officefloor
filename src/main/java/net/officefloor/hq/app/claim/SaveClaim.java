@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
 import java.time.LocalDate;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,13 +22,16 @@ public class SaveClaim {
         if (claim.status() != ClaimStatus.DRAFT) {
             throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can");
         }
+        Person owner = people.find(sheet, claim.person());
+        if (owner.retiredBefore(input.date())) {
+            throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
+        }
         Rollup.Snapshot before = rollup.take(sheet);
         // Conditional on the claim still being a draft, so one another user opened meanwhile is refused.
         if (!claims.update(sheet, claim.id(), input)) {
             throw new InvalidClaimException("The claim is no longer a DRAFT and cannot be edited");
         }
-        String person = people.find(sheet, claim.person()).name();
-        audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(person));
+        audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(owner.name()));
         rollup.record(sheet, user, before);
     }
 }

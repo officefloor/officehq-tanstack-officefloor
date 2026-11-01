@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -12,7 +14,8 @@ import org.springframework.stereotype.Repository;
 public class People {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
-            rs.getString("grade"), rs.getLong("version"));
+            rs.getString("grade"), rs.getLong("version"),
+            rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString());
 
     private final JdbcTemplate jdbc;
 
@@ -22,11 +25,11 @@ public class People {
 
     /** Everyone on the sheet, in the order they were added. */
     public List<Person> list(String sheet) {
-        return jdbc.query("SELECT id, name, grade, version FROM person WHERE sheet = ? ORDER BY id", ROW, sheet);
+        return jdbc.query("SELECT id, name, grade, version, retired_from FROM person WHERE sheet = ? ORDER BY id", ROW, sheet);
     }
 
     public Person find(String sheet, long id) {
-        List<Person> found = jdbc.query("SELECT id, name, grade, version FROM person WHERE sheet = ? AND id = ?", ROW,
+        List<Person> found = jdbc.query("SELECT id, name, grade, version, retired_from FROM person WHERE sheet = ? AND id = ?", ROW,
                 sheet, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -34,7 +37,7 @@ public class People {
     /** The person on the sheet with this name, ignoring case; null when there is none. */
     public Person findByName(String sheet, String name) {
         List<Person> found = jdbc.query(
-                "SELECT id, name, grade, version FROM person WHERE sheet = ? AND name_key = LOWER(?)", ROW, sheet, name);
+                "SELECT id, name, grade, version, retired_from FROM person WHERE sheet = ? AND name_key = LOWER(?)", ROW, sheet, name);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -56,7 +59,7 @@ public class People {
         } catch (DuplicateKeyException e) {
             throw new DuplicatePersonNameException(name);
         }
-        return new Person(keys.getKey().longValue(), name, grade, 0);
+        return new Person(keys.getKey().longValue(), name, grade, 0, null);
     }
 
     private void insert(String sheet, String name, String grade, GeneratedKeyHolder keys) {
@@ -68,6 +71,11 @@ public class People {
             ps.setString(3, grade);
             return ps;
         }, keys);
+    }
+
+    /** Retire the person from the date. */
+    public void retire(String sheet, long id, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet = ? AND id = ?", Date.valueOf(from), sheet, id);
     }
 
     /** Save the person over the version it carries, raising the version; refused when it has moved on. */

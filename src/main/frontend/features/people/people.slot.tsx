@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { GRADES, peopleKey, peoplePath, usePeople } from './people';
+import { GRADES, isRetired, peopleKey, peoplePath, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
 import { claimsKey } from '../claims/claims';
 import type { Claim } from '../claims/claims';
@@ -72,12 +72,15 @@ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
   );
 }
 
-// The sheet's people: listed in the order they were added, with one form that adds a person or,
+// The sheet's people: listed in the order they were added (retired ones only when shown), with one form that adds a person or,
 // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
 // when someone else has saved them since, the save is refused and the form shows their current values.
 function People({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
-  const { data: people = [] } = usePeople(sheet);
+  const { data: everyone = [] } = usePeople(sheet);
+  const [showRetired, setShowRetired] = useShowRetired();
+  // Retired people have no row at all unless "show retired" is on; their claims still count in every total.
+  const people = showRetired ? everyone : everyone.filter((p) => !isRetired(p));
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
 
@@ -168,6 +171,15 @@ function People({ sheet, user }: { sheet: string; user: string }) {
         )}
       </form>
       <QuickAdd sheet={sheet} user={user} />
+      <label>
+        <input
+          type="checkbox"
+          data-testid="show-retired"
+          checked={showRetired}
+          onChange={(e) => setShowRetired(e.target.checked || undefined)}
+        />{' '}
+        Show retired
+      </label>
       <table>
         <thead>
           <tr>
