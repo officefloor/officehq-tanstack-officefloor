@@ -13,7 +13,8 @@ import org.springframework.stereotype.Service;
 /**
  * Moves a DRAFT, OPEN or PENDING claim dated outside a closed period (which may not be edited) to another person on
  * the sheet, on or before that person's retirement; only a role the permission matrix lets (by default a steward) may.
- * The claim keeps its number and date, loses any figure a statement bound it to, and lists as its new person's newest
+ * The claim keeps its date but takes the next number in the sequence it would be opened in (its old number is never
+ * used again; a draft has none to take), loses any figure a statement bound it to, and lists as its new person's newest
  * claim. Shared by a claim's own Reassign button and the bulk reassign.
  */
 @Service
@@ -26,9 +27,10 @@ public class ClaimReassigner {
     private final Periods periods;
     private final Audit audit;
     private final Rollup rollup;
+    private final ClaimStatusChanger statusChanger;
 
     public ClaimReassigner(Claims claims, People people, Roles roles, Settings settings, Periods periods, Audit audit,
-            Rollup rollup) {
+            Rollup rollup, ClaimStatusChanger statusChanger) {
         this.claims = claims;
         this.people = people;
         this.roles = roles;
@@ -36,6 +38,7 @@ public class ClaimReassigner {
         this.periods = periods;
         this.audit = audit;
         this.rollup = rollup;
+        this.statusChanger = statusChanger;
     }
 
     /**
@@ -67,7 +70,15 @@ public class ClaimReassigner {
         if (!claims.reassign(sheet, claim.id(), claim.person(), claim.status(), to.id())) {
             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
         }
-        audit.record("CLAIM_REASSIGNED sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(to.name())
+        // A numbered claim is renumbered as if opened now; the number it showed before is dropped.
+        Claim moved = claim;
+        if (claim.status() != ClaimStatus.DRAFT) {
+            if (claim.periodNumber() != null) {
+                claims.setPeriodNumber(sheet, claim.id(), null);
+            }
+            moved = statusChanger.number(sheet, claim.withPeriodNumber(null));
+        }
+        audit.record("CLAIM_REASSIGNED sheet=" + sheet + " by=" + user + " " + moved.statusAuditFields(to.name())
                 + " from=" + from.name() + " to=" + to.name());
         rollup.record(sheet, user, before);
     }
