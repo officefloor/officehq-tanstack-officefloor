@@ -1,0 +1,72 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergeGradePeople.java b/src/main/java/net/officefloor/hq/app/person/MergeGradePeople.java
+index c86819a4..9eb0918d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/MergeGradePeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/MergeGradePeople.java
+@@ -13,8 +13,10 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Audits the merge, then gives every person whose grade in force on the sheet's today is the merged
+  *  grade the other one from the sheet's today, in list order, exactly as saving the person form would
+- *  (their name and terms as they are): each audited PERSON_EDITED, then the figures it moved. Last,
+- *  the figures the whole merge moved. */
++ *  (their name and terms as they are): each audited PERSON_EDITED, then the figures it moved. The merge
++ *  is retroactive: then every grade record of each person it moved on the merged grade becomes the
++ *  other, so all their claims, whatever their date, take the other grade. Last, the figures the whole
++ *  merge moved. */
+ public class MergeGradePeople {
+     public void merge(@Val GradeMerge merge, People people, Sheets sheets, Rollup rollup, Audit audit,
+             Grades grades, Out<GradeMergeResult> result) {
+@@ -24,7 +26,7 @@ public class MergeGradePeople {
+         ApplyPerson apply = new ApplyPerson();
+         SavePerson save = new SavePerson();
+         RecordPersonEdited record = new RecordPersonEdited();
+-        int moved = 0;
++        java.util.List<Person> movedPeople = new java.util.ArrayList<>();
+         for (Person listed : people.onSheet(merge.sheetId())) {
+             Person person = people.find(merge.sheetId(), listed.getId());
+             if (person == null) continue;
+@@ -42,9 +44,12 @@ public class MergeGradePeople {
+             }
+             record.record(request, person, audit);
+             rollup.record(merge.sheetId(), before, merge.by());
+-            moved++;
++            movedPeople.add(person);
++        }
++        for (Person person : movedPeople) {
++            people.regrade(person, merge.from(), merge.into());
+         }
+         rollup.record(merge.sheetId(), start, merge.by());
+-        result.set(new GradeMergeResult(merge.from(), merge.into(), moved));
++        result.set(new GradeMergeResult(merge.from(), merge.into(), movedPeople.size()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index b3258ddc..2174d400 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -472,6 +472,13 @@ public class People {
+                 "SELECT alias FROM person_alias WHERE person_id = ? ORDER BY alias_key, id", String.class, personId));
+     }
+ 
++    /** Every grade record of the person on `from` becomes `into`, whatever its date. */
++    public void regrade(Person person, String from, String into) {
++        jdbc.update("UPDATE person_grade SET grade = ? WHERE person_id = ? AND grade = ?", into, person.getId(), from);
++        jdbc.update("UPDATE person SET grade = ? WHERE id = ? AND grade = ?", into, person.getId(), from);
++        person.getGrades().replaceAll((date, grade) -> from.equals(grade) ? into : grade);
++    }
++
+     /** Record the person's grade from its date, replacing the one they had from that date. */
+     private void saveGrade(Person person, Person.DatedGrade dated) {
+         Date from = dated.from() != null ? Date.valueOf(dated.from()) : null;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+index d408c297..29316088 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -1,6 +1,7 @@
+ # Merge a grade into another. Validate first so a merge by anyone but a steward, or of a grade into
+ # itself, is a 400 and writes nothing. Then every person on the merged grade today is given the other
+-# from the sheet's today, as saving the person form would. Answers how many were moved.
++# from the sheet's today, as saving the person form would; then, retroactively, every grade record of
++# each person moved on the merged grade becomes the other. Answers how many were moved.
+ validate:
+   class: net.officefloor.hq.app.grade.ValidateGradeMerge
+   govern: [ transaction ]
