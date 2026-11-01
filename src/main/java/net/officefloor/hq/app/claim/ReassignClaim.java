@@ -3,23 +3,23 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
-import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only a steward may. The claim keeps its number
+ * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only a role the permission matrix lets (by default a steward) may. The claim keeps its number
  * and date, loses any figure a statement bound it to, and lists as its new person's newest claim.
  */
 public class ReassignClaim {
     public void reassign(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
-            @Val ReassignRequest body, @Val Claim claim, Claims claims, People people, Roles roles, Audit audit,
+            @Val ReassignRequest body, @Val Claim claim, Claims claims, People people, Roles roles, Settings settings, Audit audit,
             Rollup rollup) throws InvalidClaimStatusChangeException {
-        if (!Role.STEWARD.equals(roles.of(sheet, user))) {
-            throw new InvalidClaimStatusChangeException("Only a steward reassigns a claim");
+        if (!settings.permits(sheet, "reassign", roles.of(sheet, user))) {
+            throw new InvalidClaimStatusChangeException("Your role may not reassign a claim");
         }
         if (claim.status() != ClaimStatus.DRAFT && claim.status() != ClaimStatus.OPEN
                 && claim.status() != ClaimStatus.PENDING) {

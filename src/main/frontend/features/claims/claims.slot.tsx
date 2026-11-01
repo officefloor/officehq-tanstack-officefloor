@@ -75,7 +75,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   });
 
   const act = useSubmitOnce(status);
-  // A steward moves a DRAFT, OPEN or PENDING claim to another person on the sheet, picked beside the Reassign button.
+  // A role the permission matrix lets (by default a steward) moves a DRAFT, OPEN or PENDING claim to another person on the sheet, picked beside the Reassign button.
   const { data: people = [] } = usePeople(sheet);
   const [moveTo, setMoveTo] = useState('');
   const move = useMutation({
@@ -309,7 +309,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, and a claim whose due is above the proof threshold needs a proof).
+          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, and a claim whose due is above the proof threshold needs a proof).
         </span>
       )}
       {resettleMutation.isError && (
@@ -329,7 +329,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       )}
       {move.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be reassigned (only a steward moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
+          {' '}A {claim.status} claim cannot be reassigned (only a role the permission matrix lets, by default a steward, moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
         </span>
       )}
     </li>

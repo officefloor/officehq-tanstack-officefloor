@@ -53,6 +53,11 @@ public class ClaimStatusChanger {
     /** Applies the change to the claim (a reject gives its reason), writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
+        // The permission matrix says which roles open, settle and void a claim.
+        if ((requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.VOID)
+                && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {
+            throw new InvalidClaimStatusChangeException("Your role may not " + requested.name().toLowerCase() + " a claim");
+        }
         if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
             throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
         }

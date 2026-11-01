@@ -10,10 +10,11 @@ import { hundredths } from '../rates/rates';
  *  the sheet's today is on or after it, a claim opened is numbered within its period; and each grade's own terms
  *  (whole days; '' when it takes the sheet's terms), from which a claim's due-by is fixed when it is added; and the
  *  cap with two decimals, the most a person's due-total is ('' for no cap). Each is the value in force on the sheet's
- *  today. And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
+ *  today. And each action's permitted roles in the permission matrix (comma separated; '' for its standing rule).
+ *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
-  proofThreshold: string; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  proofThreshold: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -23,7 +24,7 @@ export type DatedCents = (date: string) => bigint;
 
 /** Whether a setting is dated: every one that carries a figure is; the policy and period numbering dates are not. */
 export function isDated(key: SettingKey): boolean {
-  return key !== 'policy-date' && key !== 'period-numbering-from';
+  return key !== 'policy-date' && key !== 'period-numbering-from' && !key.startsWith('perm-');
 }
 
 /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
@@ -42,7 +43,19 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'cap' | 'proof-threshold';
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'cap' | 'proof-threshold' | `perm-${PermAction}`;
+
+/** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
+export const PERMISSIONS = [
+  { action: 'open', standing: 'clerk,steward' },
+  { action: 'settle', standing: 'clerk,steward' },
+  { action: 'void', standing: 'clerk,steward' },
+  { action: 'reassign', standing: 'steward' },
+  { action: 'close', standing: 'clerk,steward' },
+  { action: 'reopen', standing: 'steward' },
+] as const;
+
+export type PermAction = (typeof PERMISSIONS)[number]['action'];
 
 /** The grades that may have terms of their own, with the setting key and field of {@link Settings} of each. */
 export const GRADE_TERMS = [

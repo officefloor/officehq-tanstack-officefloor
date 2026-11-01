@@ -1,21 +1,21 @@
 package net.officefloor.hq.app.period;
 
 import net.officefloor.hq.app.Audit;
-import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
+import net.officefloor.hq.app.setting.Settings;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Reopens a closed period: its fixed due-total is dropped, so it totals its claims' current figures again. Only a
- * steward may; refuses anyone else, a period not on the sheet, or one not closed.
+ * role the permission matrix lets (by default a steward) may; refuses anyone else, a period not on the sheet, or one not closed.
  */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheet") String sheet, @PathVariable("period") String period,
-            @RequestParam("user") String user, Periods periods, Roles roles, Audit audit)
+            @RequestParam("user") String user, Periods periods, Roles roles, Settings settings, Audit audit)
             throws InvalidPeriodException {
-        if (!Role.STEWARD.equals(roles.of(sheet, user))) {
-            throw new InvalidPeriodException("Only a steward may reopen a period");
+        if (!settings.permits(sheet, "reopen", roles.of(sheet, user))) {
+            throw new InvalidPeriodException("Your role may not reopen a period");
         }
         Period found = periods.find(sheet, period);
         if (found == null) {

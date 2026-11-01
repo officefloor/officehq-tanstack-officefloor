@@ -13,7 +13,7 @@ import { closePeriodPath, periodDueCents, shownDueTotal, reopenPeriodPath, perio
 import type { Period } from './periods';
 
 // One period with its due-total (fixed once closed) and closed flag, and the buttons that close and reopen it. The
-// server refuses closing a period already closed, and reopening one not closed or by anyone but a steward; the row
+// server refuses closing a period already closed, and reopening one not closed; and either by a role the permission matrix does not allow; the row
 // shows that error until its next action.
 function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: string; period: Period; dueCents: bigint }) {
   const queryClient = useQueryClient();
@@ -60,12 +60,12 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
         </button>
         {close.isError && (
           <span data-testid="period-error" role="alert">
-            {' '}This period cannot be closed: it is already closed.
+            {' '}This period cannot be closed: it is already closed, or your role may not close it.
           </span>
         )}
         {reopen.isError && (
           <span data-testid="period-error" role="alert">
-            {' '}This period cannot be reopened: it is not closed, or you are not a steward.
+            {' '}This period cannot be reopened: it is not closed, or your role may not reopen it.
           </span>
         )}
       </td>

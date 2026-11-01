@@ -30,7 +30,7 @@ public record Person(long id, String name, String grade, long version, String re
 
     /**
      * Whether the claim, theirs, counts toward a period ending on the date: by the status it had at the end of that
-     * day (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open then, not bound by a statement
+     * day (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open now, not bound by a statement
      * and dated within one of their holds.
      */
     public boolean countsOn(Claim claim, LocalDate end) {
@@ -44,7 +44,8 @@ public record Person(long id, String name, String grade, long version, String re
         if (then != ClaimStatus.OPEN && then != ClaimStatus.PENDING) {
             return false;
         }
-        return claim.bound() || holds.stream().noneMatch((h) -> h.covers(claim.date()));
+        return (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING) || claim.bound()
+                || holds.stream().noneMatch((h) -> h.covers(claim.date()));
     }
 
     /** Whether a claim dated {@code date} is after this person's retirement, and so refused. */

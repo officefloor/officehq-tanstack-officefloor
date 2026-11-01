@@ -5,8 +5,8 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADE_TERMS, isDated, settingsKey, settingsPath, useSettings } from './settings';
-import type { SettingKey, Settings as SheetSettings } from './settings';
+import { GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
+import type { PermAction, SettingKey, Settings as SheetSettings } from './settings';
 
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
 // a clerk may settle (two decimals); blank means no limit. The floor is the least a claim's live due is (two
@@ -20,7 +20,9 @@ import type { SettingKey, Settings as SheetSettings } from './settings';
 // decimals); blank means no cap. A claim whose due is above the proof threshold in force on its date (two decimals;
 // blank means none) needs a proof before it is settled or approved. Each setting that carries a figure (all but the policy date and the period numbering
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
-// values recorded from other dates, and each shows the value in force on the sheet's today.
+// values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
+// for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
+// its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward).
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -33,6 +35,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
+  const [perms, setPerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
   const [froms, setFroms] = useState<Partial<Record<SettingKey, string>>>({});
 
@@ -55,6 +58,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setPolicyDate('');
       setPeriodNumberingFrom('');
       setGradeTerms({});
+      setPerms({});
       setFroms({});
       setChanged([]);
     },
@@ -88,7 +92,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     // The server refuses a value that is not 0.00 or more with up to two decimals.
-    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
+    const values: Record<SettingKey, string> = {
+      ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -239,12 +244,32 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-period-numbering-from-current">{data?.periodNumberingFrom ?? ''}</span>{' '}
+        {PERMISSIONS.map(({ action, standing }) => (
+          <span key={action}>
+            <label>
+              Roles that may {action}{' '}
+              <input
+                data-testid={`setting-perm-${action}`}
+                placeholder={`clerk,steward (blank: ${standing})`}
+                value={perms[action] ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setPerms((all) => ({ ...all, [action]: value }));
+                  touch(`perm-${action}`);
+                }}
+                // As the policy date: clearing an already blank field must still send the blank.
+                onFocus={() => touch(`perm-${action}`)}
+              />
+            </label>{' '}
+            now <span data-testid={`setting-perm-${action}-current`}>{data?.perms?.[action] ?? ''}</span>{' '}
+          </span>
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date and each from-date dates, or blank.
+            {' '}The clerk limit, the cap, the proof threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
           </span>
         )}
       </form>

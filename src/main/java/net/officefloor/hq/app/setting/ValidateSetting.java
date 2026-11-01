@@ -4,7 +4,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -32,8 +35,23 @@ public class ValidateSetting {
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key)
-                && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))) {
+                && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
+                && Settings.PERMISSIONS.stream().noneMatch((a) -> Settings.perm(a).equals(key))) {
             throw new InvalidSettingException("No such setting: " + key);
+        }
+        // An action's permitted roles are a comma separated list of clerk and steward; blank keeps its standing rule.
+        if (key.startsWith("perm-")) {
+            List<String> roles = new ArrayList<>();
+            for (String role : value.isEmpty() ? new String[0] : value.split(",")) {
+                role = role.trim();
+                if (!Role.CLERK.equals(role) && !Role.STEWARD.equals(role)) {
+                    throw new InvalidSettingException("The roles allowed an action must be clerk or steward, comma separated, or blank");
+                }
+                if (!roles.contains(role)) {
+                    roles.add(role);
+                }
+            }
+            return new SettingInput(key, String.join(",", roles));
         }
         // The policy date is a date; blank follows the sheet's today.
         if (Settings.POLICY_DATE.equals(key)) {

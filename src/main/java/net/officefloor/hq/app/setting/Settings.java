@@ -52,6 +52,19 @@ public class Settings {
     /** The date from which (on the sheet's today) a claim opened is numbered within its period (yyyy-MM-dd); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
+    public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+
+    /** The key of an action's permitted roles (a comma separated list of roles); blank: its standing rule. */
+    public static String perm(String action) {
+        return "perm-" + action;
+    }
+
+    /** The roles that may take the action under the standing rule: reassign and reopen a steward, the rest any. */
+    public static String defaultPerm(String action) {
+        return "reassign".equals(action) || "reopen".equals(action) ? "steward" : "clerk,steward";
+    }
+
     /** The late percent a sheet starts with. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -63,7 +76,7 @@ public class Settings {
 
     /** Whether the key is dated: every setting that carries a figure is; the policy and period numbering dates are not. */
     public static boolean dated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !key.startsWith("perm-");
     }
 
     /** The from-date an undated setting's one value is kept under. */
@@ -182,6 +195,12 @@ public class Settings {
         return from.isEmpty() ? null : LocalDate.parse(from);
     }
 
+    /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
+    public boolean permits(String sheet, String action, String role) {
+        String roles = get(sheet, perm(action));
+        return List.of((roles.isEmpty() ? defaultPerm(action) : roles).split(",")).contains(role);
+    }
+
     /** The settings in force on the sheet's today, with every dated key's recorded values. */
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
@@ -189,9 +208,13 @@ public class Settings {
         for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), LATE_PCT, PROOF_THRESHOLD)) {
             dated.put(key, history(sheet, key));
         }
+        Map<String, String> perms = new LinkedHashMap<>();
+        for (String action : PERMISSIONS) {
+            perms.put(action, get(sheet, perm(action)));
+        }
         return new SettingsResponse(on(sheet, CLERK_LIMIT, today), floor(sheet).on(today).toPlainString(),
                 Integer.toString(terms(sheet, today)), latePct(sheet).on(today).toPlainString(), get(sheet, POLICY_DATE),
                 get(sheet, PERIOD_NUMBERING_FROM), on(sheet, gradeTerms("A"), today), on(sheet, gradeTerms("B"), today),
-                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), dated);
+                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), perms, dated);
     }
 }
