@@ -25,8 +25,8 @@ function StatementHeader() {
 // A person's statements: how many, the last one's due-total and date, the button that takes the next and the one
 // that cancels the last. Taking one binds their counting claims to their figures now, and cancelling one makes the
 // claims it bound live again, so the claims are re-read before the count moves on. A date beside the button takes
-// the statement as of that date (blank: now); it is cleared once the statement is taken, and changing it clears the
-// statement's error.
+// the statement as of that date (blank: now); it is cleared once the statement is taken or refused, so a refused date
+// never carries into the next press, and changing it clears the statement's error.
 function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: all = [] } = useStatements(sheet);
@@ -39,8 +39,8 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       queryClient.setQueryData(statementsKey(sheet), updated);
-      setAsof('');
     },
+    onSettled: () => setAsof(''),
   });
   const cancel = useMutation({
     mutationKey: personActionKey(sheet, person.id),

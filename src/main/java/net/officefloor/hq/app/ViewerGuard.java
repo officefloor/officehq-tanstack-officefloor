@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.asof.AsOfView;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.sheet.SheetArchive;
@@ -22,7 +23,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
  * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
  * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done.
- * An archived sheet refuses every write the same way, whoever makes it.
+ * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
+ * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -46,6 +48,11 @@ public class ViewerGuard extends OncePerRequestFilter {
             throws ServletException, IOException {
         String method = request.getMethod();
         String user = request.getParameter("user");
+        if (("POST".equals(method) || "PUT".equals(method)) && request.getParameter(AsOfView.PARAM) != null
+                && SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length())).matches()) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Nothing changes while the sheet is shown as of a date");
+            return;
+        }
         if (("POST".equals(method) || "PUT".equals(method)) && user != null) {
             Matcher m = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
             if (m.matches() && !BULK.contains(m.group(2) == null ? "" : m.group(2))) {

@@ -7,8 +7,21 @@ export class HttpError extends Error {
   }
 }
 
+/** The date the screen shows the sheet as of (search param `asof`), or '' when it shows it as it is now. */
+export function currentAsOf(): string {
+  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
+  return raw.replace(/^"|"$/g, '');
+}
+
+/** Every request carries the screen's as-of date: the server answers each read as the sheet stood then, and
+ *  refuses every write while it is set. */
+function withAsOf(path: string): string {
+  const asOf = currentAsOf();
+  return asOf ? `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}` : path;
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await fetch(withAsOf(path), init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
   }
