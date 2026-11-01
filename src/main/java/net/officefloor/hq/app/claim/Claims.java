@@ -31,14 +31,15 @@ public class Claims {
             rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of(),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
-            rs.getString("locked_by"), rs.getBoolean("late_entry"));
+            rs.getString("locked_by"), rs.getBoolean("late_entry"),
+            rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString());
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     // It is deferred while OPEN with its deferred-until after the sheet's today (the real date until one is set).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -212,6 +213,16 @@ public class Claims {
     public boolean defer(String sheet, long id, LocalDate until) {
         return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet = ? AND id = ? AND status = 'OPEN'",
                 Date.valueOf(until), sheet, id) == 1;
+    }
+
+    /**
+     * Reminds an OPEN or PENDING claim on the date (the sheet's today), conditional on its status read and on it not
+     * yet being reminded that day: false when it was not.
+     */
+    public boolean remind(String sheet, long id, ClaimStatus status, LocalDate today) {
+        return jdbc.update("UPDATE claim SET reminded_on = ? WHERE sheet = ? AND id = ? AND status = ?"
+                + " AND (reminded_on IS NULL OR reminded_on <> ?)", Date.valueOf(today), sheet, id, status.name(),
+                Date.valueOf(today)) == 1;
     }
 
     /**

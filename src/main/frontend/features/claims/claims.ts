@@ -69,6 +69,8 @@ export type Claim = {
   lockedBy: string | null;
   /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
+  /** The sheet's today it was last reminded on (null when never): an OPEN or PENDING claim is reminded once per day. */
+  remindedOn: string | null;
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
