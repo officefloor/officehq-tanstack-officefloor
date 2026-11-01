@@ -11,6 +11,11 @@ public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidPersonException {
+        body.set(check(request));
+    }
+
+    /** The form's rules for the fields alone: the request trimmed as the form would save it; shared with the import. */
+    static PersonRequest check(PersonRequest request) throws InvalidPersonException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         if (name.isBlank()) {
@@ -35,6 +40,6 @@ public class ValidatePerson {
             terms = Integer.toString(Integer.parseInt(terms));
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(Locale.ROOT);
-        body.set(new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms, contact));
+        return new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms, contact);
     }
 }
