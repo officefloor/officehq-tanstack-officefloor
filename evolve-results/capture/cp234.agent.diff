@@ -1,0 +1,87 @@
+diff --git a/src/main/frontend/features/export/exportTree.slot.tsx b/src/main/frontend/features/export/exportTree.slot.tsx
+new file mode 100644
+index 00000000..ea28d698
+--- /dev/null
++++ b/src/main/frontend/features/export/exportTree.slot.tsx
+@@ -0,0 +1,81 @@
++import { useCallback, useEffect, useState } from 'react';
++import { getJson } from '../../api/http';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { useClaims } from '../claims/useClaims';
++import { useSheetTotals } from '../claims/useSheetTotals';
++import { gradeOn, usePeople } from '../people/usePeople';
++import { showDue, useRates } from '../rates/useRates';
++import { useSettings } from '../settings/useSettings';
++import { useSheet } from '../sheet/useSheet';
++import { downloadCsv } from './csv';
++
++/** One sheet's CSV lines: `sheet,name,grade,due-total`. */
++type Lines = string[][];
++
++/** One sheet's people in list order, each with the grade in force on that sheet's today and their
++ *  due-total as their row shows it, reported once everything it is worked out from has been
++ *  re-read. Renders nothing. */
++function SheetLines({ sheet, report }: { sheet: string; report: (sheet: string, lines: Lines | null) => void }) {
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const settings = useSettings(sheet);
++  const today = useSheet(sheet);
++  const { perPerson } = useSheetTotals(sheet);
++  const queries = [people, claims, rates, settings, today];
++  const ready = queries.every((q) => q.isSuccess && !q.isFetching);
++  const on = today.data?.today ?? '';
++  const key = JSON.stringify(perPerson.map(({ person, due }) => [sheet, person.name, gradeOn(person, on), showDue(due)]));
++  useEffect(() => {
++    report(sheet, ready ? JSON.parse(key) : null);
++  }, [sheet, ready, key, report]);
++  return null;
++}
++
++/**
++ * Downloads the people of the whole tree (this sheet and every other sheet of its tree, its
++ * ancestors and descendants) as a CSV file: a header line `sheet,name,grade,due-total`, then one
++ * line per person: this sheet's people first in list order, then the other sheets' by sheet id.
++ * Each press re-reads the sheets; the file is downloaded once every sheet's lines are in.
++ */
++function ExportTree({ sheet }: { user: string; sheet: string }) {
++  const [run, setRun] = useState<{ n: number; sheet: string; sheets: string[] } | null>(null);
++  const [found, setFound] = useState<Record<string, Lines | null>>({});
++  const report = useCallback((id: string, l: Lines | null) => {
++    setFound((was) => ({ ...was, [id]: l }));
++  }, []);
++  useEffect(() => {
++    setRun(null);
++    setFound({});
++  }, [sheet]);
++
++  const press = async () => {
++    const n = (run?.n ?? 0) + 1;
++    setRun(null);
++    setFound({});
++    const others = await getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/tree`);
++    setRun({ n, sheet, sheets: [sheet, ...others.filter((s) => s !== sheet)] });
++  };
++
++  const current = run !== null && run.sheet === sheet ? run : null;
++  const all = current === null ? [] : current.sheets.map((id) => found[id] ?? null);
++  const ready = current !== null && all.every((l) => l !== null);
++
++  useEffect(() => {
++    if (!ready || current === null) return;
++    downloadCsv([['sheet', 'name', 'grade', 'due-total'], ...all.flatMap((l) => l ?? [])], `tree-${current.sheet}.csv`);
++    setRun(null);
++    setFound({});
++  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
++
++  return (
++    <p>
++      {current !== null && current.sheets.map((id) => <SheetLines key={`${current.n}-${id}`} sheet={id} report={report} />)}
++      <button type="button" data-testid="export-tree" disabled={current !== null} onClick={() => void press()}>
++        Export tree people (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 11.5, Component: ExportTree });
