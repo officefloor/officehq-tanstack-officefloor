@@ -157,6 +157,10 @@ public class ValidateSettings {
         if (grace != null && !grace.isEmpty() && !DAYS.matcher(grace).matches()) {
             throw new InvalidSheetRequestException("The grace days must be a whole number of days, or blank");
         }
+        String escalate = request == null || request.escalateAfter() == null ? null : request.escalateAfter().trim();
+        if (escalate != null && !escalate.isEmpty() && !DAYS.matcher(escalate).matches()) {
+            throw new InvalidSheetRequestException("The escalation gap must be a whole number of days, or blank");
+        }
         String fiscal = request == null || request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
         if (fiscal != null && !MONTH.matcher(fiscal).matches()) {
             throw new InvalidSheetRequestException("The fiscal year start month must be a month, 1 to 12");
@@ -226,6 +230,7 @@ public class ValidateSettings {
                 fiscal == null ? null : Integer.parseInt(fiscal),
                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
-                reviewThreshold != null, reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2)));
+                reviewThreshold != null, reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
+                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate)));
     }
 }

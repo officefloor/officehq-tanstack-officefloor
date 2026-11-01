@@ -9,7 +9,7 @@ import { ratesKey } from '../rates/useRates';
 import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -33,7 +33,7 @@ type Froms = Record<string, string>;
  * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
  * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
  * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
- * period whose to-date plus them is before the new today is closed; blank is off; not dated),
+ * period whose to-date plus them is before the new today is closed; blank is off; not dated), its escalation gap (reminding a claim whose previous reminder was at least that many days before its today escalates the claim, once ever; blank is off; not dated),
  * the grace days of each grade (a claim of a person of that grade on its date is overdue, and its late
  * charge counted, only from its due-by plus the grace in force on its date; blank is none),
  * its entry date (while set, the default date of a new claim in place of the sheet's today; blank is off; not dated),
@@ -65,7 +65,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -181,6 +181,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const alertThreshold = edit.alertThreshold?.trim() ?? null;
           const rounding = edit.rounding?.trim() ?? null;
           const reviewThreshold = edit.reviewThreshold?.trim() ?? null;
+          const escalateAfter = edit.escalateAfter?.trim() ?? null;
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
           const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
@@ -201,6 +202,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (noteThreshold !== null && !LIMIT.test(noteThreshold)) ||
             (reviewThreshold !== null && !LIMIT.test(reviewThreshold)) ||
             (graceDays !== null && !DAYS.test(graceDays)) ||
+            (escalateAfter !== null && !DAYS.test(escalateAfter)) ||
             (entryDate !== null && !POLICY_DATE.test(entryDate)) ||
             (pot !== null && !LIMIT.test(pot)) ||
             (alertThreshold !== null && !LIMIT.test(alertThreshold)) ||
@@ -215,7 +217,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, gradeTerms, gradeGrace, gradeProof, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, gradeTerms, gradeGrace, gradeProof, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -572,6 +574,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             }}
           />
         </label>{' '}
+        Escalate after (days):{' '}
+        <strong data-testid="setting-escalate-after-current">
+          {saveSettings.isPending ? '' : String(data?.escalateAfter ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-escalate-after"
+            placeholder="blank: off"
+            value={edit.escalateAfter ?? String(data?.escalateAfter ?? '')}
+            onFocus={() => touch('escalateAfter', String(data?.escalateAfter ?? ''))}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, escalateAfter: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
         Fiscal year starts in month:{' '}
         <strong data-testid="setting-fiscal-start-month-current">
           {saveSettings.isPending ? '' : String(data?.fiscalStartMonth ?? '')}
@@ -618,7 +637,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="settings-error" role="alert">
             {' '}The clerk limit and the floor must be amounts with up to two decimals (a blank limit is no
             limit, a blank floor is 1.00), the terms a whole number of days (blank is 14; blank for a grade uses the sheet's terms), and the late percent a percent with up to
-            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof and note thresholds amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and the grace days a whole number of days (blank is off), and the entry date a date, yyyy-mm-dd (blank is off), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule), and the parent sheet one that has been loaded, not this sheet nor one that has this sheet as an ancestor (blank is none), and the fiscal year start month a month, 1 to 12.
+            two decimals (blank is 0.00), and the policy date a date, yyyy-mm-dd (blank is the sheet's today), and the period numbering from a date, yyyy-mm-dd (blank is off), and the cap and the proof and note thresholds amounts with up to two decimals (blank is no cap, no threshold), and each from-date a date, yyyy-mm-dd (blank is the sheet's today), and the grace days and the escalation gap whole numbers of days (blank is off), and the entry date a date, yyyy-mm-dd (blank is off), and each permission a comma separated list of the roles clerk and steward (blank keeps the standing rule), and the parent sheet one that has been loaded, not this sheet nor one that has this sheet as an ancestor (blank is none), and the fiscal year start month a month, 1 to 12.
           </span>
         )}
       </form>

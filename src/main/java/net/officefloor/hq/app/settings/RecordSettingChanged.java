@@ -85,6 +85,9 @@ public class RecordSettingChanged {
                     + (change.reviewThreshold() != null ? change.reviewThreshold().toPlainString() : "")
                     + from(change, Settings.REVIEW_THRESHOLD));
         }
+        if (change.setsEscalateAfter()) {
+            audit.record(prefix + " key=escalate-after value=" + (change.escalateAfter() != null ? change.escalateAfter() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

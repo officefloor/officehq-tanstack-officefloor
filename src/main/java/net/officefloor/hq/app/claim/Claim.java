@@ -26,6 +26,8 @@ public class Claim {
     private String lockedBy;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private boolean escalated;
+    private boolean escalatedNow;
     private String ref;
     private String tags;
     private String tagsUsed;
@@ -113,6 +115,12 @@ public class Claim {
     /** The last day (sheet-today) a reminder was written for the claim; null when it never was. */
     public LocalDate getRemindedOn() { return remindedOn; }
     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** Whether the claim has been escalated by a reminder: at most once, ever. */
+    public boolean isEscalated() { return escalated; }
+    public void setEscalated(boolean escalated) { this.escalated = escalated; }
+    /** Whether the reminder being taken now escalates the claim (not stored). */
+    public boolean isEscalatedNow() { return escalatedNow; }
+    public void setEscalatedNow(boolean escalatedNow) { this.escalatedNow = escalatedNow; }
     /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

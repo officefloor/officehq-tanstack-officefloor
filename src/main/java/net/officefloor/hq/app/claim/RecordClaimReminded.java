@@ -9,8 +9,10 @@ import net.officefloor.plugin.variable.Val;
 public class RecordClaimReminded {
     public void record(@Val ClaimRemind change, @Val Claim claim, People people, Audit audit) {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        audit.record("REMIND sheet=" + claim.getSheetId() + " by=" + change.user()
+        String fields = " sheet=" + claim.getSheetId() + " by=" + change.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
-                + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : ""));
+                + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "");
+        audit.record("REMIND" + fields);
+        if (claim.isEscalatedNow()) audit.record("ESCALATE" + fields);
     }
 }

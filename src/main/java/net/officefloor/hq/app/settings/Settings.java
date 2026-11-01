@@ -355,6 +355,18 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, grace_days) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
     }
 
+    /** The sheet's escalation gap: reminding a claim whose previous reminder was at least this many days
+     *  before the sheet's today escalates it (once per claim). Null when unset (off). Not dated. */
+    public Integer escalateAfter(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT escalate_after FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("escalate_after", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setEscalateAfter(String sheetId, Integer days) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, escalate_after) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
+    }
+
     /** The month of the year (1 to 12) the sheet's fiscal year starts on: 1 unless set. Not dated. */
     public int fiscalStartMonth(String sheetId) {
         List<Integer> values = jdbc.query("SELECT fiscal_start_month FROM sheet_setting WHERE sheet_id = ?",

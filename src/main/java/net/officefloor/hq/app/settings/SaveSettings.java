@@ -30,6 +30,7 @@ public class SaveSettings {
         if (change.setsPot()) settings.setPot(sheetId, change.pot());
         if (change.setsParent()) settings.setParent(sheetId, change.parent());
         if (change.setsGraceDays()) settings.setGraceDays(sheetId, change.graceDays());
+        if (change.setsEscalateAfter()) settings.setEscalateAfter(sheetId, change.escalateAfter());
         if (change.fiscalStartMonth() != null) settings.setFiscalStartMonth(sheetId, change.fiscalStartMonth());
         if (change.setsAlertThreshold()) settings.setAlertThreshold(sheetId, change.alertThreshold());
         change.perms().forEach((action, roles) -> settings.setPermission(sheetId, action, roles));
