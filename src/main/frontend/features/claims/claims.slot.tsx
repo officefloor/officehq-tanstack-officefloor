@@ -7,7 +7,7 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, rateOf, showDue, useRates } from '../rates/rates';
-import { claimed, claimsKey, claimsPath, counted, useClaims } from './claims';
+import { claimDueCents, claimed, claimsKey, claimsPath, counted, useClaims } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
 type Draft = { amount: string; date: string; note: string };
@@ -57,7 +57,7 @@ function ClaimRow({ sheet, user, claim, rate, editing, onEdit, onCancel }: {
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
-      due <span data-testid="claim-due">{showDue(dueCents(claim.amount, rate))}</span>{' '}
+      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rate))}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       {claim.number !== null && '#'}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.util.List;
@@ -15,9 +16,11 @@ public class Claims {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person"),
             rs.getBigDecimal("amount").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
             rs.getDate("claimed_on").toLocalDate().toString(), rs.getString("note"),
-            ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number_on_sheet", Integer.class));
+            ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number_on_sheet", Integer.class),
+            rs.getBigDecimal("settled_due") == null ? null
+                    : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString());
 
-    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet FROM claim";
+    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -49,6 +52,11 @@ public class Claims {
     public boolean changeStatus(String sheet, long id, ClaimStatus from, ClaimStatus to) {
         return jdbc.update("UPDATE claim SET status = ? WHERE sheet = ? AND id = ? AND status = ?", to.name(), sheet,
                 id, from.name()) == 1;
+    }
+
+    /** Fixes the claim's due as it is settled, or leaves none with null. */
+    public void setSettledDue(String sheet, long id, BigDecimal due) {
+        jdbc.update("UPDATE claim SET settled_due = ? WHERE sheet = ? AND id = ?", due, sheet, id);
     }
 
     /** Sets the claim's number on the sheet, or clears it with null. */

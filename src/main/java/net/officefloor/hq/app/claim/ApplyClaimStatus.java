@@ -1,7 +1,12 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -9,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Moves the claim to the status the change takes it to, refusing a change its status does not allow. */
 public class ApplyClaimStatus {
     public void apply(@PathVariable("sheet") String sheet, @PathVariable("change") String change,
-            @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Audit audit)
+            @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Rates rates, Audit audit)
             throws InvalidClaimStatusChangeException {
         ClaimStatusChange requested = ClaimStatusChange.of(change);
         if (requested == null) {
@@ -29,7 +34,18 @@ public class ApplyClaimStatus {
         } else if (requested == ClaimStatusChange.VOID && claim.number() != null) {
             claims.setNumber(sheet, claim.id(), null);
         }
-        String person = people.find(sheet, claim.person()).name();
-        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + changed.statusAuditFields(person));
+        Person person = people.find(sheet, claim.person());
+        String fields = changed.statusAuditFields(person.name());
+        // Settling fixes the due at the person's grade rate now; with no rate there is nothing to fix, so it stays live.
+        if (requested == ClaimStatusChange.SETTLE) {
+            String pct = rates.list(sheet).stream().filter((r) -> r.grade().equals(person.grade())).map(Rate::pct)
+                    .findFirst().orElse(null);
+            BigDecimal due = pct == null ? null
+                    : new BigDecimal(claim.amount()).multiply(new BigDecimal(pct)).movePointLeft(2)
+                            .setScale(2, RoundingMode.HALF_UP);
+            claims.setSettledDue(sheet, claim.id(), due);
+            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+        }
+        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
     }
 }
