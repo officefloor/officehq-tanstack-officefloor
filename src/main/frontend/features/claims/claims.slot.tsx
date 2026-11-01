@@ -6,7 +6,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate, useReviewLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
@@ -128,6 +128,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.personId === person.id);
   const today = useSheetToday(sheet);
+  const reviewLate = useReviewLate(sheet);
   // Their OPEN and PENDING claims dated within a hold, or all of them once today reaches their
   // retirement date, count toward neither claimed nor the due-total, unless a statement binds them.
   const liveClaims = live(claims, (_, date) => heldOn(person, date, today));
@@ -696,6 +697,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-review-late">{reviewLate(c) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

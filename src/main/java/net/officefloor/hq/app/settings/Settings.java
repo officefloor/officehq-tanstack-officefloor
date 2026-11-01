@@ -367,6 +367,18 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, escalate_after) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
     }
 
+    /** The sheet's review SLA: a REVIEW claim whose review day (the sheet's today when it went to REVIEW)
+     *  plus this many days is before the sheet's today is review-late. Null when unset (none). Not dated. */
+    public Integer reviewSla(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT review_sla FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("review_sla", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setReviewSla(String sheetId, Integer days) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, review_sla) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
+    }
+
     /** The month of the year (1 to 12) the sheet's fiscal year starts on: 1 unless set. Not dated. */
     public int fiscalStartMonth(String sheetId) {
         List<Integer> values = jdbc.query("SELECT fiscal_start_month FROM sheet_setting WHERE sheet_id = ?",

@@ -16,12 +16,12 @@ export type RoleEntry = { name: string; role: string };
  *  sheet's today; and `dated`, every value recorded for the dated settings by key (clerk-limit, floor,
  *  terms, terms-<grade>, grace-<grade>, late-pct, cap, proof-threshold, proof-threshold-<grade>, note-threshold, review-threshold, rounding), oldest from-date first; and `proofThreshold` with
  *  two decimals, or null for none, as in force on the sheet's today; and `perms`, the roles set for each
- *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>); and `gradeProof`, the proof threshold set per grade with two decimals in force on the sheet's today (a grade not in it uses the sheet's; dated, under proof-threshold-<grade>); and `pot` with two decimals, or null for none: shared out among the members of each balanced pool (not dated); and `parent`, the parent sheet's id, or null for none: a grade with no rate in force on a date on this sheet takes the parent's then, up to three levels up (not dated); and `fiscalStartMonth`, the month (1 to 12) the sheet's fiscal year starts on: 1 unless set (not dated); and `rounding`, the rounding mode (half-up or half-even) in force on the sheet's today, or null for none: a claim dated when one is in force rounds its live figures by it, else by the policy date (dated); and `reviewThreshold` with two decimals, or null for none, as in force on the sheet's today: a claim whose due on its date is above the one then goes to REVIEW when opened (dated); and `escalateAfter`, the escalation gap in days, or null when off: reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim (not dated). */
+ *  action of the permission matrix, comma separated (an action not in it keeps the standing rule); and `graceDays`, the grace days, or null when off (not dated); and `delegations`, every delegation of the steward role, oldest first; and `noteThreshold` with two decimals, or null for none, as in force on the sheet's today; and `entryDate` (yyyy-mm-dd), or null when off: while set, the default date of a new claim in place of the sheet's today (not dated); and `gradeGrace`, the grace days set per grade in force on the sheet's today (a grade not in it has none; dated, under grace-<grade>); and `gradeProof`, the proof threshold set per grade with two decimals in force on the sheet's today (a grade not in it uses the sheet's; dated, under proof-threshold-<grade>); and `pot` with two decimals, or null for none: shared out among the members of each balanced pool (not dated); and `parent`, the parent sheet's id, or null for none: a grade with no rate in force on a date on this sheet takes the parent's then, up to three levels up (not dated); and `fiscalStartMonth`, the month (1 to 12) the sheet's fiscal year starts on: 1 unless set (not dated); and `rounding`, the rounding mode (half-up or half-even) in force on the sheet's today, or null for none: a claim dated when one is in force rounds its live figures by it, else by the policy date (dated); and `reviewThreshold` with two decimals, or null for none, as in force on the sheet's today: a claim whose due on its date is above the one then goes to REVIEW when opened (dated); and `escalateAfter`, the escalation gap in days, or null when off: reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim (not dated); and `reviewSla`, the review SLA in days, or null for none: a REVIEW claim whose review day plus it is before the sheet's today is review-late (not dated). */
 /** A delegation of the steward role: the user acts as a steward while the sheet's today is from
  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
 export type DelegationEntry = { name: string; from: string; to: string; by: string };
 
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };
@@ -67,6 +67,22 @@ export function useCap(sheet: string): string | null {
   const settings = useSettings(sheet).data;
   const today = useSheetToday(sheet);
   return today === '' ? (settings?.cap ?? null) : valueOn(settings, 'cap', today, null);
+}
+
+/** Whether a claim is review-late: REVIEW, and its review day (the sheet's today when it last went to
+ *  REVIEW, from its status log) plus the sheet's review SLA days is before the sheet's today. Never
+ *  while the sheet has no review SLA. */
+export function useReviewLate(sheet: string): (claim: { status: string; log: string[] }) => boolean {
+  const sla = useSettings(sheet).data?.reviewSla ?? null;
+  const today = useSheetToday(sheet);
+  return (claim) => {
+    if (sla === null || today === '' || claim.status !== 'REVIEW') return false;
+    const day = [...claim.log].reverse().map((l) => /^REVIEW by .* on (\d{4}-\d{2}-\d{2}) /.exec(l)).find((m) => m)?.[1];
+    if (!day) return false;
+    const due = new Date(`${day}T00:00:00Z`);
+    due.setUTCDate(due.getUTCDate() + sla);
+    return due.toISOString().slice(0, 10) < today;
+  };
 }
 
 /** The sheet's terms: a claim is due by its date plus this many days. */

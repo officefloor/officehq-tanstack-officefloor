@@ -4,7 +4,7 @@ import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
 import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
 import { claimRateOn, hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLate } from '../settings/useSettings';
+import { useCap, useFloor, useLate, useReviewLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 
@@ -13,7 +13,7 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
  * retired are on it on the sheet's today, their due-totals added up (n/a ones skipped), and how many
  * of them are active. Per
  * period: its due-total, and its change from the period before it by from-date (none for the
- * earliest). Per status: how many of the sheet's claims have it. Per void reason on
+ * earliest). Per status: how many of the sheet's claims have it, and how many REVIEW claims are review-late. Per void reason on
  * the sheet's list: how many VOID claims were voided with it.
  */
 function SummaryPanel({ sheet }: { user: string; sheet: string }) {
@@ -26,6 +26,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const cap = useCap(sheet);
+  const reviewLate = useReviewLate(sheet);
   const people = everyone.filter((p) => !p.retired);
   const dueOf = (p: (typeof people)[number]) =>
     personDueCents(
@@ -103,6 +104,10 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
               <td data-testid={`summary-status-${s}-count`}>{all.filter((c) => c.status === s).length}</td>
             </tr>
           ))}
+          <tr>
+            <td>REVIEW, late</td>
+            <td data-testid="summary-review-late-count">{all.filter(reviewLate).length}</td>
+          </tr>
         </tbody>
       </table>
       <table>

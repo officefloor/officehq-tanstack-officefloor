@@ -88,6 +88,9 @@ public class RecordSettingChanged {
         if (change.setsEscalateAfter()) {
             audit.record(prefix + " key=escalate-after value=" + (change.escalateAfter() != null ? change.escalateAfter() : ""));
         }
+        if (change.setsReviewSla()) {
+            audit.record(prefix + " key=review-sla value=" + (change.reviewSla() != null ? change.reviewSla() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */
