@@ -1,11 +1,11 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { dueCents, rateOf, twoDecimals, useRates } from '../rates/rates';
-import { claimed, counted, useClaims } from './claims';
+import { twoDecimals, useRates } from '../rates/rates';
+import { claimed, counted, personDueCents, useClaims } from './claims';
 
 // The sheet's claimed-total: everyone's counted (OPEN and SETTLED) claims added up; and its due-total: everyone's due-total
-// added up, skipping the people whose grade has no rate in force on the sheet's today.
+// added up, skipping the people whose due-total is n/a.
 function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
   const { data: all = [] } = useClaims(sheet);
   const claims = counted(all);
@@ -13,7 +13,7 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const due = people.reduce((sum, p) => {
-    const cents = dueCents(claimed(claims.filter((c) => c.person === p.id)), rateOf(rates, p.grade, today));
+    const cents = personDueCents(claims.filter((c) => c.person === p.id), rates, p.grade, today);
     return cents === undefined ? sum : sum + cents;
   }, 0n);
   return (

@@ -7,9 +7,9 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { dueCents, rateOf, showDue, useRates } from '../rates/rates';
+import { rateOf, showDue, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
-import { claimDueCents, claimed, claimsKey, claimsPath, counted, useClaims } from './claims';
+import { claimDueCents, claimed, claimsKey, claimsPath, counted, personDueCents, useClaims } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
 type Draft = { amount: string; date: string; note: string };
@@ -107,7 +107,6 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const claims = all.filter((c) => c.person === person.id);
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
-  const rate = rateOf(rates, person.grade, today);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -150,7 +149,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(counted(claims))}</td>
-      <td data-testid="person-due-total">{showDue(dueCents(claimed(counted(claims)), rate))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person.grade, today))}</td>
       <td>
         <form onSubmit={submit}>
           <input

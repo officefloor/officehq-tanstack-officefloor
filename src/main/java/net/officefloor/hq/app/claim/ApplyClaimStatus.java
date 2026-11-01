@@ -43,7 +43,7 @@ public class ApplyClaimStatus {
             String pct = Rate.on(rates.list(sheet), person.grade(), LocalDate.parse(claim.date()));
             BigDecimal due = pct == null ? null
                     : new BigDecimal(claim.amount()).multiply(new BigDecimal(pct)).movePointLeft(2)
-                            .setScale(2, RoundingMode.HALF_UP);
+                            .setScale(2, RoundingMode.HALF_EVEN);
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
         }

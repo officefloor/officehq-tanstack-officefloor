@@ -41,12 +41,15 @@ export function twoDecimals(cents: bigint): string {
   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
 }
 
-/** An amount times a percent, divided by 100, in hundredths rounded half up (amounts and rates are
- *  never negative, so half up is half away from zero); undefined when there is no rate. Worked in
- *  whole numbers so no float error shows. */
+/** An amount times a percent, divided by 100, in hundredths rounded half to even (1.025 -> 1.02,
+ *  1.035 -> 1.04); undefined when there is no rate. Worked in whole numbers so no float error shows. */
 export function dueCents(amount: string, pct: string | undefined): bigint | undefined {
   if (pct === undefined) return undefined;
-  return (hundredths(amount) * hundredths(pct) + 5000n) / 10000n;
+  const product = hundredths(amount) * hundredths(pct);
+  const quotient = product / 10000n;
+  const remainder = product % 10000n;
+  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) return quotient + 1n;
+  return quotient;
 }
 
 /** A due as the screen shows it: two decimals, or n/a when there is no rate. */

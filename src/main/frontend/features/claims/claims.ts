@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { dueCents, hundredths } from '../rates/rates';
+import type { Grade } from '../people/people';
+import { dueCents, hundredths, rateOf, type Rate } from '../rates/rates';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
@@ -53,3 +54,16 @@ export function claimDueCents(claim: Claim, pct: string | undefined): bigint | u
   return claim.settledDue !== null ? hundredths(claim.settledDue) : dueCents(claim.amount, pct);
 }
 
+
+/** A person's due-total: the sum of their counted claims' rounded figures. n/a (undefined) when their grade
+ *  has no rate on the sheet's today, unless a settled claim keeps a figure: then the figures there are. */
+export function personDueCents(
+  claims: Claim[],
+  rates: Rate[],
+  grade: Grade,
+  today: string | undefined,
+): bigint | undefined {
+  const mine = counted(claims);
+  if (rateOf(rates, grade, today) === undefined && !mine.some((c) => c.settledDue !== null)) return undefined;
+  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, grade, c.date)) ?? 0n), 0n);
+}
