@@ -1,0 +1,134 @@
+diff --git a/src/main/frontend/features/policy/policy.slot.tsx b/src/main/frontend/features/policy/policy.slot.tsx
+new file mode 100644
+index 00000000..40fd4acb
+--- /dev/null
++++ b/src/main/frontend/features/policy/policy.slot.tsx
+@@ -0,0 +1,48 @@
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++
++/**
++ * The sheet's policy versions: one line per version, oldest first,
++ * `<version> <from or start> <key>=<value> <count of claims whose policy version it is>` — a claim's
++ * policy version is the one in force on its date (DELETED claims left out). It reads the store; it
++ * records nothing.
++ */
++function PolicyVersionsPanel({ sheet }: { user: string; sheet: string }) {
++  const show = useMutation({
++    mutationFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/policy-versions`),
++  });
++
++  return (
++    <section data-testid="policy-panel">
++      <h2>Policy versions</h2>
++      <button
++        type="button"
++        data-testid="policy-show"
++        disabled={show.isPending}
++        onClick={() => {
++          // The old lines go while the new ones are read, so two presses are told apart.
++          show.reset();
++          show.mutate();
++        }}
++      >
++        Show
++      </button>
++      {show.isError && (
++        <span data-testid="policy-error" role="alert">
++          {' '}
++          Could not read the policy versions.
++        </span>
++      )}
++      <ol data-testid="policy-list">
++        {(show.data ?? []).map((line, i) => (
++          <li key={i} data-testid="policy-line">
++            {line}
++          </li>
++        ))}
++      </ol>
++    </section>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 28.65, Component: PolicyVersionsPanel });
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RespondWithPolicyVersions.java b/src/main/java/net/officefloor/hq/app/settings/RespondWithPolicyVersions.java
+new file mode 100644
+index 00000000..d4815c86
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/RespondWithPolicyVersions.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.settings;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The sheet's policy versions: one line per version, oldest first, <version> <from or start>
++ *  <key>=<value> <count of claims whose policy version it is> — a claim's policy version being the one in
++ *  force on its date (DELETED claims left out). Reads only; records nothing. */
++public class RespondWithPolicyVersions {
++    public void respond(@PathVariable("sheetId") String sheetId, Settings settings, Claims claims,
++            ObjectResponse<List<String>> response) {
++        List<Settings.PolicyVersion> versions = settings.policyVersionList(sheetId);
++        int[] counts = new int[versions.size() + 1];
++        for (Claim claim : claims.onSheet(sheetId)) {
++            if (claim.getStatus() == ClaimStatus.DELETED) continue;
++            LocalDate date = claim.getDate();
++            counts[(int) versions.stream().filter(v -> v.from() == null || !v.from().isAfter(date)).count()]++;
++        }
++        List<String> lines = new ArrayList<>();
++        for (int i = 0; i < versions.size(); i++) {
++            Settings.PolicyVersion v = versions.get(i);
++            lines.add(v.version() + " " + (v.from() != null ? v.from().toString() : "start") + " " + v.key() + "="
++                    + v.value() + " " + counts[i + 1]);
++        }
++        response.send(lines);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 66e61531..69a08b93 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -221,6 +221,24 @@ public class Settings {
+                 }, sheetId);
+     }
+ 
++    /** Each of the sheet's policy versions, in version order (oldest first). */
++    public List<PolicyVersion> policyVersionList(String sheetId) {
++        return jdbc.query("SELECT version, from_date, setting_key, setting_value FROM policy_version WHERE sheet_id = ? ORDER BY version",
++                (rs, i) -> {
++                    Date from = rs.getDate("from_date");
++                    String key = rs.getString("setting_key");
++                    BigDecimal value = rs.getBigDecimal("setting_value");
++                    String shown = value == null ? "" : ROUNDING.equals(key) ? roundingName(value)
++                            : TERMS.equals(key) ? String.valueOf(value.intValue()) : value.toPlainString();
++                    return new PolicyVersion(rs.getInt("version"), from != null ? from.toLocalDate() : null, key, shown);
++                }, sheetId);
++    }
++
++    /** A policy version: its number, its from-date (null for none: in force on every date), and the key
++     *  and value it set, as the screen shows it (empty for blank). */
++    public record PolicyVersion(int version, LocalDate from, String key, String value) {
++    }
++
+     /** The rounding modes a sheet can set, by the name the screen and audit show; stored as a code. */
+     private static final Map<String, RoundingMode> ROUNDING_MODES = Map.of("half-up", RoundingMode.HALF_UP,
+             "half-even", RoundingMode.HALF_EVEN);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/policy-versions.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/policy-versions.GET.yml
+new file mode 100644
+index 00000000..f97abfab
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/policy-versions.GET.yml
+@@ -0,0 +1,6 @@
++# The sheet's policy versions: one line per version, oldest first, <version> <from or start>
++# <key>=<value> <count of claims whose policy version it is> (DELETED claims left out).
++# Reads only; records nothing.
++respond:
++  class: net.officefloor.hq.app.settings.RespondWithPolicyVersions
++  govern: [ readonly-transaction ]
