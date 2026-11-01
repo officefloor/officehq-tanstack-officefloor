@@ -41,7 +41,7 @@ export function bound(claim: Claim): boolean {
  * period) when it was opened while the sheet numbered by period, shown in place of its number (null otherwise), and
  * its due-by (yyyy-MM-dd), fixed when it was added as the terms-th business day after its date (skipping weekends and holidays), from the terms of its person's grade in force on its date (worked out again with those terms when a holiday on or before it is added, unless SETTLED or VOID), and
  * its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
- * deferred now (OPEN with that date after the sheet's today: it counts in no total, is not overdue and cannot be
+ * deferred now (OPEN, or VOID when voided while deferred, with that date after the sheet's today: it counts in no total, is not overdue and cannot be
  * settled), and the number the claim it was split off shows (null unless it was split off one). */
 export type Claim = {
   id: number;

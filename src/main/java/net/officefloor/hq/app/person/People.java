@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.alias.Aliases;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,10 +24,12 @@ public class People {
 
     private final JdbcTemplate jdbc;
     private final SheetClock clock;
+    private final Aliases aliases;
 
-    public People(JdbcTemplate jdbc, SheetClock clock) {
+    public People(JdbcTemplate jdbc, SheetClock clock, Aliases aliases) {
         this.jdbc = jdbc;
         this.clock = clock;
+        this.aliases = aliases;
     }
 
     private List<Person> query(String sheet, String where, Object... args) {
@@ -72,14 +75,18 @@ public class People {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The person on the sheet with this name, ignoring case; null when there is none. */
+    /** The person on the sheet with this name or alias, ignoring case; null when there is none. */
     public Person findByName(String sheet, String name) {
         List<Person> found = query(sheet, "WHERE sheet = ? AND name_key = LOWER(?)", sheet, name);
+        if (found.isEmpty()) {
+            found = query(sheet, "WHERE sheet = ? AND id IN (SELECT person_id FROM person_alias WHERE sheet = ?"
+                    + " AND alias_key = LOWER(?))", sheet, sheet, name);
+        }
         return found.isEmpty() ? null : found.get(0);
     }
 
     /** Whether someone on the sheet other than {@code except} has this name, ignoring case. */
-    private boolean nameTaken(String sheet, String name, Long except) {
+    public boolean nameTaken(String sheet, String name, Long except) {
         Integer taken = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet = ? AND name_key = LOWER(?) AND (? IS NULL OR id <> ?)",
                 Integer.class, sheet, name, except, except);
@@ -94,7 +101,7 @@ public class People {
     /** Adds the person with their first grade, which applies from the beginning of time, their own terms and contact (null: none). */
     public Person add(String sheet, String name, String grade, Integer terms, String contact)
             throws DuplicatePersonNameException {
-        if (nameTaken(sheet, name, null)) {
+        if (nameTaken(sheet, name, null) || aliases.taken(sheet, name)) {
             throw new DuplicatePersonNameException(name);
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -159,7 +166,7 @@ public class People {
 
     /** Save the person's name over the version it carries, raising the version; refused when it has moved on. */
     public void update(String sheet, Person person) throws DuplicatePersonNameException, StalePersonException {
-        if (nameTaken(sheet, person.name(), person.id())) {
+        if (nameTaken(sheet, person.name(), person.id()) || aliases.taken(sheet, person.name())) {
             throw new DuplicatePersonNameException(person.name());
         }
         int updated;
