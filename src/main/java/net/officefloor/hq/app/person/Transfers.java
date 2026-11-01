@@ -12,6 +12,7 @@ import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimNumbers;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Service;
@@ -24,9 +25,11 @@ public class Transfers {
     private final Claims claims;
     private final ClaimNumbers numbers;
     private final People people;
+    private final Sheets sheets;
 
-    public Transfers(JdbcTemplate jdbc, Claims claims, ClaimNumbers numbers, People people) {
+    public Transfers(JdbcTemplate jdbc, Claims claims, ClaimNumbers numbers, People people, Sheets sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
         this.claims = claims;
         this.numbers = numbers;
         this.people = people;
@@ -89,6 +92,12 @@ public class Transfers {
         return toId;
     }
 
+    /** The sheet's today when the person arrived here by a transfer; null when they did not. */
+    public LocalDate arrivedOn(long personId) {
+        List<Date> dates = jdbc.queryForList("SELECT origin_date FROM person WHERE id = ?", Date.class, personId);
+        return dates.isEmpty() || dates.get(0) == null ? null : dates.get(0).toLocalDate();
+    }
+
     /** The person's name and aliases become into's aliases; answers into's id. */
     private long mergeInto(Person person, Person into) {
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, alias_key) "
@@ -101,11 +110,12 @@ public class Transfers {
     }
 
     private long insertPerson(Person person, String to) {
+        Date arrived = Date.valueOf(sheets.today(to));
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet, origin_name, dated_terms, position) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet, origin_name, dated_terms, origin_date, position) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
                             + People.END_POSITION + ")", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.getName());
@@ -116,7 +126,8 @@ public class Transfers {
             ps.setString(7, person.getSheetId());
             ps.setString(8, person.getName());
             ps.setString(9, People.datedTerms(person.getDatedTerms()));
-            ps.setString(10, to);
+            ps.setDate(10, arrived);
+            ps.setString(11, to);
             return ps;
         }, keys);
         long toId = keys.getKey().longValue();

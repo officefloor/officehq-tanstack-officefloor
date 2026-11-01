@@ -24,11 +24,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** For every plan on the sheet, in the order added, a DRAFT claim of the plan's amount for each plan
  *  date (the start, then every N days; or the day of the month in every month) up to its end and the sheet's today that it has not made yet,
  *  dated that day with an empty note, by the claim form's rules: a date the form refuses is skipped,
- *  and tried again the next time. Each claim is saved and audited as an added claim. */
+ *  and tried again the next time. Each claim is saved and audited as an added claim. A viewer makes none. */
 public class GeneratePlans {
     public void generate(@PathVariable("sheetId") String sheetId, @Val Actor actor, Plans plans, People people,
             Sheets sheets, ClosedPeriods closedPeriods, Claims claims, Settings settings, Holidays holidays,
             ClaimLog log, Audit audit, Out<GeneratePlansResult> result) {
+        if (settings.role(sheetId, actor.user()) == net.officefloor.hq.app.settings.Role.VIEWER) {
+            result.set(new GeneratePlansResult(0)); // a viewer changes nothing
+            return;
+        }
         LocalDate today = sheets.today(sheetId);
         RecordClaimAdded record = new RecordClaimAdded();
         Map<Long, Person> persons = new HashMap<>();

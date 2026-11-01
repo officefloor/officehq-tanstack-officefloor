@@ -36,6 +36,9 @@ public class ViewerGuard extends OncePerRequestFilter {
     /** The bulk actions, by the path after the sheet id: they answer counts instead of refusing. */
     private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle", "bulk-grade", "bulk-retire");
 
+    /** Generating the plans' claims answers a count too: a viewer's generate goes through and makes none. */
+    private static final Set<String> COUNTED = Set.of("generate-plans");
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final Settings settings;
@@ -66,7 +69,8 @@ public class ViewerGuard extends OncePerRequestFilter {
         String action = rest.substring(slash + 1);
         byte[] body = request.getInputStream().readAllBytes();
         String user = user(body);
-        if (user != null && !BULK.contains(action) && settings.role(sheetId, user) == Role.VIEWER) {
+        if (user != null && !BULK.contains(action) && !COUNTED.contains(action)
+                && settings.role(sheetId, user) == Role.VIEWER) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             response.setContentType("text/plain;charset=UTF-8");
             response.getWriter().write("A viewer can change nothing");

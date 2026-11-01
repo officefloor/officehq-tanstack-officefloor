@@ -63,6 +63,51 @@ function PersonTransfer({ user, sheet, person }: { user: string; sheet: string; 
   );
 }
 
+/**
+ * Undoing the transfer that brought the person here: the button to send them back to the sheet they
+ * came from, by the transfer's own rules. Only a steward may, on the sheet-today they arrived; the
+ * server refuses anyone else, a later day, and a person who did not arrive by transfer.
+ */
+function PersonTransferUndo({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/transfer-undo`, { user }),
+    // Both sheets (the claims move back with the person), then the list the row leaves.
+    onSuccess: () => {
+      if (person.origin) void queryClient.invalidateQueries({ queryKey: sheetKey(person.origin) });
+      return queryClient.invalidateQueries({
+        queryKey: sheetKey(sheet),
+        predicate: (q) => q.queryKey[2] !== peopleKey(sheet)[2],
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+  });
+  const actionTaken = useRowAction(sheet, person.id, undo.reset);
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-transfer-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          actionTaken();
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo transfer
+      </button>
+      {undo.isError && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          Could not undo this transfer (a steward only, on the day the person arrived by transfer).
+        </span>
+      )}
+    </td>
+  );
+}
+
 /** The sheet a transferred person came from; nothing for anyone else. */
 function PersonOrigin({ person }: { user: string; sheet: string; person: Person }) {
   return <td data-testid="person-origin">{person.origin ?? ''}</td>;
@@ -73,4 +118,6 @@ export const contributions = [
   PersonCells.fill({ order: 45.5, Component: PersonOrigin }),
   PersonColumns.fill({ order: 46, Component: () => <th>Transfer</th> }),
   PersonCells.fill({ order: 46, Component: PersonTransfer }),
+  PersonColumns.fill({ order: 46.5, Component: () => <th>Undo transfer</th> }),
+  PersonCells.fill({ order: 46.5, Component: PersonTransferUndo }),
 ];
