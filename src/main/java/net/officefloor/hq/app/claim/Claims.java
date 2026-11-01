@@ -36,7 +36,8 @@ public class Claims {
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getString("locked_by"), rs.getBoolean("late_entry"),
             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
-            rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of());
+            rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of(),
+            rs.getObject("batch", Integer.class));
 
     /** The tags kept as comma separated text (empty for none). */
     private static List<String> tagList(String kept) {
@@ -53,7 +54,7 @@ public class Claims {
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -236,6 +237,11 @@ public class Claims {
                         + " WHERE sheet = ? AND id = ? AND status = 'DRAFT' AND (locked_by IS NULL OR locked_by = ?)",
                 input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), input.ref(), kept(input.tags()),
                 kept(ever), user, sheet, id, user) == 1;
+    }
+
+    /** Marks the claim settled by the bulk settle batch with the number; null when settled one at a time. */
+    public void setBatch(String sheet, long id, Integer batch) {
+        jdbc.update("UPDATE claim SET batch = ? WHERE sheet = ? AND id = ?", batch, sheet, id);
     }
 
     /** The user who last edited the claim (through its form or its amount entry); null when never edited. */

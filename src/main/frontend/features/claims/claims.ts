@@ -77,6 +77,8 @@ export type Claim = {
   tags: string[];
   /** Every tag it has ever carried, sorted: the sheet lists a due-total for each tag any of its claims ever carried. */
   tagsEver: string[];
+  /** The number of the bulk settle batch that last settled it (null when settled one at a time, or never). */
+  batch: number | null;
   /** Its comments, in the order written. */
   comments: ClaimComment[];
 };

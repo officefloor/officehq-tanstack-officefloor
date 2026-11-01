@@ -225,6 +225,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
       {claim.ref !== null && 'ref '}
       <span data-testid="claim-ref">{claim.ref ?? ''}</span>{' '}
+      {claim.batch !== null && 'batch '}
+      <span data-testid="claim-batch">{claim.batch ?? ''}</span>{' '}
       {claim.tags.length > 0 && 'tags '}
       <span data-testid="claim-tags">{claim.tags.join(', ')}</span>{' '}
       deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}

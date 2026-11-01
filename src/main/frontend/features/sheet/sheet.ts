@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type Sheet = { id: string; today: string; archived: boolean };
+/** `lastBatch`: the number of the sheet's last bulk settle batch, null when there has been none. */
+export type Sheet = { id: string; today: string; archived: boolean; lastBatch: number | null };
 
 export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
 
