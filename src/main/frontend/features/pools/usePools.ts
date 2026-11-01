@@ -9,7 +9,8 @@ import { hundredths } from '../rates/useRates';
  *  the pool is unbalanced or has no pot, or the member is out of their dates), their from- and
  *  to-dates (null when none) and whether those include the sheet's today (a member out of them is
  *  left out of the pool). A pool that is a member of none has the sheet's pot; one that is a member
- *  of another has its cut there. */
+ *  of another has its cut there. `cuts` is their cut at the end of each period whose to-date is on or
+ *  before the sheet's today, by period name in the periods' order (null when they had none then). */
 export type PoolMember = {
   personId: number | null;
   name: string;
@@ -20,6 +21,7 @@ export type PoolMember = {
   from: string | null;
   to: string | null;
   current: boolean;
+  cuts: Record<string, string | null>;
 };
 
 /** A pool as the server sends it: its name, its members in the order added, the total of their

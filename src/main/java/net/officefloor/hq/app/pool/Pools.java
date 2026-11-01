@@ -199,6 +199,18 @@ public class Pools {
         return withCuts;
     }
 
+    /** The to-date of each period of the sheet whose to-date is on or before the sheet's today, by
+     *  name, by from-date. */
+    public Map<String, LocalDate> periodsEnded(String sheetId) {
+        Map<String, LocalDate> ended = new LinkedHashMap<>();
+        jdbc.query("SELECT p.name, p.to_date FROM period p JOIN sheet s ON s.id = p.sheet_id "
+                + "WHERE p.sheet_id = ? AND p.to_date <= s.today ORDER BY p.from_date, p.to_date, p.name",
+                rs -> {
+                    ended.put(rs.getString(1), rs.getDate(2).toLocalDate());
+                }, sheetId);
+        return ended;
+    }
+
     /** Whether the sheet has a pool of that name. */
     public boolean has(String sheetId, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?",

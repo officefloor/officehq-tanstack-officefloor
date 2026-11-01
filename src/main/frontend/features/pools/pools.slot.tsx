@@ -18,7 +18,8 @@ import { poolsKey, usePools, SHARE, type Pool } from './usePools';
  * that is a member of none has the sheet's pot; one that is a member of another has its cut there.
  * A membership may carry a from-date and a to-date (both optional; a to-date before the from-date is
  * refused); a member whose dates do not include the sheet's today is left out: no share in the total,
- * no cut.
+ * no cut. Each member also shows their cut at the end of each period whose to-date is on or before
+ * the sheet's today (the sheet as it stood then, that day as its today), empty when there was none.
  */
 function PoolsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -150,6 +151,12 @@ function PoolRow({
               <span>{m.name}</span>{' '}
               <span data-testid="pool-share">{m.share}</span>{' '}
               <span data-testid="pool-cut">{m.cut ?? ''}</span>
+              {Object.entries(m.cuts).map(([period, cut]) => (
+                <span key={period}>
+                  {' '}
+                  {period}: <span data-testid={`pool-cut-${period}`}>{cut ?? ''}</span>
+                </span>
+              ))}
               {m.from !== null || m.to !== null ? ` (${m.from ?? '…'} to ${m.to ?? '…'})` : ''}
               {m.retired ? ' (retired)' : ''}
               {m.current ? '' : ' (out of dates)'}
