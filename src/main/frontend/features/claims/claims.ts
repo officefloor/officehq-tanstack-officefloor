@@ -85,3 +85,34 @@ export function personDueCents(
   if (rateOf(rates, person.grade, today) === undefined && !mine.some(fixed)) return undefined;
   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, person.grade, c.date), floor) ?? 0n), 0n);
 }
+
+/** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
+export function dueBy(claim: Claim, terms: number): string {
+  const d = new Date(`${claim.date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + terms);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: OPEN with its due-by before the sheet's today. */
+export function overdue(claim: Claim, terms: number, today: string | undefined): boolean {
+  return claim.status === 'OPEN' && today !== undefined && dueBy(claim, terms) < today;
+}
+
+/** The overdue claims that count (see {@link counted}) among a person's or the sheet's claims, and the sum of
+ *  their dues (in hundredths; a claim with no due adds nothing). */
+export function overdueCents(
+  claims: Claim[],
+  people: Person[],
+  rates: Rate[],
+  terms: number,
+  today: string | undefined,
+  floor: bigint,
+): { count: number; cents: bigint } {
+  const grades = new Map(people.map((p) => [p.id, p.grade]));
+  const late = counted(claims, people).filter((c) => grades.has(c.person) && overdue(c, terms, today));
+  const cents = late.reduce(
+    (sum, c) => sum + (claimDueCents(c, rateOf(rates, grades.get(c.person)!, c.date), floor) ?? 0n),
+    0n,
+  );
+  return { count: late.length, cents };
+}

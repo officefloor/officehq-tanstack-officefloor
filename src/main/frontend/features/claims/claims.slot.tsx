@@ -8,11 +8,22 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { rateOf, showDue, useRates } from '../rates/rates';
+import { rateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloorCents } from '../settings/settings';
-import { claimDueCents, claimed, claimsKey, claimsPath, counted, personDueCents, useClaims } from './claims';
+import { useFloorCents, useTerms } from '../settings/settings';
+import {
+  claimDueCents,
+  claimed,
+  claimsKey,
+  claimsPath,
+  counted,
+  dueBy,
+  overdue,
+  overdueCents,
+  personDueCents,
+  useClaims,
+} from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
 type Draft = { amount: string; date: string; note: string };
@@ -23,6 +34,8 @@ function ClaimedHeader() {
     <>
       <th>Claimed</th>
       <th>Due total</th>
+      <th>Overdue</th>
+      <th>Overdue total</th>
       <th>Claims</th>
     </>
   );
@@ -49,6 +62,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   const queryClient = useQueryClient();
   const { data: periods = [] } = usePeriods(sheet);
   const floor = useFloorCents(sheet);
+  const terms = useTerms(sheet);
+  const today = useSheetToday(sheet);
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
       postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
@@ -65,6 +80,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
       due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor))}</span>{' '}
+      due by <span data-testid="claim-due-by">{dueBy(claim, terms)}</span>{' '}
+      overdue <span data-testid="claim-overdue">{overdue(claim, terms, today) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
@@ -129,6 +146,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
   const today = useSheetToday(sheet);
+  const terms = useTerms(sheet);
+  const late = overdueCents(claims, [person], rates, terms, today, floor);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -172,6 +191,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
     <>
       <td data-testid="person-claimed">{claimed(counted(claims, [person]))}</td>
       <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor))}</td>
+      <td data-testid="person-overdue-count">{late.count}</td>
+      <td data-testid="person-overdue-total">{twoDecimals(late.cents)}</td>
       <td>
         <form onSubmit={submit}>
           <input

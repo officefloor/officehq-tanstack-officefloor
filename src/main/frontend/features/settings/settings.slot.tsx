@@ -10,13 +10,15 @@ import type { SettingKey, Settings as SheetSettings } from './settings';
 
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
 // a clerk may settle (two decimals); blank means no limit. The floor is the least a claim's live due is (two
-// decimals); blank takes its default, 1.00. Saving sends each setting whose field was changed; with none changed it
+// decimals); blank takes its default, 1.00. The terms are the whole days after its date by which a claim is due;
+// blank takes its default, 14. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
+  const [terms, setTerms] = useState('');
   const [changed, setChanged] = useState<SettingKey[]>([]);
 
   const save = useMutation({
@@ -31,6 +33,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     onSuccess: () => {
       setClerkLimit('');
       setFloor('');
+      setTerms('');
       setChanged([]);
     },
   });
@@ -44,7 +47,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     // The server refuses a value that is not 0.00 or more with up to two decimals.
-    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor };
+    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => ({ key, value: values[key] })));
   };
@@ -79,12 +82,25 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-floor-current">{data?.floor ?? ''}</span>{' '}
+        <label>
+          Terms (days){' '}
+          <input
+            data-testid="setting-terms"
+            placeholder="days (blank: 14)"
+            value={terms}
+            onChange={(e) => {
+              setTerms(e.target.value);
+              touch('terms');
+            }}
+          />
+        </label>{' '}
+        now <span data-testid="setting-terms-current">{data?.terms ?? ''}</span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit and the floor must be 0.00 or more with up to two decimals, or blank.
+            {' '}The clerk limit and the floor must be 0.00 or more with up to two decimals, the terms a whole number of days, or blank.
           </span>
         )}
       </form>

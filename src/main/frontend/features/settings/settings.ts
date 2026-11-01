@@ -3,14 +3,18 @@ import { getJson } from '../../api/http';
 import { hundredths } from '../rates/rates';
 
 /** The sheet's settings: the clerk limit with two decimals, the most due a clerk may settle ('' for no limit);
- *  and the floor with two decimals, the least a claim's live due is. */
-export type Settings = { clerkLimit: string; floor: string };
+ *  the floor with two decimals, the least a claim's live due is; and the terms, the whole days after its date by
+ *  which a claim is due. */
+export type Settings = { clerkLimit: string; floor: string; terms: string };
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
-export type SettingKey = 'clerk-limit' | 'floor';
+export type SettingKey = 'clerk-limit' | 'floor' | 'terms';
 
 /** The floor a sheet starts with. */
 export const DEFAULT_FLOOR = '1.00';
+
+/** The terms a sheet starts with. */
+export const DEFAULT_TERMS = '14';
 
 export const settingsKey = (sheet: string) => ['settings', sheet] as const;
 
@@ -27,4 +31,10 @@ export function useSettings(sheet: string) {
 export function useFloorCents(sheet: string): bigint {
   const { data } = useSettings(sheet);
   return hundredths(data?.floor ?? DEFAULT_FLOOR);
+}
+
+/** The sheet's terms: the whole days after its date by which a claim is due. */
+export function useTerms(sheet: string): number {
+  const { data } = useSettings(sheet);
+  return Number(data?.terms ?? DEFAULT_TERMS);
 }

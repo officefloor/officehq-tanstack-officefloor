@@ -15,6 +15,12 @@ public class Settings {
     /** The least a claim's live due is (two decimals); blank: its default. */
     public static final String FLOOR = "floor";
 
+    /** The days after its date by which a claim is due (a whole number); blank: its default. */
+    public static final String TERMS = "terms";
+
+    /** The terms a sheet starts with. */
+    public static final String DEFAULT_TERMS = "14";
+
     /** The floor a sheet starts with. */
     public static final String DEFAULT_FLOOR = "1.00";
 
@@ -48,7 +54,14 @@ public class Settings {
         return new BigDecimal(floor.isEmpty() ? DEFAULT_FLOOR : floor);
     }
 
+    /** The sheet's terms: the days after its date by which a claim is due. */
+    public int terms(String sheet) {
+        String terms = get(sheet, TERMS);
+        return Integer.parseInt(terms.isEmpty() ? DEFAULT_TERMS : terms);
+    }
+
     public SettingsResponse all(String sheet) {
-        return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString());
+        return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
+                Integer.toString(terms(sheet)));
     }
 }
