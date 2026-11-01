@@ -24,14 +24,15 @@ export type Rate = {
 /** An older version of a rate, as it was set. */
 type RateVersion = { pct: string; to: string | null; forwardAfter: number | null };
 
-/** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
+/** The rates of one of the sheets the sheet's rates fall back to, `level` places along (1 for the nearest). */
 type InheritedRates = { level: number; sheet: string; rates: Rate[] };
 
 export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
 
 /** The sheet's own rates, by grade then from-date (the one with none first), each with `level` 0;
- *  then the rates of its parent sheets, nearest first, up to three levels up, each with the level it
- *  is from (1 for the parent). Re-read whenever the sheet is loaded. */
+ *  then the rates of the sheets it falls back to, nearest first, each with the level it is from: its
+ *  parent sheets up to three levels up, then, for a cloned sheet, the sheet it was cloned from and
+ *  that one's own parents and source. Re-read whenever the sheet is loaded. */
 export function useRates(sheet: string) {
   const [asOf] = useAsOf();
   return useQuery({

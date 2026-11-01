@@ -35,7 +35,7 @@ public class Clones {
         this.numbers = numbers;
     }
 
-    /** Copy sheet `from` to the never used sheet `to`: its today, settings (dated ones, grade terms and
+    /** Copy sheet `from` to the never used sheet `to`, which keeps `from` as its source: its today, settings (dated ones, grade terms and
      *  permissions among them), roles, rates, holidays, void reasons and templates; its people (in list
      *  order) with their grades, terms, contact, aliases, holds, retirements and patrons; its pools and
      *  their members; its crews with their leads and members; its periods, all open; and its claims (listed in the order they were) with their
@@ -55,6 +55,7 @@ public class Clones {
                 + "floor, terms, late_pct, policy_date, period_numbering_from, cap, grace_days, entry_date, pot, parent_id, "
                 + "fiscal_start_month, escalate_after, proof_kinds "
                 + "FROM sheet_setting WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO PUBLIC.sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
         jdbc.update("INSERT INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_dated WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_grade_terms (sheet_id, grade, terms) "

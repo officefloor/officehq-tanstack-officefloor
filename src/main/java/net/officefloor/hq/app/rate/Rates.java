@@ -7,8 +7,10 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
@@ -51,8 +53,8 @@ public class Rates {
     /** How many levels of parent sheets a grade's rate is looked for in. */
     public static final int PARENT_LEVELS = 3;
 
-    /** The grade's rate in force on `date`: the sheet's own (see {@link #ownPct}), else its parent's
-     *  then, else the parent's parent's, up to {@link #PARENT_LEVELS} levels up; null when none has one. */
+    /** The grade's rate in force on `date`: the sheet's own (see {@link #ownPct}), else that of the
+     *  first sheet of its {@link #lineage} with one then; null when none has one. */
     public BigDecimal pct(String sheetId, String grade, LocalDate date) {
         return pct(sheetId, grade, date, null);
     }
@@ -61,13 +63,45 @@ public class Rates {
      *  {@link #pct(String, String, LocalDate)}, passing over each forward-only rate saved after the claim
      *  was added. Null `seq` (a claim not yet added) passes over none. */
     public BigDecimal pct(String sheetId, String grade, LocalDate date, Long seq) {
-        String sheet = sheetId;
-        for (int level = 0; sheet != null && level <= PARENT_LEVELS; level++) {
+        BigDecimal own = ownPct(sheetId, grade, date, seq);
+        if (own != null) return own;
+        for (String sheet : lineage(sheetId)) {
             BigDecimal pct = ownPct(sheet, grade, date, seq);
             if (pct != null) return pct;
-            sheet = parent(sheet);
         }
         return null;
+    }
+
+    /** The sheets a grade's rate is looked for in after the sheet's own, nearest first: its parent sheets,
+     *  up to {@link #PARENT_LEVELS} levels up; then, for a cloned sheet, the sheet it was cloned from
+     *  followed by that one's own lineage. Each sheet appears once. */
+    public List<String> lineage(String sheetId) {
+        return lineage(sheetId, parent(sheetId));
+    }
+
+    /** As {@link #lineage(String)}, with the sheet's parent given (null for none). */
+    public List<String> lineage(String sheetId, String parent) {
+        List<String> lineage = new ArrayList<>();
+        Set<String> seen = new HashSet<>(List.of(sheetId));
+        String sheet = sheetId;
+        String up = parent;
+        while (true) {
+            for (int level = 1; up != null && level <= PARENT_LEVELS && seen.add(up); level++) {
+                lineage.add(up);
+                up = parent(up);
+            }
+            String source = source(sheet);
+            if (source == null || !seen.add(source)) return lineage;
+            lineage.add(source);
+            sheet = source;
+            up = parent(source);
+        }
+    }
+
+    /** The sheet the sheet was cloned from, or null when it was not cloned. */
+    public String source(String sheetId) {
+        return jdbc.queryForList("SELECT source_id FROM PUBLIC.sheet_source WHERE sheet_id = ?", String.class, sheetId)
+                .stream().findFirst().orElse(null);
     }
 
     /** The sheet's parent sheet id, or null when it names none. */
@@ -77,19 +111,15 @@ public class Rates {
                 .stream().filter(p -> p != null).findFirst().orElse(null);
     }
 
-    /** The sheet's ancestors' rates, nearest first: each parent sheet up to {@link #PARENT_LEVELS}
-     *  levels up, with every rate set on it. */
+    /** The rates of the sheet's {@link #lineage}, nearest first, each sheet with every rate set on it. */
     public List<Inherited> inherited(String sheetId) {
         List<Inherited> inherited = new ArrayList<>();
-        String sheet = parent(sheetId);
-        for (int level = 1; sheet != null && level <= PARENT_LEVELS; level++) {
-            inherited.add(new Inherited(level, sheet, onSheet(sheet)));
-            sheet = parent(sheet);
-        }
+        int level = 1;
+        for (String sheet : lineage(sheetId)) inherited.add(new Inherited(level++, sheet, onSheet(sheet)));
         return inherited;
     }
 
-    /** The rates of an ancestor sheet `level` levels up (1 for the parent). */
+    /** The rates of a sheet of the lineage, `level` places along it (1 for the nearest). */
     public record Inherited(int level, String sheetId, List<Rate> rates) {
     }
 

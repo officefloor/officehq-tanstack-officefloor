@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import net.officefloor.hq.app.rate.Rates;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
@@ -35,9 +36,11 @@ public class AsOf {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final Map<String, List<String>> columns = new HashMap<>();
+    private final Rates rates;
 
-    public AsOf(JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
+    public AsOf(JdbcTemplate jdbc, PlatformTransactionManager transactionManager, Rates rates) {
         this.jdbc = jdbc;
+        this.rates = rates;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -113,20 +116,17 @@ public class AsOf {
      *  theirs) and its settings (naming its own parent). */
     private static final List<String> ANCESTOR_TABLES = List.of("RATE", "RATE_VERSION", "SHEET_SETTING");
 
-    /** The sheet's parent sheets, up to {@link net.officefloor.hq.app.rate.Rates#PARENT_LEVELS} levels up,
-     *  as they stand now: each keeps a today of its own, so only the sheet itself is rebuilt as of the date. */
+    /** The sheets of the sheet's rate lineage (see {@link Rates#lineage}): its parent sheets and the sheet
+     *  it was cloned from, as they stand now: each keeps a today of its own, so only the sheet itself is
+     *  rebuilt as of the date. */
     private void ancestors(String sheetId) {
-        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
-        String sheet = parentIn("ASOF", sheetId);
-        for (int level = 1; sheet != null && seen.add(sheet)
-                && level <= net.officefloor.hq.app.rate.Rates.PARENT_LEVELS; level++) {
+        for (String sheet : rates.lineage(sheetId, parentIn("ASOF", sheetId))) {
             for (String table : ANCESTOR_TABLES) {
                 String names = '"' + String.join("\", \"", columns(table)) + '"';
                 jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheet);
                 jdbc.update("INSERT INTO ASOF.\"" + table + "\" (" + names + ") SELECT " + names
                         + " FROM PUBLIC.\"" + table + "\" WHERE sheet_id = ?", sheet);
             }
-            sheet = parentIn("PUBLIC", sheet);
         }
     }
 
