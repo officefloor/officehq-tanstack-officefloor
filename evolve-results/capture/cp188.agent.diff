@@ -1,0 +1,207 @@
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index cae72c11..0c5b8176 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -24,14 +24,15 @@ export type Rate = {
+ /** An older version of a rate, as it was set. */
+ type RateVersion = { pct: string; to: string | null; forwardAfter: number | null };
+ 
+-/** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
++/** The rates of one of the sheets the sheet's rates fall back to, `level` places along (1 for the nearest). */
+ type InheritedRates = { level: number; sheet: string; rates: Rate[] };
+ 
+ export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
+ 
+ /** The sheet's own rates, by grade then from-date (the one with none first), each with `level` 0;
+- *  then the rates of its parent sheets, nearest first, up to three levels up, each with the level it
+- *  is from (1 for the parent). Re-read whenever the sheet is loaded. */
++ *  then the rates of the sheets it falls back to, nearest first, each with the level it is from: its
++ *  parent sheets up to three levels up, then, for a cloned sheet, the sheet it was cloned from and
++ *  that one's own parents and source. Re-read whenever the sheet is loaded. */
+ export function useRates(sheet: string) {
+   const [asOf] = useAsOf();
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index e3b44a29..2d4f21fd 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -7,8 +7,10 @@ import java.sql.SQLException;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Set;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+@@ -51,8 +53,8 @@ public class Rates {
+     /** How many levels of parent sheets a grade's rate is looked for in. */
+     public static final int PARENT_LEVELS = 3;
+ 
+-    /** The grade's rate in force on `date`: the sheet's own (see {@link #ownPct}), else its parent's
+-     *  then, else the parent's parent's, up to {@link #PARENT_LEVELS} levels up; null when none has one. */
++    /** The grade's rate in force on `date`: the sheet's own (see {@link #ownPct}), else that of the
++     *  first sheet of its {@link #lineage} with one then; null when none has one. */
+     public BigDecimal pct(String sheetId, String grade, LocalDate date) {
+         return pct(sheetId, grade, date, null);
+     }
+@@ -61,15 +63,47 @@ public class Rates {
+      *  {@link #pct(String, String, LocalDate)}, passing over each forward-only rate saved after the claim
+      *  was added. Null `seq` (a claim not yet added) passes over none. */
+     public BigDecimal pct(String sheetId, String grade, LocalDate date, Long seq) {
+-        String sheet = sheetId;
+-        for (int level = 0; sheet != null && level <= PARENT_LEVELS; level++) {
++        BigDecimal own = ownPct(sheetId, grade, date, seq);
++        if (own != null) return own;
++        for (String sheet : lineage(sheetId)) {
+             BigDecimal pct = ownPct(sheet, grade, date, seq);
+             if (pct != null) return pct;
+-            sheet = parent(sheet);
+         }
+         return null;
+     }
+ 
++    /** The sheets a grade's rate is looked for in after the sheet's own, nearest first: its parent sheets,
++     *  up to {@link #PARENT_LEVELS} levels up; then, for a cloned sheet, the sheet it was cloned from
++     *  followed by that one's own lineage. Each sheet appears once. */
++    public List<String> lineage(String sheetId) {
++        return lineage(sheetId, parent(sheetId));
++    }
++
++    /** As {@link #lineage(String)}, with the sheet's parent given (null for none). */
++    public List<String> lineage(String sheetId, String parent) {
++        List<String> lineage = new ArrayList<>();
++        Set<String> seen = new HashSet<>(List.of(sheetId));
++        String sheet = sheetId;
++        String up = parent;
++        while (true) {
++            for (int level = 1; up != null && level <= PARENT_LEVELS && seen.add(up); level++) {
++                lineage.add(up);
++                up = parent(up);
++            }
++            String source = source(sheet);
++            if (source == null || !seen.add(source)) return lineage;
++            lineage.add(source);
++            sheet = source;
++            up = parent(source);
++        }
++    }
++
++    /** The sheet the sheet was cloned from, or null when it was not cloned. */
++    public String source(String sheetId) {
++        return jdbc.queryForList("SELECT source_id FROM PUBLIC.sheet_source WHERE sheet_id = ?", String.class, sheetId)
++                .stream().findFirst().orElse(null);
++    }
++
+     /** The sheet's parent sheet id, or null when it names none. */
+     public String parent(String sheetId) {
+         return jdbc.query("SELECT parent_id FROM sheet_setting WHERE sheet_id = ?",
+@@ -77,19 +111,15 @@ public class Rates {
+                 .stream().filter(p -> p != null).findFirst().orElse(null);
+     }
+ 
+-    /** The sheet's ancestors' rates, nearest first: each parent sheet up to {@link #PARENT_LEVELS}
+-     *  levels up, with every rate set on it. */
++    /** The rates of the sheet's {@link #lineage}, nearest first, each sheet with every rate set on it. */
+     public List<Inherited> inherited(String sheetId) {
+         List<Inherited> inherited = new ArrayList<>();
+-        String sheet = parent(sheetId);
+-        for (int level = 1; sheet != null && level <= PARENT_LEVELS; level++) {
+-            inherited.add(new Inherited(level, sheet, onSheet(sheet)));
+-            sheet = parent(sheet);
+-        }
++        int level = 1;
++        for (String sheet : lineage(sheetId)) inherited.add(new Inherited(level++, sheet, onSheet(sheet)));
+         return inherited;
+     }
+ 
+-    /** The rates of an ancestor sheet `level` levels up (1 for the parent). */
++    /** The rates of a sheet of the lineage, `level` places along it (1 for the nearest). */
+     public record Inherited(int level, String sheetId, List<Rate> rates) {
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+index 9266c07c..ab9a84bb 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.function.Supplier;
++import net.officefloor.hq.app.rate.Rates;
+ import org.springframework.jdbc.core.ConnectionCallback;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowCallbackHandler;
+@@ -35,9 +36,11 @@ public class AsOf {
+     private final JdbcTemplate jdbc;
+     private final TransactionTemplate transactions;
+     private final Map<String, List<String>> columns = new HashMap<>();
++    private final Rates rates;
+ 
+-    public AsOf(JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
++    public AsOf(JdbcTemplate jdbc, PlatformTransactionManager transactionManager, Rates rates) {
+         this.jdbc = jdbc;
++        this.rates = rates;
+         this.transactions = new TransactionTemplate(transactionManager);
+     }
+ 
+@@ -113,20 +116,17 @@ public class AsOf {
+      *  theirs) and its settings (naming its own parent). */
+     private static final List<String> ANCESTOR_TABLES = List.of("RATE", "RATE_VERSION", "SHEET_SETTING");
+ 
+-    /** The sheet's parent sheets, up to {@link net.officefloor.hq.app.rate.Rates#PARENT_LEVELS} levels up,
+-     *  as they stand now: each keeps a today of its own, so only the sheet itself is rebuilt as of the date. */
++    /** The sheets of the sheet's rate lineage (see {@link Rates#lineage}): its parent sheets and the sheet
++     *  it was cloned from, as they stand now: each keeps a today of its own, so only the sheet itself is
++     *  rebuilt as of the date. */
+     private void ancestors(String sheetId) {
+-        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+-        String sheet = parentIn("ASOF", sheetId);
+-        for (int level = 1; sheet != null && seen.add(sheet)
+-                && level <= net.officefloor.hq.app.rate.Rates.PARENT_LEVELS; level++) {
++        for (String sheet : rates.lineage(sheetId, parentIn("ASOF", sheetId))) {
+             for (String table : ANCESTOR_TABLES) {
+                 String names = '"' + String.join("\", \"", columns(table)) + '"';
+                 jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheet);
+                 jdbc.update("INSERT INTO ASOF.\"" + table + "\" (" + names + ") SELECT " + names
+                         + " FROM PUBLIC.\"" + table + "\" WHERE sheet_id = ?", sheet);
+             }
+-            sheet = parentIn("PUBLIC", sheet);
+         }
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Clones.java b/src/main/java/net/officefloor/hq/app/sheet/Clones.java
+index 5648b0e5..cb3d4d65 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Clones.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Clones.java
+@@ -35,7 +35,7 @@ public class Clones {
+         this.numbers = numbers;
+     }
+ 
+-    /** Copy sheet `from` to the never used sheet `to`: its today, settings (dated ones, grade terms and
++    /** Copy sheet `from` to the never used sheet `to`, which keeps `from` as its source: its today, settings (dated ones, grade terms and
+      *  permissions among them), roles, rates, holidays, void reasons and templates; its people (in list
+      *  order) with their grades, terms, contact, aliases, holds, retirements and patrons; its pools and
+      *  their members; its crews with their leads and members; its periods, all open; and its claims (listed in the order they were) with their
+@@ -55,6 +55,7 @@ public class Clones {
+                 + "floor, terms, late_pct, policy_date, period_numbering_from, cap, grace_days, entry_date, pot, parent_id, "
+                 + "fiscal_start_month, escalate_after, proof_kinds "
+                 + "FROM sheet_setting WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO PUBLIC.sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
+         jdbc.update("INSERT INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
+                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_dated WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_grade_terms (sheet_id, grade, terms) "
+diff --git a/src/main/resources/db/migration/V97__sheet_source.sql b/src/main/resources/db/migration/V97__sheet_source.sql
+new file mode 100644
+index 00000000..fec67a8d
+--- /dev/null
++++ b/src/main/resources/db/migration/V97__sheet_source.sql
+@@ -0,0 +1,6 @@
++-- The sheet a sheet was cloned from: a grade with no rate on the sheet nor on its parents takes the
++-- source's (see rate.Rates#lineage). Set once, by the clone, so it is not part of a sheet's history.
++CREATE TABLE public.sheet_source (
++    sheet_id  VARCHAR(200) PRIMARY KEY,
++    source_id VARCHAR(200) NOT NULL
++);
