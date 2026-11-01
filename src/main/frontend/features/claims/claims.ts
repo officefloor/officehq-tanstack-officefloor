@@ -419,3 +419,23 @@ export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[]
   }
   return [...totals].map(([tag, cents]) => ({ tag, cents }));
 }
+
+/** The due-total of each calendar month (yyyy-mm) any claim on the sheet is dated in, sorted (in hundredths): the dues
+ *  of the claims that count (see {@link counted}) dated in it; a claim with no due adds nothing. */
+export function useMonthDueTotals(sheet: string): { month: string; cents: bigint }[] {
+  const { data: all = [] } = useClaims(sheet);
+  const { data: people = [] } = usePeople(sheet);
+  const { data: rates = [] } = useRates(sheet);
+  const floor = useFloorCents(sheet);
+  const late = useLate(sheet);
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const totals = new Map([...new Set(all.map((c) => c.date.slice(0, 7)))].sort().map((m) => [m, 0n]));
+  for (const c of counted(all, people)) {
+    const person = byId.get(c.person);
+    if (person === undefined) continue;
+    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const month = c.date.slice(0, 7);
+    totals.set(month, (totals.get(month) ?? 0n) + due);
+  }
+  return [...totals].map(([month, cents]) => ({ month, cents }));
+}

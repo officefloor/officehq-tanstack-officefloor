@@ -1,12 +1,14 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { twoDecimals } from '../rates/rates';
-import { useSheetTotals, useTagDueTotals } from './claims';
+import { useMonthDueTotals, useSheetTotals, useTagDueTotals } from './claims';
 
 // The sheet's claimed-total, due-total, overdue count and total, and settled-total and open-total (see useSheetTotals),
-// and the due-total of each tag ever used on the sheet (see useTagDueTotals).
+// the due-total of each tag ever used on the sheet (see useTagDueTotals), and the due-total of each month any claim
+// is dated in (see useMonthDueTotals).
 function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
   const { claimed, due, overdue, settled, open } = useSheetTotals(sheet);
   const tags = useTagDueTotals(sheet);
+  const months = useMonthDueTotals(sheet);
   return (
     <>
       <p>
@@ -28,6 +30,15 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
           {tags.map(({ tag, cents }) => (
             <li key={tag}>
               Tag {tag} due total: <strong data-testid={`tag-${tag}-due-total`}>{twoDecimals(cents)}</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+      {months.length > 0 && (
+        <ul>
+          {months.map(({ month, cents }) => (
+            <li key={month}>
+              Month {month} due total: <strong data-testid={`month-${month}-due-total`}>{twoDecimals(cents)}</strong>
             </li>
           ))}
         </ul>
