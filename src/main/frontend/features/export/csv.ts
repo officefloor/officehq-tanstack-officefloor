@@ -1,3 +1,5 @@
+import { useIsFetching } from '@tanstack/react-query';
+
 /** A CSV value: wrapped in double quotes, any quote inside doubled, when it holds a comma, a quote
  *  or a line break. */
 export function csvValue(v: string): string {
@@ -16,4 +18,10 @@ export function downloadCsv(lines: string[][], filename: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Whether the sheet's reads are all in: false while any is in flight (as when the sheet is loaded,
+ *  or its as-of date set or cleared), so an export holds the figures the screen is about to show. */
+export function useSheetRead(sheet: string): boolean {
+  return useIsFetching({ queryKey: ['sheet', sheet] }) === 0;
 }

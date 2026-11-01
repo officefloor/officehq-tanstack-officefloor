@@ -4,12 +4,13 @@ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-import { downloadCsv } from './csv';
+import { downloadCsv, useSheetRead } from './csv';
 
 /**
  * Downloads the people as a CSV file: a header line, then one line per person in list order,
  * retired people included, with the grade in force on the sheet's today, the retired-from date
- * (empty when not retired) and the due-total as the people list shows it. Lines end with a line feed.
+ * (empty when not retired) and the due-total as the people list shows it — while an as-of date is
+ * set, all as of that date (the button waits for those figures). Lines end with a line feed.
  */
 function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const { data: people = [] } = usePeople(sheet);
@@ -19,6 +20,8 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const cap = useCap(sheet);
+
+  const read = useSheetRead(sheet);
 
   const download = () => {
     const claims = live(all, heldOnBy(people, today));
@@ -39,7 +42,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
 
   return (
     <p>
-      <button type="button" data-testid="export-people" onClick={download}>
+      <button type="button" data-testid="export-people" disabled={!read} onClick={download}>
         Export people (CSV)
       </button>
     </p>
