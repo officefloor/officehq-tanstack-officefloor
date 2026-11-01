@@ -22,8 +22,8 @@ public class ValidateGradeMerge {
         }
         String from = request.from() == null ? "" : request.from().trim();
         String into = request.into() == null ? "" : request.into().trim();
-        if (!Grades.ALL.contains(from) || !Grades.ALL.contains(into)) {
-            throw new InvalidSheetRequestException("The grades must be A, B or C");
+        if (!grades.isGrade(sheetId, from) || !grades.isGrade(sheetId, into)) {
+            throw new InvalidSheetRequestException("The grades must be grades of the sheet");
         }
         if (from.equals(into)) {
             throw new InvalidSheetRequestException("A grade cannot be merged into itself");

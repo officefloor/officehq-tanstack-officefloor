@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rate;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.plugin.variable.Out;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  each by the rate form's rules; blank lines are skipped. One refused line refuses the whole import. */
 public class ValidateImportRates {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRatesRequest request,
-            Out<ImportedRates> body, Out<Actor> actor) throws InvalidSheetRequestException {
+            Grades grades, Out<ImportedRates> body, Out<Actor> actor) throws InvalidSheetRequestException {
         String user = request == null ? null : request.user();
         String text = request == null || request.text() == null ? "" : request.text();
         List<RateRequest> requests = new ArrayList<>();
@@ -28,7 +29,7 @@ public class ValidateImportRates {
             RateRequest line = new RateRequest(f[0].trim(), f[1].trim(), f.length > 2 ? f[2].trim() : "",
                     f.length > 3 ? f[3].trim() : "", user);
             try {
-                rates.add(ValidateRate.checked(sheetId, line));
+                rates.add(ValidateRate.checked(sheetId, line, grades));
             } catch (InvalidSheetRequestException e) {
                 throw new InvalidSheetRequestException("Line " + n + ": " + e.getMessage());
             }

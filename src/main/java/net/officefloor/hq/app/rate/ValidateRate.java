@@ -3,7 +3,7 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import net.officefloor.hq.app.grade.Grades;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.rollup.Actor;
@@ -12,23 +12,22 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateRate {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     /** A percent: 0.00 or more, with up to two decimals. */
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request,
-            Out<RateRequest> body, Out<Rate> rate, Out<Actor> actor) throws InvalidSheetRequestException {
-        Rate checked = checked(sheetId, request);
+            Grades grades, Out<RateRequest> body, Out<Rate> rate, Out<Actor> actor) throws InvalidSheetRequestException {
+        Rate checked = checked(sheetId, request, grades);
         actor.set(new Actor(request.user()));
         body.set(request);
         rate.set(checked);
     }
 
     /** The rate the form's request sets, checked by the form's rules. */
-    static Rate checked(String sheetId, RateRequest request) throws InvalidSheetRequestException {
-        if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
-            throw new InvalidSheetRequestException("The grade must be A, B or C");
+    static Rate checked(String sheetId, RateRequest request, Grades grades) throws InvalidSheetRequestException {
+        if (request == null || request.grade() == null || !grades.isGrade(sheetId, request.grade())) {
+            throw new InvalidSheetRequestException("The grade must be one of the sheet's");
         }
         String pct = request.pct() == null ? "" : request.pct().trim();
         if (!PCT.matcher(pct).matches()) {

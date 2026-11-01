@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADES } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
 import { useSheetToday } from '../sheet/useSheet';
 import { claimRateOn, PCT, rateOn, ratesKey, totalDue, useRates, type Rate } from './useRates';
 import { claimDueCents, isOpen, useClaims } from '../claims/useClaims';
@@ -19,6 +19,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
+  const grades = useGradeCodes(sheet);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
@@ -72,7 +73,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
               clearError();
             }}
           >
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -136,7 +137,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateOn(rates, g, today) ?? 'n/a'}</td>
@@ -154,7 +155,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               {calendar.map((m) => (
@@ -207,6 +208,7 @@ function RatePreview({ sheet }: { sheet: string }) {
   const ratesQuery = useRates(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
+  const grades = useGradeCodes(sheet);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [invalid, setInvalid] = useState(false);
@@ -263,7 +265,7 @@ function RatePreview({ sheet }: { sheet: string }) {
             setResult(null);
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

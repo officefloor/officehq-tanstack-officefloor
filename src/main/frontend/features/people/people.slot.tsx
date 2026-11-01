@@ -8,7 +8,8 @@ import { QuickAddBar } from './QuickAddBar';
 import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, useSortedPeople } from './SortBy';
 import { useSheetToday } from '../sheet/useSheet';
-import { GRADES, gradeOn, peopleKey, shownName, usePeople, type Person } from './usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { gradeOn, peopleKey, shownName, usePeople, type Person } from './usePeople';
 import { Col } from '../columns/useColumns';
 import { useCrews } from '../crews/useCrews';
 import { useRoleOf } from '../settings/useSettings';
@@ -53,6 +54,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const [version, setVersion] = useState(0);
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
+  const grades = useGradeCodes(sheet);
   // The date the form's grade is in force from; blank for the sheet's today.
   const [gradeFrom, setGradeFrom] = useState('');
   // The person's own terms in days; blank for none.
@@ -180,7 +182,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
               clearError();
             }}
           >
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>

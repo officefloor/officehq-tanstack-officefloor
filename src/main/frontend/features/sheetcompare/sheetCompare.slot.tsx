@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { getJson } from '../../api/http';
 import { useClaims } from '../claims/useClaims';
-import { GRADES, usePeople } from '../people/usePeople';
+import { usePeople } from '../people/usePeople';
 import { totalDue, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheet } from '../sheet/useSheet';
@@ -21,7 +21,7 @@ function useGradeTotals(sheet: string): GradeTotals | null {
   const today = useSheet(sheet);
   const byGrade = useGradeDues(sheet);
   const ready = people.isSuccess && claims.isSuccess && rates.isSuccess && settings.isSuccess && today.isSuccess;
-  return ready ? Object.fromEntries(GRADES.map((g) => [g, totalDue(byGrade[g].map((d) => d.due))])) : null;
+  return ready ? Object.fromEntries(Object.entries(byGrade).map(([g, on]) => [g, totalDue(on.map((d) => d.due))])) : null;
 }
 
 /** The other sheet's per-grade figures, reported up. Renders nothing. */
@@ -76,7 +76,7 @@ function SheetComparePanel({ sheet }: { user: string; sheet: string }) {
       {found && other && <OtherFigures key={other.id} sheet={other.id} report={setOtherTotals} />}
       {found && mine && theirs && (
         <ul>
-          {GRADES.map((g) => (
+          {Object.keys(mine).map((g) => (
             <li key={g} data-testid="compare-line">
               {g} {mine[g]} {theirs[g] ?? '0.00'}
             </li>

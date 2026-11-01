@@ -175,4 +175,4 @@ export const PERM_ROLES = /^(\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*)?$/i
 /** The proof kinds: a comma separated list of receipt and photo, or blank for none. */
 export const PROOF_KINDS = /^(\s*(receipt|photo)\s*(,\s*(receipt|photo)\s*)*)?$/i;
 /** The default grade: one of the grades, or blank for A. */
-export const DEFAULT_GRADE = /^(A|B|C)?$/;
+export const DEFAULT_GRADE = /^([A-Z]{1,3})?$/;

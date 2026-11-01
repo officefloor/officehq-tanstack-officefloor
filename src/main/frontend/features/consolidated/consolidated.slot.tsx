@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { STATUSES, useClaims } from '../claims/useClaims';
 import { useSheetTotals } from '../claims/useSheetTotals';
-import { GRADES, usePeople } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { usePeople } from '../people/usePeople';
 import { hundredths, totalDue, trimmedTotal, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheet } from '../sheet/useSheet';
@@ -40,7 +41,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
   const cents = (c: bigint | null) => (c === null ? null : c.toString());
   const dues = JSON.stringify(perPerson.map((p) => cents(p.due)));
   const overdues = JSON.stringify(perPerson.map((p) => cents(p.overdue)));
-  const grades = JSON.stringify(Object.fromEntries(GRADES.map((g) => [g, totalDue(byGrade[g].map((d) => d.due))])));
+  const grades = JSON.stringify(Object.fromEntries(Object.entries(byGrade).map(([g, on]) => [g, totalDue(on.map((d) => d.due))])));
   const all = claims.data ?? [];
   const statuses = JSON.stringify(Object.fromEntries(STATUSES.map((s) => [s, all.filter((c) => c.status === s).length])));
   useEffect(() => {
@@ -77,7 +78,7 @@ const toCents = (c: string | null) => (c === null ? null : BigInt(c));
  * The consolidated figures over the sheet and all its descendants (see useDescendants): how many
  * people (counting once those whose names or aliases match, as names are compared), and the due-total
  * and overdue-total over every person of the tree, leaving out the single highest and lowest person's
- * figure over the whole tree when three or more have one; per grade,
+ * figure over the whole tree when three or more have one; per grade of any sheet of the tree,
  * each sheet's due-totals of the people not retired on it (as its summary shows them), added up; and
  * per status, how many claims have it over the tree. While the
  * screen shows the sheet as of a date, every sheet of the tree is read as it stood at the end of that
@@ -94,6 +95,9 @@ function Consolidated({ sheet }: { user: string; sheet: string }) {
   const all = sheets.map((id) => figures[id] ?? null);
   const ready = sheets.length > 0 && all.every((f) => f !== null);
   const loaded = all.filter((f): f is Figures => f !== null);
+  // The sheet's grades, then any other grade a sheet of the tree has, in the order first met.
+  const own = useGradeCodes(sheet);
+  const grades = [...new Set([...own, ...loaded.flatMap((f) => Object.keys(f.grades))])];
   return (
     <section data-testid="consolidated">
       {sheets.map((id) => (
@@ -106,10 +110,10 @@ function Consolidated({ sheet }: { user: string; sheet: string }) {
       </p>
       <p>
         Due by grade:
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             {' '}
-            {g} <strong data-testid={`consolidated-grade-${g}-due-total`}>{ready ? totalDue(loaded.map((f) => hundredths(f.grades[g]))) : ''}</strong>
+            {g} <strong data-testid={`consolidated-grade-${g}-due-total`}>{ready ? totalDue(loaded.map((f) => hundredths(f.grades[g] ?? '0.00'))) : ''}</strong>
           </span>
         ))}
       </p>

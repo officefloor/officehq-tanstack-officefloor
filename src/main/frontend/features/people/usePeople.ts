@@ -79,8 +79,6 @@ export function heldOnBy(people: Person[], today: string): (personId: number, da
   };
 }
 
-export const GRADES = ['A', 'B', 'C'] as const;
-
 export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
 
 /** The sheet's people in list order (by position; see the move buttons), re-read whenever the sheet is loaded. */

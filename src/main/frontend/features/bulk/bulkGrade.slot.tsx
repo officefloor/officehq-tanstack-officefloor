@@ -4,7 +4,8 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
-import { GRADES, peopleKey, type Person } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { peopleKey, type Person } from '../people/usePeople';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedPeople } from './useSelectedPeople';
 
@@ -36,6 +37,7 @@ function BulkGrade({ user, sheet }: { user: string; sheet: string }) {
   const today = useSheetToday(sheet);
   const [selected, setSelected] = useSelectedPeople();
   const [grade, setGrade] = useState<string>('A');
+  const grades = useGradeCodes(sheet);
   const [from, setFrom] = useState('');
   const bulk = useMutation({
     mutationFn: (personIds: number[]) =>
@@ -64,7 +66,7 @@ function BulkGrade({ user, sheet }: { user: string; sheet: string }) {
             bulk.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

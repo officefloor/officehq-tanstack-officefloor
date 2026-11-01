@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.claim.ProofKind;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
@@ -45,7 +46,7 @@ public class ValidateSettings {
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest request,
-            Settings settings, Sheets sheets, Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
+            Settings settings, Sheets sheets, Grades grades, Out<SettingsChange> change, Out<Actor> actor) throws InvalidSheetRequestException {
         String limit = request == null || request.clerkLimit() == null ? null : request.clerkLimit().trim();
         if (limit != null && !limit.isEmpty() && !AMOUNT.matcher(limit).matches()) {
             throw new InvalidSheetRequestException("The clerk limit must be an amount with up to two decimals, or blank");
@@ -213,8 +214,8 @@ public class ValidateSettings {
             proofKinds = String.join(",", kinds);
         }
         String defaultGrade = request == null || request.defaultGrade() == null ? null : request.defaultGrade().trim();
-        if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
-            throw new InvalidSheetRequestException("The default grade must be A, B or C, or blank");
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !grades.isGrade(sheetId, defaultGrade)) {
+            throw new InvalidSheetRequestException("The default grade must be one of the sheet's grades, or blank");
         }
         String fiscal = request == null || request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
         if (fiscal != null && !MONTH.matcher(fiscal).matches()) {

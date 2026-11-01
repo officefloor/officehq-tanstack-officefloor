@@ -11,8 +11,8 @@ public class ValidateRetireGrade {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody GradeRequest request, Grades grades,
             Out<GradeRetirement> retirement, Out<Actor> actor) throws InvalidSheetRequestException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!Grades.ALL.contains(grade)) {
-            throw new InvalidSheetRequestException("The grade must be A, B or C");
+        if (!grades.isGrade(sheetId, grade)) {
+            throw new InvalidSheetRequestException("The grade must be one of the sheet's");
         }
         if (grades.isRetired(sheetId, grade)) {
             throw new InvalidSheetRequestException("The grade " + grade + " is already retired");

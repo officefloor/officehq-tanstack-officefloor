@@ -10,6 +10,6 @@ public class RespondWithGrades {
     public void respond(@PathVariable("sheetId") String sheetId, Grades grades,
             ObjectResponse<List<GradeResponse>> response) {
         Set<String> retired = grades.retired(sheetId);
-        response.send(Grades.ALL.stream().map(g -> new GradeResponse(g, retired.contains(g))).toList());
+        response.send(grades.all(sheetId).stream().map(g -> new GradeResponse(g, retired.contains(g))).toList());
     }
 }

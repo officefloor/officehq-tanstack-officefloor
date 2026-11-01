@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
-import { GRADES, gradeOn, peopleKey, type Person } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { gradeOn, peopleKey, type Person } from '../people/usePeople';
 import { useRowAction } from '../people/useRowAction';
 import { useSheetToday } from '../sheet/useSheet';
 
@@ -15,6 +16,7 @@ import { useSheetToday } from '../sheet/useSheet';
 function PersonInlineGrade({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
   const today = useSheetToday(sheet);
+  const grades = useGradeCodes(sheet);
   const [chosen, setChosen] = useState<string | null>(null);
   const grade = chosen ?? gradeOn(person, today);
   const save = useMutation({
@@ -48,7 +50,7 @@ function PersonInlineGrade({ user, sheet, person }: { user: string; sheet: strin
           save.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

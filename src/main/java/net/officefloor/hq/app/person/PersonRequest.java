@@ -2,11 +2,11 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.claim.ClaimRequest;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 
-/** Body of a person add or edit: the name, the grade (A, B or C), who makes the change and, for an
+/** Body of a person add or edit: the name, the grade (A, B, C or one added to the sheet), who makes the change and, for an
  *  edit, the version of the person the editor loaded (null: no check), and the date the grade is
  *  in force from (yyyy-mm-dd; blank or null for the sheet's today), and the person's own terms in days
  *  (blank or null for none), and the person's contact (blank or null for none), and their tags, comma
@@ -54,15 +54,14 @@ public record PersonRequest(String name, String grade, String user, Integer vers
         return termsFrom == null || termsFrom.isBlank() ? null : LocalDate.parse(termsFrom.trim());
     }
 
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     /** The request as the person rules accept it, or refused. */
     public static PersonRequest checked(PersonRequest request) throws InvalidSheetRequestException {
         if (request == null || request.name() == null || request.name().isBlank()) {
             throw new InvalidSheetRequestException("A name is required");
         }
-        if (request.grade() == null || !GRADES.contains(request.grade())) {
-            throw new InvalidSheetRequestException("The grade must be A, B or C");
+        // Whether it is one of the sheet's grades is checked against the sheet (see Grades#refuseRetired).
+        if (request.grade() == null || !Grades.CODE.matcher(request.grade()).matches()) {
+            throw new InvalidSheetRequestException("The grade must be one to three capital letters");
         }
         String from = date(request.gradeFrom());
         String termsFrom = date(request.termsFrom());

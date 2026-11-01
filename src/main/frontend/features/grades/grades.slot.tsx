@@ -6,7 +6,8 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { gradesKey, useGrades, type Grade } from './useGrades';
 
 /**
- * The sheet's grades, each shown retired or not, and a select to retire one. A retired grade cannot
+ * The sheet's grades, each shown retired or not, an entry to add one (a code of one to three capital
+ * letters, the spaces around it aside, not yet a grade; anything else is refused), and a select to retire one. A retired grade cannot
  * be chosen for a person any more (the people already on it keep it); retiring one twice is refused.
  * A steward can merge a grade into another: everyone on it today is given the other from the sheet's
  * today. The merge shows the grades and how many it moved; that goes while the next press runs.
@@ -14,11 +15,26 @@ import { gradesKey, useGrades, type Grade } from './useGrades';
 function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data: grades = [] } = useGrades(sheet);
+  const [code, setCode] = useState('');
   const [grade, setGrade] = useState('A');
   const [mergeFrom, setMergeFrom] = useState('A');
   const [mergeInto, setMergeInto] = useState('B');
 
   const submitOnce = useSubmitOnce();
+  const add = useMutation({
+    mutationFn: (g: string) => postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades`, { grade: g, user }),
+    onSuccess: async () => {
+      setCode('');
+      await queryClient.invalidateQueries({ queryKey: gradesKey(sheet) });
+    },
+  });
+
+  const resetAll = () => {
+    add.reset();
+    retire.reset();
+    merge.reset();
+  };
+
   const retire = useMutation({
     mutationFn: (g: string) => postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheet)}/grades/retire`, { grade: g, user }),
     onSuccess: async () => {
@@ -40,11 +56,40 @@ function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
     <section data-testid="grades-panel">
       <h2>Grades</h2>
       <form
+        data-testid="grade-add-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          resetAll();
+          submitOnce(() => add.mutateAsync(code));
+        }}
+      >
+        <label>
+          New grade{' '}
+          <input
+            data-testid="grade-add-code"
+            placeholder="D"
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value);
+              add.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="grade-add" disabled={add.isPending}>
+          Add grade
+        </button>
+        {add.isError && (
+          <span data-testid="grade-error" role="alert">
+            {' '}
+            Could not add this grade.
+          </span>
+        )}
+      </form>
+      <form
         data-testid="grade-retire-form"
         onSubmit={(e) => {
           e.preventDefault();
-          retire.reset();
-          merge.reset();
+          resetAll();
           submitOnce(() => retire.mutateAsync(grade));
         }}
       >
@@ -79,8 +124,7 @@ function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
         data-testid="grade-merge-form"
         onSubmit={(e) => {
           e.preventDefault();
-          retire.reset();
-          merge.reset();
+          resetAll();
           submitOnce(() => merge.mutateAsync({ from: mergeFrom, into: mergeInto }));
         }}
       >

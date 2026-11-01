@@ -70,6 +70,8 @@ public class Clones {
                 + "SELECT ?, grade, from_date, version, pct, to_date, forward_after FROM rate_version WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_holiday (sheet_id, holiday_date) "
                 + "SELECT ?, holiday_date FROM sheet_holiday WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO sheet_grade (sheet_id, grade) "
+                + "SELECT ?, grade FROM sheet_grade WHERE sheet_id = ? ORDER BY seq", to, from);
         jdbc.update("INSERT INTO grade_retired (sheet_id, grade) "
                 + "SELECT ?, grade FROM grade_retired WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_void_reason (sheet_id, reason, position) "

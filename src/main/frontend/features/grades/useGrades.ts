@@ -15,3 +15,12 @@ export function useGrades(sheet: string) {
     gcTime: 0,
   });
 }
+
+/** The grades every sheet has, shown until the sheet's own grades are read. */
+export const BASE_GRADES: readonly string[] = ['A', 'B', 'C'];
+
+/** The codes of the sheet's grades, in order: A, B and C, then those added to the sheet. */
+export function useGradeCodes(sheet: string): readonly string[] {
+  const { data } = useGrades(sheet);
+  return data ? data.map((g) => g.grade) : BASE_GRADES;
+}

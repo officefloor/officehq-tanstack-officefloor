@@ -1,7 +1,8 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { isActive } from '../active/active';
 import { STATUSES, useClaims } from '../claims/useClaims';
-import { GRADES, usePeople } from '../people/usePeople';
+import { useGradeCodes } from '../grades/useGrades';
+import { usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
 import { hundredths, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate, useReviewLate } from '../settings/useSettings';
@@ -10,7 +11,7 @@ import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { useGradeDues } from './useGradeDues';
 
 /**
- * The sheet in figures, each worked out as the list works it out. Per grade: how many people not
+ * The sheet in figures, each worked out as the list works it out. Per grade of the sheet: how many people not
  * retired are on it on the sheet's today, their due-totals added up (n/a ones skipped), and how many
  * of them are active. Per
  * period: its due-total, and its change from the period before it by from-date (none for the
@@ -28,6 +29,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const late = useLate(sheet);
   const reviewLate = useReviewLate(sheet);
   const byGrade = useGradeDues(sheet);
+  const grades = useGradeCodes(sheet);
 
   const periodDues = new Map(periods.map((p) => [p.name, periodDue(p, all, everyone, rates, floor, late, today)]));
   const byFrom = [...periods].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
@@ -50,8 +52,8 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
-            const on = byGrade[g];
+          {grades.map((g) => {
+            const on = byGrade[g] ?? [];
             return (
               <tr key={g}>
                 <td>{g}</td>
