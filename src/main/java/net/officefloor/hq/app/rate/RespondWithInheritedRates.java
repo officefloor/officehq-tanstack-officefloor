@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class RespondWithInheritedRates {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, Rates rates, AsOf asOfSheet,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, Rates rates, AsOf asOfSheet,
             ObjectResponse<List<InheritedRatesResponse>> response) throws InvalidSheetRequestException {
-        response.send(asOfSheet.view(sheetId, asOf,
+        response.send(asOfSheet.view(sheetId, asOf, preview,
                 () -> rates.inherited(sheetId).stream().map(InheritedRatesResponse::from).toList()));
     }
 }

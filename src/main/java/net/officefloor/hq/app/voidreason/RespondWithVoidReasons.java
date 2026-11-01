@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class RespondWithVoidReasons {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, VoidReasons reasons, AsOf asOfSheet,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, VoidReasons reasons, AsOf asOfSheet,
             ObjectResponse<List<VoidReasonResponse>> response) throws InvalidSheetRequestException {
-        response.send(asOfSheet.view(sheetId, asOf,
+        response.send(asOfSheet.view(sheetId, asOf, preview,
                 () -> reasons.onSheet(sheetId).stream().map(VoidReasonResponse::new).toList()));
     }
 }

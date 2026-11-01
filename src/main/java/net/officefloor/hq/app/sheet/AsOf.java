@@ -65,14 +65,55 @@ public class AsOf {
     /** What a screen reads: `work` on the sheet as it stood at the end of the as-of date given (see
      *  {@link #at}), or on the live sheet when none is given. Refused: an as-of that is not a date. */
     public <T> T view(String sheetId, String asOfText, Supplier<T> work) throws InvalidSheetRequestException {
-        if (asOfText == null || asOfText.isBlank()) return work.get();
-        LocalDate date;
+        return view(sheetId, asOfText, null, work);
+    }
+
+    /** What a screen reads, as {@link #view(String, String, Supplier)}, and previewed as of a date when
+     *  one is given: the sheet's records (as they stand, or as of the as-of date) with the preview date
+     *  standing in for its today, so every figure is worked out as if it were that day. Nothing a change
+     *  of today does (snapshots, scores, auto-closing) happens: the work only reads, and what it writes
+     *  is thrown away. Refused: an as-of or a preview that is not a date. */
+    public <T> T view(String sheetId, String asOfText, String previewText, Supplier<T> work)
+            throws InvalidSheetRequestException {
+        LocalDate asOf = date(asOfText);
+        LocalDate preview = date(previewText);
+        if (asOf == null && preview == null) return work.get();
+        return transactions.execute(status -> {
+            status.setRollbackOnly();
+            // One rebuild of the sheet at a time.
+            jdbc.query("SELECT id FROM PUBLIC.sheet WHERE id = ? FOR UPDATE", (RowCallbackHandler) rs -> {}, sheetId);
+            if (asOf != null) rebuild(sheetId, asOf);
+            else copy(sheetId);
+            if (preview != null) jdbc.update("UPDATE ASOF.sheet SET today = ? WHERE id = ?", Date.valueOf(preview), sheetId);
+            schema("ASOF");
+            try {
+                return work.get();
+            } finally {
+                schema("PUBLIC");
+            }
+        });
+    }
+
+    private static LocalDate date(String text) throws InvalidSheetRequestException {
+        if (text == null || text.isBlank()) return null;
         try {
-            date = LocalDate.parse(asOfText.trim());
+            return LocalDate.parse(text.trim());
         } catch (DateTimeParseException e) {
-            throw new InvalidSheetRequestException("Not a date: " + asOfText);
+            throw new InvalidSheetRequestException("Not a date: " + text);
         }
-        return at(sheetId, date, work);
+    }
+
+    /** The sheet's rows as they stand now, copied into the asof schema. */
+    private void copy(String sheetId) {
+        jdbc.update("DELETE FROM ASOF.sheet WHERE id = ?", sheetId);
+        jdbc.update("INSERT INTO ASOF.sheet SELECT * FROM PUBLIC.sheet WHERE id = ?", sheetId);
+        for (String table : TABLES) {
+            String names = '"' + String.join("\", \"", columns(table)) + '"';
+            jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheetId);
+            jdbc.update("INSERT INTO ASOF.\"" + table + "\" (" + names + ") SELECT " + names
+                    + " FROM PUBLIC.\"" + table + "\" WHERE sheet_id = ?", sheetId);
+        }
+        ancestors(sheetId);
     }
 
     private void rebuild(String sheetId, LocalDate date) {

@@ -10,9 +10,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class RespondWithPlans {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, Plans plans, Sheets sheets, AsOf asOfSheet,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, Plans plans, Sheets sheets, AsOf asOfSheet,
             ObjectResponse<List<PlanResponse>> response) throws InvalidSheetRequestException {
-        response.send(asOfSheet.view(sheetId, asOf,
+        response.send(asOfSheet.view(sheetId, asOf, preview,
                 () -> {
                     var today = sheets.today(sheetId);
                     return plans.onSheet(sheetId).stream().map(plan -> PlanResponse.from(plan, today)).toList();

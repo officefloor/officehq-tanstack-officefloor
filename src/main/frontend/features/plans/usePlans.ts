@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+import { useView, viewKey, viewPath } from '../asof/useAsOf';
 
 /** A plan as the server sends it: its person, amount (two decimals), start, every N days (null when monthly) or day of
  *  the month (null otherwise), end
@@ -26,10 +26,10 @@ export const plansKey = (sheet: string) => ['sheet', sheet, 'plans'] as const;
 
 /** The sheet's plans, in the order added, re-read whenever the sheet is loaded. */
 export function usePlans(sheet: string) {
-  const [asOf] = useAsOf();
+  const view = useView();
   return useQuery({
-    queryKey: asOfKey(plansKey(sheet), asOf),
-    queryFn: () => getJson<Plan[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/plans`, asOf)),
+    queryKey: viewKey(plansKey(sheet), view),
+    queryFn: () => getJson<Plan[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/plans`, view)),
     staleTime: 0,
     gcTime: 0,
   });

@@ -9,8 +9,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class RespondWithSettings {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, Settings settings, Sheets sheets,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, Settings settings, Sheets sheets,
             AsOf asOfSheet, ObjectResponse<SettingsResponse> response) throws InvalidSheetRequestException {
-        response.send(asOfSheet.view(sheetId, asOf, () -> SettingsResponse.of(sheetId, sheets.today(sheetId), settings)));
+        response.send(asOfSheet.view(sheetId, asOf, preview, () -> SettingsResponse.of(sheetId, sheets.today(sheetId), settings)));
     }
 }

@@ -23,9 +23,10 @@ public class RespondWithPools {
     }
 
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, Pools pools, AsOf asOfSheet,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, Pools pools, AsOf asOfSheet,
             ObjectResponse<List<PoolResponse>> response) throws InvalidSheetRequestException {
-        Now now = asOfSheet.view(sheetId, asOf, () -> new Now(pools.onSheet(sheetId),
+        Now now = asOfSheet.view(sheetId, asOf, preview, () -> new Now(pools.onSheet(sheetId),
                 pools.periodsShown(sheetId), pools.fixedCuts(sheetId)));
         // Each ended period's cuts, by pool then member.
         Map<String, Map<String, Map<String, String>>> then = new LinkedHashMap<>();

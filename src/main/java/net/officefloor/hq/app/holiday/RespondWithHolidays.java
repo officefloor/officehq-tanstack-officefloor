@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class RespondWithHolidays {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, Holidays holidays, AsOf asOfSheet,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, Holidays holidays, AsOf asOfSheet,
             ObjectResponse<List<HolidayResponse>> response) throws InvalidSheetRequestException {
-        response.send(asOfSheet.view(sheetId, asOf,
+        response.send(asOfSheet.view(sheetId, asOf, preview,
                 () -> holidays.onSheet(sheetId).stream().map(HolidayResponse::from).toList()));
     }
 }

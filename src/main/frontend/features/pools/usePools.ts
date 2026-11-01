@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+import { useView, viewKey, viewPath } from '../asof/useAsOf';
 import { hundredths } from '../rates/useRates';
 
 /** A pool's member as the server sends it: the person (or, for a member that is another pool, null
@@ -38,10 +38,10 @@ export const poolsKey = (sheet: string) => ['sheet', sheet, 'pools'] as const;
 
 /** The sheet's pools, in the order added, re-read whenever the sheet is loaded. */
 export function usePools(sheet: string) {
-  const [asOf] = useAsOf();
+  const view = useView();
   return useQuery({
-    queryKey: asOfKey(poolsKey(sheet), asOf),
-    queryFn: () => getJson<Pool[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, asOf)),
+    queryKey: viewKey(poolsKey(sheet), view),
+    queryFn: () => getJson<Pool[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, view)),
     staleTime: 0,
     gcTime: 0,
   });

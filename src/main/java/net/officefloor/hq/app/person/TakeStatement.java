@@ -10,6 +10,8 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.rollup.Snapshot;
 import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.AsOf;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
@@ -26,7 +28,7 @@ import net.officefloor.plugin.variable.Val;
  *  one the person was not yet on the sheet. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
-            Rates rates, Sheets sheets, Settings settings, People people, Pools pools, AsOf asOf, Out<Statement> statement)
+            Rates rates, Sheets sheets, Settings settings, People people, Pools pools, Rollup rollup, AsOf asOf, Out<Statement> statement)
             throws InvalidSheetRequestException {
         LocalDate date = asOfDate(request);
         String sheetId = person.getSheetId();
@@ -35,10 +37,10 @@ public class TakeStatement {
         }
         Person locked = people.lock(sheetId, person.getId());
         person.setStatementCount(locked.getStatementCount());
-        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings, pools)
+        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings, pools, rollup)
                 : asOf.at(sheetId, date, () -> {
                     Person then = people.find(sheetId, person.getId());
-                    return then == null ? null : work(then, claims, figures, rates, sheets, settings, pools);
+                    return then == null ? null : work(then, claims, figures, rates, sheets, settings, pools, rollup);
                 });
         if (taken == null) {
             throw new InvalidSheetRequestException("This person was not on the sheet on " + date);
@@ -57,9 +59,11 @@ public class TakeStatement {
     }
 
     /** The statement of the person as the sheet stands (live, or as of a date): the figure each
-     *  counting claim is bound to, by id, and their due-total, dated the sheet's today. */
+     *  counting claim is bound to, by id, and their due-total as the sheet's figures work it out (see
+     *  {@link Rollup#snapshot}: their parts of the claims shared with them, less the parts of their own
+     *  claims that share holders carry), dated the sheet's today. */
     private static Taken work(Person person, Claims claims, Figures figures, Rates rates, Sheets sheets,
-            Settings settings, Pools pools) {
+            Settings settings, Pools pools, Rollup rollup) {
         String sheetId = person.getSheetId();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean any = false;
@@ -76,6 +80,8 @@ public class TakeStatement {
             }
         }
         LocalDate today = sheets.today(sheetId);
+        Snapshot.PersonFigures figured = rollup.snapshot(sheetId).people().get(person.getId());
+        if (figured != null) return new Taken(bound, figured.dueTotal(), today);
         BigDecimal dueTotal = !any && rates.pct(sheetId, person.gradeOn(today), today) == null ? null
                 : settings.capped(sheetId, total, pools.cutTotals(sheetId).get(person.getId()));
         return new Taken(bound, dueTotal, today);

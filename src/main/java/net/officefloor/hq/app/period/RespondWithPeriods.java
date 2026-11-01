@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class RespondWithPeriods {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(value = "asOf", required = false) String asOf, Periods periods, AsOf asOfSheet,
+            @RequestParam(value = "asOf", required = false) String asOf,
+            @RequestParam(value = "preview", required = false) String preview, Periods periods, AsOf asOfSheet,
             ObjectResponse<List<PeriodResponse>> response) throws InvalidSheetRequestException {
-        response.send(asOfSheet.view(sheetId, asOf, () -> periods.onSheet(sheetId).stream()
+        response.send(asOfSheet.view(sheetId, asOf, preview, () -> periods.onSheet(sheetId).stream()
                 .map(p -> PeriodResponse.from(p, periods.personTotals(p), periods.personCarried(p), periods.openings(p))).toList()));
     }
 }

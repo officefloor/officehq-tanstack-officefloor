@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+import { useView, viewKey, viewPath } from '../asof/useAsOf';
 
 /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
@@ -34,14 +34,14 @@ export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
  *  parent sheets up to three levels up, then, for a cloned sheet, the sheet it was cloned from and
  *  that one's own parents and source. Re-read whenever the sheet is loaded. */
 export function useRates(sheet: string) {
-  const [asOf] = useAsOf();
+  const view = useView();
   return useQuery({
-    queryKey: asOfKey(ratesKey(sheet), asOf),
+    queryKey: viewKey(ratesKey(sheet), view),
     queryFn: async () => {
       const base = `/api/sheets/${encodeURIComponent(sheet)}`;
       const [own, inherited] = await Promise.all([
-        getJson<Rate[]>(asOfPath(`${base}/rates`, asOf)),
-        getJson<InheritedRates[]>(asOfPath(`${base}/rates/inherited`, asOf)),
+        getJson<Rate[]>(viewPath(`${base}/rates`, view)),
+        getJson<InheritedRates[]>(viewPath(`${base}/rates/inherited`, view)),
       ]);
       return [
         ...own.map((r) => ({ ...r, level: 0 })),

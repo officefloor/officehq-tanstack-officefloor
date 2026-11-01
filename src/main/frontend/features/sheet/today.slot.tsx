@@ -13,7 +13,8 @@ import { sheetKey, useSheet, type Sheet } from './useSheet';
  *  steward only); clones the sheet to another, never used, id (a steward only) and shows the last clone made. All share the sheet's error. */
 function SheetToday({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
-  const { data } = useSheet(sheet);
+  // The sheet's real today, whatever this screen previews: every change uses it.
+  const { data } = useSheet(sheet, true);
   const { data: settings } = useSettings(sheet);
   const [date, setDate] = useState('');
   const [cloneTo, setCloneTo] = useState('');

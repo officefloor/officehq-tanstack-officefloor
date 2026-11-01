@@ -4,7 +4,7 @@ import { claimDueCents, type Claim, type ClaimStatus, type Late } from '../claim
 import { gradeOn, heldOn, type Person } from '../people/usePeople';
 import { hundredths, claimRateOn, totalDue, type Rate } from '../rates/useRates';
 import type { FloorOn } from '../settings/useSettings';
-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+import { useView, viewKey, viewPath } from '../asof/useAsOf';
 
 /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
@@ -32,10 +32,10 @@ export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as cons
 
 /** The sheet's periods, by from-date, re-read whenever the sheet is loaded. */
 export function usePeriods(sheet: string) {
-  const [asOf] = useAsOf();
+  const view = useView();
   return useQuery({
-    queryKey: asOfKey(periodsKey(sheet), asOf),
-    queryFn: () => getJson<Period[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, asOf)),
+    queryKey: viewKey(periodsKey(sheet), view),
+    queryFn: () => getJson<Period[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, view)),
     staleTime: 0,
     gcTime: 0,
   });
