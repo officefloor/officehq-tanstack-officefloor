@@ -1,0 +1,73 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java b/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java
+index 8f940f04..995fc901 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java
+@@ -13,7 +13,8 @@ import org.springframework.stereotype.Service;
+ /**
+  * Moves a DRAFT, OPEN or PENDING claim dated outside a closed period (which may not be edited) to another person on
+  * the sheet, on or before that person's retirement; only a role the permission matrix lets (by default a steward) may.
+- * The claim keeps its number and date, loses any figure a statement bound it to, and lists as its new person's newest
++ * The claim keeps its date but takes the next number in the sequence it would be opened in (its old number is never
++ * used again; a draft has none to take), loses any figure a statement bound it to, and lists as its new person's newest
+  * claim. Shared by a claim's own Reassign button and the bulk reassign.
+  */
+ @Service
+@@ -26,9 +27,10 @@ public class ClaimReassigner {
+     private final Periods periods;
+     private final Audit audit;
+     private final Rollup rollup;
++    private final ClaimStatusChanger statusChanger;
+ 
+     public ClaimReassigner(Claims claims, People people, Roles roles, Settings settings, Periods periods, Audit audit,
+-            Rollup rollup) {
++            Rollup rollup, ClaimStatusChanger statusChanger) {
+         this.claims = claims;
+         this.people = people;
+         this.roles = roles;
+@@ -36,6 +38,7 @@ public class ClaimReassigner {
+         this.periods = periods;
+         this.audit = audit;
+         this.rollup = rollup;
++        this.statusChanger = statusChanger;
+     }
+ 
+     /**
+@@ -67,7 +70,15 @@ public class ClaimReassigner {
+         if (!claims.reassign(sheet, claim.id(), claim.person(), claim.status(), to.id())) {
+             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
+         }
+-        audit.record("CLAIM_REASSIGNED sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(to.name())
++        // A numbered claim is renumbered as if opened now; the number it showed before is dropped.
++        Claim moved = claim;
++        if (claim.status() != ClaimStatus.DRAFT) {
++            if (claim.periodNumber() != null) {
++                claims.setPeriodNumber(sheet, claim.id(), null);
++            }
++            moved = statusChanger.number(sheet, claim.withPeriodNumber(null));
++        }
++        audit.record("CLAIM_REASSIGNED sheet=" + sheet + " by=" + user + " " + moved.statusAuditFields(to.name())
+                 + " from=" + from.name() + " to=" + to.name());
+         rollup.record(sheet, user, before);
+     }
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+index 5f0d9c5f..569d9950 100644
+--- a/tmp_e2e/run.log
++++ b/tmp_e2e/run.log
+@@ -2,11 +2,11 @@ Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/20261027
+ 
+ Running 4 tests using 1 worker
+ 
+-  ✓  1 [chromium] › acceptance.spec.ts:6:7 › aliases › aliases (19.9s)
+-  ✓  2 [chromium] › acceptance.spec.ts:76:7 › aliases › aliases scenario 1 (16.3s)
+-  ✓  3 [chromium] › acceptance.spec.ts:421:7 › aliases › aliases scenario 2 (26.2s)
+-  ✓  4 [chromium] › acceptance.spec.ts:746:7 › aliases › aliases scenario 3 (30.5s)
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › reassign renumbers › reassign renumbers (10.9s)
++  ✓  2 [chromium] › acceptance.spec.ts:106:7 › reassign renumbers › reassign renumbers scenario 1 (26.8s)
++  ✓  3 [chromium] › acceptance.spec.ts:509:7 › reassign renumbers › reassign renumbers scenario 2 (38.8s)
++  ✓  4 [chromium] › acceptance.spec.ts:708:7 › reassign renumbers › reassign renumbers scenario 3 (20.2s)
+ 
+-  Slow test file: [chromium] › acceptance.spec.ts (1.5m)
++  Slow test file: [chromium] › acceptance.spec.ts (1.6m)
+   Consider splitting slow test files to speed up parallel execution
+-  4 passed (1.6m)
++  4 passed (1.7m)
