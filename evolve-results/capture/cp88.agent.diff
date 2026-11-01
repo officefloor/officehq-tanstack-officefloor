@@ -1,0 +1,52 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index a4ca6cdc..d1abdb27 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -188,8 +188,9 @@ function plusDays(day: string, days: number): string {
+   return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+ }
+ 
+-/** A claim's late charge on its figure (in hundredths): for each full 30 days it is overdue, the late percent in
+- *  force on that boundary (its due-by plus its grace plus 30, 60, 90 ... days) of the figure, rounded as the claim's live figures
++/** A claim's late charge on its figure (in hundredths), compounding: for each full 30 days it is overdue, the late
++ *  percent in force on that boundary (its due-by plus its grace plus 30, 60, 90 ... days) of the figure plus the
++ *  charges of the boundaries before it, rounded as the claim's live figures
+  *  are (see {@link roundsHalfUp}), the charges added up; a correction has none. */
+ export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
+   if (correction(claim)) return 0n;
+@@ -198,7 +199,7 @@ export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
+   for (let k = 1; k <= periods; k++) {
+     const pct = late.pct(plusDays(late.graceBy(claim), 30 * k));
+     if (pct === 0n) continue;
+-    const product = figure * pct;
++    const product = (figure + total) * pct;
+     const quotient = product / 10000n;
+     const remainder = product % 10000n;
+     const up = remainder > 5000n || (remainder === 5000n && (roundsHalfUp(claim, late) || quotient % 2n === 1n));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Late.java b/src/main/java/net/officefloor/hq/app/claim/Late.java
+index 8fd781c7..a9f3ad73 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Late.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Late.java
+@@ -44,9 +44,10 @@ public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, Lis
+     }
+ 
+     /**
+-     * The claim's late charge on its figure: for each full 30 days it is overdue, the late percent in force on that
+-     * boundary (its {@link #graceBy} plus 30, 60, 90 ... days) of the figure, rounded in hundredths by the claim's {@link #rounding},
+-     * the charges added up (a boundary at 0.00 adds nothing); 0.00 when it is not overdue, and always for a correction.
++     * The claim's late charge on its figure, compounding: for each full 30 days it is overdue, the late percent in force
++     * on that boundary (its {@link #graceBy} plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
++     * before it, rounded in hundredths by the claim's {@link #rounding}, the charges added up (a boundary at 0.00 adds
++     * nothing); 0.00 when it is not overdue, and always for a correction.
+      */
+     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+@@ -58,7 +59,7 @@ public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, Lis
+         for (long k = 1; k <= periods; k++) {
+             BigDecimal boundaryPct = pct.on(dueBy.plusDays(30 * k));
+             if (boundaryPct.signum() != 0) {
+-                total = total.add(figure.multiply(boundaryPct).movePointLeft(2).setScale(2, rounding(claim)));
++                total = total.add(figure.add(total).multiply(boundaryPct).movePointLeft(2).setScale(2, rounding(claim)));
+             }
+         }
+         return total;
