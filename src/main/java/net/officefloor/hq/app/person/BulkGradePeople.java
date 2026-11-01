@@ -1,0 +1,56 @@
+package net.officefloor.hq.app.person;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.sheet.SheetClock;
+import net.officefloor.web.ObjectResponse;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+
+/**
+ * Gives each selected person, in list order (the order they were added), the grade from the from-date exactly as
+ * the person form would, each with its own PERSON_EDITED and rollup lines. A bad grade or date, or a selected
+ * person not on the sheet, refuses the whole action before anything is written.
+ */
+public class BulkGradePeople {
+    private static final Set<String> GRADES = Set.of("A", "B", "C");
+
+    public void grade(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+            @RequestBody BulkGradeRequest request, People people, SheetClock clock, Audit audit, Rollup rollup,
+            ObjectResponse<BulkGradeResponse> response)
+            throws InvalidPersonException, DuplicatePersonNameException, StalePersonException {
+        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
+        if (!GRADES.contains(grade)) {
+            throw new InvalidPersonException("Grade must be A, B or C");
+        }
+        String from = request.from() == null ? "" : request.from().trim();
+        if (!from.isEmpty()) {
+            try {
+                from = LocalDate.parse(from).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("Not a valid from-date: " + from);
+            }
+        }
+        Set<Long> selected = new HashSet<>(request.people() == null ? List.of() : request.people());
+        List<Person> everyone = people.list(sheet);
+        List<Person> chosen = everyone.stream().filter((p) -> selected.contains(p.id())).toList();
+        if (chosen.size() != selected.size()) {
+            throw new InvalidPersonException("Every selected person must be on the sheet");
+        }
+        for (Person person : chosen) {
+            // Re-read so each is saved as the store holds it after the ones before it.
+            Person current = people.find(sheet, person.id());
+            SavePerson.apply(sheet, user, current,
+                    new PersonRequest(current.name(), grade, null, from.isEmpty() ? null : from,
+                            current.terms() == null ? "" : current.terms().toString()),
+                    people, clock, audit, rollup);
+        }
+        response.send(new BulkGradeResponse(chosen.size(), people.list(sheet)));
+    }
+}

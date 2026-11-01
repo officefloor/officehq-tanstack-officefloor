@@ -12,6 +12,12 @@ public class SavePerson {
     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
             @Val PersonRequest request, People people, SheetClock clock, Audit audit, Rollup rollup)
             throws DuplicatePersonNameException, StalePersonException {
+        apply(sheet, user, person, request, people, clock, audit, rollup);
+    }
+
+    /** Saves the person as the form gave them, auditing the edit and the rollup it moves; shared with the bulk grade. */
+    static void apply(String sheet, String user, Person person, PersonRequest request, People people, SheetClock clock,
+            Audit audit, Rollup rollup) throws DuplicatePersonNameException, StalePersonException {
         // Saving over a version other than the one the editor loaded is refused, and writes nothing.
         long loaded = request.version() == null ? person.version() : request.version();
         if (loaded != person.version()) {
