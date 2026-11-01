@@ -11,8 +11,10 @@ import type { Grade, Person } from './people';
 import { claimsKey } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
-type Draft = { name: string; grade: Grade };
-const EMPTY: Draft = { name: '', grade: 'A' };
+// gradeFrom is the date an edit records the grade from (yyyy-mm-dd; blank for the sheet's today); a person's
+// first grade applies from the beginning of time.
+type Draft = { name: string; grade: Grade; gradeFrom: string };
+const EMPTY: Draft = { name: '', grade: 'A', gradeFrom: '' };
 
 type Quick = { name: string; amount: string };
 const QUICK_EMPTY: Quick = { name: '', amount: '' };
@@ -100,7 +102,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
       const p = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((c) => c.id === edit.id);
       if (p) {
-        setDraft({ name: p.name, grade: p.grade });
+        setDraft({ name: p.name, grade: p.grade, gradeFrom: '' });
         setEditing({ id: p.id, version: p.version });
       }
     },
@@ -114,7 +116,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
 
   const open = (p: Person) => {
     setEditing({ id: p.id, version: p.version });
-    setDraft({ name: p.name, grade: p.grade });
+    setDraft({ name: p.name, grade: p.grade, gradeFrom: '' });
     save.reset();
   };
 
@@ -153,6 +155,15 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             ))}
           </select>
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="person-form-grade-from"
+            placeholder="yyyy-mm-dd"
+            value={draft.gradeFrom}
+            onChange={(e) => change({ gradeFrom: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}
         </button>
@@ -166,7 +177,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             {' '}
             {save.error instanceof HttpError && save.error.status === 412
               ? 'Someone else saved this person since you opened it; the form now shows their values.'
-              : 'A person needs a name not already on the sheet and a grade of A, B or C.'}
+              : 'A person needs a name not already on the sheet, a grade of A, B or C, and a from-date that is a valid date or blank.'}
           </span>
         )}
       </form>

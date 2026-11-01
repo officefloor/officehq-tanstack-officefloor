@@ -5,7 +5,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { rateOf, twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
 import { claimDueCents, counted, useClaims, useLate } from '../claims/claims';
@@ -78,12 +78,13 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
     send(draft);
   };
 
-  const grades = new Map(people.map((p) => [p.id, p.grade]));
+  const byId = new Map(people.map((p) => [p.id, p]));
   const totals = new Map<string, bigint>();
   for (const c of counted(all, people)) {
     const period = periodOf(periods, c.date);
-    const grade = grades.get(c.person);
-    if (period === undefined || grade === undefined) continue;
+    const person = byId.get(c.person);
+    if (period === undefined || person === undefined) continue;
+    const grade = gradeOn(person, c.date);
     const due = claimDueCents(c, rateOf(rates, grade, c.date), floor, late) ?? 0n;
     totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
   }

@@ -38,7 +38,7 @@ public class ApplyClaimStatus {
         // a steward settles anything.
         if (requested == ClaimStatusChange.SETTLE && Role.CLERK.equals(roles.of(sheet, user))) {
             BigDecimal limit = settings.clerkLimit(sheet);
-            BigDecimal due = claim.due(rates.list(sheet), person.grade(), settings.floor(sheet),
+            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 throw new InvalidClaimStatusChangeException("A clerk cannot settle a due above the clerk limit");
@@ -62,7 +62,7 @@ public class ApplyClaimStatus {
         // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
         // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
         if (requested == ClaimStatusChange.SETTLE) {
-            BigDecimal due = claim.due(rates.list(sheet), person.grade(), settings.floor(sheet),
+            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());

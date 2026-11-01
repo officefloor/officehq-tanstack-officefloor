@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, type Rate } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
@@ -108,7 +109,8 @@ export function claimDueCents(claim: Claim, pct: string | undefined, floor: bigi
 
 
 /** A person's due-total: the sum of their counted claims' rounded figures (the claims of others are skipped). n/a (undefined) when their grade
- *  has no rate on the sheet's today, unless a settled or stated claim keeps a figure: then the figures there are. */
+ *  has no rate on the sheet's today, unless a claim has a figure apart from it (settled, stated, or at another grade
+ *  in force on its date): then the figures there are. */
 export function personDueCents(
   claims: Claim[],
   rates: Rate[],
@@ -118,8 +120,13 @@ export function personDueCents(
   late: Late,
 ): bigint | undefined {
   const mine = counted(claims.filter((c) => c.person === person.id), [person]);
-  if (rateOf(rates, person.grade, today) === undefined && !mine.some(fixed)) return undefined;
-  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, person.grade, c.date), floor, late) ?? 0n), 0n);
+  // A claim has a figure apart from today's grade when it keeps one, or when another grade in force on its date gives one.
+  const apart = (c: Claim) => {
+    const then = gradeOn(person, c.date);
+    return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, rateOf(rates, then, c.date), floor) !== undefined);
+  };
+  if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart)) return undefined;
+  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
 }
 
 /** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
@@ -143,10 +150,10 @@ export function overdueCents(
   late: Late,
   floor: bigint,
 ): { count: number; cents: bigint } {
-  const grades = new Map(people.map((p) => [p.id, p.grade]));
-  const overdueClaims = counted(claims, people).filter((c) => grades.has(c.person) && overdue(c, late.terms, late.today));
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const overdueClaims = counted(claims, people).filter((c) => byId.has(c.person) && overdue(c, late.terms, late.today));
   const cents = overdueClaims.reduce(
-    (sum, c) => sum + (claimDueCents(c, rateOf(rates, grades.get(c.person)!, c.date), floor, late) ?? 0n),
+    (sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(byId.get(c.person)!, c.date), c.date), floor, late) ?? 0n),
     0n,
   );
   return { count: overdueClaims.length, cents };

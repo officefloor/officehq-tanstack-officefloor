@@ -20,8 +20,8 @@ export function useRates(sheet: string) {
 
 /** The rate for a grade on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it, or
  *  undefined when the date is before every rate the grade has (or the date is not yet known). */
-export function rateOf(rates: Rate[], grade: Grade, date: string | undefined): string | undefined {
-  if (date === undefined) return undefined;
+export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | undefined): string | undefined {
+  if (date === undefined || grade === undefined) return undefined;
   let found: Rate | undefined;
   for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;

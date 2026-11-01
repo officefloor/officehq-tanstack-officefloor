@@ -48,7 +48,7 @@ public class ClosePeriod {
             if (person == null || !claim.counts(person.held()) || date.isBefore(from) || date.isAfter(to)) {
                 continue;
             }
-            BigDecimal due = claim.due(sheetRates, person.grade(), floor, late);
+            BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
             total = due == null ? total : total.add(due);
         }
         if (!periods.close(sheet, period, total)) {

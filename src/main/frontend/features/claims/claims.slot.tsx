@@ -5,7 +5,7 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { peoplePath } from '../people/people';
+import { gradeOn, peoplePath } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { rateOf, showDue, twoDecimals, useRates } from '../rates/rates';
@@ -55,7 +55,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   user: string;
   claim: Claim;
   rates: Rate[];
-  grade: Grade;
+  grade: Grade | undefined;
   editing: boolean;
   onEdit: () => void;
   onCancel: () => void;
@@ -232,7 +232,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
               user={user}
               claim={c}
               rates={rates}
-              grade={person.grade}
+              grade={gradeOn(person, c.date)}
               editing={editing === c.id}
               onEdit={() => open(c)}
               onCancel={cancel}

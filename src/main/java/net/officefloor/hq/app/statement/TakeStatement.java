@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Takes a statement of the person: records their due-total now (late charges included), binds each of their
  * counting claims to the figure it has now (without its late charge) and unbinds the rest. The due-total is n/a
  * when their grade has no rate on the sheet's today, unless a
- * counting claim keeps a figure (settled or bound): then it is the figures there are.
+ * counting claim has a figure apart from it (settled, bound, or at another grade in force on its date): then it is the figures there are.
  */
 public class TakeStatement {
     public void take(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
@@ -34,14 +34,14 @@ public class TakeStatement {
         Late late = settings.late(sheet, today);
         List<Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id()).toList();
         boolean na = Rate.on(sheetRates, person.grade(), today) == null
-                && mine.stream().noneMatch((c) -> c.counts(person.held()) && c.fixed());
+                && mine.stream().noneMatch((c) -> c.counts(person.held()) && person.figureApartFrom(c, today, sheetRates, floor));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         int count = 0;
         for (Claim claim : mine) {
             if (claim.counts(person.held())) {
                 // The statement binds the figure; the late charge keeps following the sheet's today.
-                claims.setStated(sheet, claim.id(), true, claim.figure(sheetRates, person.grade(), floor));
-                BigDecimal due = claim.due(sheetRates, person.grade(), floor, late);
+                claims.setStated(sheet, claim.id(), true, claim.figure(sheetRates, person.gradeOn(claim.date()), floor));
+                BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 total = due == null ? total : total.add(due);
                 count++;
             } else if (claim.stated()) {

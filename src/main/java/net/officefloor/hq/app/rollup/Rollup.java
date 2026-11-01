@@ -67,11 +67,12 @@ public class Rollup {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             for (Claim claim : mine) {
                 claimed = claimed.add(new BigDecimal(claim.amount()));
-                BigDecimal d = claim.due(sheetRates, person.grade(), floor, late);
+                BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 due = d == null ? due : due.add(d);
             }
-            // n/a when the grade has no rate on the sheet's today, unless a claim keeps a figure.
-            boolean na = Rate.on(sheetRates, person.grade(), today) == null && mine.stream().noneMatch(Claim::fixed);
+            // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it.
+            boolean na = Rate.on(sheetRates, person.grade(), today) == null
+                    && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dueTotal = dueTotal.add(due);
