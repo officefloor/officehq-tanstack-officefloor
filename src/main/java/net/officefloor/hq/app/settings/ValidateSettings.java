@@ -30,7 +30,8 @@ public class ValidateSettings {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     /** The settings that are dated, by key. */
-    private static final Set<String> DATED = Set.of(Settings.CLERK_LIMIT, Settings.FLOOR, Settings.TERMS,
+    private static final Set<String> DATED = Set.of(Settings.CLERK_LIMIT,
+            Settings.clerkLimitKey("A"), Settings.clerkLimitKey("B"), Settings.clerkLimitKey("C"), Settings.FLOOR, Settings.TERMS,
             Settings.gradeKey("A"), Settings.gradeKey("B"), Settings.gradeKey("C"),
             Settings.graceKey("A"), Settings.graceKey("B"), Settings.graceKey("C"), Settings.LATE_PCT, Settings.CAP,
             Settings.PROOF_THRESHOLD, Settings.proofKey("A"), Settings.proofKey("B"), Settings.proofKey("C"),
@@ -80,6 +81,19 @@ public class ValidateSettings {
                     throw new InvalidSheetRequestException("The grace days of a grade must be a whole number of days, or blank");
                 }
                 gradeGrace.put(e.getKey(), days.isEmpty() ? null : Integer.parseInt(days));
+            }
+        }
+        Map<String, BigDecimal> gradeClerkLimit = new TreeMap<>();
+        if (request != null && request.gradeClerkLimit() != null) {
+            for (Map.Entry<String, String> e : request.gradeClerkLimit().entrySet()) {
+                if (!GRADES.contains(e.getKey())) {
+                    throw new InvalidSheetRequestException("A clerk limit can be set only for grade A, B or C");
+                }
+                String amount = e.getValue() == null ? "" : e.getValue().trim();
+                if (!amount.isEmpty() && !AMOUNT.matcher(amount).matches()) {
+                    throw new InvalidSheetRequestException("The clerk limit of a grade must be an amount with up to two decimals, or blank");
+                }
+                gradeClerkLimit.put(e.getKey(), amount.isEmpty() ? null : new BigDecimal(amount).setScale(2));
             }
         }
         Map<String, BigDecimal> gradeProof = new TreeMap<>();
@@ -258,6 +272,6 @@ public class ValidateSettings {
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
                 sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
                 proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
-                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade));
+                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade, gradeClerkLimit));
     }
 }

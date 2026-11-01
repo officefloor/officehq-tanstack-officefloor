@@ -9,7 +9,7 @@ import { ratesKey } from '../rates/useRates';
 import { DAYS, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, PROOF_KINDS, DEFAULT_GRADE, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; gradeClerkLimit: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -41,7 +41,7 @@ type Froms = Record<string, string>;
  * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing),
  * and the delegations of the steward role (a steward delegates it to a user from a from-date to a to-date, inclusive,
  * by the sheet's today; a blank from-date is the sheet's today, a blank to-date the from-date). A save sets only the settings
- * whose fields were touched since the last one. The clerk limit, the floor, the terms (the sheet's and
+ * whose fields were touched since the last one. The clerk limit (the sheet's and each grade's), the floor, the terms (the sheet's and
  * each grade's), the grace days of each grade, the late percent, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold and the rounding mode are dated: a save records each from its from-date (blank
  * is the sheet's today), and each shows the value in force on the sheet's today.
  */
@@ -52,7 +52,7 @@ function untouchSent(was: SettingsEdit, sent: SettingsEdit): SettingsEdit {
     Object.fromEntries(Object.entries(v).filter(([k, x]) => x.trim() !== s[k]));
   const next = { ...was };
   for (const key of Object.keys(was) as (keyof SettingsEdit)[]) {
-    if (key === 'gradeTerms' || key === 'gradeGrace' || key === 'gradeProof' || key === 'perms') {
+    if (key === 'gradeTerms' || key === 'gradeGrace' || key === 'gradeProof' || key === 'gradeClerkLimit' || key === 'perms') {
       next[key] = map(was[key], sent[key]);
     } else {
       next[key] = scalar(was[key], sent[key]);
@@ -65,7 +65,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, proofKinds: null, defaultGrade: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, proofKinds: null, defaultGrade: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, gradeClerkLimit: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -113,7 +113,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
     setLimitInvalid(false);
   };
   // A field is set by the next save once it has been touched, starting from the value in force.
-  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'gradeGrace' | 'gradeProof' | 'perms'>, current: string) =>
+  const touch = (key: Exclude<keyof SettingsEdit, 'gradeTerms' | 'gradeGrace' | 'gradeProof' | 'gradeClerkLimit' | 'perms'>, current: string) =>
     setEdit((was) => (was[key] !== null ? was : { ...was, [key]: current }));
   // The from-date field of a dated setting, by its key.
   const fromField = (key: string) => (
@@ -188,10 +188,12 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const gradeTerms = Object.fromEntries(Object.entries(edit.gradeTerms).map(([g, v]) => [g, v.trim()]));
           const gradeGrace = Object.fromEntries(Object.entries(edit.gradeGrace).map(([g, v]) => [g, v.trim()]));
           const gradeProof = Object.fromEntries(Object.entries(edit.gradeProof).map(([g, v]) => [g, v.trim()]));
+          const gradeClerkLimit = Object.fromEntries(Object.entries(edit.gradeClerkLimit).map(([g, v]) => [g, v.trim()]));
           const perms = Object.fromEntries(Object.entries(edit.perms).map(([a, v]) => [a, v.trim()]));
           const from = Object.fromEntries(Object.entries(froms).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''));
           if (
             (limit !== null && !LIMIT.test(limit)) ||
+            Object.values(gradeClerkLimit).some((v) => !LIMIT.test(v)) ||
             (floor !== null && !LIMIT.test(floor)) ||
             (terms !== null && !DAYS.test(terms)) ||
             Object.values(gradeTerms).some((v) => !DAYS.test(v)) ||
@@ -223,7 +225,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeTerms, gradeGrace, gradeProof, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeTerms, gradeGrace, gradeProof, gradeClerkLimit, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -246,6 +248,30 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           />
         </label>{' '}
         {fromField('clerk-limit')}{' '}
+        {TERM_GRADES.map((g) => {
+          const own = data?.gradeClerkLimit?.[g] ?? '';
+          return (
+            <span key={g}>
+              Clerk limit {g}:{' '}
+              <strong data-testid={`setting-clerk-limit-${g}-current`}>{saveSettings.isPending ? '' : own}</strong>{' '}
+              <label>
+                Set to{' '}
+                <input
+                  data-testid={`setting-clerk-limit-${g}`}
+                  placeholder="blank: the sheet's"
+                  value={edit.gradeClerkLimit[g] ?? own}
+                  onFocus={() => setEdit((was) => (was.gradeClerkLimit[g] !== undefined ? was : { ...was, gradeClerkLimit: { ...was.gradeClerkLimit, [g]: own } }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEdit((was) => ({ ...was, gradeClerkLimit: { ...was.gradeClerkLimit, [g]: value } }));
+                    clearSettingsError();
+                  }}
+                />
+              </label>{' '}
+              {fromField(`clerk-limit-${g}`)}{' '}
+            </span>
+          );
+        })}
         Floor:{' '}
         <strong data-testid="setting-floor-current">
           {saveSettings.isPending ? '' : (data?.floor ?? '')}

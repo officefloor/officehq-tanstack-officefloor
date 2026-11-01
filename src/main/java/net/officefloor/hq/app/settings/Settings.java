@@ -14,7 +14,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Repository;
 
 /** Each sheet's settings: the roles given to user names, its policy date, its period numbering from,
- *  and its dated settings — its clerk limit, its floor, its terms (and any per grade), its late percent
+ *  and its dated settings — its clerk limit (and any per grade), its floor, its terms (and any per grade), its late percent
  *  its cap, its proof threshold, its note threshold and its rounding mode — each recorded from from-dates. */
 @Repository
 public class Settings {
@@ -106,6 +106,29 @@ public class Settings {
     /** The sheet's clerk limit in force on its today, or null for no limit. */
     public BigDecimal clerkLimit(String sheetId) {
         return valueOn(sheetId, CLERK_LIMIT, sheets.today(sheetId), null);
+    }
+
+    /** The clerk limit in force for a claim of `grade`: the grade's own on the sheet's today when one
+     *  is set then, else the sheet's. Null for no limit. */
+    public BigDecimal clerkLimit(String sheetId, String grade) {
+        BigDecimal own = grade != null ? valueOn(sheetId, clerkLimitKey(grade), sheets.today(sheetId), null) : null;
+        return own != null ? own : clerkLimit(sheetId);
+    }
+
+    /** Every grade's own clerk limit in force on the sheet's today, by grade (a grade not in it uses the sheet's). */
+    public Map<String, String> gradeClerkLimit(String sheetId) {
+        LocalDate today = sheets.today(sheetId);
+        Map<String, String> limits = new TreeMap<>();
+        for (String grade : List.of("A", "B", "C")) {
+            BigDecimal own = valueOn(sheetId, clerkLimitKey(grade), today, null);
+            if (own != null) limits.put(grade, own.toPlainString());
+        }
+        return limits;
+    }
+
+    /** The key a grade's own clerk limit is recorded under. */
+    public static String clerkLimitKey(String grade) {
+        return CLERK_LIMIT + "-" + grade;
     }
 
     /** The sheet's floor in force on `date`: a claim's live due is at least the one on its date.

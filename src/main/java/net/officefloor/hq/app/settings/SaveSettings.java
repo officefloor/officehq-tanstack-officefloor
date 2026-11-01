@@ -11,6 +11,7 @@ public class SaveSettings {
         String sheetId = change.sheetId();
         LocalDate today = sheets.today(sheetId);
         if (change.setsClerkLimit()) setDated(settings, change, today, Settings.CLERK_LIMIT, change.clerkLimit());
+        change.gradeClerkLimit().forEach((grade, limit) -> setDated(settings, change, today, Settings.clerkLimitKey(grade), limit));
         if (change.floor() != null) setDated(settings, change, today, Settings.FLOOR, change.floor());
         if (change.terms() != null) setDated(settings, change, today, Settings.TERMS, BigDecimal.valueOf(change.terms()));
         change.gradeTerms().forEach((grade, terms) -> setDated(settings, change, today, Settings.gradeKey(grade),

@@ -14,6 +14,9 @@ public class RecordSettingChanged {
                     + (change.clerkLimit() != null ? change.clerkLimit().toPlainString() : "")
                     + from(change, Settings.CLERK_LIMIT));
         }
+        change.gradeClerkLimit().forEach((grade, limit) ->
+                audit.record(prefix + " key=" + Settings.clerkLimitKey(grade) + " value="
+                        + (limit != null ? limit.toPlainString() : "") + from(change, Settings.clerkLimitKey(grade))));
         if (change.floor() != null) {
             audit.record(prefix + " key=floor value=" + change.floor().toPlainString() + from(change, Settings.FLOOR));
         }

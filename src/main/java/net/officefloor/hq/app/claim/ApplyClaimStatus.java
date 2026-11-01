@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
  *  Opening gives the claim its number (see {@link ClaimNumbers}); a voided claim keeps it (and it is never reused).
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. The user who opened a claim, or last edited it, may not settle it.
- *  When a clerk settles a claim whose due is over the sheet's clerk limit (a due of n/a is within any
+ *  When a clerk settles a claim whose due is over the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's) (a due of n/a is within any
  *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward
  *  approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
  *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, still bound by the last
@@ -159,7 +159,8 @@ public class ApplyClaimStatus {
                     }
                 }
             }
-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            // The person's grade's own limit on the sheet's today when one is set, else the sheet's.
+            BigDecimal limit = settings.clerkLimit(claim.getSheetId(), grade);
             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
                     && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
         }
