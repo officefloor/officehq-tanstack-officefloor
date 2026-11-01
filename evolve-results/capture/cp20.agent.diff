@@ -1,0 +1,157 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 67657010..c9a90a60 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -54,6 +54,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+   });
+ 
+   const act = useSubmitOnce(status);
++  // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
++  const [editRefused, setEditRefused] = useState(false);
+ 
+   return (
+     <li data-testid={`claim-row-${claim.id}`}>
+@@ -74,7 +76,10 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           type="button"
+           data-testid={`claim-${change}`}
+           disabled={status.isPending}
+-          onClick={() => act(change)}
++          onClick={() => {
++            setEditRefused(false);
++            act(change);
++          }}
+         >
+           {label}
+         </button>
+@@ -84,6 +89,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+         data-testid="claim-edit"
+         onClick={() => {
+           status.reset();
++          if (claim.status !== 'DRAFT') {
++            setEditRefused(true);
++            return;
++          }
++          setEditRefused(false);
+           onEdit();
+         }}
+       >
+@@ -94,6 +104,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           Cancel
+         </button>
+       )}
++      {editRefused && (
++        <span data-testid="claim-error" role="alert">
++          {' '}A {claim.status} claim cannot be edited; only a DRAFT can (void it and add a new one).
++        </span>
++      )}
+       {status.isError && (
+         <span data-testid="claim-error" role="alert">
+           {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle it).
+@@ -179,7 +194,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+           </button>
+           {save.isError && (
+             <span data-testid="claim-form-error" role="alert">
+-              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date.
++              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date; only a DRAFT claim can be edited.
+             </span>
+           )}
+         </form>
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 0ebdf91b..f329fb10 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -10,7 +10,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ export type ClaimStatusChange = 'open' | 'settle' | 'void';
+ 
+ /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
+- * the sheet (given when it is opened; null while a draft and once voided), and its due fixed when it was
++ * the sheet (given when it is opened; null while a draft; kept once voided), and its due fixed when it was
+  * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
+  * user who opened it (null until opened; that user may not settle it), and whether its person's last statement
+  * bound it, with the figure it bound (null when its grade had no rate then). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6cd93fda..0b3c6566 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -36,14 +36,12 @@ public class ApplyClaimStatus {
+             throw new InvalidClaimStatusChangeException(
+                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+         }
+-        // Opening gives the sheet's next number; voiding clears it (the line carries the number it had).
++        // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
+         Claim changed = claim;
+         if (requested == ClaimStatusChange.OPEN) {
+             changed = claim.withNumber(claims.nextNumber(sheet));
+             claims.setNumber(sheet, claim.id(), changed.number());
+             claims.setOpenedBy(sheet, claim.id(), user);
+-        } else if (requested == ClaimStatusChange.VOID && claim.number() != null) {
+-            claims.setNumber(sheet, claim.id(), null);
+         }
+         Person person = people.find(sheet, claim.person());
+         String fields = changed.statusAuditFields(person.name());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 9f4cf32d..0b75c37c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.rate.Rate;
+ 
+ /**
+  * A claim as the screen shows it: amount with two decimals, date (ISO yyyy-MM-dd), note, status and its number on
+- * the sheet (given when opened; null while a draft and once voided), and its due fixed when settled (two decimals;
++ * the sheet (given when opened and kept once voided; null while a draft), and its due fixed when settled (two decimals;
+  * null until settled, and when the grade had no rate then), and the user who opened it (null until opened), and
+  * whether its person's last statement bound it, with the figure it bound (null when the grade had no rate then).
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index d04a1fb1..c3753f5c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -46,9 +46,11 @@ public class Claims {
+                 input.amount(), Date.valueOf(input.date()), input.note());
+     }
+ 
+-    public void update(String sheet, long id, ClaimInput input) {
+-        jdbc.update("UPDATE claim SET amount = ?, claimed_on = ?, note = ? WHERE sheet = ? AND id = ?", input.amount(),
+-                Date.valueOf(input.date()), input.note(), sheet, id);
++    /** Edits a draft claim: false when it is no longer a draft. */
++    public boolean update(String sheet, long id, ClaimInput input) {
++        return jdbc.update(
++                "UPDATE claim SET amount = ?, claimed_on = ?, note = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'",
++                input.amount(), Date.valueOf(input.date()), input.note(), sheet, id) == 1;
+     }
+ 
+     /** Moves the claim from one status to another: false when it no longer has the status it was read with. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java
+index 0308545c..7656948e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java
++++ b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The claim's amount is not a number of 0.00 or more with up to two decimals, or its date is not a date. */
++/** The claim's amount is not a number of 0.00 or more with up to two decimals, or its date is not a date, or
++ * the claim edited is not a DRAFT. */
+ public class InvalidClaimException extends Exception {
+     public InvalidClaimException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 3af90138..69a14f3a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -17,8 +17,15 @@ public class SaveClaim {
+         if (periods.closedOn(sheet, LocalDate.parse(claim.date())) || periods.closedOn(sheet, input.date())) {
+             throw new InvalidClaimException("A claim dated inside a closed period may not be edited");
+         }
++        // Only a draft may be edited: an open claim is voided and a new one added instead.
++        if (claim.status() != ClaimStatus.DRAFT) {
++            throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can");
++        }
+         Rollup.Snapshot before = rollup.take(sheet);
+-        claims.update(sheet, claim.id(), input);
++        // Conditional on the claim still being a draft, so one another user opened meanwhile is refused.
++        if (!claims.update(sheet, claim.id(), input)) {
++            throw new InvalidClaimException("The claim is no longer a DRAFT and cannot be edited");
++        }
+         String person = people.find(sheet, claim.person()).name();
+         audit.record("CLAIM_EDITED sheet=" + sheet + " by=" + user + " " + input.auditFields(person));
+         rollup.record(sheet, user, before);
