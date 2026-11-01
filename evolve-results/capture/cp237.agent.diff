@@ -1,0 +1,84 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index c82279d0..bc0ddead 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -31,8 +31,8 @@ type Froms = Record<string, string>;
+  * (half-up or half-even: a claim dated when one is in force rounds every live figure by it; blank is none: the policy date decides),
+  * the proof threshold of each grade (when set on a claim's date, it is the one in force for a claim of a person of
+  * that grade then, in place of the sheet's; blank uses the sheet's),
+- * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
+- * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
++ * its permission matrix (for each of open, settle, void, reassign, close, reopen and today, the roles that may
++ * take it, comma separated; blank keeps the standing rule: open, settle, void, close and today by clerk and
+  * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
+  * period whose to-date plus them is before the new today is closed; blank is off; not dated), its escalation gap (reminding a claim whose previous reminder was at least that many days before its today escalates the claim, once ever; blank is off; not dated),
+  * the grace days of each grade (a claim of a person of that grade on its date is overdue, and its late
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 9ddae9a4..57dbf9b4 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -184,7 +184,7 @@ export const SCORE = /^(-?\d{1,6})?$/;
+ export const FROM_DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
+ /** The actions of the permission matrix: each may be given the roles allowed to take it. */
+-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ 
+ /** A permission the server accepts: a comma separated list of roles, or blank for the standing rule. */
+ export const PERM_ROLES = /^(\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*)?$/i;
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index e080169e..17ff82c3 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -38,7 +38,7 @@ public class Settings {
+             REVIEW_THRESHOLD = "review-threshold";
+ 
+     /** The actions of the permission matrix, in order. */
+-    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     /** The key a permission is set under: perm-<action>. */
+     public static String permKey(String action) {
+@@ -600,7 +600,8 @@ public class Settings {
+     }
+ 
+     /** Whether the user's role may take `action` on the sheet: the roles set for it, else the standing
+-     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. A
++     *  rule — open, settle, void, close and today (changing the sheet's today) by clerk and steward;
++     *  reassign and reopen by steward. A
+      *  viewer may take none, and no one may on an archived sheet. */
+     public boolean allows(String sheetId, String action, String user) {
+         if (sheets.archived(sheetId)) return false;
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index 72b0f298..51f1c02b 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -3,12 +3,16 @@ package net.officefloor.hq.app.sheet;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
++/** Validates a change of the sheet's today: a date, by a role the permission matrix allows to change
++ *  it (see {@link Settings#allows}, action today). */
+ public class ValidateToday {
+-    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today, Out<Actor> actor)
+-            throws InvalidSheetRequestException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Settings settings,
++            Out<LocalDate> today, Out<Actor> actor) throws InvalidSheetRequestException {
+         String raw = request == null || request.today() == null ? "" : request.today().trim();
+         try {
+             today.set(LocalDate.parse(raw));
+@@ -16,5 +20,9 @@ public class ValidateToday {
+         } catch (DateTimeParseException e) {
+             throw new InvalidSheetRequestException("Not a date (yyyy-mm-dd): " + raw);
+         }
++        String user = request.user() == null ? "" : request.user().trim();
++        if (!settings.allows(sheetId, "today", user)) {
++            throw new InvalidSheetRequestException("Your role may not change the sheet's today");
++        }
+     }
+ }
