@@ -1,0 +1,94 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 360a8bbc..80b27813 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -125,7 +125,7 @@ export function counted(claims: Claim[]): Claim[] {
+  *  unless a statement binds them. */
+ export function live(claims: Claim[], heldOn: (personId: number, date: string) => boolean): Claim[] {
+   return counted(claims).filter(
+-    (c) => !c.deferred && (!isOpen(c) || (c.stated && c.status !== 'PENDING') || !heldOn(c.personId, c.date)),
++    (c) => !c.deferred && (!isOpen(c) || c.stated || !heldOn(c.personId, c.date)),
+   );
+ }
+ 
+@@ -151,9 +151,9 @@ export function claimDueCents(claim: Claim, floor: FloorOn, pct: string | undefi
+ 
+ /** A claim's figure without any late charge or floor, in cents: the figure its person's last statement
+  *  bound it to, or else live at `pct` (null, n/a, when there is no rate).
+- *  A PENDING claim is not bound by a statement: it shows its live figure. */
++ *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
+ function claimFigureCents(claim: Claim, pct: string | undefined): bigint | null {
+-  if (claim.stated && claim.status !== 'PENDING') return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
++  if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
+   return dueCents(claim.amount, pct, claim.halfUp);
+ }
+ 
+diff --git a/src/main/frontend/features/periods/usePeriods.ts b/src/main/frontend/features/periods/usePeriods.ts
+index 5158cf6f..7410f597 100644
+--- a/src/main/frontend/features/periods/usePeriods.ts
++++ b/src/main/frontend/features/periods/usePeriods.ts
+@@ -87,7 +87,7 @@ function countsIn(period: Period, person: Person, claim: Claim, today: string, n
+ function countedAs(person: Person, claim: Claim, status: ClaimStatus | null, today: string): boolean {
+   if (status !== 'OPEN' && status !== 'PENDING' && status !== 'SETTLED') return false;
+   if (status === 'SETTLED' || !heldOn(person, claim.date, today)) return true;
+-  return claim.stated && status !== 'PENDING';
++  return claim.stated;
+ }
+ 
+ /** A person's due-total for a period, in cents: the one fixed when the period was closed (0 for a
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 5aadae15..80414f5d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -16,9 +16,9 @@ import net.officefloor.plugin.variable.Val;
+  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. The user who opened a claim, or last edited it, may not settle it.
+  *  When a clerk settles a claim whose due is over the sheet's clerk limit (a due of n/a is within any
+- *  limit) it goes PENDING instead, its due still live; a steward settles anything. Only a steward
+- *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge, at least the floor),
+- *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, bound again by the last
++ *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward
++ *  approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
++ *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, still bound by the last
+  *  statement if that bound it.
+  *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
+  *  one is set, else the sheet's) cannot be settled or
+@@ -128,7 +128,7 @@ public class ApplyClaimStatus {
+         boolean pending = false;
+         if (change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) {
+             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+-            // Figures.due: from the bound figure for an OPEN claim, the live one for a PENDING claim.
++            // Figures.due: from the bound figure when a statement binds the claim (OPEN or PENDING), else live.
+             due = figures.due(claim, grade);
+             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
+             BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Figures.java b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+index 48c227c3..483d2f2f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Figures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+@@ -61,10 +61,10 @@ public class Figures {
+     }
+ 
+     /** The claim's figure without any late charge or floor: the fixed due, else the bound figure, else live.
+-     *  A PENDING claim is not bound by a statement: it keeps its binding but shows its live figure. */
++     *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
+     public BigDecimal figure(Claim claim, String grade) {
+         if (claim.getDue() != null) return claim.getDue();
+-        if (claim.isStated() && claim.getStatus() != ClaimStatus.PENDING) return claim.getStatedDue();
++        if (claim.isStated()) return claim.getStatedDue();
+         return live(claim, grade);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 1db20910..7ff48026 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -200,7 +200,7 @@ public class Person {
+         if (status == null) return false;
+         if (!status.counts() || claim.isDeferred()) return false;
+         if (!status.isOpen() || !(heldOn(claim.getDate()) || retiredOut())) return true;
+-        return claim.isStated() && status != ClaimStatus.PENDING;
++        return claim.isStated();
+     }
+ 
+     /** Refuses a claim dated after the person's retirement date, or after the from and before the
