@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 19f50e4a..a4b99f3b 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -64,6 +64,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+       <span data-testid="claim-status">{claim.status}</span>{' '}
+       {claim.number !== null && '#'}
+       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
++      {claim.openedBy !== null && 'opened by '}
++      <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
+       {CHANGES.map(({ change, label }) => (
+         <button
+           key={change}
+@@ -92,7 +94,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+       )}
+       {status.isError && (
+         <span data-testid="claim-error" role="alert">
+-          {' '}A {claim.status} claim cannot be changed that way.
++          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle it).
+         </span>
+       )}
+     </li>
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index e248bbe2..6904e14b 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -11,7 +11,8 @@ export type ClaimStatusChange = 'open' | 'settle' | 'void';
+ 
+ /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
+  * the sheet (given when it is opened; null while a draft and once voided), and its due fixed when it was
+- * settled (two decimals; null while live: until settled, and when its grade had no rate then). */
++ * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
++ * user who opened it (null until opened; that user may not settle it). */
+ export type Claim = {
+   id: number;
+   person: number;
+@@ -21,6 +22,7 @@ export type Claim = {
+   status: ClaimStatus;
+   number: number | null;
+   settledDue: string | null;
++  openedBy: string | null;
+ };
+ 
+ export const claimsKey = (sheet: string) => ['claims', sheet] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 583c532b..a4dfbff4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -21,6 +21,10 @@ public class ApplyClaimStatus {
+         if (requested == null) {
+             throw new InvalidClaimStatusChangeException("No such status change: " + change);
+         }
++        // Four eyes: the user who opened a claim may not settle it.
++        if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
++            throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
++        }
+         ClaimStatus next = claim.status().after(requested);
+         // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
+         if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
+@@ -32,6 +36,7 @@ public class ApplyClaimStatus {
+         if (requested == ClaimStatusChange.OPEN) {
+             changed = claim.withNumber(claims.nextNumber(sheet));
+             claims.setNumber(sheet, claim.id(), changed.number());
++            claims.setOpenedBy(sheet, claim.id(), user);
+         } else if (requested == ClaimStatusChange.VOID && claim.number() != null) {
+             claims.setNumber(sheet, claim.id(), null);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index e9fa1a2e..d03a421e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -3,10 +3,10 @@ package net.officefloor.hq.app.claim;
+ /**
+  * A claim as the screen shows it: amount with two decimals, date (ISO yyyy-MM-dd), note, status and its number on
+  * the sheet (given when opened; null while a draft and once voided), and its due fixed when settled (two decimals;
+- * null until settled, and when the grade had no rate then).
++ * null until settled, and when the grade had no rate then), and the user who opened it (null until opened).
+  */
+ public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
+-        Integer number, String settledDue) {
++        Integer number, String settledDue, String openedBy) {
+ 
+     /** The audit fields of this claim for the named person, as {@link ClaimInput#auditFields}. */
+     public String auditFields(String person) {
+@@ -15,12 +15,12 @@ public record Claim(long id, long person, String amount, String date, String not
+ 
+     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
+     public Claim withNumber(Integer number) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy);
+     }
+ 
+     /** This claim, settled with its due fixed (null when its grade had no rate). */
+     public Claim withSettledDue(String settledDue) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy);
+     }
+ 
+     /** The audit fields of a status change: {@link #auditFields} then number=<number> when it has one. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 84b9898b..d6e2ec57 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -18,9 +18,10 @@ public class Claims {
+             rs.getDate("claimed_on").toLocalDate().toString(), rs.getString("note"),
+             ClaimStatus.valueOf(rs.getString("status")), rs.getObject("number_on_sheet", Integer.class),
+             rs.getBigDecimal("settled_due") == null ? null
+-                    : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString());
++                    : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
++            rs.getString("opened_by"));
+ 
+-    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due FROM claim";
++    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by FROM claim";
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -59,6 +60,11 @@ public class Claims {
+         jdbc.update("UPDATE claim SET settled_due = ? WHERE sheet = ? AND id = ?", due, sheet, id);
+     }
+ 
++    /** Records the user who opened the claim. */
++    public void setOpenedBy(String sheet, long id, String user) {
++        jdbc.update("UPDATE claim SET opened_by = ? WHERE sheet = ? AND id = ?", user, sheet, id);
++    }
++
+     /** Sets the claim's number on the sheet, or clears it with null. */
+     public void setNumber(String sheet, long id, Integer number) {
+         jdbc.update("UPDATE claim SET number_on_sheet = ? WHERE sheet = ? AND id = ?", number, sheet, id);
+diff --git a/src/main/resources/db/migration/V10__claim_opened_by.sql b/src/main/resources/db/migration/V10__claim_opened_by.sql
+new file mode 100644
+index 00000000..f46a1522
+--- /dev/null
++++ b/src/main/resources/db/migration/V10__claim_opened_by.sql
+@@ -0,0 +1,2 @@
++-- Who opened a claim: set when it is opened, null while a draft. That user may not settle it (four eyes).
++ALTER TABLE claim ADD COLUMN opened_by VARCHAR(200);
