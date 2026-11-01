@@ -28,12 +28,17 @@ public class Claims {
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
-            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of());
+            rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of(),
+            rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
+            rs.getBoolean("deferred"));
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
+    // It is deferred while OPEN with its deferred-until after the sheet's today (the real date until one is set).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
-            + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on FROM claim"
+            + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
+            + " claim.deferred_until, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
 
@@ -123,6 +128,12 @@ public class Claims {
     public boolean changeStatus(String sheet, long id, ClaimStatus from, ClaimStatus to) {
         return jdbc.update("UPDATE claim SET status = ? WHERE sheet = ? AND id = ? AND status = ?", to.name(), sheet,
                 id, from.name()) == 1;
+    }
+
+    /** Defers an OPEN claim until the date: false when it is no longer OPEN. */
+    public boolean defer(String sheet, long id, LocalDate until) {
+        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet = ? AND id = ? AND status = 'OPEN'",
+                Date.valueOf(until), sheet, id) == 1;
     }
 
     /** Fixes the claim's due as it is settled, or leaves none with null. */

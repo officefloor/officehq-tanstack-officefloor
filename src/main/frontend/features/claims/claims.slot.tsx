@@ -93,6 +93,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
   const resettle = useSubmitOnce(resettleMutation);
+  // An OPEN claim is deferred to a date after the sheet's today, typed beside the Defer button.
+  const [deferTo, setDeferTo] = useState('');
+  const deferMutation = useMutation({
+    mutationFn: (until: string) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/defer`, user), { until }),
+    onSuccess: (updated) => {
+      setDeferTo('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const defer = useSubmitOnce(deferMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
@@ -122,6 +132,9 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       {claim.corrects !== null && 'corrects #'}
       <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
+      deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
+      {claim.deferred && 'until '}
+      <span data-testid="claim-deferred-until">{claim.deferred ? claim.deferredUntil : ''}</span>{' '}
       {CHANGES.map(({ change, label }) => (
         <button
           key={change}
@@ -132,6 +145,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
             setEditRefused(false);
             move.reset();
             resettleMutation.reset();
+            deferMutation.reset();
             act(change);
           }}
         >
@@ -156,6 +170,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           setEditRefused(false);
           move.reset();
           resettleMutation.reset();
+          deferMutation.reset();
           act('reject');
         }}
       >
@@ -168,6 +183,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           move.reset();
           resettleMutation.reset();
+          deferMutation.reset();
           if (claim.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -203,6 +219,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           setEditRefused(false);
           status.reset();
           resettleMutation.reset();
+          deferMutation.reset();
           reassign(Number(moveTo));
         }}
       >
@@ -216,10 +233,34 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           setEditRefused(false);
           status.reset();
           move.reset();
+          deferMutation.reset();
           resettle(undefined);
         }}
       >
         Re-settle
+      </button>{' '}
+      <input
+        data-testid="claim-defer-date"
+        placeholder="defer until yyyy-mm-dd"
+        value={deferTo}
+        onChange={(e) => {
+          setDeferTo(e.target.value);
+          deferMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-defer"
+        disabled={deferMutation.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          defer(deferTo);
+        }}
+      >
+        Defer
       </button>{' '}
       {editing && (
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
@@ -246,6 +287,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {resettleMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be re-settled (only a steward re-settles, and only a SETTLED claim outside a closed period).
+        </span>
+      )}
+      {deferMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be deferred (only an OPEN claim outside a closed period, and only to a date after the sheet's today).
         </span>
       )}
       {move.isError && (

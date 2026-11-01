@@ -56,6 +56,9 @@ public class ClaimStatusChanger {
         if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
             throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
         }
+        if (requested == ClaimStatusChange.SETTLE && claim.deferred()) {
+            throw new InvalidClaimStatusChangeException("A deferred claim cannot be settled until its date");
+        }
         // Four eyes: the user who opened a claim may not settle it, nor approve it.
         if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
                 && user.equals(claim.openedBy())) {

@@ -40,7 +40,9 @@ export function bound(claim: Claim): boolean {
  * correction the date of the claim it corrects), and its number within its period (<period>-<n>, or X-<n> in no
  * period) when it was opened while the sheet numbered by period, shown in place of its number (null otherwise), and
  * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date, and
- * its status log, oldest first. */
+ * its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
+ * deferred now (OPEN with that date after the sheet's today: it counts in no total, is not overdue and cannot be
+ * settled). */
 export type Claim = {
   id: number;
   person: number;
@@ -58,6 +60,8 @@ export type Claim = {
   periodNumber: string | null;
   dueBy: string;
   log: ClaimLogLine[];
+  deferredUntil: string | null;
+  deferred: boolean;
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
@@ -77,10 +81,11 @@ export function useClaims(sheet: string) {
 }
 
 /** The claims that count toward claimed, due-total and every total: the OPEN, PENDING and SETTLED ones, but not
- *  the OPEN or PENDING ones dated within a hold of their person, unless bound by a statement. */
+ *  the deferred ones, nor the OPEN or PENDING ones dated within a hold of their person, unless bound by a statement. */
 export function counted(claims: Claim[], people: Person[]): Claim[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   return claims.filter((c) => {
+    if (c.deferred) return false;
     if (c.status === 'SETTLED') return true;
     if (!isOpen(c)) return false;
     const person = byId.get(c.person);
@@ -196,9 +201,9 @@ export function uncappedPersonDueCents(
   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
 }
 
-/** Whether a claim is overdue: OPEN or PENDING with its due-by before the sheet's today. */
+/** Whether a claim is overdue: OPEN or PENDING, not deferred, with its due-by before the sheet's today. */
 export function overdue(claim: Claim, today: string | undefined): boolean {
-  return isOpen(claim) && today !== undefined && claim.dueBy < today;
+  return isOpen(claim) && !claim.deferred && today !== undefined && claim.dueBy < today;
 }
 
 /** The overdue claims that count (see {@link counted}) among a person's or the sheet's claims, and the sum of

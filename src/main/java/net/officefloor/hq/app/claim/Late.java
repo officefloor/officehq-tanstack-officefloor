@@ -21,9 +21,9 @@ public record Late(Dated pct, LocalDate today, LocalDate policy) {
         return LocalDate.parse(claim.roundsOn()).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether the claim is overdue: OPEN or PENDING with its due-by (fixed when it was added) before the sheet's today. */
+    /** Whether the claim is overdue: OPEN or PENDING, not deferred, with its due-by (fixed when it was added) before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING) && LocalDate.parse(claim.dueBy()).isBefore(today);
+        return !claim.deferred() && (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING) && LocalDate.parse(claim.dueBy()).isBefore(today);
     }
 
     /**
