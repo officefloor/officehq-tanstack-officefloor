@@ -6,7 +6,7 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 import { peopleKey } from './usePeople';
 
 /** Adds a DRAFT claim by person name: dated the sheet's today, with an empty note, for the person
- *  of that name — created with grade A when the name is not on the sheet. One change on the
+ *  of that name — created with the sheet's default grade when the name is not on the sheet. One change on the
  *  server: a refused claim leaves no new person behind. */
 export function QuickAddBar({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();

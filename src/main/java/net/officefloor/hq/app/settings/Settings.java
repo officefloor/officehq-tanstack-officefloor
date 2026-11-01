@@ -402,6 +402,24 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, proof_kinds) KEY (sheet_id) VALUES (?, ?)", sheetId, kinds);
     }
 
+    /** The grade a person added without one is given (by the quick-add bar, or an import line with a
+     *  blank grade): A unless set. Not dated. */
+    public String defaultGrade(String sheetId) {
+        String grade = defaultGradeValue(sheetId);
+        return grade == null ? "A" : grade;
+    }
+
+    /** The sheet's default grade as set; null when unset. */
+    public String defaultGradeValue(String sheetId) {
+        List<String> values = jdbc.query("SELECT default_grade FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getString("default_grade"), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setDefaultGrade(String sheetId, String grade) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, default_grade) KEY (sheet_id) VALUES (?, ?)", sheetId, grade);
+    }
+
     /** The month of the year (1 to 12) the sheet's fiscal year starts on: 1 unless set. Not dated. */
     public int fiscalStartMonth(String sheetId) {
         List<Integer> values = jdbc.query("SELECT fiscal_start_month FROM sheet_setting WHERE sheet_id = ?",

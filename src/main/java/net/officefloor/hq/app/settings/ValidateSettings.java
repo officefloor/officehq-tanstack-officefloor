@@ -181,6 +181,10 @@ public class ValidateSettings {
             }
             proofKinds = String.join(",", kinds);
         }
+        String defaultGrade = request == null || request.defaultGrade() == null ? null : request.defaultGrade().trim();
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
+            throw new InvalidSheetRequestException("The default grade must be A, B or C, or blank");
+        }
         String fiscal = request == null || request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
         if (fiscal != null && !MONTH.matcher(fiscal).matches()) {
             throw new InvalidSheetRequestException("The fiscal year start month must be a month, 1 to 12");
@@ -253,6 +257,7 @@ public class ValidateSettings {
                 reviewThreshold != null, reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
                 sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
-                proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds));
+                proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
+                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade));
     }
 }

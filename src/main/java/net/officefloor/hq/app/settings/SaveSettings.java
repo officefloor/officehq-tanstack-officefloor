@@ -33,6 +33,7 @@ public class SaveSettings {
         if (change.setsEscalateAfter()) settings.setEscalateAfter(sheetId, change.escalateAfter());
         if (change.setsReviewSla()) settings.setReviewSla(sheetId, change.reviewSla());
         if (change.setsProofKinds()) settings.setProofKinds(sheetId, change.proofKinds());
+        if (change.setsDefaultGrade()) settings.setDefaultGrade(sheetId, change.defaultGrade());
         if (change.fiscalStartMonth() != null) settings.setFiscalStartMonth(sheetId, change.fiscalStartMonth());
         if (change.setsAlertThreshold()) settings.setAlertThreshold(sheetId, change.alertThreshold());
         change.perms().forEach((action, roles) -> settings.setPermission(sheetId, action, roles));

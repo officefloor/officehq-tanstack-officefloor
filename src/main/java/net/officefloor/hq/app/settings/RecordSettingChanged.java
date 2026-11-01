@@ -94,6 +94,9 @@ public class RecordSettingChanged {
         if (change.setsProofKinds()) {
             audit.record(prefix + " key=proof-kinds value=" + (change.proofKinds() != null ? change.proofKinds() : ""));
         }
+        if (change.setsDefaultGrade()) {
+            audit.record(prefix + " key=default-grade value=" + (change.defaultGrade() != null ? change.defaultGrade() : ""));
+        }
     }
 
     /** " from=<date>" when a from-date was given for the key, else nothing. */

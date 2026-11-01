@@ -21,7 +21,7 @@ export type RoleEntry = { name: string; role: string };
  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
 export type DelegationEntry = { name: string; from: string; to: string; by: string };
 
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };
@@ -158,3 +158,5 @@ export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reo
 export const PERM_ROLES = /^(\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*)?$/i;
 /** The proof kinds: a comma separated list of receipt and photo, or blank for none. */
 export const PROOF_KINDS = /^(\s*(receipt|photo)\s*(,\s*(receipt|photo)\s*)*)?$/i;
+/** The default grade: one of the grades, or blank for A. */
+export const DEFAULT_GRADE = /^(A|B|C)?$/;
