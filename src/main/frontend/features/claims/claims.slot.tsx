@@ -26,6 +26,7 @@ import {
   useLate,
 } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
+import { selectClaim, useSelectedClaims } from './selection';
 
 type Draft = { amount: string; date: string; note: string; corrects: string };
 const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '' };
@@ -73,11 +74,18 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   });
 
   const act = useSubmitOnce(status);
+  const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
 
   return (
     <li data-testid={`claim-row-${claim.id}`}>
+      <input
+        type="checkbox"
+        data-testid="claim-select"
+        checked={selected}
+        onChange={(e) => selectClaim(sheet, claim.id, e.target.checked)}
+      />{' '}
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
