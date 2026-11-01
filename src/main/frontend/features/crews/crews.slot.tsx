@@ -6,7 +6,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { useSheetTotals } from '../claims/useSheetTotals';
 import { usePeople, type Person } from '../people/usePeople';
 import { totalDue } from '../rates/useRates';
-import { crewsKey, useCrews, type Crew } from './useCrews';
+import { crewDues, crewsKey, useCrews, type Crew } from './useCrews';
 
 /**
  * The sheet's crews and a form to add one: a name (trimmed; a blank name, or one already a crew, is
@@ -39,9 +39,6 @@ function CrewsPanel({ user, sheet }: { user: string; sheet: string }) {
     add.reset();
     setInvalid(false);
   };
-
-  // A person's due-total in cents (null for n/a, or not on the sheet).
-  const dueOf = (personId: number) => perPerson.find((p) => p.person.id === personId)?.due ?? null;
 
   return (
     <section data-testid="crews-panel">
@@ -106,7 +103,7 @@ function CrewsPanel({ user, sheet }: { user: string; sheet: string }) {
               sheet={sheet}
               crew={c}
               people={people}
-              dueTotal={totalDue([dueOf(c.leadId), ...c.members.map((m) => dueOf(m.personId))])}
+              dueTotal={totalDue(crewDues(c, perPerson))}
             />
           ))}
         </tbody>

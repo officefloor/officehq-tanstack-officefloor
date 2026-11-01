@@ -18,3 +18,9 @@ export function useCrews(sheet: string) {
     gcTime: 0,
   });
 }
+
+/** A crew's dues in cents: its lead's and its members' (null for n/a, or not on the sheet). */
+export function crewDues(crew: Crew, perPerson: { person: { id: number }; due: bigint | null }[]) {
+  const dueOf = (personId: number) => perPerson.find((p) => p.person.id === personId)?.due ?? null;
+  return [dueOf(crew.leadId), ...crew.members.map((m) => dueOf(m.personId))];
+}
