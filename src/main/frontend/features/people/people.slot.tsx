@@ -8,9 +8,69 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { GRADES, peopleKey, peoplePath, usePeople } from './people';
 import type { Grade, Person } from './people';
+import { claimsKey } from '../claims/claims';
+import type { Claim } from '../claims/claims';
 
 type Draft = { name: string; grade: Grade };
 const EMPTY: Draft = { name: '', grade: 'A' };
+
+type Quick = { name: string; amount: string };
+const QUICK_EMPTY: Quick = { name: '', amount: '' };
+
+// The quick-add bar: a name and an amount make a draft claim dated the sheet's today with an empty
+// note, for the person of that name (ignoring case), who is first added with grade A when not on the
+// sheet. The server checks every rule before writing, so a refusal adds no one.
+function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<Quick>(QUICK_EMPTY);
+
+  const add = useMutation({
+    mutationFn: (body: Quick) =>
+      postJson<{ people: Person[]; claims: Claim[] }>(
+        byUser(`/api/sheets/${encodeURIComponent(sheet)}/quick-add`, user),
+        body,
+      ),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(peopleKey(sheet), updated.people);
+      queryClient.setQueryData(claimsKey(sheet), updated.claims);
+      setDraft(QUICK_EMPTY);
+    },
+  });
+  const send = useSubmitOnce(add);
+
+  const change = (next: Partial<Quick>) => {
+    setDraft((d) => ({ ...d, ...next }));
+    add.reset();
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    send(draft);
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <label>
+        Quick add: name{' '}
+        <input data-testid="quick-name" value={draft.name} onChange={(e) => change({ name: e.target.value })} />
+      </label>{' '}
+      <label>
+        Amount{' '}
+        <input data-testid="quick-amount" value={draft.amount} onChange={(e) => change({ amount: e.target.value })} />
+      </label>{' '}
+      <button type="submit" data-testid="quick-submit" disabled={add.isPending}>
+        Add claim
+      </button>
+      {add.isError && (
+        <span data-testid="quick-error" role="alert">
+          {' '}
+          A quick add needs a name and an amount of 0.00 or more with up to two decimals, dated outside any closed
+          period.
+        </span>
+      )}
+    </form>
+  );
+}
 
 // The sheet's people: listed in the order they were added, with one form that adds a person or,
 // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
@@ -107,6 +167,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
           </span>
         )}
       </form>
+      <QuickAdd sheet={sheet} user={user} />
       <table>
         <thead>
           <tr>

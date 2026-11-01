@@ -31,6 +31,13 @@ public class People {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The person on the sheet with this name, ignoring case; null when there is none. */
+    public Person findByName(String sheet, String name) {
+        List<Person> found = jdbc.query(
+                "SELECT id, name, grade, version FROM person WHERE sheet = ? AND name_key = LOWER(?)", ROW, sheet, name);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether someone on the sheet other than {@code except} has this name, ignoring case. */
     private boolean nameTaken(String sheet, String name, Long except) {
         Integer taken = jdbc.queryForObject(
