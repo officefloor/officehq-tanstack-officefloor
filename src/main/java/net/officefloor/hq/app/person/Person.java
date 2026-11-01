@@ -1,11 +1,11 @@
 package net.officefloor.hq.app.person;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.setting.Dated;
 
 /**
  * A person on a sheet: name (unique on the sheet, ignoring case) and grades (A, B or C), each in force from its
@@ -44,7 +44,7 @@ public record Person(long id, String name, String grade, long version, String re
      * today, the claim not being dated after today. Their due-total is n/a only when no claim does and that grade
      * has no rate on today.
      */
-    public boolean figureApartFrom(Claim claim, LocalDate today, List<Rate> rates, BigDecimal floor) {
+    public boolean figureApartFrom(Claim claim, LocalDate today, List<Rate> rates, Dated floor) {
         String then = gradeOn(claim.date());
         return claim.fixed()
                 || (then != null && !then.equals(gradeOn(today)) && claim.figure(rates, then, floor) != null)

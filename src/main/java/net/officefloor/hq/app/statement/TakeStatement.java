@@ -11,6 +11,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Dated;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Val;
@@ -30,7 +31,7 @@ public class TakeStatement {
         Rollup.Snapshot before = rollup.take(sheet);
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
-        BigDecimal floor = settings.floor(sheet);
+        Dated floor = settings.floor(sheet);
         Late late = settings.late(sheet, today);
         List<Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id()).toList();
         boolean na = Rate.on(sheetRates, person.grade(), today) == null

@@ -14,6 +14,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Dated;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,7 +41,7 @@ public class ClosePeriod {
         LocalDate to = LocalDate.parse(found.to());
         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, (p) -> p));
         List<Rate> sheetRates = rates.list(sheet);
-        BigDecimal floor = settings.floor(sheet);
+        Dated floor = settings.floor(sheet);
         Late late = settings.late(sheet, clock.today(sheet));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();

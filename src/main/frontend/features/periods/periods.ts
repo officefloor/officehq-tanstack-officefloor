@@ -6,6 +6,7 @@ import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
 import { rateOf, twoDecimals } from '../rates/rates';
 import type { Rate } from '../rates/rates';
+import type { DatedCents } from '../settings/settings';
 
 /** A period on the sheet: its name (unique on the sheet) and its from and to date (yyyy-MM-dd), inclusive;
  *  whether it is closed, its due-total fixed when closed (two decimals; null while open), and each person's due-total
@@ -51,7 +52,7 @@ export function periodDueCents(
   claims: Claim[],
   people: Person[],
   rates: Rate[],
-  floor: bigint,
+  floor: DatedCents,
   late: Late,
 ): Map<string, bigint> {
   const totals = new Map<string, bigint>();
@@ -68,7 +69,7 @@ export function personPeriodDueCents(
   claims: Claim[],
   people: Person[],
   rates: Rate[],
-  floor: bigint,
+  floor: DatedCents,
   late: Late,
 ): Map<string, Map<number, bigint>> {
   const byId = new Map(people.map((p) => [p.id, p]));

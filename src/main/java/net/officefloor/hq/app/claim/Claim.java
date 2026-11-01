@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.setting.Dated;
 
 /**
  * A claim as the screen shows it: amount with two decimals, date (ISO yyyy-MM-dd), note, status and its number on
@@ -89,22 +90,22 @@ public record Claim(long id, long person, String amount, String date, String not
      * This claim's due: its {@link #figure} plus, while it is overdue, its late charge (settling fixes the charge
      * in); null when there is no figure.
      */
-    public BigDecimal due(List<Rate> rates, String grade, BigDecimal floor, Late late) {
+    public BigDecimal due(List<Rate> rates, String grade, Dated floor, Late late) {
         BigDecimal figure = figure(rates, grade, floor, late.rounding(this));
         return figure == null || settledDue != null ? figure : figure.add(late.charge(this, figure));
     }
 
     /**
      * This claim's figure: the due fixed when settled, else the one its statement bound (unless PENDING), else its amount at the
-     * grade's rate in force on its date, raised to at least the sheet's floor (a correction has no floor); null when
+     * grade's rate in force on its date, raised to at least the sheet's floor in force on its date (a correction has no floor); null when
      * there is none.
      */
-    public BigDecimal figure(List<Rate> rates, String grade, BigDecimal floor) {
+    public BigDecimal figure(List<Rate> rates, String grade, Dated floor) {
         return figure(rates, grade, floor, RoundingMode.HALF_EVEN);
     }
 
     /** This claim's {@link #figure}, its live figure rounded by the mode. */
-    public BigDecimal figure(List<Rate> rates, String grade, BigDecimal floor, RoundingMode rounding) {
+    public BigDecimal figure(List<Rate> rates, String grade, Dated floor, RoundingMode rounding) {
         if (settledDue != null) {
             return new BigDecimal(settledDue);
         }
@@ -112,6 +113,6 @@ public record Claim(long id, long person, String amount, String date, String not
             return statedDue == null ? null : new BigDecimal(statedDue);
         }
         BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)), rounding);
-        return live == null || correction() ? live : live.max(floor);
+        return live == null || correction() ? live : live.max(floor.on(date));
     }
 }

@@ -14,6 +14,7 @@ import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Dated;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
@@ -58,7 +59,7 @@ public class Rollup {
     public Snapshot take(String sheet) {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
-        BigDecimal floor = settings.floor(sheet);
+        Dated floor = settings.floor(sheet);
         BigDecimal cap = settings.cap(sheet);
         Late late = settings.late(sheet, today);
         List<Claim> all = claims.list(sheet);

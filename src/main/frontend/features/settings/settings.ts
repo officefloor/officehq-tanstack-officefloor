@@ -9,9 +9,35 @@ import { hundredths } from '../rates/rates';
  *  rounds half up, on or after it half to even; and the period numbering from-date (yyyy-MM-dd; '' for off): while
  *  the sheet's today is on or after it, a claim opened is numbered within its period; and each grade's own terms
  *  (whole days; '' when it takes the sheet's terms), from which a claim's due-by is fixed when it is added; and the
- *  cap with two decimals, the most a person's due-total is ('' for no cap). */
+ *  cap with two decimals, the most a person's due-total is ('' for no cap). Each is the value in force on the sheet's
+ *  today. And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
-  termsA: string; termsB: string; termsC: string; cap: string };
+  termsA: string; termsB: string; termsC: string; cap: string; dated: Partial<Record<SettingKey, DatedValue[]>> };
+
+/** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
+export type DatedValue = { from: string; value: string };
+
+/** A figure in force by date (yyyy-MM-dd), in hundredths. */
+export type DatedCents = (date: string) => bigint;
+
+/** Whether a setting is dated: every one that carries a figure is; the policy and period numbering dates are not. */
+export function isDated(key: SettingKey): boolean {
+  return key !== 'policy-date' && key !== 'period-numbering-from';
+}
+
+/** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
+ *  where a blank is in force) the starting value. */
+function datedCents(values: DatedValue[] | undefined, start: string): DatedCents {
+  const sorted = [...(values ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  return (date) => {
+    let value = start;
+    for (const v of sorted) {
+      if (v.from > date) break;
+      value = v.value === '' ? start : v.value;
+    }
+    return hundredths(value);
+  };
+}
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
@@ -44,10 +70,10 @@ export function useSettings(sheet: string) {
   });
 }
 
-/** The sheet's floor in hundredths: the least a claim's live due is. */
-export function useFloorCents(sheet: string): bigint {
+/** The sheet's floor in hundredths by date: the least a claim's live due is, the one in force on its date. */
+export function useFloorCents(sheet: string): DatedCents {
   const { data } = useSettings(sheet);
-  return hundredths(data?.floor ?? DEFAULT_FLOOR);
+  return datedCents(data?.dated?.floor, DEFAULT_FLOOR);
 }
 
 /** The sheet's cap in hundredths: the most a person's due-total is; undefined when there is none. */
@@ -56,11 +82,11 @@ export function useCapCents(sheet: string): bigint | undefined {
   return data?.cap ? hundredths(data.cap) : undefined;
 }
 
-/** The sheet's late percent in hundredths: charged on an overdue claim's figure for every full 30 days it is
- *  overdue. */
-export function useLatePctCents(sheet: string): bigint {
+/** The sheet's late percent in hundredths by date: charged on an overdue claim's figure for every full 30 days it is
+ *  overdue, the one in force on the claim's date. */
+export function useLatePctCents(sheet: string): DatedCents {
   const { data } = useSettings(sheet);
-  return hundredths(data?.latePct ?? DEFAULT_LATE_PCT);
+  return datedCents(data?.dated?.['late-pct'], DEFAULT_LATE_PCT);
 }
 
 /** The sheet's policy date (yyyy-MM-dd), or '' when it is the sheet's today. */

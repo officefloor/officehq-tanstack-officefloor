@@ -13,6 +13,20 @@ public class ValidateSetting {
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
     public void validate(@RequestBody SettingRequest request, Out<SettingInput> body) throws InvalidSettingException {
+        SettingInput input = input(request);
+        // A dated key may be given the date it is in force from; blank: the sheet's today.
+        String from = request == null || request.from() == null ? "" : request.from().trim();
+        if (Settings.dated(input.key()) && !from.isEmpty()) {
+            try {
+                input = input.withFrom(LocalDate.parse(from));
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The from-date must be a date (yyyy-mm-dd), or blank");
+            }
+        }
+        body.set(input);
+    }
+
+    private SettingInput input(SettingRequest request) throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
@@ -30,8 +44,7 @@ public class ValidateSetting {
                     throw new InvalidSettingException("The policy date must be a date (yyyy-mm-dd), or blank");
                 }
             }
-            body.set(new SettingInput(key, value));
-            return;
+            return new SettingInput(key, value);
         }
         // The period numbering from-date is a date; blank turns it off.
         if (Settings.PERIOD_NUMBERING_FROM.equals(key)) {
@@ -42,24 +55,21 @@ public class ValidateSetting {
                     throw new InvalidSettingException("The period numbering from-date must be a date (yyyy-mm-dd), or blank");
                 }
             }
-            body.set(new SettingInput(key, value));
-            return;
+            return new SettingInput(key, value);
         }
         // The terms are a whole number of days; blank takes the default.
         if (Settings.TERMS.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days, 0 or more, or blank");
             }
-            body.set(new SettingInput(key, Integer.toString(Integer.parseInt(value.isEmpty() ? Settings.DEFAULT_TERMS : value))));
-            return;
+            return new SettingInput(key, Integer.toString(Integer.parseInt(value.isEmpty() ? Settings.DEFAULT_TERMS : value)));
         }
         // A grade's own terms are a whole number of days; blank clears them, so the grade takes the sheet's terms.
         if (key.startsWith(Settings.TERMS + "-")) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms of a grade must be a whole number of days, 0 or more, or blank");
             }
-            body.set(new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value))));
-            return;
+            return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
         }
         if (!value.isEmpty() && !LIMIT.matcher(value).matches()) {
             throw new InvalidSettingException("The " + key + " must be 0.00 or more with up to two decimals, or blank");
@@ -71,7 +81,7 @@ public class ValidateSetting {
         if (Settings.LATE_PCT.equals(key) && value.isEmpty()) {
             value = Settings.DEFAULT_LATE_PCT;
         }
-        body.set(new SettingInput(key,
-                value.isEmpty() ? "" : new BigDecimal(value).setScale(2, RoundingMode.UNNECESSARY).toPlainString()));
+        return new SettingInput(key,
+                value.isEmpty() ? "" : new BigDecimal(value).setScale(2, RoundingMode.UNNECESSARY).toPlainString());
     }
 }

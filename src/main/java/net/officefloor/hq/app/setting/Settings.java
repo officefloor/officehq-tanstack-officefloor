@@ -1,13 +1,22 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import net.officefloor.hq.app.claim.Late;
+import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The settings kept per sheet, by key; a key with no value set takes its default. */
+/**
+ * The settings kept per sheet, by key; a key with no value set takes its default. A setting that carries a figure is
+ * {@link #dated}: it keeps a value per from-date, the one in force on a date being that of the latest from-date on or
+ * before it; the others keep one value.
+ */
 @Repository
 public class Settings {
 
@@ -49,33 +58,73 @@ public class Settings {
     /** The floor a sheet starts with. */
     public static final String DEFAULT_FLOOR = "1.00";
 
-    private final JdbcTemplate jdbc;
-
-    public Settings(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    /** Whether the key is dated: every setting that carries a figure is; the policy and period numbering dates are not. */
+    public static boolean dated(String key) {
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
     }
 
-    /** The value set for the key, or "" when none is. */
+    /** The from-date an undated setting's one value is kept under. */
+    private static final Date UNDATED = Date.valueOf(LocalDate.of(1, 1, 1));
+
+    private final JdbcTemplate jdbc;
+
+    private final SheetClock clock;
+
+    public Settings(JdbcTemplate jdbc, SheetClock clock) {
+        this.jdbc = jdbc;
+        this.clock = clock;
+    }
+
+    /** The value set for an undated key, or "" when none is. */
     public String get(String sheet, String key) {
         List<String> found = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet = ? AND setting_key = ?",
                 String.class, sheet, key);
         return found.isEmpty() ? "" : found.get(0);
     }
 
-    public void set(String sheet, String key, String value) {
-        jdbc.update("MERGE INTO setting (sheet, setting_key, setting_value) KEY (sheet, setting_key) VALUES (?, ?, ?)", sheet,
-                key, value);
+    /** The value of a dated key in force on the date, or "" when none is recorded on or before it. */
+    public String on(String sheet, String key, LocalDate date) {
+        List<String> found = jdbc.queryForList("SELECT setting_value FROM setting WHERE sheet = ? AND setting_key = ?"
+                + " AND from_date <= ? ORDER BY from_date DESC LIMIT 1", String.class, sheet, key, Date.valueOf(date));
+        return found.isEmpty() ? "" : found.get(0);
     }
 
-    /** The sheet's clerk limit, or null when there is none. */
+    /** The values recorded for a dated key, by from-date. */
+    public List<DatedValue> history(String sheet, String key) {
+        return jdbc.query("SELECT from_date, setting_value FROM setting WHERE sheet = ? AND setting_key = ? ORDER BY from_date",
+                (rs, i) -> new DatedValue(rs.getDate(1).toLocalDate().toString(), rs.getString(2)), sheet, key);
+    }
+
+    /** Sets an undated key's value. */
+    public void set(String sheet, String key, String value) {
+        set(sheet, key, null, value);
+    }
+
+    /** Records the key's value from the from-date (an undated key ignores it), replacing one already recorded from it. */
+    public void set(String sheet, String key, LocalDate from, String value) {
+        Date date = dated(key) && from != null ? Date.valueOf(from) : UNDATED;
+        jdbc.update("MERGE INTO setting (sheet, setting_key, from_date, setting_value) KEY (sheet, setting_key, from_date)"
+                + " VALUES (?, ?, ?, ?)", sheet, key, date, value);
+    }
+
+    /** The dated key's figure by date, starting (before every from-date, or where a blank is in force) at the start. */
+    private Dated figure(String sheet, String key, BigDecimal start) {
+        TreeMap<LocalDate, BigDecimal> values = new TreeMap<>();
+        for (DatedValue v : history(sheet, key)) {
+            values.put(LocalDate.parse(v.from()), v.value().isEmpty() ? start : new BigDecimal(v.value()));
+        }
+        return new Dated(start, values);
+    }
+
+    /** The sheet's clerk limit in force on its today, or null when there is none. */
     public BigDecimal clerkLimit(String sheet) {
-        String limit = get(sheet, CLERK_LIMIT);
+        String limit = on(sheet, CLERK_LIMIT, clock.today(sheet));
         return limit.isEmpty() ? null : new BigDecimal(limit);
     }
 
-    /** The sheet's cap: the most a person's due-total is, or null when there is none. */
+    /** The sheet's cap in force on its today: the most a person's due-total is, or null when there is none. */
     public BigDecimal cap(String sheet) {
-        String cap = get(sheet, CAP);
+        String cap = on(sheet, CAP, clock.today(sheet));
         return cap.isEmpty() ? null : new BigDecimal(cap);
     }
 
@@ -84,28 +133,32 @@ public class Settings {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
     }
 
-    /** The sheet's floor: the least a claim's live due is. */
-    public BigDecimal floor(String sheet) {
-        String floor = get(sheet, FLOOR);
-        return new BigDecimal(floor.isEmpty() ? DEFAULT_FLOOR : floor);
+    /** The sheet's floor by date: the least a claim's live due is, the one in force on the claim's date. */
+    public Dated floor(String sheet) {
+        return figure(sheet, FLOOR, new BigDecimal(DEFAULT_FLOOR));
     }
 
-    /** The sheet's terms: the days after its date by which a claim is due. */
-    public int terms(String sheet) {
-        String terms = get(sheet, TERMS);
+    /** The sheet's terms in force on the date: the days after its date by which a claim is due. */
+    public int terms(String sheet, LocalDate date) {
+        String terms = on(sheet, TERMS, date);
         return Integer.parseInt(terms.isEmpty() ? DEFAULT_TERMS : terms);
     }
 
-    /** The terms of the grade: its own when it has them, else the sheet's (a null grade takes the sheet's). */
-    public int terms(String sheet, String grade) {
-        String own = grade == null ? "" : get(sheet, gradeTerms(grade));
-        return own.isEmpty() ? terms(sheet) : Integer.parseInt(own);
+    /**
+     * The terms of the grade in force on the date: its own when it has them then, else the sheet's (a null grade takes
+     * the sheet's).
+     */
+    public int terms(String sheet, String grade, LocalDate date) {
+        String own = grade == null ? "" : on(sheet, gradeTerms(grade), date);
+        return own.isEmpty() ? terms(sheet, date) : Integer.parseInt(own);
     }
 
-    /** The sheet's late percent: charged on an overdue claim's figure for every full 30 days it is overdue. */
-    public BigDecimal latePct(String sheet) {
-        String pct = get(sheet, LATE_PCT);
-        return new BigDecimal(pct.isEmpty() ? DEFAULT_LATE_PCT : pct);
+    /**
+     * The sheet's late percent by date: charged on an overdue claim's figure for every full 30 days it is overdue, the
+     * one in force on the claim's date.
+     */
+    public Dated latePct(String sheet) {
+        return figure(sheet, LATE_PCT, new BigDecimal(DEFAULT_LATE_PCT));
     }
 
     /** What makes the sheet's late charges on its today. */
@@ -120,10 +173,16 @@ public class Settings {
         return from.isEmpty() ? null : LocalDate.parse(from);
     }
 
+    /** The settings in force on the sheet's today, with every dated key's recorded values. */
     public SettingsResponse all(String sheet) {
-        return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
-                Integer.toString(terms(sheet)), latePct(sheet).toPlainString(), get(sheet, POLICY_DATE),
-                get(sheet, PERIOD_NUMBERING_FROM), get(sheet, gradeTerms("A")), get(sheet, gradeTerms("B")),
-                get(sheet, gradeTerms("C")), get(sheet, CAP));
+        LocalDate today = clock.today(sheet);
+        Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
+        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), LATE_PCT)) {
+            dated.put(key, history(sheet, key));
+        }
+        return new SettingsResponse(on(sheet, CLERK_LIMIT, today), floor(sheet).on(today).toPlainString(),
+                Integer.toString(terms(sheet, today)), latePct(sheet).on(today).toPlainString(), get(sheet, POLICY_DATE),
+                get(sheet, PERIOD_NUMBERING_FROM), on(sheet, gradeTerms("A"), today), on(sheet, gradeTerms("B"), today),
+                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), dated);
     }
 }
