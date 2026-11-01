@@ -42,7 +42,7 @@ export function bound(claim: Claim): boolean {
  * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date, and
  * its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
  * deferred now (OPEN with that date after the sheet's today: it counts in no total, is not overdue and cannot be
- * settled). */
+ * settled), and the number the claim it was split off shows (null unless it was split off one). */
 export type Claim = {
   id: number;
   person: number;
@@ -64,6 +64,7 @@ export type Claim = {
   deferred: boolean;
   /** How many proofs the claim has: one above the sheet's proof threshold needs one to be settled or approved. */
   proofs: number;
+  splitFrom: string | null;
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the

@@ -117,16 +117,7 @@ public class ClaimStatusChanger {
         // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
         Claim changed = claim;
         if (requested == ClaimStatusChange.OPEN) {
-            LocalDate from = settings.periodNumberingFrom(sheet);
-            if (from != null && !clock.today(sheet).isBefore(from)) {
-                String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
-                String key = period == null ? "" : period;
-                changed = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
-                claims.setPeriodNumber(sheet, claim.id(), changed.periodNumber());
-            } else {
-                changed = claim.withNumber(claims.nextNumber(sheet));
-                claims.setNumber(sheet, claim.id(), changed.number());
-            }
+            changed = number(sheet, claim);
             claims.setOpenedBy(sheet, claim.id(), user);
         }
         String fields = changed.statusAuditFields(person.name());
@@ -144,5 +135,23 @@ public class ClaimStatusChanger {
         log.record(sheet, user, claim.id());
         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
         rollup.record(sheet, user, before);
+    }
+
+    /**
+     * Gives an opening claim the sheet's next number, or, while the sheet numbers by period from on or before its
+     * today, the next number in the claim's period (X for none); returns the claim so numbered.
+     */
+    public Claim number(String sheet, Claim claim) {
+        LocalDate from = settings.periodNumberingFrom(sheet);
+        if (from != null && !clock.today(sheet).isBefore(from)) {
+            String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
+            String key = period == null ? "" : period;
+            Claim numbered = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
+            claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
+            return numbered;
+        }
+        Claim numbered = claim.withNumber(claims.nextNumber(sheet));
+        claims.setNumber(sheet, claim.id(), numbered.number());
+        return numbered;
     }
 }

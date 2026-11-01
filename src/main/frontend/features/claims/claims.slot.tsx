@@ -109,6 +109,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
   const addProof = useSubmitOnce(proofMutation);
+  // An OPEN claim splits off an amount, typed beside the Split button, into a new OPEN claim.
+  const [splitAmount, setSplitAmount] = useState('');
+  const splitMutation = useMutation({
+    mutationFn: (amount: string) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/split`, user), { amount }),
+    onSuccess: (updated) => {
+      setSplitAmount('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const split = useSubmitOnce(splitMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
@@ -141,6 +151,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
       {claim.deferredUntil !== null && (claim.deferred ? 'until ' : 'last until ')}
       <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
+      {claim.splitFrom !== null && 'split from #'}
+      <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
       proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       <button
         type="button"
@@ -152,6 +164,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          splitMutation.reset();
           addProof(undefined);
         }}
       >
@@ -168,6 +181,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
             move.reset();
             resettleMutation.reset();
             deferMutation.reset();
+            splitMutation.reset();
             proofMutation.reset();
             act(change);
           }}
@@ -183,6 +197,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           setReason(e.target.value);
           status.reset();
           move.reset();
+          splitMutation.reset();
         }}
       />{' '}
       <button
@@ -194,6 +209,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          splitMutation.reset();
           proofMutation.reset();
           act('reject');
         }}
@@ -208,6 +224,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          splitMutation.reset();
           proofMutation.reset();
           if (claim.status !== 'DRAFT') {
             setEditRefused(true);
@@ -225,6 +242,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onChange={(e) => {
           setMoveTo(e.target.value);
           move.reset();
+          splitMutation.reset();
         }}
       >
         <option value="">move to…</option>
@@ -245,6 +263,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          splitMutation.reset();
           proofMutation.reset();
           reassign(Number(moveTo));
         }}
@@ -260,6 +279,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           move.reset();
           deferMutation.reset();
+          splitMutation.reset();
           proofMutation.reset();
           resettle(undefined);
         }}
@@ -273,6 +293,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onChange={(e) => {
           setDeferTo(e.target.value);
           deferMutation.reset();
+          splitMutation.reset();
         }}
       />{' '}
       <button
@@ -285,10 +306,36 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           proofMutation.reset();
+          splitMutation.reset();
           defer(deferTo);
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-split-amount"
+        placeholder="split off amount"
+        value={splitAmount}
+        onChange={(e) => {
+          setSplitAmount(e.target.value);
+          splitMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-split"
+        disabled={splitMutation.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          proofMutation.reset();
+          split(splitAmount);
+        }}
+      >
+        Split
       </button>{' '}
       {editing && (
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
@@ -325,6 +372,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {proofMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one dated inside a closed period).
+        </span>
+      )}
+      {splitMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor dated inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
         </span>
       )}
       {move.isError && (

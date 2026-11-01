@@ -30,14 +30,14 @@ public class Claims {
             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
             rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of(),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
-            rs.getBoolean("deferred"), rs.getInt("proofs"));
+            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"));
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     // It is deferred while OPEN with its deferred-until after the sheet's today (the real date until one is set).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -105,6 +105,42 @@ public class Claims {
             return ps;
         }, keys);
         return keys.getKey().longValue();
+    }
+
+    /**
+     * Adds the OPEN claim split off another: the amount, with the date and note of the claim it was split from (by
+     * the number that claim shows), opened by the user, with its due-by fixed now; returns its id.
+     */
+    public long addSplit(String sheet, long person, BigDecimal amount, LocalDate date, String note, LocalDate dueBy,
+            String splitFrom, String openedBy) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, due_by, status,"
+                    + " split_from, opened_by, listed) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, " + NEXT_LISTED + ")",
+                    new String[] { "id" });
+            ps.setString(1, sheet);
+            ps.setLong(2, person);
+            ps.setBigDecimal(3, amount);
+            ps.setDate(4, Date.valueOf(date));
+            ps.setString(5, note);
+            ps.setDate(6, Date.valueOf(dueBy));
+            ps.setString(7, splitFrom);
+            ps.setString(8, openedBy);
+            ps.setString(9, sheet);
+            return ps;
+        }, keys);
+        return keys.getKey().longValue();
+    }
+
+    /**
+     * Leaves an OPEN claim the rest of its amount once split, unbound from any statement; conditional on the
+     * amount read and on it still being OPEN and not deferred: false when it no longer is.
+     */
+    public boolean split(String sheet, long id, BigDecimal was, BigDecimal rest) {
+        return jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE sheet = ? AND id = ?"
+                + " AND status = 'OPEN' AND amount = ? AND (deferred_until IS NULL OR deferred_until <="
+                + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE))",
+                rest, sheet, id, was) == 1;
     }
 
     /** Edits a draft claim: false when it is no longer a draft. */
