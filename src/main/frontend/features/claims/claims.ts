@@ -285,6 +285,30 @@ export function overdueCents(
   return { count: overdueClaims.length, cents };
 }
 
+/** A person's dues by the age of the claim on the sheet's today (the whole days from its date): their OPEN and
+ *  PENDING claims that count (see {@link counted}) aged 0 to 30 days, 31 to 60, and 61 or more (in hundredths; a
+ *  claim dated after today is 0 to 30, and a claim with no due adds nothing). */
+export function agedCents(
+  claims: Claim[],
+  person: Person,
+  rates: Rate[],
+  late: Late,
+  floor: DatedCents,
+): { upTo30: bigint; upTo60: bigint; over60: bigint } {
+  const aged = { upTo30: 0n, upTo60: 0n, over60: 0n };
+  const today = late.today;
+  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
+    if (!isOpen(c)) continue;
+    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const days =
+      today === undefined ? 0 : Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000);
+    if (days <= 30) aged.upTo30 += due;
+    else if (days <= 60) aged.upTo60 += due;
+    else aged.over60 += due;
+  }
+  return aged;
+}
+
 /** Adds up the people's figures, leaving out the single highest and the single lowest when three or more people
  *  have a figure. */
 export function trimmedSum(figures: bigint[]): bigint {

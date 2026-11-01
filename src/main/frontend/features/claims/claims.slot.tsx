@@ -20,6 +20,7 @@ import {
   counted,
   overdue,
   overdueCents,
+  agedCents,
   personDueCents,
   uncappedPersonDueCents,
   useClaims,
@@ -39,6 +40,9 @@ function ClaimedHeader() {
       <th>Excess</th>
       <th>Overdue</th>
       <th>Overdue total</th>
+      <th>Due 0-30 days</th>
+      <th>Due 31-60 days</th>
+      <th>Due 61+ days</th>
       <th>Claims</th>
     </>
   );
@@ -466,6 +470,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const uncapped = uncappedPersonDueCents(claims, rates, person, today, floor, late);
   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
+  const aged = agedCents(claims, person, rates, late, floor);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
@@ -526,6 +531,9 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
       <td data-testid="person-excess">{twoDecimals(excess)}</td>
       <td data-testid="person-overdue-count">{lateClaims.count}</td>
       <td data-testid="person-overdue-total">{twoDecimals(lateClaims.cents)}</td>
+      <td data-testid="person-aged-0-30">{twoDecimals(aged.upTo30)}</td>
+      <td data-testid="person-aged-31-60">{twoDecimals(aged.upTo60)}</td>
+      <td data-testid="person-aged-61">{twoDecimals(aged.over60)}</td>
       <td>
         <form onSubmit={submit}>
           <input
