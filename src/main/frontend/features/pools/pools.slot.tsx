@@ -8,7 +8,7 @@ import { usePeople } from '../people/people';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { poolMembersPath, poolsKey, poolsPath, usePools, type Pool } from './pools';
 
-// One pool's row: its members with their shares, its total share and whether it is balanced, and a form that adds
+// One pool's row: its members with their shares and cuts of the pot, its total share and whether it is balanced, and a form that adds
 // a member chosen from the sheet's people.
 function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Pool }) {
   const queryClient = useQueryClient();
@@ -40,7 +40,8 @@ function PoolRow({ sheet, user, pool }: { sheet: string; user: string; pool: Poo
       <ul>
         {pool.members.map((m) => (
           <li key={m.person} data-testid={`pool-member-${pool.name}-${m.person}`}>
-            {m.name} <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}
+            {m.name} <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}, cut{' '}
+            <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
       </ul>

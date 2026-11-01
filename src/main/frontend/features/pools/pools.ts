@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A person in a pool with their share percent (two decimals); retired when the person has a retirement date set. */
-export type PoolMember = { person: number; name: string; share: string; retired: boolean };
+/** A person in a pool with their share percent (two decimals); retired when the person has a retirement date set; and
+ *  their cut of the sheet's pot (two decimals), '' when the pool is not balanced or there is no pot. */
+export type PoolMember = { person: number; name: string; share: string; retired: boolean; cut: string };
 
 /** A pool: its members, the total of their shares (a retired member's counting 0.00), and whether that is 100.00. */
 export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };

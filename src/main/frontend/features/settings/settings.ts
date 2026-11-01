@@ -18,11 +18,12 @@ import { hundredths } from '../rates/rates';
  *  sheet's today, and its late charge's 30-day boundaries are counted from there.
  *  And each grade's own proof threshold (two decimals; '' for none), in force on the sheet's today: a claim whose
  *  person's grade in force on its date has one in force on that date takes it in place of the sheet's.
+ *  And the pot (two decimals; '' for none, not dated): what each balanced pool shares out among its members.
  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; graceDays: string; entryDate: string; graceA: string; graceB: string; graceC: string;
-  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -30,9 +31,9 @@ export type DatedValue = { from: string; value: string };
 /** A figure in force by date (yyyy-MM-dd), in hundredths. */
 export type DatedCents = (date: string) => bigint;
 
-/** Whether a setting is dated: every one that carries a figure is; the policy, period numbering and entry dates and the grace days are not. */
+/** Whether a setting is dated: every one that carries a figure is but the pot; the policy, period numbering and entry dates and the grace days are not. */
 export function isDated(key: SettingKey): boolean {
-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && !key.startsWith('perm-');
+  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && key !== 'pot' && !key.startsWith('perm-');
 }
 
 /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
@@ -51,7 +52,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | `perm-${PermAction}`;
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | `perm-${PermAction}`;
 
 /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
 export const PERMISSIONS = [

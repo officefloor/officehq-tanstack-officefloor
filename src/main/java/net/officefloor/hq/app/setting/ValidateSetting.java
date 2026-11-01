@@ -35,6 +35,7 @@ public class ValidateSetting {
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
+                && !Settings.POT.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))

@@ -5,6 +5,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { poolsKey } from '../pools/pools';
 import { GRADE_GRACE, GRADE_PROOF_THRESHOLD, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
 import type { PermAction, SettingKey, Settings as SheetSettings } from './settings';
 
@@ -29,6 +30,7 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // The entry date (not dated; blank turns it off): while set, a new claim with a blank date takes it in place of the sheet's today.
 // A grade's grace (whole days, dated; blank means none): a claim whose person's grade in force on its date has a grace
 // in force on that date is overdue only once its due-by plus the grace is before the sheet's today.
+// The pot (two decimals, not dated; blank means none): what each balanced pool shares out among its members.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -43,6 +45,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [graceDays, setGraceDays] = useState('');
   const [entryDate, setEntryDate] = useState('');
+  const [pot, setPot] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
@@ -60,6 +63,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       return updated;
     },
     onSuccess: () => {
+      // The pot moves each balanced pool's cuts.
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setClerkLimit('');
       setCap('');
       setProofThreshold('');
@@ -71,6 +76,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setPeriodNumberingFrom('');
       setGraceDays('');
       setEntryDate('');
+      setPot('');
       setGradeTerms({});
       setGradeGrace({});
       setGradeProofThreshold({});
@@ -112,7 +118,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
-      'grace-days': graceDays, 'entry-date': entryDate, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'entry-date': entryDate, pot, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -351,6 +357,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-entry-date-current">{data?.entryDate ?? ''}</span>{' '}
+        <label>
+          Pot{' '}
+          <input
+            data-testid="setting-pot"
+            placeholder="0.00 (blank: none)"
+            value={pot}
+            onChange={(e) => {
+              setPot(e.target.value);
+              touch('pot');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('pot')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-pot-current">{data?.pot ?? ''}</span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>
@@ -376,7 +397,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
           </span>
         )}
       </form>

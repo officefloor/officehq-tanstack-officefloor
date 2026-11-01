@@ -72,6 +72,9 @@ public class Settings {
     /** The default date of a new claim in place of the sheet's today (yyyy-MM-dd); blank: off. */
     public static final String ENTRY_DATE = "entry-date";
 
+    /** The sum a balanced pool shares out among its members (two decimals, not dated); blank: none. */
+    public static final String POT = "pot";
+
     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
     public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
@@ -94,10 +97,10 @@ public class Settings {
     /** The floor a sheet starts with. */
     public static final String DEFAULT_FLOOR = "1.00";
 
-    /** Whether the key is dated: every setting that carries a figure is; the policy, period numbering and entry dates and the grace days are not. */
+    /** Whether the key is dated: every setting that carries a figure is but the pot; the policy, period numbering and entry dates and the grace days are not. */
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key) && !key.startsWith("perm-");
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !key.startsWith("perm-");
     }
 
     /** The from-date an undated setting's one value is kept under. */
@@ -268,6 +271,12 @@ public class Settings {
         return entry.isEmpty() ? clock.today(sheet) : LocalDate.parse(entry);
     }
 
+    /** The sheet's pot, or null when there is none. */
+    public BigDecimal pot(String sheet) {
+        String pot = get(sheet, POT);
+        return pot.isEmpty() ? null : new BigDecimal(pot);
+    }
+
     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
     public boolean permits(String sheet, String action, String role) {
         String roles = get(sheet, perm(action));
@@ -292,6 +301,6 @@ public class Settings {
                 get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE),
                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
-                on(sheet, gradeProofThreshold("C"), today));
+                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT));
     }
 }
