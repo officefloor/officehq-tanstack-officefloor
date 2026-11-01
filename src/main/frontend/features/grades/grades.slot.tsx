@@ -8,11 +8,15 @@ import { gradesKey, useGrades, type Grade } from './useGrades';
 /**
  * The sheet's grades, each shown retired or not, and a select to retire one. A retired grade cannot
  * be chosen for a person any more (the people already on it keep it); retiring one twice is refused.
+ * A steward can merge a grade into another: everyone on it today is given the other from the sheet's
+ * today. The merge shows the grades and how many it moved; that goes while the next press runs.
  */
 function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data: grades = [] } = useGrades(sheet);
   const [grade, setGrade] = useState('A');
+  const [mergeFrom, setMergeFrom] = useState('A');
+  const [mergeInto, setMergeInto] = useState('B');
 
   const submitOnce = useSubmitOnce();
   const retire = useMutation({
@@ -20,6 +24,16 @@ function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: gradesKey(sheet) });
     },
+  });
+
+  const merge = useMutation({
+    mutationFn: (m: { from: string; into: string }) =>
+      postJson<{ from: string; into: string; moved: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/grades/merge`,
+        { ...m, user },
+      ),
+    // Everyone moved changes the people, their claims' figures and the sheet's totals.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheet] }),
   });
 
   return (
@@ -30,6 +44,7 @@ function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
         onSubmit={(e) => {
           e.preventDefault();
           retire.reset();
+          merge.reset();
           submitOnce(() => retire.mutateAsync(grade));
         }}
       >
@@ -57,6 +72,65 @@ function GradesPanel({ user, sheet }: { user: string; sheet: string }) {
           <span data-testid="grade-error" role="alert">
             {' '}
             Could not retire this grade.
+          </span>
+        )}
+      </form>
+      <form
+        data-testid="grade-merge-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          retire.reset();
+          merge.reset();
+          submitOnce(() => merge.mutateAsync({ from: mergeFrom, into: mergeInto }));
+        }}
+      >
+        <label>
+          Merge{' '}
+          <select
+            data-testid="grade-merge-from"
+            value={mergeFrom}
+            onChange={(e) => {
+              setMergeFrom(e.target.value);
+              merge.reset();
+            }}
+          >
+            {grades.map((g) => (
+              <option key={g.grade} value={g.grade}>
+                {g.grade}
+              </option>
+            ))}
+          </select>
+        </label>{' '}
+        <label>
+          into{' '}
+          <select
+            data-testid="grade-merge-into"
+            value={mergeInto}
+            onChange={(e) => {
+              setMergeInto(e.target.value);
+              merge.reset();
+            }}
+          >
+            {grades.map((g) => (
+              <option key={g.grade} value={g.grade}>
+                {g.grade}
+              </option>
+            ))}
+          </select>
+        </label>{' '}
+        <button type="submit" data-testid="grade-merge" disabled={merge.isPending}>
+          Merge grade
+        </button>
+        {merge.isSuccess && (
+          <span>
+            {' '}
+            Moved <strong data-testid="grade-merged">{`${merge.data.from} into ${merge.data.into}: ${merge.data.moved}`}</strong>
+          </span>
+        )}
+        {merge.isError && (
+          <span data-testid="grade-error" role="alert">
+            {' '}
+            Could not merge these grades.
           </span>
         )}
       </form>
