@@ -295,6 +295,13 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
         setRefused({ id: c.id, message: e.body.includes('locked') ? LOCKED : NOT_DRAFT });
         await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       }
+      // An amount typed over a claim's lines is refused on the form, and its editor is let go: the
+      // amount can only come from the lines, so the form goes back to adding.
+      if (c.id !== null && e instanceof HttpError && e.status === 400 && e.body.includes('lines')) {
+        const held = queryClient.getQueryData<Claim[]>(claimsKey(sheet))?.find((x) => x.id === c.id);
+        if (held) putClaim({ ...held, lockedBy: null });
+        unlock.mutate({ id: c.id });
+      }
     },
   });
 
