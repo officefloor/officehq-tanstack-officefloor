@@ -1,0 +1,177 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 963e9254..c24ae3c7 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -95,6 +95,26 @@ export function counted(claims: Claim[], people: Person[]): Claim[] {
+   });
+ }
+ 
++/** The status a claim had at the end of the day (yyyy-MM-dd), as its status log records it (the last line on or before
++ *  it); undefined when it was not yet added then. A claim kept from before the log (no lines) has its status now. */
++export function statusOn(claim: Claim, end: string): ClaimStatus | undefined {
++  if (claim.log.length === 0) return claim.status;
++  let then: ClaimStatus | undefined;
++  for (const line of claim.log) if (line.on <= end) then = line.status;
++  return then;
++}
++
++/** Whether a claim counts toward a period ending on the day (yyyy-MM-dd): by the status it had at the end of it
++ *  (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open then, unbound and dated within a hold of
++ *  its person. */
++export function countedOn(claim: Claim, person: Person | undefined, end: string): boolean {
++  const then = statusOn(claim, end);
++  if (claim.deferred || then === undefined) return false;
++  if (then === 'SETTLED') return true;
++  if (then !== 'OPEN' && then !== 'PENDING') return false;
++  return bound(claim) || person === undefined || !heldOn(person, claim.date);
++}
++
+ /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
+ export function claimed(claims: Claim[]): string {
+   return twoDecimals(claims.reduce((sum, c) => sum + hundredths(c.amount), 0n));
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 771d51c3..6869d4c2 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -76,7 +76,7 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
+ type Draft = { name: string; from: string; to: string };
+ const EMPTY: Draft = { name: '', from: '', to: '' };
+ 
+-// The sheet's periods, each with its due-total: the due of the counted (OPEN and SETTLED, but not an unbound OPEN one within its person's hold) claims whose date
++// The sheet's periods, each with its due-total: the due now of the claims that counted at the end of its last day (see countedOn) whose date
+ // falls in it (a claim with no rate adds nothing), fixed when the period is closed. The form adds one; the server refuses a name already on
+ // the sheet, a bad date, a to-date before the from-date, or dates that overlap another period.
+ function Periods({ sheet, user }: { sheet: string; user: string }) {
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 30a7c3cd..f4eee7da 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { claimDueCents, counted } from '../claims/claims';
++import { claimDueCents, countedOn } from '../claims/claims';
+ import type { Claim, Late } from '../claims/claims';
+ import { gradeOn } from '../people/people';
+ import type { Person } from '../people/people';
+@@ -45,8 +45,9 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
+   return periods.find((p) => p.from <= date && date <= p.to);
+ }
+ 
+-/** Each period's live due-total (in hundredths, by name): the due of the counted (OPEN and SETTLED, but not an unbound
+- *  OPEN one within its person's hold) claims whose date falls in it (a claim with no rate adds nothing). */
++/** Each period's live due-total (in hundredths, by name): the due now of the claims whose date falls in it that counted
++ *  at the end of its last day (see {@link countedOn}: OPEN, PENDING or SETTLED then by their status log, but not a
++ *  deferred one, nor an unbound open one within its person's hold); a claim with no rate adds nothing. */
+ export function periodDueCents(
+   periods: Period[],
+   claims: Claim[],
+@@ -74,10 +75,10 @@ export function personPeriodDueCents(
+ ): Map<string, Map<number, bigint>> {
+   const byId = new Map(people.map((p) => [p.id, p]));
+   const totals = new Map<string, Map<number, bigint>>();
+-  for (const c of counted(claims, people)) {
++  for (const c of claims) {
+     const period = periodOf(periods, c.date);
+     const person = byId.get(c.person);
+-    if (period === undefined || person === undefined) continue;
++    if (period === undefined || person === undefined || !countedOn(c, person, period.to)) continue;
+     const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+     const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
+     byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
+diff --git a/src/main/frontend/features/periods/person-periods.slot.tsx b/src/main/frontend/features/periods/person-periods.slot.tsx
+index 47014872..cc4fca2b 100644
+--- a/src/main/frontend/features/periods/person-periods.slot.tsx
++++ b/src/main/frontend/features/periods/person-periods.slot.tsx
+@@ -17,7 +17,7 @@ function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
+   );
+ }
+ 
+-// Per period on the sheet, the person's due-total for it: the due of their counted claims whose date falls in it,
++// Per period on the sheet, the person's due-total for it: the due now of their claims whose date falls in it that counted at its end,
+ // fixed for everyone on the sheet when the period is closed (0.00 for a person added since). The period's own
+ // due-total is the sum of these.
+ function PersonPeriods({ sheet, person }: { sheet: string; user: string; person: Person }) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 1f99d1f1..1c909192 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -74,6 +74,23 @@ public record Claim(long id, long person, String amount, String date, String not
+         return !deferred && (status == ClaimStatus.OPEN || status == ClaimStatus.PENDING || status == ClaimStatus.SETTLED);
+     }
+ 
++    /**
++     * The status this claim had at the end of the day, as its status log records it (the last line on or before it);
++     * null when it was not yet added then. A claim kept from before the log (no lines) has its status now.
++     */
++    public ClaimStatus statusOn(LocalDate end) {
++        if (log == null || log.isEmpty()) {
++            return status;
++        }
++        ClaimStatus then = null;
++        for (ClaimLogLine line : log) {
++            if (!LocalDate.parse(line.on()).isAfter(end)) {
++                then = line.status();
++            }
++        }
++        return then;
++    }
++
+     /** Whether this claim's statement binds its figure: it is stated, and not PENDING (which shows its live figure). */
+     public boolean bound() {
+         return stated && status != ClaimStatus.PENDING;
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 92eba743..470bf55d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -21,8 +21,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due of the counted (OPEN and SETTLED, but not an unbound OPEN one dated
+- * within its person's hold) claims dated in it (a
++ * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims dated in it
++ * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
++ * within its person's hold) (a
+  * claim with no rate adds nothing). Refuses a period not on the sheet or already closed.
+  */
+ public class ClosePeriod {
+@@ -49,7 +50,7 @@ public class ClosePeriod {
+         for (Claim claim : claims.list(sheet)) {
+             LocalDate date = LocalDate.parse(claim.date());
+             Person person = byId.get(claim.person());
+-            if (person == null || !person.counts(claim) || date.isBefore(from) || date.isAfter(to)) {
++            if (person == null || !person.countsOn(claim, to) || date.isBefore(from) || date.isAfter(to)) {
+                 continue;
+             }
+             BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 47aced1f..3d923d4d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -28,6 +28,25 @@ public record Person(long id, String name, String grade, long version, String re
+         return holds.stream().noneMatch((h) -> h.covers(claim.date()));
+     }
+ 
++    /**
++     * Whether the claim, theirs, counts toward a period ending on the date: by the status it had at the end of that
++     * day (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open then, not bound by a statement
++     * and dated within one of their holds.
++     */
++    public boolean countsOn(Claim claim, LocalDate end) {
++        ClaimStatus then = claim.statusOn(end);
++        if (claim.deferred() || then == null) {
++            return false;
++        }
++        if (then == ClaimStatus.SETTLED) {
++            return true;
++        }
++        if (then != ClaimStatus.OPEN && then != ClaimStatus.PENDING) {
++            return false;
++        }
++        return claim.bound() || holds.stream().noneMatch((h) -> h.covers(claim.date()));
++    }
++
+     /** Whether a claim dated {@code date} is after this person's retirement, and so refused. */
+     public boolean retiredBefore(LocalDate date) {
+         return retiredFrom != null && date.isAfter(LocalDate.parse(retiredFrom));
