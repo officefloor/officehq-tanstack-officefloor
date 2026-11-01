@@ -294,6 +294,23 @@ public class Settings {
         return found.isEmpty() ? "" : found.get(0);
     }
 
+    /** The sheet's children: the sheets naming it as their parent, by id. */
+    public List<String> children(String sheet) {
+        return jdbc.queryForList("SELECT child FROM sheet_parent WHERE parent = ? ORDER BY child", String.class, sheet);
+    }
+
+    /** The sheet then all its descendants (its children, theirs, and so on), each once. */
+    public List<String> family(String sheet) {
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>(List.of(sheet));
+        java.util.ArrayDeque<String> left = new java.util.ArrayDeque<>(List.of(sheet));
+        while (!left.isEmpty()) {
+            for (String child : children(left.pop())) {
+                if (found.add(child)) left.add(child);
+            }
+        }
+        return List.copyOf(found);
+    }
+
     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
     public boolean permits(String sheet, String action, String role) {
         String roles = get(sheet, perm(action));
