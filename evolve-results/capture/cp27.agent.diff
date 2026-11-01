@@ -1,0 +1,328 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+new file mode 100644
+index 00000000..0e7185c3
+--- /dev/null
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -0,0 +1,99 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { byUser } from '../session/session';
++import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { peoplePath, usePeople } from '../people/people';
++import type { Person } from '../people/people';
++import { personDueCents, useClaims, useLate } from '../claims/claims';
++import { twoDecimals, useRates } from '../rates/rates';
++import { useFloorCents } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++import { patronsKey, usePatrons } from './patrons';
++import type { Patron } from './patrons';
++
++function PatronsHeader() {
++  return (
++    <>
++      <th>Patrons</th>
++      <th>Backing</th>
++      <th />
++    </>
++  );
++}
++
++// A person's patrons (names sorted, comma separated) and their backing: the patrons' due-totals added up,
++// skipping those that are n/a. A patron is picked from the others on the sheet and named one at a time; the
++// server refuses a patron already named.
++function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const { data: everyone = [] } = usePeople(sheet);
++  const { data: patrons = [] } = usePatrons(sheet);
++  const { data: claims = [] } = useClaims(sheet);
++  const { data: rates = [] } = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const floor = useFloorCents(sheet);
++  const late = useLate(sheet);
++  const [picked, setPicked] = useState('');
++
++  const mine = patrons
++    .filter((p) => p.person === person.id)
++    .map((p) => everyone.find((e) => e.id === p.patron))
++    .filter((p): p is Person => p !== undefined);
++  const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
++  const backing = mine.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late) ?? 0n), 0n);
++  const others = everyone.filter((p) => p.id !== person.id);
++
++  const add = useMutation({
++    mutationFn: (patron: number) =>
++      postJson<Patron[]>(byUser(`${peoplePath(sheet)}/${person.id}/patrons`, user), { patron }),
++    onSuccess: (updated) => {
++      queryClient.setQueryData(patronsKey(sheet), updated);
++      setPicked('');
++    },
++  });
++  const send = useSubmitOnce(add);
++
++  return (
++    <>
++      <td data-testid="person-patrons">{names.join(', ')}</td>
++      <td data-testid="person-backing">{twoDecimals(backing)}</td>
++      <td>
++        <select
++          data-testid="person-patron-select"
++          value={picked}
++          onChange={(e) => {
++            setPicked(e.target.value);
++            add.reset();
++          }}
++        >
++          <option value="">Patron…</option>
++          {others.map((p) => (
++            <option key={p.id} value={String(p.id)}>
++              {p.name}
++            </option>
++          ))}
++        </select>{' '}
++        <button
++          type="button"
++          data-testid="person-patron-add"
++          disabled={add.isPending}
++          onClick={() => send(picked === '' ? -1 : Number(picked))}
++        >
++          Add patron
++        </button>
++        {add.isError && (
++          <span data-testid="person-patron-error" role="alert">
++            {' '}A patron must be someone else on the sheet, not already named.
++          </span>
++        )}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeaders.fill({ order: 50, Component: PatronsHeader }),
++  PersonColumns.fill({ order: 50, Component: PersonPatrons }),
++];
+diff --git a/src/main/frontend/features/patrons/patrons.ts b/src/main/frontend/features/patrons/patrons.ts
+new file mode 100644
+index 00000000..04bf6f1b
+--- /dev/null
++++ b/src/main/frontend/features/patrons/patrons.ts
+@@ -0,0 +1,17 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** That `patron` is one of `person`'s patrons: both are ids of people on the sheet. */
++export type Patron = { person: number; patron: number };
++
++export const patronsKey = (sheet: string) => ['patrons', sheet] as const;
++
++export const patronsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/patrons`;
++
++/** Every patron named on the sheet. */
++export function usePatrons(sheet: string) {
++  return useQuery({
++    queryKey: patronsKey(sheet),
++    queryFn: () => getJson<Patron[]>(patronsPath(sheet)),
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/AddPatron.java b/src/main/java/net/officefloor/hq/app/patron/AddPatron.java
+new file mode 100644
+index 00000000..3926ba97
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/AddPatron.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.patron;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Names someone else on the sheet as one of the person's patrons; refused for themselves or a patron already named. */
++public class AddPatron {
++    public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
++            @RequestBody PatronRequest request, People people, Patrons patrons, Audit audit)
++            throws InvalidPatronException {
++        Person patron = request == null || request.patron() == null ? null : people.find(sheet, request.patron());
++        if (patron == null) {
++            throw new InvalidPatronException("A patron must be someone on the sheet");
++        }
++        if (patron.id() == person.id()) {
++            throw new InvalidPatronException("A person cannot be their own patron");
++        }
++        if (patrons.has(sheet, person.id(), patron.id())) {
++            throw new InvalidPatronException(patron.name() + " is already a patron of " + person.name());
++        }
++        patrons.add(sheet, person.id(), patron.id());
++        audit.record("PATRON_ADDED sheet=" + sheet + " by=" + user + " name=" + person.name() + " patron="
++                + patron.name());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/HandleInvalidPatron.java b/src/main/java/net/officefloor/hq/app/patron/HandleInvalidPatron.java
+new file mode 100644
+index 00000000..3e7eac37
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/HandleInvalidPatron.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.patron;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidPatron {
++    public void handle(@Parameter InvalidPatronException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/InvalidPatronException.java b/src/main/java/net/officefloor/hq/app/patron/InvalidPatronException.java
+new file mode 100644
+index 00000000..f8c9de73
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/InvalidPatronException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.patron;
++
++/** The patron is not someone else on the sheet, or is already one of the person's patrons. */
++public class InvalidPatronException extends Exception {
++    public InvalidPatronException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/Patron.java b/src/main/java/net/officefloor/hq/app/patron/Patron.java
+new file mode 100644
+index 00000000..c3573a50
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/Patron.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.patron;
++
++/** That {@code patron} is one of {@code person}'s patrons: both are ids of people on the same sheet. */
++public record Patron(long person, long patron) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/PatronRequest.java b/src/main/java/net/officefloor/hq/app/patron/PatronRequest.java
+new file mode 100644
+index 00000000..750b3549
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/PatronRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.patron;
++
++/** Body of POST /api/sheets/{sheet}/people/{person}/patrons: the id of the person named as patron. */
++public record PatronRequest(Long patron) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/Patrons.java b/src/main/java/net/officefloor/hq/app/patron/Patrons.java
+new file mode 100644
+index 00000000..cd6cf9f1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/Patrons.java
+@@ -0,0 +1,37 @@
++package net.officefloor.hq.app.patron;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The patrons each person on a sheet has named. */
++@Repository
++public class Patrons {
++
++    private static final RowMapper<Patron> ROW = (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id"));
++
++    private final JdbcTemplate jdbc;
++
++    public Patrons(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Every patron named on the sheet. */
++    public List<Patron> list(String sheet) {
++        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet = ? ORDER BY person_id, patron_id", ROW,
++                sheet);
++    }
++
++    /** Whether the person has already named this patron. */
++    public boolean has(String sheet, long person, long patron) {
++        Integer found = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM patron WHERE sheet = ? AND person_id = ? AND patron_id = ?", Integer.class, sheet,
++                person, patron);
++        return found != null && found > 0;
++    }
++
++    public void add(String sheet, long person, long patron) {
++        jdbc.update("INSERT INTO patron (sheet, person_id, patron_id) VALUES (?, ?, ?)", sheet, person, patron);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
+new file mode 100644
+index 00000000..a8b5edee
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.patron;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Responds with every patron named on the sheet. */
++public class RespondWithPatrons {
++    public void respond(@PathVariable("sheet") String sheet, Patrons patrons, ObjectResponse<List<Patron>> response) {
++        response.send(patrons.list(sheet));
++    }
++}
+diff --git a/src/main/resources/db/migration/V19__patron.sql b/src/main/resources/db/migration/V19__patron.sql
+new file mode 100644
+index 00000000..8cc1540c
+--- /dev/null
++++ b/src/main/resources/db/migration/V19__patron.sql
+@@ -0,0 +1,7 @@
++-- The patrons a person has named on the sheet: other people on it, each at most once.
++CREATE TABLE patron (
++    sheet     VARCHAR(200) NOT NULL,
++    person_id BIGINT       NOT NULL,
++    patron_id BIGINT       NOT NULL,
++    PRIMARY KEY (sheet, person_id, patron_id)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.patron.InvalidPatronException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.patron.InvalidPatronException.yml
+new file mode 100644
+index 00000000..fbbd0b65
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.patron.InvalidPatronException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.patron.HandleInvalidPatron
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/patrons.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/patrons.GET.yml
+new file mode 100644
+index 00000000..8825ef63
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/patrons.GET.yml
+@@ -0,0 +1,3 @@
++respond:
++  class: net.officefloor.hq.app.patron.RespondWithPatrons
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/patrons.POST.yml
+new file mode 100644
+index 00000000..047afa98
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/patrons.POST.yml
+@@ -0,0 +1,13 @@
++# Names a patron for the person: refused (400, nothing written) for themselves or a patron already named.
++# Responds with the sheet's patrons.
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: add
++add:
++  class: net.officefloor.hq.app.patron.AddPatron
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.patron.RespondWithPatrons
++  govern: [ transaction ]
