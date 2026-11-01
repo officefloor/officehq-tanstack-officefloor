@@ -133,3 +133,9 @@ export function personPeriodCarriedCents(period: Period, periods: Period[], pers
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: FloorOn, late: Late, today: string, now = false): string {
   return totalDue(people.map((p) => personPeriodDueCents(period, p, claims, rates, floor, late, today, now)));
 }
+
+/** How many claims belong to a period — by due-by, as `countsIn` places them — leaving out VOID and
+ *  DELETED ones; any other status counts, whether or not the period is closed. */
+export function periodClaimsCount(period: Period, claims: Claim[]): number {
+  return claims.filter((c) => c.status !== 'VOID' && c.status !== 'DELETED' && periodOf([period], c.dueBy) !== undefined).length;
+}
