@@ -1,0 +1,26 @@
+import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+import { useClaims, type ClaimStatus } from './useClaims';
+import type { Person } from '../people/usePeople';
+
+/** The statuses whose claims a person's row counts, each in its own cell. */
+const COUNTED: readonly ClaimStatus[] = ['OPEN', 'SETTLED'];
+
+/** How many of a person's claims are OPEN, and how many SETTLED. */
+function PersonClaimCounts({ sheet, person }: { user: string; sheet: string; person: Person }) {
+  const { data: all = [] } = useClaims(sheet);
+  const claims = all.filter((c) => c.personId === person.id);
+  return (
+    <>
+      {COUNTED.map((s) => (
+        <td key={s} data-testid={`person-claims-${s}-count`}>
+          {claims.filter((c) => c.status === s).length}
+        </td>
+      ))}
+    </>
+  );
+}
+
+export const contributions = [
+  PersonColumns.fill({ order: 10.5, Component: () => <>{COUNTED.map((s) => <th key={s}>{s} claims</th>)}</> }),
+  PersonCells.fill({ order: 10.5, Component: PersonClaimCounts }),
+];
