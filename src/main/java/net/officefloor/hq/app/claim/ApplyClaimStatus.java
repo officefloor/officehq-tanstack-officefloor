@@ -48,6 +48,16 @@ public class ApplyClaimStatus {
             Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets,
             VoidReasons voidReasons)
             throws ClaimStatusRefusedException, PeriodClosedException {
+        apply(change, claim, claim, numbers, people, figures, closedPeriods, settings, log, sheets, voidReasons);
+    }
+
+    /** As {@link #apply}, but with the four-eyes rules (who opened or last edited it) and the proof rule
+     *  judged on {@code judged} rather than on the claim itself (a part-settle judges them on the
+     *  claim the part was split off, as it stood before the split). */
+    void apply(ClaimStatusChange change, Claim claim, Claim judged, ClaimNumbers numbers, People people,
+            Figures figures, ClosedPeriods closedPeriods, Settings settings, ClaimLog log, Sheets sheets,
+            VoidReasons voidReasons)
+            throws ClaimStatusRefusedException, PeriodClosedException {
         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
         if (!change.action().allowedFrom(claim.getStatus())) {
             throw new ClaimStatusRefusedException(claim.getStatus(), change.action());
@@ -99,11 +109,11 @@ public class ApplyClaimStatus {
         if (change.action() == ClaimAction.SETTLE && claim.isDeferred()) {
             throw new ClaimStatusRefusedException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
         }
-        if (change.action() == ClaimAction.SETTLE && claim.getOpenedBy() != null
-                && claim.getOpenedBy().equals(change.user())) {
+        if (change.action() == ClaimAction.SETTLE && judged.getOpenedBy() != null
+                && judged.getOpenedBy().equals(change.user())) {
             throw new ClaimStatusRefusedException("The user who opened a claim cannot settle it");
         }
-        if (change.action() == ClaimAction.SETTLE && change.user().equals(claim.getEditedBy())) {
+        if (change.action() == ClaimAction.SETTLE && change.user().equals(judged.getEditedBy())) {
             throw new ClaimStatusRefusedException("The user who last edited a claim cannot settle it");
         }
         if (change.action() == ClaimAction.APPROVE) {
@@ -136,13 +146,15 @@ public class ApplyClaimStatus {
             // Figures.due: from the bound figure when a statement binds the claim (OPEN or PENDING), else live.
             due = figures.due(claim, grade);
             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
-            BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
-            if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
+            String judgedGrade = people.find(judged.getSheetId(), judged.getPersonId()).gradeOn(judged.getDate());
+            BigDecimal judgedDue = judged == claim ? due : figures.due(judged, judgedGrade);
+            BigDecimal threshold = settings.proofThreshold(judged.getSheetId(), judgedGrade, judged.getDate());
+            if (threshold != null && judgedDue != null && judgedDue.compareTo(threshold) > 0 && judged.getProofs() == 0) {
                 throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof");
             }
-            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
-                for (String kind : settings.proofKinds(claim.getSheetId())) {
-                    if (claim.proofsOf(kind) == 0) {
+            if (threshold != null && judgedDue != null && judgedDue.compareTo(threshold) > 0) {
+                for (String kind : settings.proofKinds(judged.getSheetId())) {
+                    if (judged.proofsOf(kind) == 0) {
                         throw new ClaimStatusRefusedException("A claim whose due is over the proof threshold needs a proof of each kind: " + kind);
                     }
                 }

@@ -51,6 +51,7 @@ const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot
 const CANNOT_PROVE = 'A proof cannot be added to a SETTLED or VOID claim, nor to one due by in a closed period.';
 const CANNOT_SPLIT = "Only an OPEN claim (not deferred, nor due by in a closed period) can be split, by a user whose role may open a claim.";
 const BAD_SPLIT = "The amount split off must be more than 0.00 and less than the claim's amount, with up to two decimals.";
+const CANNOT_SETTLE_PART = "Only an OPEN claim can be part-settled, when its part can be split off and settled by you: never by the user who opened or last edited it, nor while it lacks the proofs its due needs.";
 const NOT_DRAFT = 'Only a DRAFT claim can be edited: to change an open claim, void it and add a new one.';
 const LOCKED = 'Another user is editing this claim: it is locked until they save or cancel their editor.';
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
@@ -124,6 +125,10 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * An OPEN claim can be split: an amount (more than 0.00, less than its amount) goes off it into a new
  * OPEN claim with the same date and note, the next number, opened by the user, which shows the
  * original's number as split-from; the original keeps the rest and is no longer bound by a statement.
+ * An OPEN claim can be part-settled: an amount is split off it as the split button does, and the new
+ * claim settled at once by the user as the settle button does (PENDING over the clerk limit); a split or
+ * settle that would be refused refuses the whole action. Who opened or last edited it, and its proofs,
+ * are judged on the original claim.
  * A DRAFT claim (not one due by in a closed period) can be deleted: it shows DELETED, counts nowhere and
  * cannot be edited, opened or voided; on the sheet's today it was deleted it can be restored to DRAFT.
  * A claim can be commented: each comment shows on it, oldest first, as "<user> on <date>: <text>"
@@ -189,6 +194,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [moveTo, setMoveTo] = useState<Record<number, string>>({});
   // The amount typed for splitting each claim, by claim id.
   const [splitOff, setSplitOff] = useState<Record<number, string>>({});
+  // The amount typed for part-settling each claim, by claim id.
+  const [settleOff, setSettleOff] = useState<Record<number, string>>({});
   // The comment typed for each claim, by claim id.
   const [commentText, setCommentText] = useState<Record<number, string>>({});
   // The line typed for each claim, by claim id.
@@ -429,6 +436,28 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
       setRefused({
         id: c.id,
         message: e instanceof HttpError && (e.status === 400 || e.body.includes('less than')) ? BAD_SPLIT : CANNOT_SPLIT,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // An amount split off an OPEN claim and settled at once.
+  const settlePart = useMutation({
+    mutationFn: (c: { id: number; amount: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/settle-part`, { amount: c.amount, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setSettleOff((s) => ({ ...s, [c.id]: '' })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: !(e instanceof HttpError)
+          ? CANNOT_SETTLE_PART
+          : e.status === 400 || e.body.includes('less than')
+            ? BAD_SPLIT
+            : e.body.includes('proof threshold')
+              ? NEEDS_PROOF
+              : e.body.includes('deferred')
+                ? DEFERRED
+                : CANNOT_SETTLE_PART,
       }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
@@ -977,6 +1006,32 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 }}
               >
                 Split
+              </button>{' '}
+              <input
+                data-testid="claim-settle-part-amount"
+                aria-label="Amount to settle"
+                placeholder="0.00"
+                value={settleOff[c.id] ?? ''}
+                onChange={(e) => {
+                  setSettleOff({ ...settleOff, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-settle-part"
+                disabled={settlePart.isPending}
+                onClick={() => {
+                  const amount = (settleOff[c.id] ?? '').trim();
+                  if (!/^\d+(\.\d{1,2})?$/.test(amount)) {
+                    // Refused here, before anything is sent: the store is untouched.
+                    setRefused({ id: c.id, message: BAD_SPLIT });
+                    return;
+                  }
+                  settlePart.mutate({ id: c.id, amount });
+                }}
+              >
+                Settle part
               </button>{' '}
               <select
                 data-testid="claim-reassign-to"
