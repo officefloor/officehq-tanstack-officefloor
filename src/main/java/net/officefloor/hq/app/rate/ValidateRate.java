@@ -16,6 +16,7 @@ public class ValidateRate {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
         String from = request == null || request.from() == null ? "" : request.from().trim();
+        String to = request == null || request.to() == null ? "" : request.to().trim();
         if (!GRADES.contains(grade)) {
             throw new InvalidRateException("Grade must be A, B or C");
         }
@@ -28,6 +29,15 @@ public class ValidateRate {
         } catch (DateTimeParseException e) {
             throw new InvalidRateException("Not a valid from-date: " + from);
         }
-        body.set(new RateInput(grade, new BigDecimal(pct), on));
+        LocalDate through;
+        try {
+            through = to.isEmpty() ? null : LocalDate.parse(to);
+        } catch (DateTimeParseException e) {
+            throw new InvalidRateException("Not a valid to-date: " + to);
+        }
+        if (on != null && through != null && through.isBefore(on)) {
+            throw new InvalidRateException("The to-date must not be before the from-date");
+        }
+        body.set(new RateInput(grade, new BigDecimal(pct), on, through));
     }
 }

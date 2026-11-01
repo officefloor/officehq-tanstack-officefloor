@@ -3,8 +3,8 @@ import { getJson } from '../../api/http';
 import type { Grade } from '../people/people';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
- *  applies from the beginning of time). */
-export type Rate = { grade: Grade; pct: string; from: string | null };
+ *  applies from the beginning of time) through its to-date (null when it has no end). */
+export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null };
 
 export const ratesKey = (sheet: string) => ['rates', sheet] as const;
 
@@ -19,7 +19,8 @@ export function useRates(sheet: string) {
 }
 
 /** The rate for a grade on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it, or
- *  undefined when the date is before every rate the grade has (or the date is not yet known). */
+ *  undefined when the date is before every rate the grade has, or after the to-date of that one (or the date
+ *  is not yet known). */
 export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | undefined): string | undefined {
   if (date === undefined || grade === undefined) return undefined;
   let found: Rate | undefined;
@@ -27,6 +28,7 @@ export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | u
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
+  if (found?.to != null && found.to < date) return undefined;
   return found?.pct;
 }
 

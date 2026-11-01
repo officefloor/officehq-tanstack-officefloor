@@ -40,13 +40,16 @@ public record Person(long id, String name, String grade, long version, String re
 
     /**
      * Whether the claim has a figure apart from the grade in force on {@code today}: one it keeps (settled or
-     * bound), or one at another grade, in force on its date. Their due-total is n/a only when no claim does and
-     * that grade has no rate on today.
+     * bound), one at another grade, in force on its date, or one from a rate that ended (its to-date) on or before
+     * today, the claim not being dated after today. Their due-total is n/a only when no claim does and that grade
+     * has no rate on today.
      */
     public boolean figureApartFrom(Claim claim, LocalDate today, List<Rate> rates, BigDecimal floor) {
         String then = gradeOn(claim.date());
         return claim.fixed()
-                || (then != null && !then.equals(gradeOn(today)) && claim.figure(rates, then, floor) != null);
+                || (then != null && !then.equals(gradeOn(today)) && claim.figure(rates, then, floor) != null)
+                || (then != null && !LocalDate.parse(claim.date()).isAfter(today)
+                        && claim.figure(rates, then, floor) != null);
     }
 
     /** The grade in force on the claim's date (yyyy-mm-dd). */

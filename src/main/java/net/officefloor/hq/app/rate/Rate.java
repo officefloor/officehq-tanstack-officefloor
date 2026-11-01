@@ -8,18 +8,19 @@ import java.util.List;
 
 /**
  * A grade's rate on a sheet: a percent with two decimals, as the screen shows it, in force from its from-date
- * (yyyy-MM-dd; null when it applies from the beginning of time).
+ * (yyyy-MM-dd; null when it applies from the beginning of time) through its to-date (null when it has no end).
  */
-public record Rate(String grade, String pct, String from) {
+public record Rate(String grade, String pct, String from, String to) {
 
     /**
      * The percent the grade's rates give on a date: the one whose from-date is the latest on or before it, or null
-     * when the date is before every rate the grade has.
+     * when the date is before every rate the grade has, or after the to-date of that one.
      */
     public static String on(List<Rate> rates, String grade, LocalDate date) {
         return rates.stream().filter((r) -> r.grade().equals(grade))
                 .filter((r) -> r.from() == null || !LocalDate.parse(r.from()).isAfter(date))
                 .max(Comparator.comparing((Rate r) -> r.from() == null ? LocalDate.MIN : LocalDate.parse(r.from())))
+                .filter((r) -> r.to() == null || !LocalDate.parse(r.to()).isBefore(date))
                 .map(Rate::pct).orElse(null);
     }
 

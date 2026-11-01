@@ -11,11 +11,11 @@ import type { Grade } from '../people/people';
 import { rateOf, ratesKey, ratesPath, useRates } from './rates';
 import type { Rate } from './rates';
 
-type Draft = { grade: Grade; pct: string; from: string };
-const EMPTY: Draft = { grade: 'A', pct: '', from: '' };
+type Draft = { grade: Grade; pct: string; from: string; to: string };
+const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
 
 // The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), every rate with its
-// from-date (a blank from-date applies from the start), and a form that sets one, replacing the rate already
+// from-date (a blank from-date applies from the start) and to-date (a blank one has no end), and a form that sets one, replacing the rate already
 // there for that grade and from-date.
 function Rates({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -27,7 +27,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
     mutationFn: (body: Draft) => postJson<Rate[]>(byUser(ratesPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(ratesKey(sheet), updated);
-      setDraft((d) => ({ ...d, pct: '', from: '' }));
+      setDraft((d) => ({ ...d, pct: '', from: '', to: '' }));
     },
   });
   const send = useSubmitOnce(save);
@@ -39,7 +39,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    // The server refuses a percent that is not 0.00 or more with up to two decimals, or a bad from-date.
+    // The server refuses a percent that is not 0.00 or more with up to two decimals, a bad from- or to-date, or a to-date before the from-date.
     send(draft);
   };
 
@@ -74,12 +74,21 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
             onChange={(e) => change({ from: e.target.value })}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            data-testid="rate-form-to"
+            placeholder="yyyy-mm-dd (blank: no end)"
+            value={draft.to}
+            onChange={(e) => change({ to: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
         {save.isError && (
           <span data-testid="rate-form-error" role="alert">
-            {' '}A rate needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals, and a from-date that is a valid date or blank.
+            {' '}A rate needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals, a from-date and a to-date that are each a valid date or blank, and a to-date not before the from-date.
           </span>
         )}
       </form>
@@ -104,6 +113,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -112,6 +122,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
               <td>
                 <span data-testid="rate-pct">{r.pct}</span>
               </td>

@@ -158,8 +158,8 @@ export function claimDueCents(claim: Claim, pct: string | undefined, floor: bigi
 
 
 /** A person's due-total: the sum of their counted claims' rounded figures (the claims of others are skipped). n/a (undefined) when their grade
- *  has no rate on the sheet's today, unless a claim has a figure apart from it (settled, stated, or at another grade
- *  in force on its date): then the figures there are. */
+ *  has no rate on the sheet's today, unless a claim has a figure apart from it (settled, stated, at another grade
+ *  in force on its date, or from a rate that ended by today on a claim not dated after it): then the figures there are. */
 export function personDueCents(
   claims: Claim[],
   rates: Rate[],
@@ -172,7 +172,8 @@ export function personDueCents(
   // A claim has a figure apart from today's grade when it keeps one, or when another grade in force on its date gives one.
   const apart = (c: Claim) => {
     const then = gradeOn(person, c.date);
-    return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, rateOf(rates, then, c.date), floor) !== undefined);
+    return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, rateOf(rates, then, c.date), floor) !== undefined)
+      || (then !== undefined && today !== undefined && c.date <= today && claimFigureCents(c, rateOf(rates, then, c.date), floor) !== undefined);
   };
   if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart)) return undefined;
   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
