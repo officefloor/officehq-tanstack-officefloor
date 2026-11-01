@@ -259,9 +259,19 @@ export function overdueCents(
   return { count: overdueClaims.length, cents };
 }
 
+/** Adds up the people's figures, leaving out the single highest and the single lowest when three or more people
+ *  have a figure. */
+export function trimmedSum(figures: bigint[]): bigint {
+  const sum = figures.reduce((s, f) => s + f, 0n);
+  if (figures.length < 3) return sum;
+  const max = figures.reduce((m, f) => (f > m ? f : m));
+  const min = figures.reduce((m, f) => (f < m ? f : m));
+  return sum - max - min;
+}
+
 /** The sheet's totals: its claimed-total (everyone's counted claims added up), its due-total (everyone's due-total
- *  added up, skipping the people whose due-total is n/a), and how many of the counted claims are overdue, with their
- *  dues (late charges included) added up. */
+ *  added up, skipping the people whose due-total is n/a, trimmed — see trimmedSum), and how many of the counted claims
+ *  are overdue, with their total (each person's overdue-total, trimmed). */
 export function useSheetTotals(sheet: string): { claimed: string; due: bigint; overdue: { count: number; cents: bigint } } {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
@@ -270,9 +280,12 @@ export function useSheetTotals(sheet: string): { claimed: string; due: bigint; o
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
   const cap = useCapCents(sheet);
-  const due = people.reduce((sum, p) => {
-    const cents = personDueCents(all, rates, p, today, floor, late, cap);
-    return cents === undefined ? sum : sum + cents;
-  }, 0n);
-  return { claimed: claimed(counted(all, people)), due, overdue: overdueCents(all, people, rates, late, floor) };
+  const due = trimmedSum(
+    people
+      .map((p) => personDueCents(all, rates, p, today, floor, late, cap))
+      .filter((cents): cents is bigint => cents !== undefined),
+  );
+  const overdue = overdueCents(all, people, rates, late, floor);
+  const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
+  return { claimed: claimed(counted(all, people)), due, overdue: { count: overdue.count, cents: trimmedSum(perPerson) } };
 }

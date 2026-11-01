@@ -2,6 +2,8 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +23,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * The sheet's figures as the screen shows them: each person's claimed, due-total and overdue-total, and the sheet's
- * claimed-total, due-total and overdue-total. A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
+ * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
+ * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
  * per person whose figures changed (in the order they were added; a new person counts as changed), then a TOTALS
  * line when the sheet's totals changed.
  */
@@ -65,8 +68,8 @@ public class Rollup {
         List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
+        List<BigDecimal> dueFigures = new ArrayList<>();
+        List<BigDecimal> overdueFigures = new ArrayList<>();
         for (Person person : people.list(sheet)) {
             List<Claim> mine = all.stream().filter((c) -> c.person() == person.id() && person.counts(c)).toList();
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
@@ -85,15 +88,24 @@ public class Rollup {
                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
             due = Settings.capped(due, cap);
             claimedTotal = claimedTotal.add(claimed);
-            overdueTotal = overdueTotal.add(overdue);
+            overdueFigures.add(overdue);
             if (!na) {
-                dueTotal = dueTotal.add(due);
+                dueFigures.add(due);
             }
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), na ? "n/a" : due.toPlainString(),
                     overdue.toPlainString()));
         }
-        return new Snapshot(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
-                overdueTotal.toPlainString());
+        return new Snapshot(figures, claimedTotal.toPlainString(), trimmedSum(dueFigures).toPlainString(),
+                trimmedSum(overdueFigures).toPlainString());
+    }
+
+    /** Adds up the people's figures, leaving out the single highest and the single lowest when three or more have one. */
+    static BigDecimal trimmedSum(List<BigDecimal> figures) {
+        BigDecimal sum = figures.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+        if (figures.size() < 3) {
+            return sum;
+        }
+        return sum.subtract(Collections.max(figures)).subtract(Collections.min(figures));
     }
 
     /** Audits the figures the change moved since {@code before}, after the change's own lines. */
