@@ -1,0 +1,855 @@
+diff --git a/src/main/frontend/features/aging/aging.slot.tsx b/src/main/frontend/features/aging/aging.slot.tsx
+index 0969955d..c836744c 100644
+--- a/src/main/frontend/features/aging/aging.slot.tsx
++++ b/src/main/frontend/features/aging/aging.slot.tsx
+@@ -1,7 +1,7 @@
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { claimDueCents, isOpen, live, useClaims, type Claim } from '../claims/useClaims';
+ import { gradeOn, heldOn, type Person } from '../people/usePeople';
+-import { rateOn, showDue, useRates } from '../rates/useRates';
++import { claimRateOn, showDue, useRates } from '../rates/useRates';
+ import { useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+@@ -25,7 +25,7 @@ function PersonAged({ sheet, person }: { user: string; sheet: string; person: Pe
+   ).filter(isOpen);
+   const buckets = [0n, 0n, 0n];
+   for (const c of claims) {
+-    const due = claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy);
++    const due = claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+     if (due === null) continue;
+     const age = ageOn(c, today);
+     buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 6c8273f8..42608a84 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+-import { rateOn, showDue, useRates } from '../rates/useRates';
++import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { useSelectedClaims } from '../bulk/useSelectedClaims';
+@@ -138,11 +138,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const lateBy = useLate(sheet);
+   const cap = useCap(sheet);
+   // The sum of their figures; their due-total is at most the cap, the rest their excess.
+-  const dueSum = personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
++  const dueSum = personDueCents(liveClaims, floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+   // The due-total before the cap, split (an n/a part shows 0.00): their SETTLED claims' figures, and their OPEN and PENDING ones'.
+-  const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
+-  const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
+-  const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
++  const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
++  const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
++  const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
+   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
+   const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
+   const editing = editingClaim?.id ?? null;
+@@ -690,7 +690,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+               <span data-testid="claim-date">{c.date}</span>{' '}
+               <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
+               <span data-testid="claim-note">{c.note}</span>{' '}
+-              <span data-testid="claim-due">{showDue(claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy))}</span>{' '}
++              <span data-testid="claim-due">{showDue(claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy))}</span>{' '}
+               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+               <span data-testid="claim-status">{c.status}</span>{' '}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 8c436551..360a8bbc 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -82,6 +82,8 @@ export type Claim = {
+   lines: string[];
+   /** The number of the bulk settle batch (1, 2, ... on the sheet) that settled the claim (or sent it PENDING); null when none did. */
+   batch: number | null;
++  /** The order the claim was added in: a forward-only rate applies only to claims added after it was saved (see `claimRateOn`). */
++  seq: number;
+ };
+ 
+ export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
+@@ -195,16 +197,16 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
+ 
+ 
+ /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
+- *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim's date)`, plus any late charge and at least `floor`, the rate in force on the claim's
++ *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim)` (the rate that applies to it on its date), plus any late charge and at least `floor`, the rate in force on the claim's
+  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
+  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
+  *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
+  *  is not capped). */
+-export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late, cap?: string | null): bigint | null {
++export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (claim: Claim) => string | undefined, late?: Late, cap?: string | null): bigint | null {
+   let sum = 0n;
+   let any = false;
+   for (const c of counted(claims)) {
+-    const due = claimDueCents(c, floor, pctOn ? pctOn(c.date) : pct, late);
++    const due = claimDueCents(c, floor, pctOn ? pctOn(c) : pct, late);
+     if (due === null) continue;
+     sum += due;
+     any = true;
+@@ -233,9 +235,9 @@ export function overdue(claim: Claim, late: Late): boolean {
+ }
+ 
+ /** These claims' overdue ones: their count, and their dues with late charges added up in cents (n/a ones skipped).
+- *  `pctOn` is the rate in force on a claim's date. */
+-export function overdueFigures(claims: Claim[], late: Late, floor: FloorOn, pctOn: (date: string) => string | undefined): { count: number; cents: bigint } {
++ *  `pctOn` is the rate that applies to a claim on its date. */
++export function overdueFigures(claims: Claim[], late: Late, floor: FloorOn, pctOn: (claim: Claim) => string | undefined): { count: number; cents: bigint } {
+   const over = claims.filter((c) => overdue(c, late));
+-  const cents = over.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c.date), late) ?? 0n), 0n);
++  const cents = over.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c), late) ?? 0n), 0n);
+   return { count: over.length, cents };
+ }
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+index 7bd9c958..3e04cf50 100644
+--- a/src/main/frontend/features/claims/useSheetTotals.ts
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -1,5 +1,5 @@
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+-import { rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
++import { claimRateOn, rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
+@@ -22,15 +22,15 @@ export function useSheetTotals(sheet: string) {
+   const late = useLate(sheet);
+   const cap = useCap(sheet);
+   const dues = people.map((p) =>
+-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
++    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (c) => claimRateOn(rates, gradeOn(p, c.date), c), late, cap),
+   );
+   // Everyone's due-total before the cap, split into its SETTLED and its OPEN-and-PENDING part.
+   const part = (keep: (c: (typeof claims)[number]) => boolean) =>
+     people.map((p) =>
+-      personDueCents(claims.filter((c) => c.personId === p.id && keep(c)), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
++      personDueCents(claims.filter((c) => c.personId === p.id && keep(c)), floor, rateOn(rates, gradeOn(p, today), today), (c) => claimRateOn(rates, gradeOn(p, c.date), c), late),
+     );
+   const over = people.map((p) =>
+-    overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
++    overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (c) => claimRateOn(rates, gradeOn(p, c.date), c)),
+   );
+   return {
+     /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 42834452..45e16279 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -1,7 +1,7 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { live, personDueCents, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+-import { rateOn, showDue, useRates } from '../rates/useRates';
++import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { downloadCsv } from './csv';
+@@ -28,7 +28,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
+         claims.filter((c) => c.personId === p.id),
+         floor,
+         rateOn(rates, gradeOn(p, today), today),
+-        (d) => rateOn(rates, gradeOn(p, d), d),
++        (c) => claimRateOn(rates, gradeOn(p, c.date), c),
+         late,
+         cap,
+       );
+diff --git a/src/main/frontend/features/export/exportClaims.slot.tsx b/src/main/frontend/features/export/exportClaims.slot.tsx
+index 16073468..cc07d5c7 100644
+--- a/src/main/frontend/features/export/exportClaims.slot.tsx
++++ b/src/main/frontend/features/export/exportClaims.slot.tsx
+@@ -2,7 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimDueCents, useClaims } from '../claims/useClaims';
+ import { gradeOn, usePeople } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+-import { rateOn, showDue, useRates } from '../rates/useRates';
++import { claimRateOn, showDue, useRates } from '../rates/useRates';
+ import { useFloor, useLate } from '../settings/useSettings';
+ import { downloadCsv } from './csv';
+ 
+@@ -31,7 +31,7 @@ function ExportClaims({ sheet }: { user: string; sheet: string }) {
+           c.number ?? '',
+           c.date,
+           c.amount,
+-          showDue(claimDueCents(c, floor, rateOn(rates, gradeOn(p, c.date), c.date), lateBy)),
++          showDue(claimDueCents(c, floor, claimRateOn(rates, gradeOn(p, c.date), c), lateBy)),
+           c.status,
+           periodOf(periods, c.dueBy)?.name ?? '',
+         ]);
+diff --git a/src/main/frontend/features/months/months.slot.tsx b/src/main/frontend/features/months/months.slot.tsx
+index 5373274d..ab200ca5 100644
+--- a/src/main/frontend/features/months/months.slot.tsx
++++ b/src/main/frontend/features/months/months.slot.tsx
+@@ -1,7 +1,7 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimDueCents, live, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+-import { rateOn, totalDue, useRates } from '../rates/useRates';
++import { claimRateOn, totalDue, useRates } from '../rates/useRates';
+ import { useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+@@ -22,7 +22,7 @@ function MonthsPanel({ sheet }: { user: string; sheet: string }) {
+   const months = [...new Set(all.map((c) => c.date.slice(0, 7)))].sort();
+   const dueOf = (c: (typeof claims)[number]) => {
+     const p = byId.get(c.personId);
+-    return claimDueCents(c, floor, p ? rateOn(rates, gradeOn(p, c.date), c.date) : undefined, late);
++    return claimDueCents(c, floor, p ? claimRateOn(rates, gradeOn(p, c.date), c) : undefined, late);
+   };
+ 
+   return (
+diff --git a/src/main/frontend/features/periods/usePeriods.ts b/src/main/frontend/features/periods/usePeriods.ts
+index e42dff6d..e6b52b70 100644
+--- a/src/main/frontend/features/periods/usePeriods.ts
++++ b/src/main/frontend/features/periods/usePeriods.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { claimDueCents, type Claim, type ClaimStatus, type Late } from '../claims/useClaims';
+ import { gradeOn, heldOn, type Person } from '../people/usePeople';
+-import { hundredths, rateOn, totalDue, type Rate } from '../rates/useRates';
++import { hundredths, claimRateOn, totalDue, type Rate } from '../rates/useRates';
+ import type { FloorOn } from '../settings/useSettings';
+ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+ 
+@@ -94,7 +94,7 @@ export function personPeriodDueCents(period: Period, person: Person, claims: Cla
+   }
+   return claims
+     .filter((c) => countsIn(period, person, c, today, now))
+-    .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), late) ?? 0n), 0n);
++    .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), late) ?? 0n), 0n);
+ }
+ 
+ /** A period's due-total: everyone's due-total for it added up (with `now`, each claim counted by its
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index fbb30906..7904202f 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { PCT, rateOn, ratesKey, totalDue, useRates, type Rate } from './useRates';
++import { claimRateOn, PCT, rateOn, ratesKey, totalDue, useRates, type Rate } from './useRates';
+ import { claimDueCents, isOpen, useClaims } from '../claims/useClaims';
+ import { gradeOn, usePeople } from '../people/usePeople';
+ import { useFloor, useLate } from '../settings/useSettings';
+@@ -172,7 +172,8 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
+ /**
+  * A preview of a candidate rate for a grade, saving nothing: how many OPEN and PENDING claims of
+  * people on that grade (the grade in force on the claim's date) would show a different due if the
+- * rate applied to the grade on every date, and the differences (new due minus current) added up.
++ * rate applied to the grade on every date and to every claim, and the differences (new due minus current,
++ * each claim's current at the rate that applies to it, see `claimRateOn`) added up.
+  * A claim bound by a statement keeps its figure, so it does not change; a settled claim is not counted.
+  */
+ function RatePreview({ sheet }: { sheet: string }) {
+@@ -205,7 +206,7 @@ function RatePreview({ sheet }: { sheet: string }) {
+       for (const c of claims.data ?? []) {
+         const person = byId.get(c.personId);
+         if (!isOpen(c) || person === undefined || gradeOn(person, c.date) !== grade) continue;
+-        const current = claimDueCents(c, floor, rateOn(rates.data ?? [], grade, c.date), late);
++        const current = claimDueCents(c, floor, claimRateOn(rates.data ?? [], grade, c), late);
+         const next = claimDueCents(c, floor, candidate, late);
+         if (current === next) continue;
+         count++;
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 8c2454da..cae72c11 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -6,7 +6,23 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
+  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
+  *  date it applies through, or null when it has no end; `version` how many values have been set for
+  *  its grade and from-date, this newest one (the one in force) included. */
+-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; version: number; level?: number };
++export type Rate = {
++  grade: string;
++  pct: string;
++  from: string | null;
++  to: string | null;
++  version: number;
++  /** Set for a forward-only rate (saved with a from-date on or after the sheet's today): it applies only to
++   *  claims whose `seq` is higher. Null when it applies to every claim. */
++  forwardAfter: number | null;
++  /** Its grade and from-date's older versions, newest first: a claim a forward-only version does not apply
++   *  to takes the newest of them that does. */
++  earlier: RateVersion[];
++  level?: number;
++};
++
++/** An older version of a rate, as it was set. */
++type RateVersion = { pct: string; to: string | null; forwardAfter: number | null };
+ 
+ /** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
+ type InheritedRates = { level: number; sheet: string; rates: Rate[] };
+@@ -65,6 +81,21 @@ function levelRateOn(rates: Rate[], grade: string, date: string): string | undef
+   return found !== undefined && (found.to === null || found.to >= date) ? found.pct : undefined;
+ }
+ 
++/**
++ * The grade's rate that applies to a claim on its date: as `rateOn`, but passing over each forward-only
++ * rate saved after the claim was added — for the newest older version of its from-date that applies to
++ * the claim, else for the from-date before. The rates panel and the preview's candidate go by `rateOn`.
++ */
++export function claimRateOn(rates: Rate[], grade: string, claim: { date: string; seq: number }): string | undefined {
++  const applies = (v: { forwardAfter: number | null }) => v.forwardAfter === null || claim.seq > v.forwardAfter;
++  const applying: Rate[] = [];
++  for (const r of rates) {
++    const v = applies(r) ? r : r.earlier.find(applies);
++    if (v !== undefined) applying.push({ ...r, pct: v.pct, to: v.to, forwardAfter: v.forwardAfter });
++  }
++  return rateOn(applying, grade, claim.date);
++}
++
+ /** "12.34" as a whole number of hundredths (1234n), exactly. */
+ export function hundredths(value: string): bigint {
+   const negative = value.startsWith('-');
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index a0d97c23..d25b5f85 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -3,7 +3,7 @@ import { isActive } from '../active/active';
+ import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
+ import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
+ import { periodDue, usePeriods } from '../periods/usePeriods';
+-import { hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
++import { claimRateOn, hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
+ import { useCap, useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { useVoidReasons } from '../voidreasons/useVoidReasons';
+@@ -32,7 +32,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
+       live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date, today)),
+       floor,
+       rateOn(rates, gradeOn(p, today), today),
+-      (d) => rateOn(rates, gradeOn(p, d), d),
++      (c) => claimRateOn(rates, gradeOn(p, c.date), c),
+       late,
+       cap,
+     );
+diff --git a/src/main/frontend/features/tags/tags.slot.tsx b/src/main/frontend/features/tags/tags.slot.tsx
+index 516dce44..f080ec0d 100644
+--- a/src/main/frontend/features/tags/tags.slot.tsx
++++ b/src/main/frontend/features/tags/tags.slot.tsx
+@@ -1,7 +1,7 @@
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimDueCents, live, useClaims } from '../claims/useClaims';
+ import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
+-import { rateOn, totalDue, useRates } from '../rates/useRates';
++import { claimRateOn, totalDue, useRates } from '../rates/useRates';
+ import { useFloor, useLate } from '../settings/useSettings';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+@@ -24,7 +24,7 @@ function TagsPanel({ sheet }: { user: string; sheet: string }) {
+   const carries = (c: (typeof claims)[number], t: string) => c.tags.includes(t) || (byId.get(c.personId)?.tags.includes(t) ?? false);
+   const dueOf = (c: (typeof claims)[number]) => {
+     const p = byId.get(c.personId);
+-    return claimDueCents(c, floor, p ? rateOn(rates, gradeOn(p, c.date), c.date) : undefined, late);
++    return claimDueCents(c, floor, p ? claimRateOn(rates, gradeOn(p, c.date), c) : undefined, late);
+   };
+ 
+   return (
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 34668812..19d69140 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -33,6 +33,7 @@ public class Claim {
+     private String editedBy;
+     private Integer dueTerms;
+     private Integer batch;
++    private Long addedSeq;
+ 
+     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             ClaimStatus status, String number, BigDecimal due, String openedBy) {
+@@ -134,6 +135,12 @@ public class Claim {
+     /** The number of the bulk settle that settled the claim; null when none did. */
+     public Integer getBatch() { return batch; }
+     public void setBatch(Integer batch) { this.batch = batch; }
++    /** The sequence the claim was added in, across every sheet (a clone keeps the claim's own); null for its id. */
++    public Long getAddedSeq() { return addedSeq; }
++    public void setAddedSeq(Long addedSeq) { this.addedSeq = addedSeq; }
++    /** The order the claim was added in, for which rates apply to it (see {@link net.officefloor.hq.app.rate.Rates#pct}):
++     *  its added sequence, else its id; null for a claim not yet added. */
++    public Long seq() { return addedSeq != null ? addedSeq : id; }
+     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
+     public boolean isCorrection() { return amount.signum() < 0; }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 333c387a..b6ce6fda 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -10,11 +10,11 @@ import java.util.List;
+  *  and the figure it binds it to (two decimals; null when unbound or bound to n/a), and the number
+  *  of the claim a correction corrects (null when it is not a correction), and whether its live
+  *  figures round half up (else half to even), by the sheet's policy date, and the due-by fixed when it was added (yyyy-mm-dd), and its status log, oldest first (see {@link ClaimLog}),
+- *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count, and the number of the claim it was split off (null when it was not), and the user whose open editor locks it (null when none), and whether it was added while its period was soft-closed, and the last day it was reminded (yyyy-mm-dd; null when it never was), and its external reference (null when none), and its tags (sorted, empty when none) and every tag it has ever carried, and the reason it was voided with (null when none), and its comments, oldest first (see {@link ClaimComments}), and its lines, in the order added (see {@link ClaimLines}), and the number of the bulk settle batch that settled it (null when none). */
++ *  and whether it is deferred now and the date it was last deferred until (yyyy-mm-dd; null when it never was), and its proofs count, and the number of the claim it was split off (null when it was not), and the user whose open editor locks it (null when none), and whether it was added while its period was soft-closed, and the last day it was reminded (yyyy-mm-dd; null when it never was), and its external reference (null when none), and its tags (sorted, empty when none) and every tag it has ever carried, and the reason it was voided with (null when none), and its comments, oldest first (see {@link ClaimComments}), and its lines, in the order added (see {@link ClaimLines}), and the number of the bulk settle batch that settled it (null when none), and the sequence it was added in (see {@link Claim#seq}). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note,
+         String status, String number, String due, String openedBy, boolean stated, String statedDue, String corrects, boolean halfUp, String dueBy, List<String> log,
+         boolean deferred, String deferredUntil, int proofs, String splitFrom, String lockedBy,
+-        boolean lateEntry, String remindedOn, String ref, List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, List<String> lines, Integer batch) {
++        boolean lateEntry, String remindedOn, String ref, List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, List<String> lines, Integer batch, Long seq) {
+     public static ClaimResponse from(Claim claim, Figures figures, List<String> log, List<String> comments, List<String> lines) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
+                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),
+@@ -24,7 +24,7 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getDueBy().toString(), log, claim.isDeferred(),
+                 claim.getDeferredUntil() != null ? claim.getDeferredUntil().toString() : null, claim.getProofs(), claim.getSplitFrom(), claim.getLockedBy(),
+                 claim.isLateEntry(), claim.getRemindedOn() != null ? claim.getRemindedOn().toString() : null, claim.getRef(),
+-                split(claim.getTags()), split(claim.getTagsUsed()), claim.getVoidReason(), comments, lines, claim.getBatch());
++                split(claim.getTags()), split(claim.getTagsUsed()), claim.getVoidReason(), comments, lines, claim.getBatch(), claim.seq());
+     }
+ 
+     private static List<String> split(String tags) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 1e8a7495..381695a5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Claims {
+ 
+-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, "
++    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
+             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
+ 
+     private final JdbcTemplate jdbc;
+@@ -158,6 +158,8 @@ public class Claims {
+         claim.setDueTerms(rs.wasNull() ? null : terms);
+         int batch = rs.getInt("batch");
+         claim.setBatch(rs.wasNull() ? null : batch);
++        long addedSeq = rs.getLong("added_seq");
++        claim.setAddedSeq(rs.wasNull() ? null : addedSeq);
+         Date reminded = rs.getDate("reminded_on");
+         claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
+         Date until = rs.getDate("deferred_until");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Figures.java b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+index c076e95e..48c227c3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Figures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+@@ -102,11 +102,12 @@ public class Figures {
+         return total;
+     }
+ 
+-    /** The claim's due at its person's grade's rate in force on the claim's date: amount times the
++    /** The claim's due at its person's grade's rate in force on the claim's date (passing over a
++     *  forward-only rate saved after the claim was added, see {@link Rates#ownPct}): amount times the
+      *  rate divided by 100, rounded by the claim's rounding to two decimals, before any late charge or
+      *  floor (see {@link #due}); null when there is no rate. */
+     public BigDecimal live(Claim claim, String grade) {
+-        BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
++        BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate(), claim.seq());
+         if (pct == null) return null;
+         return claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index 51e9f18a..d5444524 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -2,12 +2,22 @@ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.List;
+ 
+ /** A grade's rate on a sheet: a percent with two decimals, in force from `from` (null: from the beginning of time)
+  *  through `to` (null: with no end). `version` counts the values set for its grade and from-date, this
+- *  newest one included (0 for one not yet saved). */
+-public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int version) {
++ *  newest one included (0 for one not yet saved). `forwardAfter` is set for a forward-only rate, one saved
++ *  with a from-date on or after the sheet's today: it applies only to claims whose sequence is higher (those
++ *  added after it was saved); null for one that applies to every claim. `earlier` are its grade and
++ *  from-date's older versions, newest first: a claim a forward-only version does not apply to takes the
++ *  newest of them that does. */
++public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int version,
++        Long forwardAfter, List<Version> earlier) {
+     public Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
+-        this(sheetId, grade, pct, from, to, 0);
++        this(sheetId, grade, pct, from, to, 0, null, List.of());
++    }
++
++    /** An older version of a rate: its percent, to-date and forward-only mark as it was set. */
++    public record Version(BigDecimal pct, LocalDate to, Long forwardAfter) {
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index 26b0411d..53d2daf4 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,11 +1,24 @@
+ package net.officefloor.hq.app.rate;
+ 
++import java.util.List;
++
+ /** A rate as the screen sees it: `pct` with two decimals, `from` and `to` as yyyy-mm-dd or null when it has none,
+- *  `version` its version count. */
+-public record RateResponse(String grade, String pct, String from, String to, int version) {
++ *  `version` its version count, `forwardAfter` the claim sequence a forward-only rate applies after (null when
++ *  it applies to every claim), and `earlier` its older versions, newest first (see {@link Rate}). */
++public record RateResponse(String grade, String pct, String from, String to, int version, Long forwardAfter,
++        List<VersionResponse> earlier) {
+     public static RateResponse from(Rate rate) {
+         return new RateResponse(rate.grade(), rate.pct().toPlainString(),
+                 rate.from() != null ? rate.from().toString() : null,
+-                rate.to() != null ? rate.to().toString() : null, rate.version());
++                rate.to() != null ? rate.to().toString() : null, rate.version(), rate.forwardAfter(),
++                rate.earlier().stream().map(VersionResponse::from).toList());
++    }
++
++    /** An older version of a rate: `pct` with two decimals, `to` as yyyy-mm-dd or null, and its `forwardAfter`. */
++    public record VersionResponse(String pct, String to, Long forwardAfter) {
++        static VersionResponse from(Rate.Version version) {
++            return new VersionResponse(version.pct().toPlainString(),
++                    version.to() != null ? version.to().toString() : null, version.forwardAfter());
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index 219e3291..e3b44a29 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -2,10 +2,15 @@ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
+ import java.sql.Date;
++import java.sql.ResultSet;
++import java.sql.SQLException;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowCallbackHandler;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The rates for each grade of each sheet; a grade has at most one in force per from-date (or none), the
+@@ -19,28 +24,46 @@ public class Rates {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** Every rate on the sheet, by grade, then by from-date (the one with none first). */
++    /** Every rate on the sheet, by grade, then by from-date (the one with none first), each with its older versions. */
+     public List<Rate> onSheet(String sheetId) {
+-        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ? ORDER BY grade, from_key",
+-                (rs, i) -> {
+-                    Date from = rs.getDate("from_date");
+-                    Date to = rs.getDate("to_date");
+-                    return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("pct"),
+-                            from != null ? from.toLocalDate() : null, to != null ? to.toLocalDate() : null,
+-                            rs.getInt("version"));
+-                },
++        Map<String, List<Rate.Version>> earlier = new HashMap<>();
++        jdbc.query("SELECT grade, from_date, pct, to_date, forward_after FROM rate_version WHERE sheet_id = ? ORDER BY version DESC",
++                (RowCallbackHandler) rs -> earlier.computeIfAbsent(rs.getString("grade") + "/" + rs.getDate("from_date"),
++                        k -> new ArrayList<>()).add(new Rate.Version(rs.getBigDecimal("pct"), date(rs.getDate("to_date")),
++                                forwardAfter(rs))),
++                sheetId);
++        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version, forward_after FROM rate WHERE sheet_id = ? ORDER BY grade, from_key",
++                (rs, i) -> new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("pct"),
++                        date(rs.getDate("from_date")), date(rs.getDate("to_date")), rs.getInt("version"), forwardAfter(rs),
++                        earlier.getOrDefault(rs.getString("grade") + "/" + rs.getDate("from_date"), List.of())),
+                 sheetId);
+     }
+ 
++    private static LocalDate date(Date date) {
++        return date != null ? date.toLocalDate() : null;
++    }
++
++    private static Long forwardAfter(ResultSet rs) throws SQLException {
++        long after = rs.getLong("forward_after");
++        return rs.wasNull() ? null : after;
++    }
++
+     /** How many levels of parent sheets a grade's rate is looked for in. */
+     public static final int PARENT_LEVELS = 3;
+ 
+     /** The grade's rate in force on `date`: the sheet's own (see {@link #ownPct}), else its parent's
+      *  then, else the parent's parent's, up to {@link #PARENT_LEVELS} levels up; null when none has one. */
+     public BigDecimal pct(String sheetId, String grade, LocalDate date) {
++        return pct(sheetId, grade, date, null);
++    }
++
++    /** The grade's rate that applies on `date` to the claim with sequence `seq` (see {@link #ownPct}): as
++     *  {@link #pct(String, String, LocalDate)}, passing over each forward-only rate saved after the claim
++     *  was added. Null `seq` (a claim not yet added) passes over none. */
++    public BigDecimal pct(String sheetId, String grade, LocalDate date, Long seq) {
+         String sheet = sheetId;
+         for (int level = 0; sheet != null && level <= PARENT_LEVELS; level++) {
+-            BigDecimal pct = ownPct(sheet, grade, date);
++            BigDecimal pct = ownPct(sheet, grade, date, seq);
+             if (pct != null) return pct;
+             sheet = parent(sheet);
+         }
+@@ -71,33 +94,46 @@ public class Rates {
+     }
+ 
+     /** The grade's rate in force on `date` set on the sheet itself: the one with the latest from-date
+-     *  on or before it, or null when there is none or that one's to-date is before `date`. */
+-    public BigDecimal ownPct(String sheetId, String grade, LocalDate date) {
+-        return jdbc.query("SELECT pct, to_date FROM rate WHERE sheet_id = ? AND grade = ? AND from_key <= ?"
+-                + " ORDER BY from_key DESC LIMIT 1",
++     *  on or before it, or null when there is none or that one's to-date is before `date`. With a claim's
++     *  sequence `seq`, the rate that applies to that claim: a forward-only version saved after the claim
++     *  was added is passed over for the newest version of its from-date that applies, and a from-date
++     *  with none that applies is passed over for the one before. */
++    public BigDecimal ownPct(String sheetId, String grade, LocalDate date, Long seq) {
++        String applies = seq == null ? "" : " AND (forward_after IS NULL OR forward_after < ?)";
++        String versions = seq == null ? "SELECT from_key, version, pct, to_date FROM rate WHERE sheet_id = ? AND grade = ?" + applies
++                : "SELECT from_key, version, pct, to_date FROM rate WHERE sheet_id = ? AND grade = ?" + applies
++                        + " UNION ALL SELECT from_key, version, pct, to_date FROM rate_version WHERE sheet_id = ? AND grade = ?" + applies;
++        List<Object> args = new ArrayList<>(List.of(sheetId, grade));
++        if (seq != null) args.addAll(List.of(seq, sheetId, grade, seq));
++        args.add(Date.valueOf(date));
++        return jdbc.query("SELECT pct, to_date FROM (" + versions + ") v WHERE from_key <= ?"
++                + " ORDER BY from_key DESC, version DESC LIMIT 1",
+                 (rs, i) -> {
+                     Date to = rs.getDate("to_date");
+                     return to != null && to.toLocalDate().isBefore(date) ? null : rs.getBigDecimal("pct");
+-                }, sheetId, grade, Date.valueOf(date))
++                }, args.toArray())
+                 .stream().filter(p -> p != null).findFirst().orElse(null);
+     }
+ 
+     /** Set the grade's rate from its from-date as its newest version: the one it had for that from-date
+-     *  is kept as an older version. */
+-    public void save(Rate rate) {
++     *  is kept as an older version. Saved with a from-date on or after the sheet's `today`, it is
++     *  forward-only: it applies only to the claims added from now on (see {@link Rate#forwardAfter}). */
++    public void save(Rate rate, LocalDate today) {
+         Date from = rate.from() != null ? Date.valueOf(rate.from()) : null;
++        Long forwardAfter = rate.from() != null && today != null && !rate.from().isBefore(today)
++                ? jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM PUBLIC.claim", Long.class) : null;
+         Integer current = jdbc.query("SELECT version FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                 (rs, i) -> rs.getInt("version"), rate.sheetId(), rate.grade(), from).stream().findFirst().orElse(null);
+         if (current != null) {
+-            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) "
+-                    + "SELECT sheet_id, grade, from_date, version, pct, to_date FROM rate "
++            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, forward_after) "
++                    + "SELECT sheet_id, grade, from_date, version, pct, to_date, forward_after FROM rate "
+                     + "WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                     rate.sheetId(), rate.grade(), from);
+             jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                     rate.sheetId(), rate.grade(), from);
+         }
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
++        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, forward_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                 rate.sheetId(), rate.grade(), rate.pct(), from, rate.to() != null ? Date.valueOf(rate.to()) : null,
+-                current != null ? current + 1 : 1);
++                current != null ? current + 1 : 1, forwardAfter);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+index 9e77718c..1f0612f6 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+@@ -1,9 +1,10 @@
+ package net.officefloor.hq.app.rate;
+ 
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class SaveRate {
+-    public void save(@Val Rate rate, Rates rates) {
+-        rates.save(rate);
++    public void save(@Val Rate rate, Rates rates, Sheets sheets) {
++        rates.save(rate, sheets.today(rate.sheetId()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java b/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
+index e38320d8..1fb84f18 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
+@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.Snapshot;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -12,12 +13,12 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  same from-date, audited RATE_SET and then the figures it moved. */
+ public class SetImportedRates {
+     public void set(@PathVariable("sheetId") String sheetId, @Val ImportedRates imported, @Val Actor actor,
+-            Rates rates, Rollup rollup, Audit audit, Out<ImportRatesResult> result) {
++            Rates rates, Sheets sheets, Rollup rollup, Audit audit, Out<ImportRatesResult> result) {
+         RecordRateSet record = new RecordRateSet();
+         for (int i = 0; i < imported.rates().size(); i++) {
+             Rate rate = imported.rates().get(i);
+             Snapshot before = rollup.snapshot(sheetId);
+-            rates.save(rate);
++            rates.save(rate, sheets.today(sheetId));
+             record.record(imported.requests().get(i), rate, audit);
+             rollup.record(sheetId, before, actor.user());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java b/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java
+index 61628154..b7a9d88c 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshot.java
+@@ -3,16 +3,17 @@ package net.officefloor.hq.app.rollup;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+-import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.hq.app.sheet.LeftDay;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Runs before a new today takes effect: when the today moves, one SNAPSHOT line per person, in list
++/** Runs as a new today takes effect: when the today moves, one SNAPSHOT line per person, in list
+  *  order, with their due-total as it stood on the day being left (n/a when it is n/a), each also kept
+- *  on the person as a snapshot line. */
++ *  on the person as a snapshot line. Kept once the new today is set, so the sheet as it stood before
++ *  the move (see {@link net.officefloor.hq.app.sheet.AsOf}) does not have it. */
+ public class RecordSnapshot {
+-    public void record(@Val RollupBefore before, @Val LocalDate today, @Val Actor actor, Sheets sheets, People people,
++    public void record(@Val RollupBefore before, @Val LocalDate today, @Val LeftDay left, @Val Actor actor, People people,
+             Audit audit) {
+-        LocalDate leaving = sheets.today(before.sheetId());
++        LocalDate leaving = left.day();
+         if (today.equals(leaving)) return;
+         String prefix = " sheet=" + before.sheetId() + " by=" + actor.user();
+         before.snapshot().people().forEach((id, was) -> {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplyToday.java b/src/main/java/net/officefloor/hq/app/sheet/ApplyToday.java
+index 3f0b0b99..8344ff17 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ApplyToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplyToday.java
+@@ -2,13 +2,18 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Sets the sheet's today; a new today closes every open claim editor, releasing its lock. */
++/** Sets the sheet's today; a new today closes every open claim editor, releasing its lock. Keeps the
++ *  day being left. */
+ public class ApplyToday {
+-    public void apply(@PathVariable("sheetId") String sheetId, @Val LocalDate today, Sheets sheets, Claims claims) {
+-        if (!today.equals(sheets.today(sheetId))) claims.unlockAll(sheetId);
++    public void apply(@PathVariable("sheetId") String sheetId, @Val LocalDate today, Sheets sheets, Claims claims,
++            Out<LeftDay> left) {
++        LocalDate leaving = sheets.today(sheetId);
++        left.set(new LeftDay(leaving));
++        if (!today.equals(leaving)) claims.unlockAll(sheetId);
+         sheets.setToday(sheetId, today);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+index ac874941..3e47ff6d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -27,7 +27,7 @@ public class AsOf {
+ 
+     /** The tables of a sheet's data (keyed by sheet_id) kept in asof_hist and rebuilt into asof. */
+     static final List<String> TABLES = List.of("CLAIM", "PERSON", "PERSON_GRADE", "PERSON_HOLD", "PERSON_PATRON",
+-            "PERSON_WATCH", "PERSON_STATEMENT", "PERIOD", "PERIOD_PERSON_TOTAL", "PERIOD_NUMBER", "RATE",
++            "PERSON_WATCH", "PERSON_STATEMENT", "PERIOD", "PERIOD_PERSON_TOTAL", "PERIOD_NUMBER", "RATE", "RATE_VERSION",
+             "SHEET_SETTING", "SHEET_SETTING_DATED", "SHEET_ROLE", "SHEET_PERMISSION", "SHEET_DELEGATION",
+             "CLAIM_LOG", "SHEET_GRADE_TERMS", "SHEET_HOLIDAY", "SHEET_VOID_REASON", "CLAIM_COMMENT", "PERSON_ALIAS",
+             "POOL", "POOL_MEMBER", "PLAN", "PLAN_CLAIM", "CLAIM_LINE", "PERSON_SNAPSHOT");
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Clones.java b/src/main/java/net/officefloor/hq/app/sheet/Clones.java
+index 1087ef28..db6eb8ee 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Clones.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Clones.java
+@@ -63,10 +63,10 @@ public class Clones {
+                 + "SELECT ?, action_key, roles FROM sheet_permission WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) "
+                 + "SELECT ?, user_name, role FROM sheet_role WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) "
+-                + "SELECT ?, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) "
+-                + "SELECT ?, grade, from_date, version, pct, to_date FROM rate_version WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, forward_after) "
++                + "SELECT ?, grade, pct, from_date, to_date, version, forward_after FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, forward_after) "
++                + "SELECT ?, grade, from_date, version, pct, to_date, forward_after FROM rate_version WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_holiday (sheet_id, holiday_date) "
+                 + "SELECT ?, holiday_date FROM sheet_holiday WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_void_reason (sheet_id, reason, position) "
+@@ -165,9 +165,9 @@ public class Clones {
+             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
+                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
+                     + "proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, "
+-                    + "edited_by, due_terms, batch) SELECT ?, ?, amount, claim_date, note, status, NULL, due, opened_by, "
++                    + "edited_by, due_terms, batch, added_seq) SELECT ?, ?, amount, claim_date, note, status, NULL, due, opened_by, "
+                     + "FALSE, NULL, NULL, due_by, deferred_until, proofs, NULL, NULL, late_entry, reminded_on, "
+-                    + "ref, tags, tags_used, void_reason, edited_by, due_terms, batch FROM claim WHERE id = ?",
++                    + "ref, tags, tags_used, void_reason, edited_by, due_terms, batch, COALESCE(added_seq, id) FROM claim WHERE id = ?",
+                     new String[] { "id" });
+             ps.setString(1, to);
+             ps.setLong(2, personId);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LeftDay.java b/src/main/java/net/officefloor/hq/app/sheet/LeftDay.java
+new file mode 100644
+index 00000000..f185e203
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LeftDay.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++
++/** The sheet's today before a new one took effect: the day being left. */
++public record LeftDay(LocalDate day) {
++}
+diff --git a/src/main/resources/db/migration/V82__rate_forward_only.sql b/src/main/resources/db/migration/V82__rate_forward_only.sql
+new file mode 100644
+index 00000000..436de980
+--- /dev/null
++++ b/src/main/resources/db/migration/V82__rate_forward_only.sql
+@@ -0,0 +1,28 @@
++-- A rate saved with a from-date on or after the sheet's today is forward-only: it applies only to
++-- the claims added after it was saved. `forward_after` is the highest claim sequence there was when
++-- it was saved (a claim applies it only when its own sequence is higher); null for a rate that
++-- applies to every claim. Kept on each version, so a claim a forward-only version passes over keeps
++-- the version that applied to it.
++ALTER TABLE public.rate ADD COLUMN forward_after BIGINT;
++ALTER TABLE asof.rate ADD COLUMN forward_after BIGINT;
++ALTER TABLE asof_hist.rate ADD COLUMN forward_after BIGINT;
++DROP TRIGGER public.rate_history;
++CREATE TRIGGER rate_history AFTER INSERT, UPDATE, DELETE ON public.rate FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++ALTER TABLE public.rate_version ADD COLUMN forward_after BIGINT;
++
++-- The older versions are read with the rates, so a sheet as it stood keeps them too.
++CREATE TABLE asof.rate_version AS SELECT * FROM public.rate_version WHERE FALSE;
++CREATE TABLE asof_hist.rate_version AS SELECT * FROM public.rate_version WHERE FALSE;
++ALTER TABLE asof_hist.rate_version ADD COLUMN h_seq BIGINT NOT NULL;
++ALTER TABLE asof_hist.rate_version ADD COLUMN h_made_on DATE;
++ALTER TABLE asof_hist.rate_version ADD COLUMN h_op CHAR(1) NOT NULL;
++CREATE INDEX rate_version_hist_sheet ON asof_hist.rate_version (sheet_id, h_seq);
++CREATE TRIGGER rate_version_history AFTER INSERT, UPDATE, DELETE ON public.rate_version FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
++
++-- A claim's sequence: the order claims were added in, across every sheet. Null for its own id; a
++-- clone of a sheet keeps each claim's, so its rates apply to its claims as they did.
++ALTER TABLE public.claim ADD COLUMN added_seq BIGINT;
++ALTER TABLE asof.claim ADD COLUMN added_seq BIGINT;
++ALTER TABLE asof_hist.claim ADD COLUMN added_seq BIGINT;
++DROP TRIGGER public.claim_history;
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON public.claim FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 1985c3ac..f7ca109d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -6,15 +6,16 @@ validate:
+ snapshot:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   govern: [ transaction ]
+-  next: record-snapshot
+-# A changed today writes each person's due-total on the day being left, before it takes effect.
+-record-snapshot:
+-  class: net.officefloor.hq.app.rollup.RecordSnapshot
+-  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplyToday
+   govern: [ transaction ]
++  next: record-snapshot
++# A changed today writes each person's due-total on the day being left (as kept before the change),
++# once the new today is set: the sheet as it stood before the move has none.
++record-snapshot:
++  class: net.officefloor.hq.app.rollup.RecordSnapshot
++  govern: [ transaction ]
+   next: autoclose
+ # Once the new today is set, close the periods past their grace days, before the rollup lines.
+ autoclose:
