@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 20d71018..d87ae3f7 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -89,6 +89,17 @@ const ACTIONS = ['open', 'review', 'settle', 'approve', 'reject', 'void', 'delet
+ type Action = (typeof ACTIONS)[number];
+ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void', delete: 'Delete', restore: 'Restore' };
+ 
++/** A score from settled figures in cents and an overdue count: cents / 10000 - 5 per overdue claim,
++ *  rounded half to even to a whole number. */
++function scoreOf(settledCents: bigint, overdue: number): string {
++  const n = settledCents - 50000n * BigInt(overdue);
++  let q = n / 10000n;
++  const r = n - q * 10000n;
++  const twice = 2n * (r < 0n ? -r : r);
++  if (twice > 10000n || (twice === 10000n && q % 2n !== 0n)) q += r < 0n ? -1n : 1n;
++  return q.toString();
++}
++
+ /**
+  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
+  * one form to add a claim or edit the one whose editor is open (only a DRAFT outside a closed period can be edited; an open
+@@ -163,6 +174,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+   const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
++  // Their score: their settled figures over 100, less 5 for each overdue claim, rounded half to even.
++  const score = scoreOf(settledSum ?? 0n, late.count);
+   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
+   const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
+   const editing = editingClaim?.id ?? null;
+@@ -623,6 +636,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+       <td data-testid="person-open-total">{showDue(openSum ?? 0n)}</td>
+       <Col user={user} id="overdue-count"><td data-testid="person-overdue-count">{late.count}</td></Col>
+       <Col user={user} id="overdue-total"><td data-testid="person-overdue-total">{showDue(late.cents)}</td></Col>
++      <td data-testid="person-score">{score}</td>
+       <td>
+         <form
+           data-testid="claim-form"
+@@ -1173,6 +1187,7 @@ export const contributions = [
+         <th>Open</th>
+         <Col user={user} id="overdue-count"><th>Overdue</th></Col>
+         <Col user={user} id="overdue-total"><th>Overdue due</th></Col>
++        <th>Score</th>
+         <th>Claims</th>
+       </>
+     ),
+diff --git a/src/main/frontend/features/people/QuickAddBar.tsx b/src/main/frontend/features/people/QuickAddBar.tsx
+index beb3a92a..9a9e8c13 100644
+--- a/src/main/frontend/features/people/QuickAddBar.tsx
++++ b/src/main/frontend/features/people/QuickAddBar.tsx
+@@ -7,8 +7,8 @@ import { peopleKey } from './usePeople';
+ 
+ /** Adds a DRAFT claim by person name: dated the sheet's today, with an empty note, for the person
+  *  of that name — created with the sheet's default grade when the name is not on the sheet. One change on the
+- *  server: a refused claim leaves no new person behind. */
+-export function QuickAddBar({ user, sheet }: { user: string; sheet: string }) {
++ *  server: a refused claim leaves no new person behind. `onAdded` is told the person the claim went to. */
++export function QuickAddBar({ user, sheet, onAdded }: { user: string; sheet: string; onAdded?: (personId: number) => void }) {
+   const queryClient = useQueryClient();
+   const [name, setName] = useState('');
+   const [amount, setAmount] = useState('');
+@@ -16,7 +16,8 @@ export function QuickAddBar({ user, sheet }: { user: string; sheet: string }) {
+   const add = useMutation({
+     mutationFn: (q: { name: string; amount: string }) =>
+       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/quick-add`, { ...q, user }),
+-    onSuccess: async () => {
++    onSuccess: async (claim) => {
++      onAdded?.(claim.personId);
+       setName('');
+       setAmount('');
+       await Promise.all([
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index de1c0322..8f1cd787 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -43,7 +43,9 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+   const shown = showRetired ? everyone : everyone.filter((p) => !p.retired);
+   // A restricted user's list holds only their own crews' people; every other figure is over everyone.
+   const visible = useVisiblePeople(user, sheet);
+-  const listed = shown.filter((p) => visible(p.id));
++  // The people this user quick-added on this screen stay listed until the sheet is loaded again.
++  const [addedHere, setAddedHere] = useState<number[]>([]);
++  const listed = shown.filter((p) => visible(p.id) || addedHere.includes(p.id));
+   // This user's screen may sort the list; only what is shown changes, not the list order.
+   const people = useSortedPeople(sheet, listed);
+   const [editing, setEditing] = useState<number | null>(null);
+@@ -267,7 +269,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+           </span>
+         )}
+       </form>
+-      <QuickAddBar user={user} sheet={sheet} />
++      <QuickAddBar user={user} sheet={sheet} onAdded={(id) => setAddedHere((ids) => (ids.includes(id) ? ids : [...ids, id]))} />
+       <ShowRetired />{' '}
+       <SortBy />
+       <table data-testid="people-list">
