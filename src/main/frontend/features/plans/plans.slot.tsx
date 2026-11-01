@@ -14,7 +14,9 @@ import { plansKey, usePlans, type Plan } from './usePlans';
  * refused. Each plan shows how many claims it has made so far
  * and its next five plan dates after the sheet's today, up to its end. A plan can be paused and
  * resumed (pausing a paused plan or resuming a running one is refused); a plan date on or after the
- * day paused and before the day resumed is skipped, so it is left out of the next dates.
+ * day paused and before the day resumed is skipped, so it is left out of the next dates. A plan's
+ * amount can be changed (a bad amount is refused): the new amount applies to the claims made from then
+ * on. Each plan lists its changes, oldest first, as `<date> amount=<amount>`.
  */
 function PersonPlans({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -24,6 +26,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
   const [every, setEvery] = useState('');
   const [day, setDay] = useState('');
   const [end, setEnd] = useState('');
+  const [newAmounts, setNewAmounts] = useState<Record<number, string>>({});
 
   const submitOnce = useSubmitOnce();
   const add = useMutation({
@@ -50,10 +53,19 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
       postJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${planId}/${on ? 'pause' : 'resume'}`, { user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheet) }),
   });
+  const changeAmount = useMutation({
+    mutationFn: ({ planId, amount }: { planId: number; amount: string }) =>
+      postJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${planId}/amount`, { amount, user }),
+    onSuccess: async (_data, { planId }) => {
+      setNewAmounts((was) => ({ ...was, [planId]: '' }));
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+    },
+  });
   const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     add.reset();
     pause.reset();
+    changeAmount.reset();
   };
 
   return (
@@ -84,6 +96,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
                 disabled={pause.isPending}
                 onClick={() => {
                   pause.reset();
+                  changeAmount.reset();
                   pause.mutate({ planId: p.id, on: true });
                 }}
               >
@@ -95,11 +108,51 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
                 disabled={pause.isPending}
                 onClick={() => {
                   pause.reset();
+                  changeAmount.reset();
                   pause.mutate({ planId: p.id, on: false });
                 }}
               >
                 Resume
+              </button>{' '}
+              <input
+                data-testid="plan-amount"
+                aria-label="New plan amount"
+                placeholder="new amount"
+                size={7}
+                value={newAmounts[p.id] ?? ''}
+                onChange={(e) => {
+                  setNewAmounts((was) => ({ ...was, [p.id]: e.target.value }));
+                  changeAmount.reset();
+                  pause.reset();
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="plan-amount-save"
+                disabled={changeAmount.isPending}
+                onClick={() => {
+                  changeAmount.reset();
+                  pause.reset();
+                  changeAmount.mutate({ planId: p.id, amount: newAmounts[p.id] ?? '' });
+                }}
+              >
+                Save amount
               </button>
+              <ul>
+                {p.changes.map((line, i) => (
+                  <li key={i} data-testid="plan-change-line">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              {changeAmount.isError && changeAmount.variables?.planId === p.id && (
+                <span data-testid="plan-error" role="alert">
+                  {' '}
+                  {changeAmount.error instanceof HttpError && changeAmount.error.body
+                    ? changeAmount.error.body
+                    : 'Could not change this amount (more than 0, up to two decimals).'}
+                </span>
+              )}
               {pause.isError && pause.variables?.planId === p.id && (
                 <span data-testid="plan-error" role="alert">
                   {' '}
@@ -117,6 +170,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
           e.preventDefault();
           add.reset();
           pause.reset();
+          changeAmount.reset();
           submitOnce(() => add.mutateAsync());
         }}
       >

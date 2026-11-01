@@ -10,7 +10,8 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The plans of each sheet, in the order added, the plan dates each has made its claim for, and its pauses. */
+/** The plans of each sheet, in the order added, the plan dates each has made its claim for, its pauses
+ *  and its changes of amount. */
 @Repository
 public class Plans {
 
@@ -22,6 +23,12 @@ public class Plans {
 
     /** Every plan on the sheet, in the order added, with how many claims it has made so far and its pauses. */
     public List<Plan> onSheet(String sheetId) {
+        Map<Long, List<PlanChange>> changes = new HashMap<>();
+        jdbc.query("SELECT plan_id, changed_on, amount FROM plan_change WHERE sheet_id = ? ORDER BY id",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> changes
+                        .computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
+                        .add(new PlanChange(rs.getDate(2).toLocalDate(), rs.getBigDecimal(3).setScale(2))),
+                sheetId);
         Map<Long, List<PlanPause>> pauses = new HashMap<>();
         jdbc.query("SELECT plan_id, paused_on, resumed_on FROM plan_pause WHERE sheet_id = ? ORDER BY id",
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> pauses
@@ -35,7 +42,8 @@ public class Plans {
                 (rs, i) -> new Plan(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getBigDecimal(4).setScale(2),
                         rs.getDate(5).toLocalDate(), rs.getObject(6, Integer.class), rs.getObject(7, Integer.class),
                         rs.getDate(8).toLocalDate(), rs.getInt(9),
-                        pauses.getOrDefault(rs.getLong(1), List.of())),
+                        pauses.getOrDefault(rs.getLong(1), List.of()),
+                        changes.getOrDefault(rs.getLong(1), List.of())),
                 sheetId);
     }
 
@@ -71,6 +79,13 @@ public class Plans {
     public void pause(String sheetId, long planId, LocalDate on) {
         jdbc.update("INSERT INTO plan_pause (sheet_id, plan_id, paused_on) VALUES (?, ?, ?)", sheetId, planId,
                 Date.valueOf(on));
+    }
+
+    /** Changes the plan's amount on that day, from then on, and notes the change. */
+    public void changeAmount(String sheetId, long planId, LocalDate on, BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
+        jdbc.update("INSERT INTO plan_change (sheet_id, plan_id, changed_on, amount) VALUES (?, ?, ?, ?)", sheetId,
+                planId, Date.valueOf(on), amount);
     }
 
     /** Ends the plan's open pause on that day. */

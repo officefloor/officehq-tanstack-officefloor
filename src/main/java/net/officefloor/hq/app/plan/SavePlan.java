@@ -18,6 +18,6 @@ public class SavePlan {
         long id = plans.add(person.getSheetId(), person.getId(), values.amount(), start, values.every(), values.day(),
                 values.end());
         plan.set(new Plan(id, person.getSheetId(), person.getId(), values.amount(), start, values.every(), values.day(),
-                values.end(), 0, java.util.List.of()));
+                values.end(), 0, java.util.List.of(), java.util.List.of()));
     }
 }

@@ -5,7 +5,8 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 /** A plan as the server sends it: its person, amount (two decimals), start, every N days (null when monthly) or day of
  *  the month (null otherwise), end
  *  (yyyy-mm-dd), how many claims it has made so far and its next (up to five) plan dates after the sheet's
- *  today (the paused ones left out), and whether it is paused now. */
+ *  today (the paused ones left out), whether it is paused now, and its changes of amount, oldest first, each
+ *  as `<date> amount=<amount>`. */
 export type Plan = {
   id: number;
   personId: number;
@@ -17,6 +18,7 @@ export type Plan = {
   generated: number;
   nextDates: string[];
   paused: boolean;
+  changes: string[];
 };
 
 export const plansKey = (sheet: string) => ['sheet', sheet, 'plans'] as const;
