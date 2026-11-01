@@ -106,6 +106,33 @@ public class AsOf {
             });
             if (!batch.isEmpty()) jdbc.batchUpdate(insert, batch);
         }
+        ancestors(sheetId);
+    }
+
+    /** The tables an ancestor sheet lends the sheet: its rates (a grade with none on the sheet takes
+     *  theirs) and its settings (naming its own parent). */
+    private static final List<String> ANCESTOR_TABLES = List.of("RATE", "RATE_VERSION", "SHEET_SETTING");
+
+    /** The sheet's parent sheets, up to {@link net.officefloor.hq.app.rate.Rates#PARENT_LEVELS} levels up,
+     *  as they stand now: each keeps a today of its own, so only the sheet itself is rebuilt as of the date. */
+    private void ancestors(String sheetId) {
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        String sheet = parentIn("ASOF", sheetId);
+        for (int level = 1; sheet != null && seen.add(sheet)
+                && level <= net.officefloor.hq.app.rate.Rates.PARENT_LEVELS; level++) {
+            for (String table : ANCESTOR_TABLES) {
+                String names = '"' + String.join("\", \"", columns(table)) + '"';
+                jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheet);
+                jdbc.update("INSERT INTO ASOF.\"" + table + "\" (" + names + ") SELECT " + names
+                        + " FROM PUBLIC.\"" + table + "\" WHERE sheet_id = ?", sheet);
+            }
+            sheet = parentIn("PUBLIC", sheet);
+        }
+    }
+
+    private String parentIn(String schema, String sheetId) {
+        return jdbc.query("SELECT parent_id FROM " + schema + ".sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> rs.getString(1), sheetId).stream().filter(p -> p != null).findFirst().orElse(null);
     }
 
     private List<String> columns(String table) {

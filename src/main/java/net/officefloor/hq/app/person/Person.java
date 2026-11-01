@@ -43,6 +43,7 @@ public class Person {
     private List<PastRetirement> pastRetirements = new ArrayList<>();
     private List<Hold> holds = new ArrayList<>();
     private List<String> snapshots = new ArrayList<>();
+    private List<String> statementLines = new ArrayList<>();
     private List<Long> patronIds = new ArrayList<>();
     /** The person's aliases, sorted as names are compared. */
     private List<String> aliases = new ArrayList<>();
@@ -150,6 +151,10 @@ public class Person {
     /** The person's snapshot lines, oldest first: the day being left and their due-total then (n/a). */
     public List<String> getSnapshots() { return snapshots; }
     public void setSnapshots(List<String> snapshots) { this.snapshots = snapshots; }
+    /** The person's statements still standing, oldest first (by date, then as taken): the statement's
+     *  date and its due-total (n/a). */
+    public List<String> getStatementLines() { return statementLines; }
+    public void setStatementLines(List<String> statementLines) { this.statementLines = statementLines; }
     /** Whether `date` falls within any of the person's holds. */
     public boolean heldOn(LocalDate date) {
         return holds.stream().anyMatch(h -> h.covers(date));

@@ -55,6 +55,11 @@ public class People {
                 (ResultSet rs) -> {
                     snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
                 }, sheetId);
+        Map<Long, List<String>> statementLines = new HashMap<>();
+        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? ORDER BY statement_date, seq",
+                (ResultSet rs) -> {
+                    statementLines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(statementLine(rs));
+                }, sheetId);
         Map<Long, List<String>> aliases = new HashMap<>();
         jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY alias_key, id",
                 (ResultSet rs) -> {
@@ -65,6 +70,7 @@ public class People {
             person.setAliases(aliases.getOrDefault(person.getId(), new ArrayList<>()));
             person.setHolds(holds.getOrDefault(person.getId(), new ArrayList<>()));
             person.setSnapshots(snapshots.getOrDefault(person.getId(), new ArrayList<>()));
+            person.setStatementLines(statementLines.getOrDefault(person.getId(), new ArrayList<>()));
             person.setPatronIds(patrons.getOrDefault(person.getId(), new ArrayList<>()));
             TreeMap<LocalDate, String> dated = grades.get(person.getId());
             if (dated != null) person.setGrades(dated);
@@ -438,6 +444,9 @@ public class People {
             person.setSnapshots(new ArrayList<>(jdbc.query(
                     "SELECT left_day, due_total FROM person_snapshot WHERE person_id = ? ORDER BY id",
                     (rs, i) -> snapshot(rs), person.getId())));
+            person.setStatementLines(new ArrayList<>(jdbc.query(
+                    "SELECT statement_date, stated_total FROM person_statement WHERE person_id = ? ORDER BY statement_date, seq",
+                    (rs, i) -> statementLine(rs), person.getId())));
             person.setAliases(aliasesOf(person.getId()));
             person.setPatronIds(new ArrayList<>(jdbc.queryForList(
                     "SELECT patron_id FROM person_patron WHERE person_id = ? ORDER BY id", Long.class, person.getId())));
@@ -450,6 +459,12 @@ public class People {
     private static String snapshot(ResultSet rs) throws SQLException {
         java.math.BigDecimal due = rs.getBigDecimal("due_total");
         return rs.getDate("left_day").toLocalDate() + " " + (due == null ? "n/a" : due.setScale(2).toPlainString());
+    }
+
+    /** A statement line as shown: the statement's date and its due-total (n/a when it was). */
+    private static String statementLine(ResultSet rs) throws SQLException {
+        java.math.BigDecimal due = rs.getBigDecimal("stated_total");
+        return rs.getDate("statement_date").toLocalDate() + " " + (due == null ? "n/a" : due.setScale(2).toPlainString());
     }
 
     /** Record a snapshot of the person: the day being left and their due-total then (null: n/a). Not an

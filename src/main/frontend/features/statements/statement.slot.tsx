@@ -14,7 +14,8 @@ import { Col } from '../columns/useColumns';
  * button takes it as of that date (on or before the sheet's today): the claims that counted at the
  * end of it are bound to their figures as they stood then, and the statement is dated it. A steward can
  * cancel the last statement: the claims it bound become live again, and the row shows the one
- * before it (or nothing).
+ * before it (or nothing). Each statement still standing shows as a line, oldest first:
+ * `<statement date> <due-total>`.
  */
 function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -50,6 +51,13 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
       <Col user={user} id="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
       <Col user={user} id="stated-total"><td data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</td></Col>
       <Col user={user} id="statement-date"><td data-testid="person-statement-date">{taken ? (person.statementDate ?? '') : ''}</td></Col>
+      <td>
+        {person.statementLines.map((line, i) => (
+          <div key={i} data-testid="person-statement-line-line">
+            {line}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="text"
@@ -100,6 +108,7 @@ export const contributions = [
         <Col user={user} id="statement-count"><th>Statements</th></Col>
         <Col user={user} id="stated-total"><th>Last stated</th></Col>
         <Col user={user} id="statement-date"><th>Stated on</th></Col>
+        <th>Statement lines</th>
         <th />
       </>
     ),
