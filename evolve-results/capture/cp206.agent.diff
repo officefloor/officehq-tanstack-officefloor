@@ -1,0 +1,146 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 758ecd5d..de1c0322 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -10,6 +10,29 @@ import { SortBy, useSortedPeople } from './SortBy';
+ import { useSheetToday } from '../sheet/useSheet';
+ import { GRADES, gradeOn, peopleKey, shownName, usePeople, type Person } from './usePeople';
+ import { Col } from '../columns/useColumns';
++import { useCrews } from '../crews/useCrews';
++import { useRoleOf } from '../settings/useSettings';
++
++/** Whether a person has a row on this user's list: anyone's for every role but restricted. A
++ *  restricted user sees the people with their name (or an alias of it, as names are compared: case
++ *  and the spaces around it ignored) and the leads and members of every crew such a person leads or
++ *  belongs to. No one is listed until the user's role is read. */
++function useVisiblePeople(user: string, sheet: string): (id: number) => boolean {
++  const role = useRoleOf(sheet, user);
++  const { data: everyone = [] } = usePeople(sheet);
++  const { data: crews } = useCrews(sheet);
++  if (role === null) return () => false;
++  if (role !== 'restricted') return () => true;
++  if (crews === undefined) return () => false;
++  const key = (n: string) => n.trim().toLowerCase();
++  const mine = new Set(everyone.filter((p) => [p.name, ...p.aliases].some((n) => key(n) === key(user))).map((p) => p.id));
++  const ids = new Set(mine);
++  for (const c of crews) {
++    const crewIds = [c.leadId, ...c.members.map((m) => m.personId)];
++    if (crewIds.some((id) => mine.has(id))) crewIds.forEach((id) => ids.add(id));
++  }
++  return (id) => ids.has(id);
++}
+ 
+ /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
+ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+@@ -17,7 +40,10 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
+   const { data: everyone = [] } = usePeople(sheet);
+   // Retired people have no row unless they are shown; their claims still count in every total.
+   const [showRetired] = useShowRetired();
+-  const listed = showRetired ? everyone : everyone.filter((p) => !p.retired);
++  const shown = showRetired ? everyone : everyone.filter((p) => !p.retired);
++  // A restricted user's list holds only their own crews' people; every other figure is over everyone.
++  const visible = useVisiblePeople(user, sheet);
++  const listed = shown.filter((p) => visible(p.id));
+   // This user's screen may sort the list; only what is shown changes, not the list order.
+   const people = useSortedPeople(sheet, listed);
+   const [editing, setEditing] = useState<number | null>(null);
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 7ba77bb7..a17feb1e 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -38,7 +38,7 @@ type Froms = Record<string, string>;
+  * charge counted, only from its due-by plus the grace in force on its date; blank is none),
+  * its entry date (while set, the default date of a new claim in place of the sheet's today; blank is off; not dated),
+  * its fiscal year start month (1 to 12, 1 unless set; a fiscal year FY<yyyy> starts on its first day in yyyy; not dated),
+- * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing),
++ * and the roles given to user names (clerk, the default, steward, viewer — who sees everything and can change nothing — or restricted, who sees only their crews' people),
+  * and the delegations of the steward role (a steward delegates it to a user from a from-date to a to-date, inclusive,
+  * by the sheet's today; a blank from-date is the sheet's today, a blank to-date the from-date). A save sets only the settings
+  * whose fields were touched since the last one. The clerk limit (the sheet's and each grade's), the floor, the terms (the sheet's and
+@@ -754,7 +754,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+           Role{' '}
+           <input
+             data-testid="role-form-role"
+-            placeholder="clerk, steward or viewer"
++            placeholder="clerk, steward, viewer or restricted"
+             list="role-options"
+             value={role}
+             onChange={(e) => {
+@@ -773,7 +773,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
+         </button>
+         {(roleInvalid || saveRole.isError) && (
+           <span data-testid="role-form-error" role="alert">
+-            {' '}Give a user name the role clerk, steward or viewer.
++            {' '}Give a user name the role clerk, steward, viewer or restricted.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index ffeb09fb..1088817a 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -110,7 +110,7 @@ export function useLate(sheet: string): Late {
+   };
+ }
+ 
+-export const ROLES = ['clerk', 'steward', 'viewer'] as const;
++export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'] as const;
+ 
+ /** The user's role on the sheet as every rule takes it: steward while a delegation to them covers
+  *  the sheet's today, else the role given to their name (clerk unless given another). Under an as-of
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index f91e455e..7511e351 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -165,7 +165,7 @@ public class ApplyClaimStatus {
+             // The person's grade's own limit on the sheet's today when one is set, else the sheet's.
+             BigDecimal limit = settings.clerkLimit(claim.getSheetId(), grade);
+             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
+-                    && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
++                    && java.util.EnumSet.of(Role.CLERK, Role.RESTRICTED).contains(settings.role(claim.getSheetId(), change.user()));
+         }
+         claim.setStatus(pending ? ClaimStatus.PENDING : review ? ClaimStatus.REVIEW : change.action().to());
+         // Settled one at a time: in no batch (a bulk settle sets its batch after this).
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Role.java b/src/main/java/net/officefloor/hq/app/settings/Role.java
+index 9919f2e4..b683d83d 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Role.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Role.java
+@@ -2,10 +2,11 @@ package net.officefloor.hq.app.settings;
+ 
+ import java.util.Locale;
+ 
+-/** A user name's role on a sheet: a clerk (the default for any name), a steward, or a viewer (who sees
+- *  everything and can change nothing). */
++/** A user name's role on a sheet: a clerk (the default for any name), a steward, a viewer (who sees
++ *  everything and can change nothing), or a restricted clerk (whose people list holds only the people
++ *  of the crews they lead or belong to, and themselves). */
+ public enum Role {
+-    CLERK, STEWARD, VIEWER;
++    CLERK, STEWARD, VIEWER, RESTRICTED;
+ 
+     public String show() {
+         return name().toLowerCase(Locale.ROOT);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java b/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java
+index 87e3c339..3df03f79 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RoleRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.settings;
+ 
+-/** Body of a role change: the user name given the role, the role (clerk, steward or viewer) and who makes the change. */
++/** Body of a role change: the user name given the role, the role (clerk, steward, viewer or restricted) and who makes the change. */
+ public record RoleRequest(String name, String role, String user) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java b/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
+index 1e99e6b8..17037021 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
+@@ -17,7 +17,7 @@ public class ValidateRole {
+         try {
+             change.set(new RoleChange(sheetId, name, Role.valueOf(role.toUpperCase(Locale.ROOT)), request.user()));
+         } catch (IllegalArgumentException e) {
+-            throw new InvalidSheetRequestException("Not a role (clerk, steward or viewer): " + role);
++            throw new InvalidSheetRequestException("Not a role (clerk, steward, viewer or restricted): " + role);
+         }
+     }
+ }
