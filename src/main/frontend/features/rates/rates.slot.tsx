@@ -148,6 +148,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -159,6 +160,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
               <td>
                 <span data-testid="rate-pct">{r.pct}</span>
               </td>
+              <td data-testid="rate-version">{r.version}</td>
             </tr>
           ))}
         </tbody>

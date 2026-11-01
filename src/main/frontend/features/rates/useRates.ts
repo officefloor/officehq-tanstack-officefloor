@@ -4,8 +4,9 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
 /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
- *  date it applies through, or null when it has no end. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
+ *  date it applies through, or null when it has no end; `version` how many values have been set for
+ *  its grade and from-date, this newest one (the one in force) included. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; version: number; level?: number };
 
 /** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
 type InheritedRates = { level: number; sheet: string; rates: Rate[] };

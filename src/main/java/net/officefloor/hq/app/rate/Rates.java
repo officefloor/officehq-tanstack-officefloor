@@ -8,7 +8,8 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The rates for each grade of each sheet; a grade has at most one per from-date (or none). */
+/** The rates for each grade of each sheet; a grade has at most one in force per from-date (or none), the
+ *  newest of its versions. */
 @Repository
 public class Rates {
 
@@ -20,12 +21,13 @@ public class Rates {
 
     /** Every rate on the sheet, by grade, then by from-date (the one with none first). */
     public List<Rate> onSheet(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate WHERE sheet_id = ? ORDER BY grade, from_key",
+        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ? ORDER BY grade, from_key",
                 (rs, i) -> {
                     Date from = rs.getDate("from_date");
                     Date to = rs.getDate("to_date");
                     return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("pct"),
-                            from != null ? from.toLocalDate() : null, to != null ? to.toLocalDate() : null);
+                            from != null ? from.toLocalDate() : null, to != null ? to.toLocalDate() : null,
+                            rs.getInt("version"));
                 },
                 sheetId);
     }
@@ -80,12 +82,22 @@ public class Rates {
                 .stream().filter(p -> p != null).findFirst().orElse(null);
     }
 
-    /** Set the grade's rate from its from-date, replacing the one it had for that from-date. */
+    /** Set the grade's rate from its from-date as its newest version: the one it had for that from-date
+     *  is kept as an older version. */
     public void save(Rate rate) {
         Date from = rate.from() != null ? Date.valueOf(rate.from()) : null;
-        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
-                rate.sheetId(), rate.grade(), from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.pct(), from, rate.to() != null ? Date.valueOf(rate.to()) : null);
+        Integer current = jdbc.query("SELECT version FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                (rs, i) -> rs.getInt("version"), rate.sheetId(), rate.grade(), from).stream().findFirst().orElse(null);
+        if (current != null) {
+            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) "
+                    + "SELECT sheet_id, grade, from_date, version, pct, to_date FROM rate "
+                    + "WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                    rate.sheetId(), rate.grade(), from);
+            jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                    rate.sheetId(), rate.grade(), from);
+        }
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.pct(), from, rate.to() != null ? Date.valueOf(rate.to()) : null,
+                current != null ? current + 1 : 1);
     }
 }
