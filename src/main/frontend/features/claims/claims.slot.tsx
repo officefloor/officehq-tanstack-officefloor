@@ -5,8 +5,10 @@ import { postJson, putJson } from '../../api/http';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
-import type { Person } from '../people/people';
+import type { Grade, Person } from '../people/people';
+import { useSheetToday } from '../sheet/sheet';
 import { dueCents, rateOf, showDue, useRates } from '../rates/rates';
+import type { Rate } from '../rates/rates';
 import { claimDueCents, claimed, claimsKey, claimsPath, counted, useClaims } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
@@ -31,11 +33,12 @@ const CHANGES: { change: ClaimStatusChange; label: string }[] = [
 
 // One claim with its status and the buttons that change it. Every button is offered; the server
 // refuses a change the claim's status does not allow, and the row shows that error until its next action.
-function ClaimRow({ sheet, user, claim, rate, editing, onEdit, onCancel }: {
+function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel }: {
   sheet: string;
   user: string;
   claim: Claim;
-  rate: string | undefined;
+  rates: Rate[];
+  grade: Grade;
   editing: boolean;
   onEdit: () => void;
   onCancel: () => void;
@@ -57,7 +60,7 @@ function ClaimRow({ sheet, user, claim, rate, editing, onEdit, onCancel }: {
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
-      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rate))}</span>{' '}
+      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date)))}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       {claim.number !== null && '#'}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
@@ -103,7 +106,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.person === person.id);
   const { data: rates = [] } = useRates(sheet);
-  const rate = rateOf(rates, person.grade);
+  const today = useSheetToday(sheet);
+  const rate = rateOf(rates, person.grade, today);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -183,7 +187,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
               sheet={sheet}
               user={user}
               claim={c}
-              rate={rate}
+              rates={rates}
+              grade={person.grade}
               editing={editing === c.id}
               onEdit={() => open(c)}
               onCancel={cancel}

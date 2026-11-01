@@ -1,17 +1,19 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.RoundingMode;
+import java.sql.Date;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/** The rates kept per sheet, one per grade. */
+/** The rates kept per sheet: per grade, one for each from-date (and at most one with none). */
 @Repository
 public class Rates {
 
     private static final RowMapper<Rate> ROW = (rs, i) -> new Rate(rs.getString("grade"),
-            rs.getBigDecimal("pct").setScale(2, RoundingMode.UNNECESSARY).toPlainString());
+            rs.getBigDecimal("pct").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
+            rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString());
 
     private final JdbcTemplate jdbc;
 
@@ -19,13 +21,19 @@ public class Rates {
         this.jdbc = jdbc;
     }
 
-    /** Every grade's rate on the sheet, by grade. */
+    /** Every rate on the sheet, by grade then from-date (the one with none first). */
     public List<Rate> list(String sheet) {
-        return jdbc.query("SELECT grade, pct FROM rate WHERE sheet = ? ORDER BY grade", ROW, sheet);
+        return jdbc.query("SELECT grade, pct, from_date FROM rate WHERE sheet = ? ORDER BY grade, from_key", ROW,
+                sheet);
     }
 
+    /** Sets the grade's rate from the from-date, replacing the one already there for that grade and from-date. */
     public void set(String sheet, RateInput input) {
-        jdbc.update("MERGE INTO rate (sheet, grade, pct) KEY (sheet, grade) VALUES (?, ?, ?)", sheet, input.grade(),
-                input.pct());
+        Date from = input.from() == null ? null : Date.valueOf(input.from());
+        if (jdbc.update("UPDATE rate SET pct = ? WHERE sheet = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                input.pct(), sheet, input.grade(), from) == 0) {
+            jdbc.update("INSERT INTO rate (sheet, grade, pct, from_date) VALUES (?, ?, ?, ?)", sheet, input.grade(),
+                    input.pct(), from);
+        }
     }
 }

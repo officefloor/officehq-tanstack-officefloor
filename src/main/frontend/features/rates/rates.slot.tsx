@@ -5,24 +5,28 @@ import { postJson } from '../../api/http';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES } from '../people/people';
+import { useSheetToday } from '../sheet/sheet';
 import type { Grade } from '../people/people';
 import { rateOf, ratesKey, ratesPath, useRates } from './rates';
 import type { Rate } from './rates';
 
-type Draft = { grade: Grade; pct: string };
-const EMPTY: Draft = { grade: 'A', pct: '' };
+type Draft = { grade: Grade; pct: string; from: string };
+const EMPTY: Draft = { grade: 'A', pct: '', from: '' };
 
-// The sheet's rate for each grade: shown per grade (n/a when unset), with a form that sets one.
+// The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), every rate with its
+// from-date (a blank from-date applies from the start), and a form that sets one, replacing the rate already
+// there for that grade and from-date.
 function Rates({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: rates = [] } = useRates(sheet);
+  const today = useSheetToday(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
 
   const save = useMutation({
     mutationFn: (body: Draft) => postJson<Rate[]>(byUser(ratesPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(ratesKey(sheet), updated);
-      setDraft((d) => ({ ...d, pct: '' }));
+      setDraft((d) => ({ ...d, pct: '', from: '' }));
     },
   });
 
@@ -34,7 +38,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save.reset();
-    // The server refuses a percent that is not 0.00 or more with up to two decimals.
+    // The server refuses a percent that is not 0.00 or more with up to two decimals, or a bad from-date.
     save.mutate(draft);
   };
 
@@ -60,12 +64,21 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
           Rate %{' '}
           <input data-testid="rate-form-pct" value={draft.pct} onChange={(e) => change({ pct: e.target.value })} />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="rate-form-from"
+            placeholder="yyyy-mm-dd (blank: from the start)"
+            value={draft.from}
+            onChange={(e) => change({ from: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
         {save.isError && (
           <span data-testid="rate-form-error" role="alert">
-            {' '}A rate needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals.
+            {' '}A rate needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals, and a from-date that is a valid date or blank.
           </span>
         )}
       </form>
@@ -73,21 +86,36 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
         <thead>
           <tr>
             <th>Grade</th>
+            <th>Rate % today</th>
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              <td data-testid={`rate-current-${g}`}>{rateOf(rates, g, today) ?? 'n/a'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>From</th>
             <th>Rate %</th>
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
-            const pct = rateOf(rates, g);
-            return (
-              <tr key={g} data-testid={pct === undefined ? undefined : `rate-row-${g}-start`}>
-                <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>
-                  {pct === undefined ? 'n/a' : <span data-testid="rate-pct">{pct}</span>}
-                </td>
-              </tr>
-            );
-          })}
+          {rates.map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td>
+                <span data-testid="rate-pct">{r.pct}</span>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>

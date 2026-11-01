@@ -48,7 +48,7 @@ export function claimed(claims: Claim[]): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
-/** A claim's due: the one fixed when it was settled, else its amount at the grade's rate now. */
+/** A claim's due: the one fixed when it was settled, else its amount at the grade's rate in force on its date. */
 export function claimDueCents(claim: Claim, pct: string | undefined): bigint | undefined {
   return claim.settledDue !== null ? hundredths(claim.settledDue) : dueCents(claim.amount, pct);
 }

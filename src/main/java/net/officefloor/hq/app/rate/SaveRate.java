@@ -11,6 +11,7 @@ public class SaveRate {
             Rates rates, Audit audit) {
         rates.set(sheet, input);
         audit.record("RATE_SET sheet=" + sheet + " by=" + user + " grade=" + input.grade() + " rate="
-                + input.pct().setScale(2, RoundingMode.UNNECESSARY).toPlainString());
+                + input.pct().setScale(2, RoundingMode.UNNECESSARY).toPlainString()
+                + (input.from() == null ? "" : " from=" + input.from()));
     }
 }
