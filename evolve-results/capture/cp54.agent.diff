@@ -1,0 +1,335 @@
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index 8a5e7de5..fea89ae9 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -2,9 +2,10 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+-import { isHeld, peopleKey, peoplePath } from './people';
++import { isHeld, peopleKey, peoplePath, personActionKey } from './people';
+ import type { Person } from './people';
+ 
+ function HoldHeader() {
+@@ -25,6 +26,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+   const hold = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
+     mutationFn: (dates: { from: string; to: string }) =>
+       postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/hold`, user), dates),
+     onSuccess: (updated) => {
+@@ -34,6 +36,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
+     },
+   });
+   const act = useSubmitOnce(hold);
++  const latest = useIsLatest(personActionKey(sheet, person.id), hold.submittedAt);
+ 
+   return (
+     <>
+@@ -74,7 +77,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
+         >
+           Hold
+         </button>
+-        {hold.isError && (
++        {hold.isError && latest && (
+           <span data-testid="person-error" role="alert">
+             {' '}That hold was refused.
+           </span>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 51e0b599..e8b8490c 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -46,6 +46,9 @@ export const isRetired = (p: Person) => p.retiredFrom !== null;
+ 
+ export const peopleKey = (sheet: string) => ['people', sheet] as const;
+ 
++/** The mutation key every action on a person's row shares, so the row shows only its latest action's refusal. */
++export const personActionKey = (sheet: string, person: number) => ['person-action', sheet, person] as const;
++
+ export const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
+ 
+ /** Everyone on the sheet, in the order they were added. */
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index 61d2a307..665dcdfd 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -2,9 +2,10 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+-import { isRetired, peopleKey, peoplePath } from './people';
++import { isRetired, peopleKey, peoplePath, personActionKey } from './people';
+ import type { Person } from './people';
+ 
+ function RetireHeader() {
+@@ -23,6 +24,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
+   const queryClient = useQueryClient();
+   const [from, setFrom] = useState('');
+   const retire = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
+     mutationFn: (date: string) =>
+       postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/retire`, user), { from: date }),
+     onSuccess: (updated) => {
+@@ -31,6 +33,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
+     },
+   });
+   const act = useSubmitOnce(retire);
++  const latest = useIsLatest(personActionKey(sheet, person.id), retire.submittedAt);
+ 
+   return (
+     <>
+@@ -50,7 +53,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
+         <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={() => act(from.trim())}>
+           Retire
+         </button>
+-        {retire.isError && (
++        {retire.isError && latest && (
+           <span data-testid="person-error" role="alert">
+             {' '}That retirement date was refused.
+           </span>
+diff --git a/src/main/frontend/features/roles/roles.slot.tsx b/src/main/frontend/features/roles/roles.slot.tsx
+index 32ede22a..556f0b07 100644
+--- a/src/main/frontend/features/roles/roles.slot.tsx
++++ b/src/main/frontend/features/roles/roles.slot.tsx
+@@ -11,7 +11,7 @@ import type { Role } from './roles';
+ type Draft = { user: string; role: string };
+ const EMPTY: Draft = { user: '', role: '' };
+ 
+-// The roles given on the sheet, and a form that gives a user name a role (clerk or steward). Any name not
++// The roles given on the sheet, and a form that gives a user name a role (clerk, steward or viewer). Any name not
+ // listed is a clerk.
+ function Roles({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+@@ -34,7 +34,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
+ 
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+-    // The server refuses a blank name or a role that is not clerk or steward.
++    // The server refuses a blank name or a role that is not clerk, steward or viewer.
+     send(draft);
+   };
+ 
+@@ -50,7 +50,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
+           Role{' '}
+           <input
+             data-testid="role-form-role"
+-            placeholder="clerk or steward"
++            placeholder="clerk, steward or viewer"
+             value={draft.role}
+             onChange={(e) => change({ role: e.target.value })}
+           />
+@@ -60,7 +60,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="role-form-error" role="alert">
+-            {' '}A role needs a user name and a role of clerk or steward.
++            {' '}A role needs a user name and a role of clerk, steward or viewer.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index d525b758..afaf3497 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+ /** The role a user name has on the sheet; a name given none is a clerk. A steward settles any due, a clerk
+- *  only one at or below the sheet's clerk limit. */
+-export type Role = { user: string; role: 'clerk' | 'steward' };
++ *  only one at or below the sheet's clerk limit; a viewer sees everything and changes nothing. */
++export type Role = { user: string; role: 'clerk' | 'steward' | 'viewer' };
+ 
+ export const rolesKey = (sheet: string) => ['roles', sheet] as const;
+ 
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 320d1e9f..f671d7d7 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -1,9 +1,10 @@
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+-import { peoplePath } from '../people/people';
++import { peoplePath, personActionKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { claimsKey } from '../claims/claims';
+ import { statementsKey, useStatements } from './statements';
+@@ -27,6 +28,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
+   const { data: all = [] } = useStatements(sheet);
+   const mine = all.find((s) => s.person === person.id);
+   const take = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
+     mutationFn: () =>
+       postJson<StatementSummary[]>(byUser(`${peoplePath(sheet)}/${person.id}/statement`, user), {}),
+     onSuccess: async (updated) => {
+@@ -35,6 +37,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
+     },
+   });
+   const act = useSubmitOnce(take);
++  const latest = useIsLatest(personActionKey(sheet, person.id), take.submittedAt);
+ 
+   return (
+     <>
+@@ -45,7 +48,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
+         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => act()}>
+           Statement
+         </button>
+-        {take.isError && (
++        {take.isError && latest && (
+           <span data-testid="person-error" role="alert">
+             {' '}The statement could not be taken.
+           </span>
+diff --git a/src/main/frontend/query/useIsLatest.ts b/src/main/frontend/query/useIsLatest.ts
+new file mode 100644
+index 00000000..6077590c
+--- /dev/null
++++ b/src/main/frontend/query/useIsLatest.ts
+@@ -0,0 +1,10 @@
++import { useMutationState } from '@tanstack/react-query';
++import type { MutationKey } from '@tanstack/react-query';
++
++// Whether the mutation sent at `submittedAt` is the latest of those sharing `mutationKey`. Actions that live in
++// separate components but share one error element (a row's actions) show their refusal only while it is the
++// row's latest, so the next action on that row removes it.
++export function useIsLatest(mutationKey: MutationKey, submittedAt: number): boolean {
++  const times = useMutationState({ filters: { mutationKey }, select: (m) => m.state.submittedAt });
++  return submittedAt >= Math.max(0, ...times);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/ViewerGuard.java
+new file mode 100644
+index 00000000..d088b3a5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ViewerGuard.java
+@@ -0,0 +1,57 @@
++package net.officefloor.hq.app;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.net.URLDecoder;
++import java.nio.charset.StandardCharsets;
++import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.Roles;
++import org.springframework.core.Ordered;
++import org.springframework.core.annotation.Order;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
++ * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
++ * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done.
++ */
++@Component
++@Order(Ordered.HIGHEST_PRECEDENCE)
++public class ViewerGuard extends OncePerRequestFilter {
++
++    private static final Pattern SHEET_WRITE = Pattern.compile("^/api/sheets/([^/]+)(/.*)?$");
++
++    /** The writes that report per-item counts, so a viewer's press goes through with every item refused. */
++    private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle");
++
++    private final Roles roles;
++
++    public ViewerGuard(Roles roles) {
++        this.roles = roles;
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String method = request.getMethod();
++        String user = request.getParameter("user");
++        if (("POST".equals(method) || "PUT".equals(method)) && user != null) {
++            Matcher m = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
++            if (m.matches() && !BULK.contains(m.group(2) == null ? "" : m.group(2))) {
++                String sheet = URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
++                if (Role.VIEWER.equals(roles.of(sheet, user))) {
++                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "A viewer cannot change the sheet");
++                    return;
++                }
++            }
++        }
++        chain.doFilter(request, response);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index e9310560..c9829728 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -53,6 +53,10 @@ public class ClaimStatusChanger {
+     /** Applies the change to the claim (a reject gives its reason), writing nothing when it is refused. */
+     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
+             throws InvalidClaimStatusChangeException {
++        // A viewer changes nothing.
++        if (Role.VIEWER.equals(roles.of(sheet, user))) {
++            throw new InvalidClaimStatusChangeException("A viewer cannot change a claim");
++        }
+         // The permission matrix says which roles open, settle and void a claim.
+         if ((requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.VOID)
+                 && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {
+diff --git a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+index 964d1907..73cf3e91 100644
+--- a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
++++ b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** The role's user name is blank, or its role is not clerk or steward. */
++/** The role's user name is blank, or its role is not clerk, steward or viewer. */
+ public class InvalidRoleException extends Exception {
+     public InvalidRoleException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index ea583aed..77b93da1 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -1,8 +1,9 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** The role a user name has on a sheet: clerk (any name not given one) or steward. */
++/** The role a user name has on a sheet: clerk (any name not given one), steward, or viewer (sees everything, changes nothing). */
+ public record Role(String user, String role) {
+ 
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    public static final String VIEWER = "viewer";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index 4cd8dad1..fb0a69ae 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRole {
+-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
++    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
+ 
+     public void validate(@RequestBody RoleRequest request, Out<Role> body) throws InvalidRoleException {
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+@@ -14,7 +14,7 @@ public class ValidateRole {
+             throw new InvalidRoleException("A role needs a user name");
+         }
+         if (!ROLES.contains(role)) {
+-            throw new InvalidRoleException("The role must be clerk or steward");
++            throw new InvalidRoleException("The role must be clerk, steward or viewer");
+         }
+         body.set(new Role(user, role));
+     }
