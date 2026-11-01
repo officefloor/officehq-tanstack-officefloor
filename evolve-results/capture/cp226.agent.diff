@@ -1,0 +1,881 @@
+diff --git a/src/main/frontend/features/asof/useAsOf.ts b/src/main/frontend/features/asof/useAsOf.ts
+index cfc27ed2..866e3d3a 100644
+--- a/src/main/frontend/features/asof/useAsOf.ts
++++ b/src/main/frontend/features/asof/useAsOf.ts
+@@ -1,4 +1,5 @@
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { usePreview } from '../preview/usePreview';
+ 
+ /**
+  * The date this user's screen shows the sheet as of (yyyy-mm-dd), or '' for the sheet as it stands.
+@@ -20,3 +21,28 @@ export function asOfKey<K extends readonly unknown[]>(key: K, asOf: string): K {
+ export function asOfPath(path: string, asOf: string): string {
+   return asOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
+ }
++
++/** What this screen's reads are of: the sheet as of a date (`asOf`), and/or with a preview date
++ *  standing in for the sheet's today (`preview`, see features/preview/usePreview.ts); '' for none. */
++export type View = { asOf: string; preview: string };
++
++export function useView(): View {
++  const [asOf] = useAsOf();
++  const [preview] = usePreview();
++  return { asOf, preview };
++}
++
++/** A read's query key for the view: the live key, or one apart from it. It keeps the live key as its
++ *  prefix, so invalidating the live key re-reads every view. */
++export function viewKey<K extends readonly unknown[]>(key: K, view: View): K {
++  if (view.asOf === '' && view.preview === '') return key;
++  return [...key, { asOf: view.asOf, preview: view.preview }] as unknown as K;
++}
++
++/** A read's path, asking for the view when one is set. */
++export function viewPath(path: string, view: View): string {
++  const withAsOf = asOfPath(path, view.asOf);
++  return view.preview === ''
++    ? withAsOf
++    : `${withAsOf}${withAsOf.includes('?') ? '&' : '?'}preview=${encodeURIComponent(view.preview)}`;
++}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 2a3c7af9..21d86965 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { dueCents, hundredths, roundTenThousandths } from '../rates/useRates';
+ import type { FloorOn } from '../settings/useSettings';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** Where a claim is in its life: DRAFT → OPEN → SETTLED (or, settled by a clerk over the clerk
+  *  limit, OPEN → PENDING, which a steward approves to SETTLED or rejects back to OPEN), and DRAFT,
+@@ -103,10 +103,10 @@ export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
+ 
+ /** Every claim on the sheet, newest first, re-read whenever the sheet is loaded. */
+ export function useClaims(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(claimsKey(sheet), asOf),
+-    queryFn: () => getJson<Claim[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, asOf)),
++    queryKey: viewKey(claimsKey(sheet), view),
++    queryFn: () => getJson<Claim[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/crews/useCrews.ts b/src/main/frontend/features/crews/useCrews.ts
+index 8d3c154a..6d0e9aab 100644
+--- a/src/main/frontend/features/crews/useCrews.ts
++++ b/src/main/frontend/features/crews/useCrews.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A crew as the server sends it: its name, its lead (the person and their name; null when no longer
+  *  on the sheet) and its members in the order added. */
+@@ -10,10 +10,10 @@ export const crewsKey = (sheet: string) => ['sheet', sheet, 'crews'] as const;
+ 
+ /** The sheet's crews, in the order added, re-read whenever the sheet is loaded. */
+ export function useCrews(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(crewsKey(sheet), asOf),
+-    queryFn: () => getJson<Crew[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/crews`, asOf)),
++    queryKey: viewKey(crewsKey(sheet), view),
++    queryFn: () => getJson<Crew[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/crews`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/holidays/useHolidays.ts b/src/main/frontend/features/holidays/useHolidays.ts
+index 0e9fe5ac..bc9170ce 100644
+--- a/src/main/frontend/features/holidays/useHolidays.ts
++++ b/src/main/frontend/features/holidays/useHolidays.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A holiday as the server sends it: its date, yyyy-mm-dd. */
+ export type Holiday = { date: string };
+@@ -9,10 +9,10 @@ export const holidaysKey = (sheet: string) => ['sheet', sheet, 'holidays'] as co
+ 
+ /** The sheet's holidays, earliest first, re-read whenever the sheet is loaded. */
+ export function useHolidays(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(holidaysKey(sheet), asOf),
+-    queryFn: () => getJson<Holiday[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/holidays`, asOf)),
++    queryKey: viewKey(holidaysKey(sheet), view),
++    queryFn: () => getJson<Holiday[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/holidays`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/notes/useNotes.ts b/src/main/frontend/features/notes/useNotes.ts
+index 443379cf..fcce487f 100644
+--- a/src/main/frontend/features/notes/useNotes.ts
++++ b/src/main/frontend/features/notes/useNotes.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A note as the server sends it: the sheet's today when added, who added it, its text. */
+ export type Note = { date: string; user: string; text: string };
+@@ -9,10 +9,10 @@ export const notesKey = (sheet: string) => ['sheet', sheet, 'notes'] as const;
+ 
+ /** The sheet's notes, newest first, re-read whenever the sheet is loaded. */
+ export function useNotes(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(notesKey(sheet), asOf),
+-    queryFn: () => getJson<Note[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/notes`, asOf)),
++    queryKey: viewKey(notesKey(sheet), view),
++    queryFn: () => getJson<Note[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/notes`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 7388c339..2e19d8f2 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** `version` counts the person's saves; an edit sends the version it loaded, so a save made by
+  *  someone else in the meantime refuses it. `statementCount` is how many statements have been
+@@ -85,10 +85,10 @@ export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;
+ 
+ /** The sheet's people in list order (by position; see the move buttons), re-read whenever the sheet is loaded. */
+ export function usePeople(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(peopleKey(sheet), asOf),
+-    queryFn: () => getJson<Person[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, asOf)),
++    queryKey: viewKey(peopleKey(sheet), view),
++    queryFn: () => getJson<Person[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/periods/usePeriods.ts b/src/main/frontend/features/periods/usePeriods.ts
+index 658f4f98..473ee2cd 100644
+--- a/src/main/frontend/features/periods/usePeriods.ts
++++ b/src/main/frontend/features/periods/usePeriods.ts
+@@ -4,7 +4,7 @@ import { claimDueCents, type Claim, type ClaimStatus, type Late } from '../claim
+ import { gradeOn, heldOn, type Person } from '../people/usePeople';
+ import { hundredths, claimRateOn, totalDue, type Rate } from '../rates/useRates';
+ import type { FloorOn } from '../settings/useSettings';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
+  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
+@@ -32,10 +32,10 @@ export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as cons
+ 
+ /** The sheet's periods, by from-date, re-read whenever the sheet is loaded. */
+ export function usePeriods(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(periodsKey(sheet), asOf),
+-    queryFn: () => getJson<Period[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, asOf)),
++    queryKey: viewKey(periodsKey(sheet), view),
++    queryFn: () => getJson<Period[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/plans/usePlans.ts b/src/main/frontend/features/plans/usePlans.ts
+index e106dd1a..61d39660 100644
+--- a/src/main/frontend/features/plans/usePlans.ts
++++ b/src/main/frontend/features/plans/usePlans.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A plan as the server sends it: its person, amount (two decimals), start, every N days (null when monthly) or day of
+  *  the month (null otherwise), end
+@@ -26,10 +26,10 @@ export const plansKey = (sheet: string) => ['sheet', sheet, 'plans'] as const;
+ 
+ /** The sheet's plans, in the order added, re-read whenever the sheet is loaded. */
+ export function usePlans(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(plansKey(sheet), asOf),
+-    queryFn: () => getJson<Plan[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/plans`, asOf)),
++    queryKey: viewKey(plansKey(sheet), view),
++    queryFn: () => getJson<Plan[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/plans`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/pools/usePools.ts b/src/main/frontend/features/pools/usePools.ts
+index 90138ae1..1bd037be 100644
+--- a/src/main/frontend/features/pools/usePools.ts
++++ b/src/main/frontend/features/pools/usePools.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ import { hundredths } from '../rates/useRates';
+ 
+ /** A pool's member as the server sends it: the person (or, for a member that is another pool, null
+@@ -38,10 +38,10 @@ export const poolsKey = (sheet: string) => ['sheet', sheet, 'pools'] as const;
+ 
+ /** The sheet's pools, in the order added, re-read whenever the sheet is loaded. */
+ export function usePools(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(poolsKey(sheet), asOf),
+-    queryFn: () => getJson<Pool[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, asOf)),
++    queryKey: viewKey(poolsKey(sheet), view),
++    queryFn: () => getJson<Pool[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/pools`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/preview/preview.slot.tsx b/src/main/frontend/features/preview/preview.slot.tsx
+new file mode 100644
+index 00000000..f10e1694
+--- /dev/null
++++ b/src/main/frontend/features/preview/preview.slot.tsx
+@@ -0,0 +1,40 @@
++import { useState } from 'react';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { usePreview } from './usePreview';
++
++/** Previews the sheet on this user's screen as if its today were a date (or as it is, when cleared),
++ *  and shows the date previewed. */
++function PreviewPicker() {
++  const [preview, setPreview] = usePreview();
++  const [date, setDate] = useState('');
++
++  return (
++    <form
++      data-testid="preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = date.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) setPreview(trimmed);
++      }}
++    >
++      Preview: <strong data-testid="sheet-preview">{preview}</strong>{' '}
++      <label>
++        Preview as if today were{' '}
++        <input
++          data-testid="preview-date"
++          placeholder="yyyy-mm-dd"
++          value={date}
++          onChange={(e) => setDate(e.target.value)}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="preview-set">
++        Set
++      </button>{' '}
++      <button type="button" data-testid="preview-clear" onClick={() => setPreview(undefined)}>
++        Clear
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 1, Component: PreviewPicker });
+diff --git a/src/main/frontend/features/preview/usePreview.ts b/src/main/frontend/features/preview/usePreview.ts
+new file mode 100644
+index 00000000..0b2f712e
+--- /dev/null
++++ b/src/main/frontend/features/preview/usePreview.ts
+@@ -0,0 +1,12 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/**
++ * The date this user's screen previews the sheet as of (yyyy-mm-dd), or '' for none. It lives in the
++ * URL (`preview`), so it is this screen's alone. While it is set every read is of the sheet's current
++ * records with that date standing in for the sheet's today; every change still goes to the sheet as
++ * it is, on its real today (see features/asof/useAsOf.ts `useView`).
++ */
++export function usePreview(): [string, (value: string | undefined) => void] {
++  const [preview, setPreview] = useSearchParam('preview', asString);
++  return [preview, setPreview];
++}
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 0c5b8176..01dc850c 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A grade's rate as the server sends it: `pct` is a percent with two decimals, `from` the date it
+  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
+@@ -34,14 +34,14 @@ export const ratesKey = (sheet: string) => ['sheet', sheet, 'rates'] as const;
+  *  parent sheets up to three levels up, then, for a cloned sheet, the sheet it was cloned from and
+  *  that one's own parents and source. Re-read whenever the sheet is loaded. */
+ export function useRates(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(ratesKey(sheet), asOf),
++    queryKey: viewKey(ratesKey(sheet), view),
+     queryFn: async () => {
+       const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+       const [own, inherited] = await Promise.all([
+-        getJson<Rate[]>(asOfPath(`${base}/rates`, asOf)),
+-        getJson<InheritedRates[]>(asOfPath(`${base}/rates/inherited`, asOf)),
++        getJson<Rate[]>(viewPath(`${base}/rates`, view)),
++        getJson<InheritedRates[]>(viewPath(`${base}/rates/inherited`, view)),
+       ]);
+       return [
+         ...own.map((r) => ({ ...r, level: 0 })),
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 5135b946..911d43e5 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import type { Late } from '../claims/useClaims';
+ import { useSheetToday } from '../sheet/useSheet';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ import { gradeOn, usePeople } from '../people/usePeople';
+ 
+ /** A role given to a user name: clerk (the default for any name) or steward. */
+@@ -36,10 +36,10 @@ export const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'] as co
+ 
+ /** The sheet's settings, re-read whenever the sheet is loaded. */
+ export function useSettings(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(settingsKey(sheet), asOf),
+-    queryFn: () => getJson<Settings>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, asOf)),
++    queryKey: viewKey(settingsKey(sheet), view),
++    queryFn: () => getJson<Settings>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 1ff71779..6d18b23c 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -13,7 +13,8 @@ import { sheetKey, useSheet, type Sheet } from './useSheet';
+  *  steward only); clones the sheet to another, never used, id (a steward only) and shows the last clone made. All share the sheet's error. */
+ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+-  const { data } = useSheet(sheet);
++  // The sheet's real today, whatever this screen previews: every change uses it.
++  const { data } = useSheet(sheet, true);
+   const { data: settings } = useSettings(sheet);
+   const [date, setDate] = useState('');
+   const [cloneTo, setCloneTo] = useState('');
+diff --git a/src/main/frontend/features/sheet/useSheet.ts b/src/main/frontend/features/sheet/useSheet.ts
+index dd7e6758..700a9f6b 100644
+--- a/src/main/frontend/features/sheet/useSheet.ts
++++ b/src/main/frontend/features/sheet/useSheet.ts
+@@ -1,18 +1,20 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** `lastBatch`: the number of the sheet's last bulk settle batch, kept once its claims leave the sheet; null when none. */
+ export type Sheet = { id: string; today: string; archived: boolean; lastBatch: number | null };
+ 
+ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+ 
+-/** The active sheet as the store holds it, re-read whenever the sheet is loaded. */
+-export function useSheet(sheet: string) {
+-  const [asOf] = useAsOf();
++/** The active sheet as the store holds it, re-read whenever the sheet is loaded. Its today is the
++ *  preview date while one is set, unless `realToday` asks for the sheet's own. */
++export function useSheet(sheet: string, realToday = false) {
++  const shown = useView();
++  const view = realToday ? { ...shown, preview: '' } : shown;
+   return useQuery({
+-    queryKey: asOfKey(sheetKey(sheet), asOf),
+-    queryFn: () => getJson<Sheet>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}`, asOf)),
++    queryKey: viewKey(sheetKey(sheet), view),
++    queryFn: () => getJson<Sheet>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/summary/useGradeDues.ts b/src/main/frontend/features/summary/useGradeDues.ts
+index 8a808864..a8e9ee92 100644
+--- a/src/main/frontend/features/summary/useGradeDues.ts
++++ b/src/main/frontend/features/summary/useGradeDues.ts
+@@ -1,40 +1,17 @@
+-import { live, personDueCents, useClaims } from '../claims/useClaims';
+-import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
+-import { claimRateOn, rateOn, useRates } from '../rates/useRates';
+-import { useCutTotal } from '../pools/usePools';
+-import { useCap, useFloor, useLate } from '../settings/useSettings';
++import { useSheetTotals } from '../claims/useSheetTotals';
++import { GRADES, gradeOn } from '../people/usePeople';
+ import { useSheetToday } from '../sheet/useSheet';
+ 
+ /**
+  * Per grade, the people not retired on it on the sheet's today, each with their due-total in cents
+- * (null when n/a), worked out as the list works it out. One place, so the summary and the
+- * consolidated figures agree.
++ * (null when n/a), worked out as the list works it out (their parts of the claims shared with them
++ * included, see useSheetTotals). One place, so the summary and the consolidated figures agree.
+  */
+ export function useGradeDues(sheet: string) {
+-  const { data: all = [] } = useClaims(sheet);
+-  const { data: everyone = [] } = usePeople(sheet);
+-  const { data: rates = [] } = useRates(sheet);
++  const { perPerson } = useSheetTotals(sheet);
+   const today = useSheetToday(sheet);
+-  const floor = useFloor(sheet);
+-  const late = useLate(sheet);
+-  const cap = useCap(sheet);
+-  const cutOf = useCutTotal(sheet);
+-  const people = everyone.filter((p) => !p.retired);
+-  const dueOf = (p: (typeof people)[number]) =>
+-    personDueCents(
+-      live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date, today)),
+-      floor,
+-      rateOn(rates, gradeOn(p, today), today),
+-      (c) => claimRateOn(rates, gradeOn(p, c.date), c),
+-      late,
+-      cap,
+-      undefined,
+-      cutOf(p.id),
+-    );
++  const people = perPerson.filter((d) => !d.person.retired);
+   return Object.fromEntries(
+-    GRADES.map((g) => {
+-      const on = people.filter((p) => gradeOn(p, today) === g);
+-      return [g, on.map((p) => ({ person: p, due: dueOf(p) }))];
+-    }),
+-  ) as Record<(typeof GRADES)[number], Array<{ person: (typeof people)[number]; due: bigint | null }>>;
++    GRADES.map((g) => [g, people.filter((d) => gradeOn(d.person, today) === g).map(({ person, due }) => ({ person, due }))]),
++  ) as Record<(typeof GRADES)[number], Array<{ person: (typeof people)[number]['person']; due: bigint | null }>>;
+ }
+diff --git a/src/main/frontend/features/voidreasons/useVoidReasons.ts b/src/main/frontend/features/voidreasons/useVoidReasons.ts
+index e720b5b8..545756c5 100644
+--- a/src/main/frontend/features/voidreasons/useVoidReasons.ts
++++ b/src/main/frontend/features/voidreasons/useVoidReasons.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ /** A void reason as the server sends it: its text. */
+ export type VoidReason = { reason: string };
+@@ -9,10 +9,10 @@ export const voidReasonsKey = (sheet: string) => ['sheet', sheet, 'void-reasons'
+ 
+ /** The sheet's void reasons, in the order added, re-read whenever the sheet is loaded. */
+ export function useVoidReasons(sheet: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(voidReasonsKey(sheet), asOf),
+-    queryFn: () => getJson<VoidReason[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/void-reasons`, asOf)),
++    queryKey: viewKey(voidReasonsKey(sheet), view),
++    queryFn: () => getJson<VoidReason[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/void-reasons`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/frontend/features/watch/useWatches.ts b/src/main/frontend/features/watch/useWatches.ts
+index 6ac5838d..f27fd948 100644
+--- a/src/main/frontend/features/watch/useWatches.ts
++++ b/src/main/frontend/features/watch/useWatches.ts
+@@ -1,16 +1,16 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
++import { useView, viewKey, viewPath } from '../asof/useAsOf';
+ 
+ export const watchesKey = (sheet: string, user: string) => ['sheet', sheet, 'watches', user] as const;
+ 
+ /** The ids of the people on the sheet the signed-in user watches, re-read whenever the sheet is loaded. */
+ export function useWatches(sheet: string, user: string) {
+-  const [asOf] = useAsOf();
++  const view = useView();
+   return useQuery({
+-    queryKey: asOfKey(watchesKey(sheet, user), asOf),
++    queryKey: viewKey(watchesKey(sheet, user), view),
+     queryFn: () =>
+-      getJson<number[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`, asOf)),
++      getJson<number[]>(viewPath(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`, view)),
+     staleTime: 0,
+     gcTime: 0,
+   });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index 9615e1a7..0bf19f4d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -10,10 +10,11 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithClaims {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Claims claims, Figures figures,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Claims claims, Figures figures,
+             ClaimLog log, ClaimComments comments, ClaimLines claimLines, AsOf asOfSheet, ObjectResponse<List<ClaimResponse>> response)
+             throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf, () -> {
++        response.send(asOfSheet.view(sheetId, asOf, preview, () -> {
+             Map<Long, List<String>> lines = log.onSheet(sheetId);
+             Map<Long, List<String>> said = comments.onSheet(sheetId);
+             Map<Long, List<String>> itemised = claimLines.onSheet(sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java
+index 835b9413..ecbdbd42 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java
++++ b/src/main/java/net/officefloor/hq/app/crew/RespondWithCrews.java
+@@ -9,8 +9,9 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithCrews {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Crews crews, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Crews crews, AsOf asOfSheet,
+             ObjectResponse<List<CrewResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf, () -> crews.onSheet(sheetId)));
++        response.send(asOfSheet.view(sheetId, asOf, preview, () -> crews.onSheet(sheetId)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java b/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java
+index eb9f2d6c..067afada 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithHolidays {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Holidays holidays, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Holidays holidays, AsOf asOfSheet,
+             ObjectResponse<List<HolidayResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> holidays.onSheet(sheetId).stream().map(HolidayResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java b/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java
+index edc94ab1..08f987de 100644
+--- a/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java
++++ b/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithNotes {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Notes notes, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Notes notes, AsOf asOfSheet,
+             ObjectResponse<List<NoteResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> notes.onSheet(sheetId).stream().map(NoteResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index da410d6f..44ee6fcd 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithPeriods {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Periods periods, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Periods periods, AsOf asOfSheet,
+             ObjectResponse<List<PeriodResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf, () -> periods.onSheet(sheetId).stream()
++        response.send(asOfSheet.view(sheetId, asOf, preview, () -> periods.onSheet(sheetId).stream()
+                 .map(p -> PeriodResponse.from(p, periods.personTotals(p), periods.personCarried(p), periods.openings(p))).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 6a5a3c2d..9d43e117 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithPeople {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, People people, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, People people, AsOf asOfSheet,
+             ObjectResponse<List<PersonResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> people.onSheet(sheetId).stream().map(PersonResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java b/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
+index a2203838..cce4e6bd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithWatches.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithWatches {
+     public void respond(@PathVariable("sheetId") String sheetId, @RequestParam(value = "user", required = false) String user,
+-            @RequestParam(value = "asOf", required = false) String asOf, Watches watches, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Watches watches, AsOf asOfSheet,
+             ObjectResponse<List<Long>> response) throws InvalidSheetRequestException {
+         response.send(user == null || user.isBlank() ? List.of()
+-                : asOfSheet.view(sheetId, asOf, () -> watches.watchedBy(sheetId, user.trim())));
++                : asOfSheet.view(sheetId, asOf, preview, () -> watches.watchedBy(sheetId, user.trim())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index a9f33197..4a6ddc5e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -10,6 +10,8 @@ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.claim.Figures;
+ import net.officefloor.hq.app.pool.Pools;
+ import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Snapshot;
+ import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+@@ -26,7 +28,7 @@ import net.officefloor.plugin.variable.Val;
+  *  one the person was not yet on the sheet. */
+ public class TakeStatement {
+     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
+-            Rates rates, Sheets sheets, Settings settings, People people, Pools pools, AsOf asOf, Out<Statement> statement)
++            Rates rates, Sheets sheets, Settings settings, People people, Pools pools, Rollup rollup, AsOf asOf, Out<Statement> statement)
+             throws InvalidSheetRequestException {
+         LocalDate date = asOfDate(request);
+         String sheetId = person.getSheetId();
+@@ -35,10 +37,10 @@ public class TakeStatement {
+         }
+         Person locked = people.lock(sheetId, person.getId());
+         person.setStatementCount(locked.getStatementCount());
+-        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings, pools)
++        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings, pools, rollup)
+                 : asOf.at(sheetId, date, () -> {
+                     Person then = people.find(sheetId, person.getId());
+-                    return then == null ? null : work(then, claims, figures, rates, sheets, settings, pools);
++                    return then == null ? null : work(then, claims, figures, rates, sheets, settings, pools, rollup);
+                 });
+         if (taken == null) {
+             throw new InvalidSheetRequestException("This person was not on the sheet on " + date);
+@@ -57,9 +59,11 @@ public class TakeStatement {
+     }
+ 
+     /** The statement of the person as the sheet stands (live, or as of a date): the figure each
+-     *  counting claim is bound to, by id, and their due-total, dated the sheet's today. */
++     *  counting claim is bound to, by id, and their due-total as the sheet's figures work it out (see
++     *  {@link Rollup#snapshot}: their parts of the claims shared with them, less the parts of their own
++     *  claims that share holders carry), dated the sheet's today. */
+     private static Taken work(Person person, Claims claims, Figures figures, Rates rates, Sheets sheets,
+-            Settings settings, Pools pools) {
++            Settings settings, Pools pools, Rollup rollup) {
+         String sheetId = person.getSheetId();
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean any = false;
+@@ -76,6 +80,8 @@ public class TakeStatement {
+             }
+         }
+         LocalDate today = sheets.today(sheetId);
++        Snapshot.PersonFigures figured = rollup.snapshot(sheetId).people().get(person.getId());
++        if (figured != null) return new Taken(bound, figured.dueTotal(), today);
+         BigDecimal dueTotal = !any && rates.pct(sheetId, person.gradeOn(today), today) == null ? null
+                 : settings.capped(sheetId, total, pools.cutTotals(sheetId).get(person.getId()));
+         return new Taken(bound, dueTotal, today);
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 167d6eea..f0eff0b9 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -10,9 +10,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithPlans {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Plans plans, Sheets sheets, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Plans plans, Sheets sheets, AsOf asOfSheet,
+             ObjectResponse<List<PlanResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> {
+                     var today = sheets.today(sheetId);
+                     return plans.onSheet(sheetId).stream().map(plan -> PlanResponse.from(plan, today)).toList();
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index eb59ed39..975b9330 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -23,9 +23,10 @@ public class RespondWithPools {
+     }
+ 
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Pools pools, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Pools pools, AsOf asOfSheet,
+             ObjectResponse<List<PoolResponse>> response) throws InvalidSheetRequestException {
+-        Now now = asOfSheet.view(sheetId, asOf, () -> new Now(pools.onSheet(sheetId),
++        Now now = asOfSheet.view(sheetId, asOf, preview, () -> new Now(pools.onSheet(sheetId),
+                 pools.periodsShown(sheetId), pools.fixedCuts(sheetId)));
+         // Each ended period's cuts, by pool then member.
+         Map<String, Map<String, Map<String, String>>> then = new LinkedHashMap<>();
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java
+index 51166ced..f90e26e2 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithInheritedRates.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithInheritedRates {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Rates rates, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Rates rates, AsOf asOfSheet,
+             ObjectResponse<List<InheritedRatesResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> rates.inherited(sheetId).stream().map(InheritedRatesResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index 54f9201b..b73ab7e5 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithRates {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Rates rates, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Rates rates, AsOf asOfSheet,
+             ObjectResponse<List<RateResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> rates.onSheet(sheetId).stream().map(RateResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java
+index 62f93c51..fa3c86c7 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RespondWithSettings.java
+@@ -9,8 +9,9 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithSettings {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Settings settings, Sheets sheets,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Settings settings, Sheets sheets,
+             AsOf asOfSheet, ObjectResponse<SettingsResponse> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf, () -> SettingsResponse.of(sheetId, sheets.today(sheetId), settings)));
++        response.send(asOfSheet.view(sheetId, asOf, preview, () -> SettingsResponse.of(sheetId, sheets.today(sheetId), settings)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+index 8dda26b3..e92a9d7a 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -65,14 +65,55 @@ public class AsOf {
+     /** What a screen reads: `work` on the sheet as it stood at the end of the as-of date given (see
+      *  {@link #at}), or on the live sheet when none is given. Refused: an as-of that is not a date. */
+     public <T> T view(String sheetId, String asOfText, Supplier<T> work) throws InvalidSheetRequestException {
+-        if (asOfText == null || asOfText.isBlank()) return work.get();
+-        LocalDate date;
++        return view(sheetId, asOfText, null, work);
++    }
++
++    /** What a screen reads, as {@link #view(String, String, Supplier)}, and previewed as of a date when
++     *  one is given: the sheet's records (as they stand, or as of the as-of date) with the preview date
++     *  standing in for its today, so every figure is worked out as if it were that day. Nothing a change
++     *  of today does (snapshots, scores, auto-closing) happens: the work only reads, and what it writes
++     *  is thrown away. Refused: an as-of or a preview that is not a date. */
++    public <T> T view(String sheetId, String asOfText, String previewText, Supplier<T> work)
++            throws InvalidSheetRequestException {
++        LocalDate asOf = date(asOfText);
++        LocalDate preview = date(previewText);
++        if (asOf == null && preview == null) return work.get();
++        return transactions.execute(status -> {
++            status.setRollbackOnly();
++            // One rebuild of the sheet at a time.
++            jdbc.query("SELECT id FROM PUBLIC.sheet WHERE id = ? FOR UPDATE", (RowCallbackHandler) rs -> {}, sheetId);
++            if (asOf != null) rebuild(sheetId, asOf);
++            else copy(sheetId);
++            if (preview != null) jdbc.update("UPDATE ASOF.sheet SET today = ? WHERE id = ?", Date.valueOf(preview), sheetId);
++            schema("ASOF");
++            try {
++                return work.get();
++            } finally {
++                schema("PUBLIC");
++            }
++        });
++    }
++
++    private static LocalDate date(String text) throws InvalidSheetRequestException {
++        if (text == null || text.isBlank()) return null;
+         try {
+-            date = LocalDate.parse(asOfText.trim());
++            return LocalDate.parse(text.trim());
+         } catch (DateTimeParseException e) {
+-            throw new InvalidSheetRequestException("Not a date: " + asOfText);
++            throw new InvalidSheetRequestException("Not a date: " + text);
+         }
+-        return at(sheetId, date, work);
++    }
++
++    /** The sheet's rows as they stand now, copied into the asof schema. */
++    private void copy(String sheetId) {
++        jdbc.update("DELETE FROM ASOF.sheet WHERE id = ?", sheetId);
++        jdbc.update("INSERT INTO ASOF.sheet SELECT * FROM PUBLIC.sheet WHERE id = ?", sheetId);
++        for (String table : TABLES) {
++            String names = '"' + String.join("\", \"", columns(table)) + '"';
++            jdbc.update("DELETE FROM ASOF.\"" + table + "\" WHERE sheet_id = ?", sheetId);
++            jdbc.update("INSERT INTO ASOF.\"" + table + "\" (" + names + ") SELECT " + names
++                    + " FROM PUBLIC.\"" + table + "\" WHERE sheet_id = ?", sheetId);
++        }
++        ancestors(sheetId);
+     }
+ 
+     private void rebuild(String sheetId, LocalDate date) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 87adc7d9..24a05b75 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -7,10 +7,11 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** The sheet; seen as of a date (?asOf=), as it stood then, with that date for its today. */
+ public class RespondWithSheet {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, Sheets sheets, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, Sheets sheets, AsOf asOfSheet,
+             ObjectResponse<SheetResponse> response) throws InvalidSheetRequestException {
+         sheets.today(sheetId);
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> new SheetResponse(sheetId, sheets.today(sheetId).toString(), sheets.archived(sheetId), sheets.lastBatch(sheetId))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java b/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java
+index 675cbfca..ac9f265f 100644
+--- a/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java
++++ b/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java
+@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithVoidReasons {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(value = "asOf", required = false) String asOf, VoidReasons reasons, AsOf asOfSheet,
++            @RequestParam(value = "asOf", required = false) String asOf,
++            @RequestParam(value = "preview", required = false) String preview, VoidReasons reasons, AsOf asOfSheet,
+             ObjectResponse<List<VoidReasonResponse>> response) throws InvalidSheetRequestException {
+-        response.send(asOfSheet.view(sheetId, asOf,
++        response.send(asOfSheet.view(sheetId, asOf, preview,
+                 () -> reasons.onSheet(sheetId).stream().map(VoidReasonResponse::new).toList()));
+     }
+ }
