@@ -8,14 +8,45 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/people';
 import { rateOf, twoDecimals, useRates } from '../rates/rates';
 import { claimDueCents, counted, useClaims } from '../claims/claims';
-import { periodOf, periodsKey, periodsPath, usePeriods } from './periods';
+import { closePeriodPath, periodOf, periodsKey, periodsPath, usePeriods } from './periods';
 import type { Period } from './periods';
+
+// One period with its due-total (fixed once closed) and closed flag, and the button that closes it. The server
+// refuses closing a period already closed; the row shows that error until its next action.
+function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: string; period: Period; dueCents: bigint }) {
+  const queryClient = useQueryClient();
+  const close = useMutation({
+    mutationFn: () => postJson<Period[]>(byUser(closePeriodPath(sheet, period.name), user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
+  });
+  const act = useSubmitOnce(close);
+
+  return (
+    <tr data-testid={`period-row-${period.name}`}>
+      <td data-testid="period-name">{period.name}</td>
+      <td data-testid="period-from">{period.from}</td>
+      <td data-testid="period-to">{period.to}</td>
+      <td data-testid="period-due-total">{period.closed && period.closedTotal !== null ? period.closedTotal : twoDecimals(dueCents)}</td>
+      <td data-testid="period-closed">{period.closed ? 'yes' : 'no'}</td>
+      <td>
+        <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => act(undefined)}>
+          Close
+        </button>
+        {close.isError && (
+          <span data-testid="period-error" role="alert">
+            {' '}This period cannot be closed: it is already closed.
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+}
 
 type Draft = { name: string; from: string; to: string };
 const EMPTY: Draft = { name: '', from: '', to: '' };
 
 // The sheet's periods, each with its due-total: the due of the counted (OPEN and SETTLED) claims whose date
-// falls in it (a claim with no rate adds nothing). The form adds one; the server refuses a name already on
+// falls in it (a claim with no rate adds nothing), fixed when the period is closed. The form adds one; the server refuses a name already on
 // the sheet, a bad date, a to-date before the from-date, or dates that overlap another period.
 function Periods({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -96,16 +127,13 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
             <th>From</th>
             <th>To</th>
             <th>Due total</th>
+            <th>Closed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {periods.map((p) => (
-            <tr key={p.name} data-testid={`period-row-${p.name}`}>
-              <td data-testid="period-name">{p.name}</td>
-              <td data-testid="period-from">{p.from}</td>
-              <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{twoDecimals(totals.get(p.name) ?? 0n)}</td>
-            </tr>
+            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} />
           ))}
         </tbody>
       </table>
