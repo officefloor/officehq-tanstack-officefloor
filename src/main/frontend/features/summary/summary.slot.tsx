@@ -1,12 +1,13 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { isActive } from '../active/active';
-import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
-import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
+import { STATUSES, useClaims } from '../claims/useClaims';
+import { GRADES, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
-import { claimRateOn, hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLate, useReviewLate } from '../settings/useSettings';
+import { hundredths, totalDue, useRates } from '../rates/useRates';
+import { useFloor, useLate, useReviewLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
+import { useGradeDues } from './useGradeDues';
 
 /**
  * The sheet in figures, each worked out as the list works it out. Per grade: how many people not
@@ -25,18 +26,8 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
-  const cap = useCap(sheet);
   const reviewLate = useReviewLate(sheet);
-  const people = everyone.filter((p) => !p.retired);
-  const dueOf = (p: (typeof people)[number]) =>
-    personDueCents(
-      live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date, today)),
-      floor,
-      rateOn(rates, gradeOn(p, today), today),
-      (c) => claimRateOn(rates, gradeOn(p, c.date), c),
-      late,
-      cap,
-    );
+  const byGrade = useGradeDues(sheet);
 
   const periodDues = new Map(periods.map((p) => [p.name, periodDue(p, all, everyone, rates, floor, late, today)]));
   const byFrom = [...periods].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
@@ -60,13 +51,13 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const on = people.filter((p) => gradeOn(p, today) === g);
+            const on = byGrade[g];
             return (
               <tr key={g}>
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
-                <td data-testid={`summary-grade-${g}-due-total`}>{totalDue(on.map(dueOf))}</td>
-                <td data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(p, all, today)).length}</td>
+                <td data-testid={`summary-grade-${g}-due-total`}>{totalDue(on.map((d) => d.due))}</td>
+                <td data-testid={`summary-grade-${g}-active`}>{on.filter((d) => isActive(d.person, all, today)).length}</td>
               </tr>
             );
           })}
