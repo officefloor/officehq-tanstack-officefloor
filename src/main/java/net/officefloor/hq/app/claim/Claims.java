@@ -34,7 +34,7 @@ public class Claims {
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getString("locked_by"), rs.getBoolean("late_entry"),
             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
-            rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")));
+            rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of());
 
     /** The tags kept as comma separated text (empty for none). */
     private static List<String> tagList(String kept) {
@@ -67,16 +67,40 @@ public class Claims {
 
     private static final String LOG = "SELECT claim, status, by_user, on_date, due FROM claim_log WHERE sheet = ?";
 
+    private static final String COMMENTS = "SELECT claim, by_user, on_date, text FROM claim_comment WHERE sheet = ?";
+
     /** Every claim on the sheet, newest first. */
     public List<Claim> list(String sheet) {
-        return withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
-                jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet));
+        return withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
+                jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet)), jdbc.query(COMMENTS + " ORDER BY id", COMMENT_ROW, sheet));
     }
 
     public Claim find(String sheet, long id) {
         List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
         return found.isEmpty() ? null
-                : withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)).get(0);
+                : withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
+                        jdbc.query(COMMENTS + " AND claim = ? ORDER BY id", COMMENT_ROW, sheet, id)).get(0);
+    }
+
+    private record Commented(long claim, ClaimComment comment) {
+    }
+
+    private static final RowMapper<Commented> COMMENT_ROW = (rs, i) -> new Commented(rs.getLong("claim"),
+            new ClaimComment(rs.getString("by_user"), rs.getDate("on_date").toLocalDate().toString(), rs.getString("text")));
+
+    /** The claims, each with its own comments (in the order written). */
+    private static List<Claim> withComments(List<Claim> found, List<Commented> commented) {
+        Map<Long, List<ClaimComment>> comments = new HashMap<>();
+        for (Commented c : commented) {
+            comments.computeIfAbsent(c.claim(), k -> new ArrayList<>()).add(c.comment());
+        }
+        return found.stream().map(c -> c.withComments(comments.getOrDefault(c.id(), List.of()))).toList();
+    }
+
+    /** Adds a comment to the claim, by the user on the date (the sheet's today). */
+    public void comment(String sheet, long id, String user, LocalDate on, String text) {
+        jdbc.update("INSERT INTO claim_comment (sheet, claim, by_user, on_date, text) VALUES (?, ?, ?, ?, ?)",
+                sheet, id, user, Date.valueOf(on), text);
     }
 
     private record Logged(long claim, ClaimLogLine line) {

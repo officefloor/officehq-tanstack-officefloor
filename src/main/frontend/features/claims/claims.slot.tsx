@@ -142,6 +142,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
   const addProof = useSubmitOnce(proofMutation);
+  // A comment, typed beside the Comment button, is kept with its writer and the sheet's today (an empty one is refused).
+  const [commentText, setCommentText] = useState('');
+  const commentMutation = useMutation({
+    mutationFn: (text: string) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/comment`, user), { text }),
+    onSuccess: (updated) => {
+      setCommentText('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const addComment = useSubmitOnce(commentMutation);
   // An OPEN claim splits off an amount, typed beside the Split button, into a new OPEN claim.
   const [splitAmount, setSplitAmount] = useState('');
   const splitMutation = useMutation({
@@ -261,6 +271,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
             inlineMutation.reset();
           inlineMutation.reset();
             proofMutation.reset();
+            commentMutation.reset();
             act(change);
           }}
         >
@@ -308,6 +319,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           act('reject');
         }}
       >
@@ -336,6 +348,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           splitMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           inlineMutation.reset();
           saveInline(inlineAmount);
         }}
@@ -355,6 +368,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           clearEditError();
           if (claim.status !== 'DRAFT' || periodOf(periods, claim.dueBy)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
             setEditRefused(true);
@@ -398,6 +412,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           reassign(Number(moveTo));
         }}
       >
@@ -417,6 +432,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           resettle(undefined);
         }}
       >
@@ -445,6 +461,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           move.reset();
           resettleMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
           redateMutation.reset();
@@ -466,6 +483,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           deferMutation.reset();
           redateMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
           remindMutation.reset();
@@ -495,6 +513,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           deferMutation.reset();
           remindMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
           redate(redateTo);
@@ -525,10 +544,41 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           proofMutation.reset();
+          commentMutation.reset();
           split(splitAmount);
         }}
       >
         Split
+      </button>{' '}
+      <input
+        data-testid="claim-comment-text"
+        placeholder="comment"
+        value={commentText}
+        onChange={(e) => {
+          setCommentText(e.target.value);
+          commentMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-comment-add"
+        disabled={commentMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          proofMutation.reset();
+          splitMutation.reset();
+          inlineMutation.reset();
+          commentMutation.reset();
+          addComment(commentText);
+        }}
+      >
+        Comment
       </button>{' '}
       {editing && (
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
@@ -542,6 +592,13 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           </li>
         ))}
       </ol>
+      <ul>
+        {claim.comments.map((comment, i) => (
+          <li key={i} data-testid="claim-comments-line">
+            {comment.by} on {comment.on}: {comment.text}
+          </li>
+        ))}
+      </ul>
       {(editRefused || lockMutation.isError) && (
         <span data-testid="claim-error" role="alert">
           {' '}This claim cannot be edited: only a DRAFT outside a closed period can (void it and add a new one), and
@@ -576,6 +633,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       {proofMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one due inside a closed period).
+        </span>
+      )}
+      {commentMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}This comment cannot be added: it may not be empty, and a viewer, an archived sheet or the as-of view changes nothing.
         </span>
       )}
       {splitMutation.isError && (

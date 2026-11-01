@@ -77,7 +77,12 @@ export type Claim = {
   tags: string[];
   /** Every tag it has ever carried, sorted: the sheet lists a due-total for each tag any of its claims ever carried. */
   tagsEver: string[];
+  /** Its comments, in the order written. */
+  comments: ClaimComment[];
 };
+
+/** One comment on a claim: the user who wrote it, the sheet's today then (yyyy-MM-dd), and its text. */
+export type ClaimComment = { by: string; on: string; text: string };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
  * claim's due as computed at that moment (two decimals, or n/a). */
