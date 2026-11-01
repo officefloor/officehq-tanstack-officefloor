@@ -10,6 +10,7 @@ import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { rateOf, showDue, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
+import { periodOf, usePeriods } from '../periods/periods';
 import { claimDueCents, claimed, claimsKey, claimsPath, counted, personDueCents, useClaims } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
@@ -45,6 +46,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: periods = [] } = usePeriods(sheet);
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
       postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
@@ -61,6 +63,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date)))}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
+      period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
       {claim.number !== null && '#'}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       {claim.openedBy !== null && 'opened by '}
