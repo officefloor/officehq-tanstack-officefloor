@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  */
 public class SplitClaim {
     public void split(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val BigDecimal amount,
-            @Val Claim claim, Claims claims, People people, Periods periods, Roles roles, Settings settings,
+            @Val Claim claim, Claims claims, People people, Periods periods, Roles roles, Settings settings, Holidays holidays,
             ClaimStatusChanger changer, ClaimLog log, Audit audit, Rollup rollup)
             throws InvalidClaimStatusChangeException {
         if (Role.VIEWER.equals(roles.of(sheet, user)) || !settings.permits(sheet, "open", roles.of(sheet, user))) {
@@ -50,7 +51,7 @@ public class SplitClaim {
         if (!claims.split(sheet, claim.id(), was, rest)) {
             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
         }
-        LocalDate dueBy = person.dueBy(sheet, date, settings);
+        LocalDate dueBy = person.dueBy(sheet, date, settings, holidays);
         long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), dueBy, claim.shownNumber(), user);
         // Judged by the claim split alone: the new claim is a late entry when that claim is one.
         if (claim.lateEntry()) {

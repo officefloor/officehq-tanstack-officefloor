@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.setting.Dated;
 import net.officefloor.hq.app.setting.Settings;
@@ -91,10 +92,11 @@ public record Person(long id, String name, String grade, long version, String re
 
     /**
      * The due-by of a claim of theirs dated {@code date}, fixed when it is made: the date plus the first of their own
-     * terms, the terms of their grade then, and the sheet's terms then.
+     * terms, the terms of their grade then, and the sheet's terms then; moved past the sheet's holidays (as they stand
+     * now) to the next day that is not one.
      */
-    public LocalDate dueBy(String sheet, LocalDate date, Settings settings) {
-        return date.plusDays(terms != null ? terms : settings.terms(sheet, gradeOn(date), date));
+    public LocalDate dueBy(String sheet, LocalDate date, Settings settings, Holidays holidays) {
+        return holidays.past(sheet, date.plusDays(terms != null ? terms : settings.terms(sheet, gradeOn(date), date)));
     }
 
     /** The grade in force on the claim's date (yyyy-mm-dd). */

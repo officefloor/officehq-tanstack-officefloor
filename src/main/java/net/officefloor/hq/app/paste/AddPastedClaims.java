@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.paste;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimLog;
@@ -17,13 +18,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Adds a draft claim per checked line, in order, as the claim form's BuildClaim adds one. */
 public class AddPastedClaims {
     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
-            @Val PastedClaims pasted, Claims claims, Periods periods, Settings settings, ClaimLog log, Audit audit, Rollup rollup,
+            @Val PastedClaims pasted, Claims claims, Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup,
             ObjectResponse<PasteResponse> response) {
         for (PastedClaim line : pasted.lines()) {
             Person person = line.person();
             ClaimInput input = line.input();
             Rollup.Snapshot before = rollup.take(sheet);
-            LocalDate dueBy = person.dueBy(sheet, input.date(), settings);
+            LocalDate dueBy = person.dueBy(sheet, input.date(), settings, holidays);
             long id = claims.add(sheet, person.id(), input, dueBy);
             log.record(sheet, user, id);
             audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));

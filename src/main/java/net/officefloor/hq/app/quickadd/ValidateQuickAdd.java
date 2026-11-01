@@ -3,6 +3,7 @@ package net.officefloor.hq.app.quickadd;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.period.Periods;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateQuickAdd {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
-    public void validate(@PathVariable("sheet") String sheet, @RequestBody QuickAddRequest request, Settings settings,
+    public void validate(@PathVariable("sheet") String sheet, @RequestBody QuickAddRequest request, Settings settings, Holidays holidays,
             Periods periods, People people, Out<QuickAddRequest> body, Out<ClaimInput> claim)
             throws InvalidPersonException, InvalidClaimException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
@@ -36,8 +37,8 @@ public class ValidateQuickAdd {
         ClaimInput input = new ClaimInput(new BigDecimal(amount), settings.entryDay(sheet), "");
         // The due-by it would be fixed with: from the person of the name, else from a new person of grade A.
         Person person = people.findByName(sheet, name);
-        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings)
-                : input.date().plusDays(settings.terms(sheet, "A", input.date()));
+        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings, holidays)
+                : holidays.past(sheet, input.date().plusDays(settings.terms(sheet, "A", input.date())));
         if (periods.closedOn(sheet, dueBy)) {
             throw new InvalidClaimException("A claim may not be due inside a closed period");
         }

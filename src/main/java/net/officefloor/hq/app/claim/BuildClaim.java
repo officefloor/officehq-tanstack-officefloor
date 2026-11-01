@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
@@ -12,11 +13,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class BuildClaim {
     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
-            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, ClaimLog log, Audit audit, Rollup rollup)
+            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup)
             throws InvalidClaimException {
         // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
         // stand on that date; the claim belongs to the period its due-by falls in.
-        LocalDate dueBy = person.dueBy(sheet, input.date(), settings);
+        LocalDate dueBy = person.dueBy(sheet, input.date(), settings, holidays);
         if (periods.closedOn(sheet, dueBy)) {
             throw new InvalidClaimException("A claim may not be due inside a closed period");
         }

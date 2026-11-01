@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.period.Periods;
@@ -26,7 +27,7 @@ public class ValidatePaste {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody PasteRequest request, People people,
-            Settings settings, Periods periods, Out<PastedClaims> pasted) throws InvalidClaimException {
+            Settings settings, Holidays holidays, Periods periods, Out<PastedClaims> pasted) throws InvalidClaimException {
         String text = request == null || request.text() == null ? "" : request.text();
         List<PastedClaim> lines = new ArrayList<>();
         int at = 0;
@@ -35,7 +36,7 @@ public class ValidatePaste {
             if (line.isBlank()) {
                 continue;
             }
-            lines.add(check(sheet, at, line, people, settings, periods));
+            lines.add(check(sheet, at, line, people, settings, holidays, periods));
         }
         if (lines.isEmpty()) {
             throw new InvalidClaimException("Paste at least one line of name,amount,date,note");
@@ -43,7 +44,7 @@ public class ValidatePaste {
         pasted.set(new PastedClaims(lines));
     }
 
-    private static PastedClaim check(String sheet, int at, String line, People people, Settings settings,
+    private static PastedClaim check(String sheet, int at, String line, People people, Settings settings, Holidays holidays,
             Periods periods) throws InvalidClaimException {
         String[] fields = line.split(",", 4);
         String name = fields[0].trim();
@@ -67,7 +68,7 @@ public class ValidatePaste {
         } catch (DateTimeParseException e) {
             throw new InvalidClaimException("Line " + at + ": not a valid date: " + date);
         }
-        if (periods.closedOn(sheet, person.dueBy(sheet, on, settings))) {
+        if (periods.closedOn(sheet, person.dueBy(sheet, on, settings, holidays))) {
             throw new InvalidClaimException("Line " + at + ": a claim may not be due inside a closed period");
         }
         if (person.retiredBefore(on)) {
