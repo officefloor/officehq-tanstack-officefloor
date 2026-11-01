@@ -16,8 +16,8 @@ import net.officefloor.plugin.variable.Val;
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. Settled as of a date, the figure is its due as it stood at the end of that date instead (see {@link ValidateClaimStatus}). The user who opened a claim, or last edited it, may not settle it.
  *  When a clerk settles a claim whose due is over the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's) (a due of n/a is within any
- *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward
- *  approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
+ *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward,
+ *  or its person's approver, approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
  *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, still bound by the last
  *  statement if that bound it.
  *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
@@ -123,8 +123,9 @@ public class ApplyClaimStatus {
             if (change.user().equals(claim.getEditedBy())) {
                 throw new ClaimStatusRefusedException("The user who last edited a claim cannot approve it");
             }
-            if (settings.role(claim.getSheetId(), change.user()) != Role.STEWARD) {
-                throw new ClaimStatusRefusedException("Only a steward can approve a pending claim");
+            if (settings.role(claim.getSheetId(), change.user()) != Role.STEWARD
+                    && !change.user().equals(people.find(claim.getSheetId(), claim.getPersonId()).getApprover())) {
+                throw new ClaimStatusRefusedException("Only a steward or the person's approver can approve a pending claim");
             }
         }
         if (change.action() == ClaimAction.REVIEW && settings.role(claim.getSheetId(), change.user()) != Role.STEWARD) {

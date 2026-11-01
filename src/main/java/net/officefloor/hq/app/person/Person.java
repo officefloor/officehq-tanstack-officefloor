@@ -47,6 +47,8 @@ public class Person {
     /** The person's flag: its reason and the date it is in force until, inclusive (null: never flagged). */
     private String flagReason;
     private LocalDate flagUntil;
+    /** The user who may approve or reject the person's PENDING claims as a steward may (null: none). */
+    private String approver;
     private List<String> snapshots = new ArrayList<>();
     private List<String> statementLines = new ArrayList<>();
     private List<Long> patronIds = new ArrayList<>();
@@ -174,6 +176,8 @@ public class Person {
     public boolean isFlagged() {
         return flagUntil != null && (today == null || !today.isAfter(flagUntil));
     }
+    public String getApprover() { return approver; }
+    public void setApprover(String approver) { this.approver = approver; }
     public boolean isHeld() { return !holds.isEmpty(); }
     /** The person's holds, in the order they were added. */
     public List<Hold> getHolds() { return holds; }

@@ -17,13 +17,15 @@ import java.util.List;
  *  `statementLines` their statements still standing, in the order taken ("<statement date> <due-total>");
  *  `ownTerms` their own terms from the beginning of time (null: none); `datedTerms` every dated terms
  *  recorded, by from-date (`terms` null: none from then); `flag` the reason of their flag while it is
- *  in force (null: none in force). */
+ *  in force (null: none in force); `approver` the user who may approve or reject their PENDING
+ *  claims as a steward may (null: none). */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
         List<RetirementDates> pastRetirements,
         boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms,
         String contact, List<String> aliases, boolean clashing, String origin, List<String> tags,
-        List<String> snapshots, List<String> statementLines, Integer ownTerms, List<TermsFrom> datedTerms, String flag) {
+        List<String> snapshots, List<String> statementLines, Integer ownTerms, List<TermsFrom> datedTerms, String flag,
+        String approver) {
 
     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
     public record HoldDates(String from, String to) {
@@ -63,6 +65,6 @@ public record PersonResponse(long id, String name, String grade, int version, in
                 person.getDatedTerms().entrySet().stream()
                         .map(e -> new TermsFrom(e.getValue(), e.getKey().toString()))
                         .toList(),
-                person.isFlagged() ? person.getFlagReason() : null);
+                person.isFlagged() ? person.getFlagReason() : null, person.getApprover());
     }
 }

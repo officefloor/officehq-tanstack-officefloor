@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, dated_terms, origin_sheet, origin_name, flag_reason, flag_until, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, dated_terms, origin_sheet, origin_name, flag_reason, flag_until, approver, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
@@ -334,6 +334,11 @@ public class People {
         return past;
     }
 
+    /** Record the person's approver. Not an edit: the person's version is untouched. */
+    public void saveApprover(Person person) {
+        jdbc.update("UPDATE person SET approver = ? WHERE id = ?", person.getApprover(), person.getId());
+    }
+
     /** Record the person's flag. Not an edit: the person's version is untouched. */
     public void saveFlag(Person person) {
         jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", person.getFlagReason(),
@@ -541,6 +546,7 @@ public class People {
         person.setDatedTerms(datedTerms(rs.getString("dated_terms")));
         Date flagUntil = rs.getDate("flag_until");
         person.setFlag(rs.getString("flag_reason"), flagUntil != null ? flagUntil.toLocalDate() : null);
+        person.setApprover(rs.getString("approver"));
         Date today = rs.getDate("sheet_today");
         person.setToday(today != null ? today.toLocalDate() : LocalDate.now());
         return person;
