@@ -11,17 +11,19 @@ public final class DueBy {
     private DueBy() {
     }
 
-    /** The due-by of a claim of `person` dated `date`: the terms-th business day after its date,
-     *  taking the person's own terms, else the terms of their grade then, else the sheet's terms then,
-     *  and skipping every Saturday, Sunday and holiday on the sheet now. */
+    /** The due-by of a claim of `person` dated `date` created now: the terms-th business day after its
+     *  date, taking the terms in force on the sheet's today (see `terms`), and skipping every Saturday,
+     *  Sunday and holiday on the sheet now. */
     public static LocalDate of(Person person, LocalDate date, Settings settings, Holidays holidays) {
-        return holidays.businessDaysAfter(person.getSheetId(), date, terms(person, date, settings));
+        return holidays.businessDaysAfter(person.getSheetId(), date, terms(person, settings));
     }
 
-    /** The terms a claim of `person` dated `date` is fixed with: the person's own in force then, else
-     *  those of their grade then, else the sheet's then. */
-    public static int terms(Person person, LocalDate date, Settings settings) {
-        Integer own = person.termsOn(date);
-        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date);
+    /** The terms a claim of `person` created now is fixed with, each looked up on the day it is created
+     *  (the sheet's today), not on its date: the person's own in force then, else those of the grade
+     *  they had then, else the sheet's then. */
+    public static int terms(Person person, Settings settings) {
+        LocalDate created = settings.today(person.getSheetId());
+        Integer own = person.termsOn(created);
+        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(created), created);
     }
 }

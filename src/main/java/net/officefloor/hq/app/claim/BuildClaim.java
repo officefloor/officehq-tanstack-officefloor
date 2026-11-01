@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, a late entry when a soft-closed period contains its due-by, refusing one due by in a closed period or after its person's retirement date,
+/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade, else the sheet's, in force on the day it is created (the sheet's today), a late entry when a soft-closed period contains its due-by, refusing one due by in a closed period or after its person's retirement date,
  *  and a correction that does not name a SETTLED claim of the same person. */
 public class BuildClaim {
     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
@@ -25,7 +25,7 @@ public class BuildClaim {
     static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
             Claims claims, Settings settings, Holidays holidays) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.getSheetId());
-        int terms = DueBy.terms(person, date, settings);
+        int terms = DueBy.terms(person, settings);
         LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), date, terms);
         closedPeriods.refuse(person.getSheetId(), dueBy);
         person.refuseRetired(date);

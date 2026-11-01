@@ -337,6 +337,11 @@ public class Settings {
                 sheetId, date != null ? Date.valueOf(date) : null);
     }
 
+    /** The sheet's today: the day a claim added now is created on. */
+    public LocalDate today(String sheetId) {
+        return sheets.today(sheetId);
+    }
+
     /** The default date of a new claim: the sheet's entry date while set, else its today. */
     public LocalDate claimDate(String sheetId) {
         LocalDate entry = entryDate(sheetId);
