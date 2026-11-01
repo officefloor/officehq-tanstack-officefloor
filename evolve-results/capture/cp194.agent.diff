@@ -1,0 +1,237 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index f34e27c1..3cd45559 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -45,6 +45,7 @@ const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLE
+ const NO_TARGET = 'Choose another person to reassign this claim to.';
+ const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
+ const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
++const SETTLE_ASOF = "A claim can be settled as of a date only on or before the sheet's today, and only one that existed then.";
+ const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
+ const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof (one of each of the sheet's proof kinds, when set).";
+ const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
+@@ -184,6 +185,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   // The void reason chosen for each claim, by claim id: one is needed while the sheet has any.
+   const { data: voidReasons = [] } = useVoidReasons(sheet);
+   const [voidWith, setVoidWith] = useState<Record<number, string>>({});
++  // The date typed to settle each claim as of, by claim id ('' for the sheet's today).
++  const [settleOn, setSettleOn] = useState<Record<number, string>>({});
+   // The date typed for deferring each claim, by claim id.
+   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
+   // The new date typed for re-dating each claim, by claim id.
+@@ -250,10 +253,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   });
+ 
+   const changeStatus = useMutation({
+-    mutationFn: (c: { id: number; action: Action; reason?: string }) =>
+-      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user, reason: c.reason }),
++    mutationFn: (c: { id: number; action: Action; reason?: string; on?: string }) =>
++      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user, reason: c.reason, on: c.on }),
+     onMutate: () => setRefused(null),
+     onSuccess: (_, c) => {
++      if (c.action === 'settle') setSettleOn((r) => ({ ...r, [c.id]: '' }));
+       if (c.action === 'reject') setReasons((r) => ({ ...r, [c.id]: '' }));
+       if (c.action === 'void') setVoidWith((r) => ({ ...r, [c.id]: '' }));
+     },
+@@ -266,6 +270,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+             ? CANNOT_RESTORE
+           : !(e instanceof HttpError)
+           ? STATUS_REFUSED
++          : e.body.includes('as of')
++            ? SETTLE_ASOF
+           : e.body.includes('void reason')
+             ? NO_VOID_REASON
+           : e.body.includes('void a settled')
+@@ -885,6 +891,20 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+                       />{' '}
+                     </>
+                   )}
++                  {action === 'settle' && (
++                    <>
++                      <input
++                        data-testid="claim-settle-date"
++                        aria-label="Settle as of"
++                        placeholder="yyyy-mm-dd"
++                        value={settleOn[c.id] ?? ''}
++                        onChange={(e) => {
++                          setSettleOn({ ...settleOn, [c.id]: e.target.value });
++                          if (refused?.id === c.id) setRefused(null);
++                        }}
++                      />{' '}
++                    </>
++                  )}
+                   {action === 'void' && voidReasons.length > 0 && (
+                     <>
+                       <select
+@@ -930,6 +950,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+                             : action === 'void' && voidReason !== ''
+                               ? voidReason
+                               : undefined,
++                        on: action === 'settle' && (settleOn[c.id] ?? '').trim() !== '' ? (settleOn[c.id] ?? '').trim() : undefined,
+                       });
+                     }}
+                   >
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 24b7d6f8..d0ab5d20 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Moves the claim to the action's status, refusing a change its current status does not allow.
+  *  Opening gives the claim its number (see {@link ClaimNumbers}); a voided claim keeps it (and it is never reused).
+  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+- *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. The user who opened a claim, or last edited it, may not settle it.
++ *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. Settled as of a date, the figure is its due as it stood at the end of that date instead (see {@link ValidateClaimStatus}). The user who opened a claim, or last edited it, may not settle it.
+  *  When a clerk settles a claim whose due is over the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's) (a due of n/a is within any
+  *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward
+  *  approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
+@@ -145,6 +145,8 @@ public class ApplyClaimStatus {
+             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
+             // Figures.due: from the bound figure when a statement binds the claim (OPEN or PENDING), else live.
+             due = figures.due(claim, grade);
++            // Settled as of a date: frozen at its due as it stood at the end of that date.
++            if (change.on() != null) due = change.onDue();
+             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
+             String judgedGrade = people.find(judged.getSheetId(), judged.getPersonId()).gradeOn(judged.getDate());
+             BigDecimal judgedDue = judged == claim ? due : figures.due(judged, judgedGrade);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 6ca87701..0d6c550e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -1,8 +1,17 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
+ /** A validated status change body; `reason` is a rejection's reason, or the reason a void
+- *  was given from the sheet's list (null when none, and for any other action). */
+-public record ClaimStatusChange(ClaimAction action, String user, String reason) {
++ *  was given from the sheet's list (null when none, and for any other action). A settle as of a
++ *  date carries the date (`on`) and the claim's due as it stood at the end of it (`onDue`, null
++ *  for n/a); both are null for any other change. */
++public record ClaimStatusChange(ClaimAction action, String user, String reason, LocalDate on, BigDecimal onDue) {
++    public ClaimStatusChange(ClaimAction action, String user, String reason) {
++        this(action, user, reason, null, null);
++    }
++
+     public ClaimStatusChange(ClaimAction action, String user) {
+         this(action, user, null);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+index 01d994f0..86f986a6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /** Body of a claim status change: the action (open, settle, approve, reject or void), who takes it
+- *  and, for a rejection, its reason. */
+-public record ClaimStatusRequest(String action, String user, String reason) {
++ *  and, for a rejection, its reason, and for a settle the date it settles as of (yyyy-mm-dd; blank
++ *  for the sheet's today). */
++public record ClaimStatusRequest(String action, String user, String reason, String on) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+index 7c22a1b6..e2181f34 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatusChanged.java
+@@ -30,7 +30,8 @@ public class RecordClaimStatusChanged {
+                 + (fixesDue ? " due=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")
+                 + (change.action() == ClaimAction.REJECT ? " reason=" + change.reason() : "")
+                 + (voidsSettled ? " reversed=" + (claim.getDue() != null ? claim.getDue().toPlainString() : "n/a") : "")
+-                + (change.action() == ClaimAction.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
++                + (change.action() == ClaimAction.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : "")
++                + (fixesDue && change.on() != null ? " on=" + change.on() : ""));
+         // A watched person's claim settled or approved: a line per watching user, after the claim's own.
+         if (fixesDue) watches.notify(claim, person, change.user(), audit);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index 70d5e44d..1b3e69b7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -1,25 +1,64 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import java.util.Locale;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.hq.app.rollup.Actor;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
++/** Binds the body. A settle as of a date works out the claim's due as it stood at the end of that
++ *  date (as the as-of view does, see {@link AsOf}) here, before the change's transaction: refused
++ *  when the date is after the sheet's today or the claim did not exist then. */
+ public class ValidateClaimStatus {
+-    public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusChange> body, Out<Actor> actor)
+-            throws InvalidSheetRequestException {
++    public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") long claimId,
++            @RequestBody ClaimStatusRequest request, Sheets sheets, AsOf asOf, Claims claims, People people,
++            Figures figures, Out<ClaimStatusChange> body, Out<Actor> actor)
++            throws InvalidSheetRequestException, ClaimStatusRefusedException {
+         String action = request == null || request.action() == null ? "" : request.action().trim();
++        ClaimAction parsed;
+         try {
+             actor.set(new Actor(request.user()));
+-            ClaimAction parsed = ClaimAction.valueOf(action.toUpperCase(Locale.ROOT));
+-            String reason = request.reason() == null ? "" : request.reason().trim();
+-            if (parsed == ClaimAction.REJECT && reason.isEmpty()) {
+-                throw new InvalidSheetRequestException("A rejection needs a reason");
+-            }
+-            body.set(new ClaimStatusChange(parsed, request.user(), parsed == ClaimAction.REJECT || (parsed == ClaimAction.VOID && !reason.isEmpty()) ? reason : null));
++            parsed = ClaimAction.valueOf(action.toUpperCase(Locale.ROOT));
+         } catch (IllegalArgumentException e) {
+             throw new InvalidSheetRequestException("Not a claim action (open, settle, approve, reject, review, void, delete or restore): " + action);
+         }
++        String reason = request.reason() == null ? "" : request.reason().trim();
++        if (parsed == ClaimAction.REJECT && reason.isEmpty()) {
++            throw new InvalidSheetRequestException("A rejection needs a reason");
++        }
++        String kept = parsed == ClaimAction.REJECT || (parsed == ClaimAction.VOID && !reason.isEmpty()) ? reason : null;
++        String onText = request.on() == null ? "" : request.on().trim();
++        if (parsed != ClaimAction.SETTLE || onText.isEmpty()) {
++            body.set(new ClaimStatusChange(parsed, request.user(), kept));
++            return;
++        }
++        LocalDate on;
++        try {
++            on = LocalDate.parse(onText);
++        } catch (DateTimeParseException e) {
++            throw new ClaimStatusRefusedException("A claim can be settled as of a date only: " + onText);
++        }
++        if (on.isAfter(sheets.today(sheetId))) {
++            throw new ClaimStatusRefusedException("A claim cannot be settled as of a date after the sheet's today");
++        }
++        // Null: the claim did not exist then; else its due then (n/a when it had none).
++        Object[] then = asOf.at(sheetId, on, () -> {
++            Claim claim = claims.find(sheetId, claimId);
++            if (claim == null) return null;
++            Person person = people.find(sheetId, claim.getPersonId());
++            return new Object[] { figures.due(claim, person.gradeOn(claim.getDate())) };
++        });
++        if (then == null) {
++            throw new ClaimStatusRefusedException("A claim cannot be settled as of a date before it existed");
++        }
++        body.set(new ClaimStatusChange(parsed, request.user(), kept, on, (BigDecimal) then[0]));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
+index 84f4a695..cd4e93fe 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ViewerGuard.java
+@@ -34,7 +34,7 @@ public class ViewerGuard extends OncePerRequestFilter {
+     private static final String PREFIX = "/api/sheets/";
+ 
+     /** The bulk actions, by the path after the sheet id: they answer counts instead of refusing. */
+-    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle", "bulk-grade", "bulk-retire");
++    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle", "bulk-grade", "bulk-retire", "bulk-void");
+ 
+     /** Generating the plans' claims answers a count too: a viewer's generate goes through and makes none. */
+     private static final Set<String> COUNTED = Set.of("generate-plans");
