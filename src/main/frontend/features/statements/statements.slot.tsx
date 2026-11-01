@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -23,18 +24,22 @@ function StatementHeader() {
 
 // A person's statements: how many, the last one's due-total and date, the button that takes the next and the one
 // that cancels the last. Taking one binds their counting claims to their figures now, and cancelling one makes the
-// claims it bound live again, so the claims are re-read before the count moves on.
+// claims it bound live again, so the claims are re-read before the count moves on. A date beside the button takes
+// the statement as of that date (blank: now); it is cleared once the statement is taken, and changing it clears the
+// statement's error.
 function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: all = [] } = useStatements(sheet);
   const mine = all.find((s) => s.person === person.id);
+  const [asof, setAsof] = useState('');
   const take = useMutation({
     mutationKey: personActionKey(sheet, person.id),
-    mutationFn: () =>
-      postJson<StatementSummary[]>(byUser(`${peoplePath(sheet)}/${person.id}/statement`, user), {}),
+    mutationFn: (date: string) =>
+      postJson<StatementSummary[]>(byUser(`${peoplePath(sheet)}/${person.id}/statement`, user), { asof: date }),
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       queryClient.setQueryData(statementsKey(sheet), updated);
+      setAsof('');
     },
   });
   const cancel = useMutation({
@@ -57,7 +62,17 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
       <td data-testid="person-stated-total">{mine?.lastDueTotal ?? ''}</td>
       <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>
       <td>
-        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => act()}>
+        <input
+          type="date"
+          data-testid="person-statement-asof"
+          aria-label="Statement as of"
+          value={asof}
+          onChange={(e) => {
+            setAsof(e.target.value);
+            take.reset();
+          }}
+        />{' '}
+        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => act(asof)}>
           Statement
         </button>{' '}
         <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => actCancel()}>

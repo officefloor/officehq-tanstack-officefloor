@@ -129,8 +129,13 @@ public class Settings {
 
     /** The dated key's figure by date, starting (before every from-date, or where a blank is in force) at the start. */
     private Dated figure(String sheet, String key, BigDecimal start) {
+        return figure(history(sheet, key), start);
+    }
+
+    /** A dated key's figure by date from its recorded values, starting (before every from-date, or where a blank is in force) at the start. */
+    public static Dated figure(List<DatedValue> history, BigDecimal start) {
         TreeMap<LocalDate, BigDecimal> values = new TreeMap<>();
-        for (DatedValue v : history(sheet, key)) {
+        for (DatedValue v : history) {
             values.put(LocalDate.parse(v.from()), v.value().isEmpty() ? start : new BigDecimal(v.value()));
         }
         return new Dated(start, values);
@@ -146,6 +151,17 @@ public class Settings {
     public BigDecimal cap(String sheet) {
         String cap = on(sheet, CAP, clock.today(sheet));
         return cap.isEmpty() ? null : new BigDecimal(cap);
+    }
+
+    /** The value in force on the date among a dated key's recorded values, or "" when none is recorded on or before it. */
+    public static String on(List<DatedValue> history, LocalDate date) {
+        String found = "";
+        for (DatedValue v : history) {
+            if (!LocalDate.parse(v.from()).isAfter(date)) {
+                found = v.value();
+            }
+        }
+        return found;
     }
 
     /** The due-total capped at the cap (none: as it is); a null (n/a) due-total is not capped. */

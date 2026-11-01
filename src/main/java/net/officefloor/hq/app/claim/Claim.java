@@ -66,6 +66,12 @@ public record Claim(long id, long person, String amount, String date, String not
         return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry);
     }
 
+    /** This claim as it stands with the date for the sheet's today: deferred while OPEN with its deferred-until after it. */
+    public Claim on(LocalDate today) {
+        boolean deferredThen = status == ClaimStatus.OPEN && deferredUntil != null && LocalDate.parse(deferredUntil).isAfter(today);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferredThen, proofs, splitFrom, lockedBy, lateEntry);
+    }
+
     /** This claim, with its status log (oldest first). */
     public Claim withLog(List<ClaimLogLine> log) {
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry);

@@ -34,6 +34,12 @@ public record Person(long id, String name, String grade, long version, String re
         return !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date()));
     }
 
+    /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
+    public Person on(LocalDate today) {
+        return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
+                retiredOn(retiredFrom, today));
+    }
+
     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */
     static boolean retiredOn(String retiredFrom, LocalDate today) {
         return retiredFrom != null && !today.isBefore(LocalDate.parse(retiredFrom));
