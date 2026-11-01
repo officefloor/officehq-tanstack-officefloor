@@ -241,6 +241,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
             shows it only once the save has landed. */}
+        Policy version: <strong data-testid="policy-version">{data?.policyVersions?.length ?? 0}</strong>{' '}
         Clerk limit:{' '}
         <strong data-testid="setting-clerk-limit-current">
           {saveSettings.isPending ? '' : (data?.clerkLimit ?? '')}

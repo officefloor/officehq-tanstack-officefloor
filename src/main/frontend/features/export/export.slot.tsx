@@ -36,7 +36,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
         rateOn(rates, gradeOn(p, today), today),
         (c) => claimRateOn(rates, gradeOn(p, c.date), c),
         late,
-        cap,
+        cap(claims, p.id),
         undefined,
         cutOf(p.id),
       );

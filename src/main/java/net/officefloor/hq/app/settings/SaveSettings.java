@@ -45,7 +45,10 @@ public class SaveSettings {
         change.perms().forEach((action, roles) -> settings.setPermission(sheetId, action, roles));
     }
 
+    /** A policy setting's change is also a new policy version, from the same from-date. */
     private static void setDated(Settings settings, SettingsChange change, LocalDate today, String key, BigDecimal value) {
-        settings.setDated(change.sheetId(), key, change.froms().getOrDefault(key, today), value);
+        LocalDate from = change.froms().getOrDefault(key, today);
+        settings.setDated(change.sheetId(), key, from, value);
+        if (Settings.POLICY.contains(key)) settings.addPolicyVersion(change.sheetId(), key, from, value);
     }
 }

@@ -95,10 +95,13 @@ public class Rollup {
             BigDecimal settled = ZERO;
             int overdueCount = 0;
             boolean any = false;
+            // The date of their latest claim that counts: their cap is the one in force then.
+            LocalDate latest = null;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (person.countsClaimed(claim) && claim.getCorrects() == null) claimed = claimed.add(claim.getAmount());
                 if (!person.counts(claim)) continue;
+                if (latest == null || claim.getDate().isAfter(latest)) latest = claim.getDate();
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = figures.due(claim, grade);
                 if (figures.overdue(claim, grade)) overdueCount++;
@@ -123,7 +126,7 @@ public class Rollup {
                 any = true;
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
-            due = settings.capped(sheetId, due, cuts.get(person.getId()));
+            due = settings.capped(sheetId, latest, due, cuts.get(person.getId()));
             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue,
                     settled.subtract(BigDecimal.valueOf(500L * overdueCount)).divide(HUNDRED, 0, RoundingMode.HALF_EVEN)));
             claimedTotal = claimedTotal.add(claimed);

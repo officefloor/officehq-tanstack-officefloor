@@ -38,7 +38,7 @@ export function useSheetTotals(sheet: string) {
     return holder === undefined ? undefined : claimRateOn(rates, gradeOn(holder, c.date), c);
   };
   const dues = people.map((p) =>
-    personDueCents(carried(claims, p.id), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, cap, p.id, cutOf(p.id), holderRate),
+    personDueCents(carried(claims, p.id), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, cap(carried(claims, p.id), p.id), p.id, cutOf(p.id), holderRate),
   );
   // Everyone's due-total before the cap, split into its SETTLED and its OPEN-and-PENDING part.
   const part = (keep: (c: (typeof claims)[number]) => boolean) =>

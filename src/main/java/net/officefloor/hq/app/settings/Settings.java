@@ -108,11 +108,11 @@ public class Settings {
         return valueOn(sheetId, CLERK_LIMIT, sheets.today(sheetId), null);
     }
 
-    /** The clerk limit in force for a claim of `grade`: the grade's own on the sheet's today when one
-     *  is set then, else the sheet's. Null for no limit. */
-    public BigDecimal clerkLimit(String sheetId, String grade) {
-        BigDecimal own = grade != null ? valueOn(sheetId, clerkLimitKey(grade), sheets.today(sheetId), null) : null;
-        return own != null ? own : clerkLimit(sheetId);
+    /** The clerk limit in force for a claim of `grade` dated `date`: the grade's own on that date when one
+     *  is set then, else the sheet's then. Null for no limit. */
+    public BigDecimal clerkLimit(String sheetId, String grade, LocalDate date) {
+        BigDecimal own = grade != null ? valueOn(sheetId, clerkLimitKey(grade), date, null) : null;
+        return own != null ? own : valueOn(sheetId, CLERK_LIMIT, date, null);
     }
 
     /** Every grade's own clerk limit in force on the sheet's today, by grade (a grade not in it uses the sheet's). */
@@ -199,6 +199,26 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
                 + "KEY (sheet_id, setting_key, from_date) VALUES (?, ?, ?, ?)",
                 sheetId, key, Date.valueOf(from), value);
+    }
+
+    /** The keys of the policy settings: each change to one is a new policy version. */
+    public static final java.util.Set<String> POLICY = java.util.Set.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
+
+    /** Record a new policy version: the next number on the sheet, setting `key` to `value` from `from`
+     *  (null for no from-date). */
+    public void addPolicyVersion(String sheetId, String key, LocalDate from, BigDecimal value) {
+        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date, setting_value) "
+                + "SELECT ?, COALESCE(MAX(version), 0) + 1, ?, ?, ? FROM policy_version WHERE sheet_id = ?",
+                sheetId, key, from != null ? Date.valueOf(from) : null, value, sheetId);
+    }
+
+    /** The from-date of each of the sheet's policy versions (yyyy-mm-dd; null for none), in version order. */
+    public List<String> policyVersions(String sheetId) {
+        return jdbc.query("SELECT from_date FROM policy_version WHERE sheet_id = ? ORDER BY version",
+                (rs, i) -> {
+                    Date from = rs.getDate("from_date");
+                    return from != null ? from.toLocalDate().toString() : null;
+                }, sheetId);
     }
 
     /** The rounding modes a sheet can set, by the name the screen and audit show; stored as a code. */
@@ -523,9 +543,15 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, fiscal_start_month) KEY (sheet_id) VALUES (?, ?)", sheetId, month);
     }
 
-    /** The sheet's cap in force on its today: a person's due-total is at most it. Null for no cap. */
+    /** The sheet's cap in force on its today. Null for no cap. */
     public BigDecimal cap(String sheetId) {
-        return valueOn(sheetId, CAP, sheets.today(sheetId), null);
+        return cap(sheetId, sheets.today(sheetId));
+    }
+
+    /** The sheet's cap in force on `date`: a person's due-total is at most the one on the date of their
+     *  latest claim that counts. Null for no cap. */
+    public BigDecimal cap(String sheetId, LocalDate date) {
+        return valueOn(sheetId, CAP, date, null);
     }
 
     /** The sheet's proof threshold in force on `date`: a claim dated then whose due is above it
@@ -569,10 +595,10 @@ public class Settings {
         return valueOn(sheetId, REVIEW_THRESHOLD, date, null);
     }
 
-    /** A person's due-total at most the sheet's cap less their cut total (not below 0.00); n/a (null)
-     *  is not capped. */
-    public BigDecimal capped(String sheetId, BigDecimal dueTotal, BigDecimal cutTotal) {
-        BigDecimal cap = cap(sheetId);
+    /** A person's due-total at most the sheet's cap on `date` (the date of their latest claim that counts;
+     *  the sheet's today when null) less their cut total (not below 0.00); n/a (null) is not capped. */
+    public BigDecimal capped(String sheetId, LocalDate date, BigDecimal dueTotal, BigDecimal cutTotal) {
+        BigDecimal cap = date != null ? cap(sheetId, date) : cap(sheetId);
         if (dueTotal == null || cap == null) return dueTotal;
         BigDecimal most = cap.subtract(cutTotal == null ? BigDecimal.ZERO : cutTotal).max(BigDecimal.ZERO).setScale(2);
         return dueTotal.compareTo(most) <= 0 ? dueTotal : most;

@@ -167,8 +167,8 @@ public class ApplyClaimStatus {
                     }
                 }
             }
-            // The person's grade's own limit on the sheet's today when one is set, else the sheet's.
-            BigDecimal limit = settings.clerkLimit(claim.getSheetId(), grade);
+            // The person's grade's own limit on the claim's date when one is set, else the sheet's then.
+            BigDecimal limit = settings.clerkLimit(claim.getSheetId(), grade, claim.getDate());
             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
                     && java.util.EnumSet.of(Role.CLERK, Role.RESTRICTED).contains(settings.role(claim.getSheetId(), change.user()));
         }

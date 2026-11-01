@@ -6,7 +6,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { gradeOn, heldOn, heldOnBy, retiredOut, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { claimRateOn, hundredths, rateOn, showDue, useRates } from '../rates/useRates';
-import { useCap, useFloor, useLate, usePendingLate, useReviewLate, useScoreBand } from '../settings/useSettings';
+import { useCap, useFloor, usePolicyVersions, useLate, usePendingLate, useReviewLate, useScoreBand } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
@@ -177,6 +177,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);
   const cap = useCap(sheet);
+  const policy = usePolicyVersions(sheet);
   const cut = useCutTotal(sheet)(person.id);
   // The claims they carry: their own less the holders' parts, and their parts of those shared with them
   // (each live by its own person, at its own person's rate; a holder's part at their own grade's rate).
@@ -720,8 +721,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(claimedClaims)}</td></Col>
-      <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap, cut))}</td></Col>
-      <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap, cut))}</td></Col>
+      <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap(carriedClaims, person.id), cut))}</td></Col>
+      <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap(carriedClaims, person.id), cut))}</td></Col>
       <td data-testid="person-settled-total">{showDue(settledSum ?? 0n)}</td>
       <td data-testid="person-open-total">{showDue(openSum ?? 0n)}</td>
       <Col user={user} id="overdue-count"><td data-testid="person-overdue-count">{late.count}</td></Col>
@@ -873,6 +874,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{showDue(claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy))}</span>{' '}
+              <span data-testid="claim-policy">{policy.on(c.date)}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}

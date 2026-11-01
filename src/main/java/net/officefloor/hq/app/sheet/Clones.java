@@ -58,6 +58,8 @@ public class Clones {
         jdbc.update("INSERT INTO PUBLIC.sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
         jdbc.update("INSERT INTO sheet_setting_dated (sheet_id, setting_key, from_date, setting_value) "
                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_dated WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date, setting_value) "
+                + "SELECT ?, version, setting_key, from_date, setting_value FROM policy_version WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_grade_terms (sheet_id, grade, terms) "
                 + "SELECT ?, grade, terms FROM sheet_grade_terms WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_permission (sheet_id, action_key, roles) "

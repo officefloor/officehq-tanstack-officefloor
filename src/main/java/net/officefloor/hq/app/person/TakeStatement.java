@@ -68,8 +68,10 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean any = false;
         Map<Long, BigDecimal> bound = new HashMap<>();
+        LocalDate latest = null;
         for (Claim claim : claims.ofPerson(sheetId, person.getId())) {
             if (person.counts(claim)) {
+                if (latest == null || claim.getDate().isAfter(latest)) latest = claim.getDate();
                 // The statement binds the due as shown, late charge and floor included.
                 BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
                 bound.put(claim.getId(), figure);
@@ -83,7 +85,7 @@ public class TakeStatement {
         Snapshot.PersonFigures figured = rollup.snapshot(sheetId).people().get(person.getId());
         if (figured != null) return new Taken(bound, figured.dueTotal(), today);
         BigDecimal dueTotal = !any && rates.pct(sheetId, person.gradeOn(today), today) == null ? null
-                : settings.capped(sheetId, total, pools.cutTotals(sheetId).get(person.getId()));
+                : settings.capped(sheetId, latest, total, pools.cutTotals(sheetId).get(person.getId()));
         return new Taken(bound, dueTotal, today);
     }
 

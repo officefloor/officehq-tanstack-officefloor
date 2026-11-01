@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import type { Late } from '../claims/useClaims';
+import { counted, type Claim, type Late } from '../claims/useClaims';
 import { useSheetToday } from '../sheet/useSheet';
 import { useView, viewKey, viewPath } from '../asof/useAsOf';
 import { gradeOn, usePeople } from '../people/usePeople';
@@ -21,7 +21,7 @@ export type RoleEntry = { name: string; role: string };
  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
 export type DelegationEntry = { name: string; from: string; to: string; by: string };
 
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; pendingSla: number | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; pendingSla: number | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null; policyVersions: (string | null)[] };
 
 /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
 export type DatedValue = { from: string; value: string | null };
@@ -62,11 +62,29 @@ export function useFloor(sheet: string): FloorOn {
   return (date) => valueOn(settings, 'floor', date, DEFAULT_FLOOR) ?? DEFAULT_FLOOR;
 }
 
-/** The sheet's cap in force on its today: a person's due-total is at most it. Null for no cap. */
-export function useCap(sheet: string): string | null {
+/** A person's cap: the sheet's cap in force on the date of their latest claim that counts (on the
+ *  sheet's today while none does), out of `claims` (their own are those of `personId`). Null for no cap. */
+export type CapOf = (claims: Claim[], personId: number) => string | null;
+
+/** The sheet's cap, by person: a person's due-total is at most it. */
+export function useCap(sheet: string): CapOf {
   const settings = useSettings(sheet).data;
   const today = useSheetToday(sheet);
-  return today === '' ? (settings?.cap ?? null) : valueOn(settings, 'cap', today, null);
+  return (claims, personId) => {
+    const on = counted(claims).filter((c) => c.personId === personId)
+      .reduce((latest, c) => (c.date > latest ? c.date : latest), '');
+    const date = on !== '' ? on : today;
+    return date === '' ? (settings?.cap ?? null) : valueOn(settings, 'cap', date, null);
+  };
+}
+
+/** The sheet's policy versions: every change to its rounding mode, floor, cap, terms, late percent or
+ *  clerk limit is a new one, numbered from 1 in the order made. `current` is the number of the latest
+ *  (0 for none); `on(date)` the version in force on a date — how many have a from-date on or before it
+ *  (one with no from-date counts always). */
+export function usePolicyVersions(sheet: string): { current: number; on: (date: string) => number } {
+  const froms = useSettings(sheet).data?.policyVersions ?? [];
+  return { current: froms.length, on: (date) => froms.filter((from) => from === null || from <= date).length };
 }
 
 /** Whether a claim is review-late: REVIEW, and its review day (the sheet's today when it last went to
