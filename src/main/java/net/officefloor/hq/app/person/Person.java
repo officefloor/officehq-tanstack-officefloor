@@ -170,7 +170,7 @@ public class Person {
     /** The person's snapshot lines, oldest first: the day being left and their due-total then (n/a). */
     public List<String> getSnapshots() { return snapshots; }
     public void setSnapshots(List<String> snapshots) { this.snapshots = snapshots; }
-    /** The person's statements still standing, oldest first (by date, then as taken): the statement's
+    /** The person's statements still standing, in the order taken: the statement's
      *  date and its due-total (n/a). */
     public List<String> getStatementLines() { return statementLines; }
     public void setStatementLines(List<String> statementLines) { this.statementLines = statementLines; }

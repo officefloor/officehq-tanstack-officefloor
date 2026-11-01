@@ -14,7 +14,7 @@ import java.util.List;
  *  their name or an alias is used on another sheet of their sheet's tree; `origin` the sheet they were
  *  transferred from (null: they were not); `tags` their tags, sorted (empty: none);
  *  `snapshots` their snapshot lines, oldest first ("<day left> <due-total>");
- *  `statementLines` their statements still standing, oldest first ("<statement date> <due-total>");
+ *  `statementLines` their statements still standing, in the order taken ("<statement date> <due-total>");
  *  `ownTerms` their own terms from the beginning of time (null: none); `datedTerms` every dated terms
  *  recorded, by from-date (`terms` null: none from then). */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount,

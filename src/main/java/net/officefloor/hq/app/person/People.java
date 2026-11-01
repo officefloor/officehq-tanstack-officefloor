@@ -56,7 +56,7 @@ public class People {
                     snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
                 }, sheetId);
         Map<Long, List<String>> statementLines = new HashMap<>();
-        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? ORDER BY statement_date, seq",
+        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? ORDER BY person_id, seq",
                 (ResultSet rs) -> {
                     statementLines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(statementLine(rs));
                 }, sheetId);

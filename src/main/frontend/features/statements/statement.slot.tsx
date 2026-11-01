@@ -14,7 +14,7 @@ import { Col } from '../columns/useColumns';
  * button takes it as of that date (on or before the sheet's today): the claims that counted at the
  * end of it are bound to their figures as they stood then, and the statement is dated it. A steward can
  * cancel the last statement: the claims it bound become live again, and the row shows the one
- * before it (or nothing). Each statement still standing shows as a line, oldest first:
+ * before it (or nothing). Each statement still standing shows as a line, in the order taken:
  * `<statement date> <due-total>`.
  */
 function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {

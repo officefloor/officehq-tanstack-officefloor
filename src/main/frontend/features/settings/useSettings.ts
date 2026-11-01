@@ -112,6 +112,18 @@ export function useLate(sheet: string): Late {
 
 export const ROLES = ['clerk', 'steward', 'viewer'] as const;
 
+/** The user's role on the sheet as every rule takes it: steward while a delegation to them covers
+ *  the sheet's today, else the role given to their name (clerk unless given another). Under an as-of
+ *  date, the role they had then. Null until the settings are read. */
+export function useRoleOf(sheet: string, user: string): string | null {
+  const settings = useSettings(sheet).data;
+  const today = useSheetToday(sheet);
+  if (settings === undefined || today === '') return null;
+  if ((settings.delegations ?? []).some((d) => d.name === user && d.from <= today && today <= d.to)) return 'steward';
+  return settings.roles.find((r) => r.name === user)?.role ?? 'clerk';
+}
+
+
 /** A clerk limit the server accepts: an amount with up to two decimals, or blank for no limit. */
 export const LIMIT = /^(\d{1,10}(\.\d{1,2})?)?$/;
 
