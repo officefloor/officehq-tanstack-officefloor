@@ -16,7 +16,8 @@ import { plansKey, usePlans, type Plan } from './usePlans';
  * resumed (pausing a paused plan or resuming a running one is refused); a plan date on or after the
  * day paused and before the day resumed is skipped, so it is left out of the next dates. A plan's
  * amount can be changed (a bad amount is refused): the new amount applies to the claims made from then
- * on. Each plan lists its changes, oldest first, as `<date> amount=<amount>`.
+ * on. A plan may name one of the sheet's descendants (any other sheet is refused): its claims are
+ * then made for the person of the same name on that sheet. Each plan lists its changes, oldest first, as `<date> amount=<amount>`.
  */
 function PersonPlans({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
   const [every, setEvery] = useState('');
   const [day, setDay] = useState('');
   const [end, setEnd] = useState('');
+  const [target, setTarget] = useState('');
   const [newAmounts, setNewAmounts] = useState<Record<number, string>>({});
 
   const submitOnce = useSubmitOnce();
@@ -37,6 +39,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
         every,
         day,
         end,
+        sheet: target,
         user,
       }),
     onSuccess: async () => {
@@ -45,6 +48,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
       setEvery('');
       setDay('');
       setEnd('');
+      setTarget('');
       await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
     },
   });
@@ -86,7 +90,13 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
                   monthly on day <span data-testid="plan-day">{p.day}</span>
                 </>
               )}{' '}
-              to <span data-testid="plan-end">{p.end}</span>; made{' '}
+              to <span data-testid="plan-end">{p.end}</span>
+              {p.sheet != null && (
+                <>
+                  {' '}on sheet <span data-testid="plan-sheet">{p.sheet}</span>
+                </>
+              )}
+              ; made{' '}
               <span data-testid="plan-generated">{p.generated}</span>; next{' '}
               <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>; paused{' '}
               <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
@@ -179,6 +189,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
         <input data-testid="plan-form-every" aria-label="Plan every N days" placeholder="every" size={4} value={every} onChange={change(setEvery)} />
         <input data-testid="plan-form-day" aria-label="Plan day of the month" placeholder="or day 1-31" size={4} value={day} onChange={change(setDay)} />
         <input data-testid="plan-form-end" aria-label="Plan end" placeholder="end yyyy-mm-dd" size={10} value={end} onChange={change(setEnd)} />
+        <input data-testid="plan-form-sheet" aria-label="Plan sheet" placeholder="sheet (descendant)" size={10} value={target} onChange={change(setTarget)} />
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
         </button>
@@ -187,7 +198,7 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
             {' '}
             {add.error instanceof HttpError && add.error.body
               ? add.error.body
-              : 'Could not add this plan (an amount, every at least 1 or a day 1 to 31, an end not before the start).'}
+              : 'Could not add this plan (an amount, every at least 1 or a day 1 to 31, an end not before the start, a sheet that is a descendant of this one).'}
           </span>
         )}
       </form>

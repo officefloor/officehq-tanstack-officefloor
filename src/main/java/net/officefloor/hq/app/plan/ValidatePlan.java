@@ -45,7 +45,8 @@ public class ValidatePlan {
         if (start != null && end.isBefore(start)) {
             throw new InvalidSheetRequestException("The end date cannot be before the start");
         }
-        body.set(new PlanValues(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end, request.user()));
+        body.set(new PlanValues(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end,
+                request.sheet() == null || request.sheet().isBlank() ? null : request.sheet().trim(), request.user()));
     }
 
     private static LocalDate date(String raw, String what) throws InvalidSheetRequestException {

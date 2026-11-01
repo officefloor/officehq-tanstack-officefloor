@@ -9,6 +9,6 @@ public class RecordPlanAdded {
     public void record(@Val PlanValues values, @Val Person person, @Val Plan plan, Audit audit) {
         audit.record("PLAN_ADDED sheet=" + plan.sheetId() + " by=" + values.user() + " name=" + person.getName()
                 + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + (plan.every() != null ? " every=" + plan.every() : " day=" + plan.day())
-                + " end=" + plan.end());
+                + " end=" + plan.end() + (plan.targetSheet() != null ? " sheet=" + plan.targetSheet() : ""));
     }
 }

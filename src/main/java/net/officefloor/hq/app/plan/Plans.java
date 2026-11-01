@@ -36,23 +36,23 @@ public class Plans {
                         .add(new PlanPause(rs.getDate(2).toLocalDate(),
                                 rs.getDate(3) == null ? null : rs.getDate(3).toLocalDate())),
                 sheetId);
-        return jdbc.query("SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, "
+        return jdbc.query("SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.month_day, p.end_date, p.target_sheet, "
                 + "(SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) "
                 + "FROM plan p WHERE p.sheet_id = ? ORDER BY p.id",
                 (rs, i) -> new Plan(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getBigDecimal(4).setScale(2),
                         rs.getDate(5).toLocalDate(), rs.getObject(6, Integer.class), rs.getObject(7, Integer.class),
-                        rs.getDate(8).toLocalDate(), rs.getInt(9),
+                        rs.getDate(8).toLocalDate(), rs.getInt(10),
                         pauses.getOrDefault(rs.getLong(1), List.of()),
-                        changes.getOrDefault(rs.getLong(1), List.of())),
+                        changes.getOrDefault(rs.getLong(1), List.of()), rs.getString(9)),
                 sheetId);
     }
 
     /** Adds the plan; answers its id. */
     public long add(String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
-            LocalDate end) {
-        jdbc.update("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, personId, amount, Date.valueOf(start), every, day,
-                Date.valueOf(end));
+            LocalDate end, String targetSheet) {
+        jdbc.update("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date, target_sheet) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", sheetId, personId, amount, Date.valueOf(start), every, day,
+                Date.valueOf(end), targetSheet);
         return jdbc.queryForObject("SELECT MAX(id) FROM plan WHERE sheet_id = ? AND person_id = ?", Long.class,
                 sheetId, personId);
     }
