@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { peopleKey, type Person } from '../people/usePeople';
 import { useRowAction } from '../people/useRowAction';
+import { Col } from '../columns/useColumns';
 
 /**
  * A person's holds: whether they have any, a line per hold with its dates, and the dates and button
@@ -27,7 +28,7 @@ function PersonHold({ user, sheet, person }: { user: string; sheet: string; pers
   const actionTaken = useRowAction(sheet, person.id, hold.reset);
   return (
     <>
-      <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>
+      <Col user={user} id="hold"><td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td></Col>
       <td>
         {person.holds.map((h, i) => (
           <div key={i} data-testid="person-hold-line">
@@ -81,9 +82,9 @@ function PersonHold({ user, sheet, person }: { user: string; sheet: string; pers
 export const contributions = [
   PersonColumns.fill({
     order: 35,
-    Component: () => (
+    Component: ({ user }: { user: string; sheet: string }) => (
       <>
-        <th>Held</th>
+        <Col user={user} id="hold"><th>Held</th></Col>
         <th>Holds</th>
         <th />
       </>

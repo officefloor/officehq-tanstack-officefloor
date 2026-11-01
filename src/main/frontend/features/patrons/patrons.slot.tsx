@@ -6,6 +6,7 @@ import { useClaims } from '../claims/useClaims';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
 import { hundredths, totalDue } from '../rates/useRates';
 import { useSheetToday } from '../sheet/useSheet';
+import { Col } from '../columns/useColumns';
 
 /**
  * A person's patrons: the other people on the sheet they have named, each with a share of 100.00
@@ -78,8 +79,8 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
 
   return (
     <>
-      <td data-testid="person-patrons">{labels.join(', ')}</td>
-      <td data-testid="person-backing">{totalDue([backing])}</td>
+      <Col user={user} id="patrons"><td data-testid="person-patrons">{labels.join(', ')}</td></Col>
+      <Col user={user} id="backing"><td data-testid="person-backing">{totalDue([backing])}</td></Col>
       <td>
         <select
           data-testid="person-patron-select"
@@ -123,10 +124,10 @@ function PersonPatrons({ user, sheet, person }: { user: string; sheet: string; p
 export const contributions = [
   PersonColumns.fill({
     order: 40,
-    Component: () => (
+    Component: ({ user }: { user: string; sheet: string }) => (
       <>
-        <th>Patrons</th>
-        <th>Backing</th>
+        <Col user={user} id="patrons"><th>Patrons</th></Col>
+        <Col user={user} id="backing"><th>Backing</th></Col>
         <th />
       </>
     ),

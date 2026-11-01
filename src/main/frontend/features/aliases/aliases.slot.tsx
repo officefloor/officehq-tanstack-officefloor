@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { peopleKey, type Person } from '../people/usePeople';
 import { useRowAction } from '../people/useRowAction';
+import { Col } from '../columns/useColumns';
 
 /**
  * A person's aliases (sorted as names are compared, comma and space separated), and the entry and
@@ -24,7 +25,7 @@ function PersonAliases({ user, sheet, person }: { user: string; sheet: string; p
   return (
     <>
       <td data-testid="person-clashing">{person.clashing ? 'yes' : 'no'}</td>
-      <td data-testid="person-aliases">{person.aliases.join(', ')}</td>
+      <Col user={user} id="aliases"><td data-testid="person-aliases">{person.aliases.join(', ')}</td></Col>
       <td>
         <input
           type="text"
@@ -62,10 +63,10 @@ function PersonAliases({ user, sheet, person }: { user: string; sheet: string; p
 export const contributions = [
   PersonColumns.fill({
     order: 5,
-    Component: () => (
+    Component: ({ user }: { user: string; sheet: string }) => (
       <>
         <th>Clashing</th>
-        <th>Aliases</th>
+        <Col user={user} id="aliases"><th>Aliases</th></Col>
         <th />
       </>
     ),

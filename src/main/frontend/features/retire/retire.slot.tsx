@@ -5,6 +5,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { peopleKey, type Person } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
 import { useRowAction } from '../people/useRowAction';
+import { Col } from '../columns/useColumns';
 
 /**
  * A person's retirement: whether they are retired and from when, and the date and button to retire
@@ -42,7 +43,7 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
   });
   return (
     <>
-      <td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td>
+      <Col user={user} id="retired"><td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td></Col>
       <td data-testid="person-retired-from">{person.retiredFrom ?? ''}</td>
       <td>
         {person.pastRetirements.map((r, i) => (
@@ -107,9 +108,9 @@ function PersonRetire({ user, sheet, person }: { user: string; sheet: string; pe
 export const contributions = [
   PersonColumns.fill({
     order: 30,
-    Component: () => (
+    Component: ({ user }: { user: string; sheet: string }) => (
       <>
-        <th>Retired</th>
+        <Col user={user} id="retired"><th>Retired</th></Col>
         <th>Retired from</th>
         <th>Past retirements</th>
         <th />

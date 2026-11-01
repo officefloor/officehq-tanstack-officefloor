@@ -9,6 +9,7 @@ import { ShowRetired, useShowRetired } from './ShowRetired';
 import { SortBy, useSortedPeople } from './SortBy';
 import { useSheetToday } from '../sheet/useSheet';
 import { GRADES, gradeOn, peopleKey, usePeople, type Person } from './usePeople';
+import { Col } from '../columns/useColumns';
 
 /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
 function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
@@ -229,8 +230,8 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            <Col user={user} id="terms"><th>Terms</th></Col>
+            <Col user={user} id="contact"><th>Contact</th></Col>
             <th>Tags</th>
             <th />
             <PersonColumns.Slot user={user} sheet={sheet} />
@@ -241,8 +242,8 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{gradeOn(p, today)}</td>
-              <td data-testid="person-terms">{p.terms ?? ''}</td>
-              <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <Col user={user} id="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></Col>
+              <Col user={user} id="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></Col>
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>

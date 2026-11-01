@@ -11,6 +11,7 @@ import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { useTemplates } from '../templates/useTemplates';
+import { Col } from '../columns/useColumns';
 import {
   AMOUNT,
   CLAIM_NUMBER,
@@ -539,13 +540,13 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(liveClaims)}</td>
-      <td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td>
-      <td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td>
+      <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(liveClaims)}</td></Col>
+      <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td></Col>
+      <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td></Col>
       <td data-testid="person-settled-total">{showDue(settledSum ?? 0n)}</td>
       <td data-testid="person-open-total">{showDue(openSum ?? 0n)}</td>
-      <td data-testid="person-overdue-count">{late.count}</td>
-      <td data-testid="person-overdue-total">{showDue(late.cents)}</td>
+      <Col user={user} id="overdue-count"><td data-testid="person-overdue-count">{late.count}</td></Col>
+      <Col user={user} id="overdue-total"><td data-testid="person-overdue-total">{showDue(late.cents)}</td></Col>
       <td>
         <form
           data-testid="claim-form"
@@ -1010,15 +1011,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
 export const contributions = [
   PersonColumns.fill({
     order: 10,
-    Component: () => (
+    Component: ({ user }: { user: string; sheet: string }) => (
       <>
-        <th>Claimed</th>
-        <th>Due</th>
-        <th>Excess</th>
+        <Col user={user} id="claimed"><th>Claimed</th></Col>
+        <Col user={user} id="due-total"><th>Due</th></Col>
+        <Col user={user} id="excess"><th>Excess</th></Col>
         <th>Settled</th>
         <th>Open</th>
-        <th>Overdue</th>
-        <th>Overdue due</th>
+        <Col user={user} id="overdue-count"><th>Overdue</th></Col>
+        <Col user={user} id="overdue-total"><th>Overdue due</th></Col>
         <th>Claims</th>
       </>
     ),

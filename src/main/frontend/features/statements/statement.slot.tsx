@@ -5,6 +5,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey, type Person } from '../people/usePeople';
 import { useRowAction } from '../people/useRowAction';
+import { Col } from '../columns/useColumns';
 
 /**
  * A person's statements: the button to take one, which records their due-total now and binds each
@@ -46,9 +47,9 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
   const taken = person.statementCount > 0;
   return (
     <>
-      <td data-testid="person-statement-count">{person.statementCount}</td>
-      <td data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</td>
-      <td data-testid="person-statement-date">{taken ? (person.statementDate ?? '') : ''}</td>
+      <Col user={user} id="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
+      <Col user={user} id="stated-total"><td data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</td></Col>
+      <Col user={user} id="statement-date"><td data-testid="person-statement-date">{taken ? (person.statementDate ?? '') : ''}</td></Col>
       <td>
         <input
           type="text"
@@ -94,11 +95,11 @@ function PersonStatement({ user, sheet, person }: { user: string; sheet: string;
 export const contributions = [
   PersonColumns.fill({
     order: 20,
-    Component: () => (
+    Component: ({ user }: { user: string; sheet: string }) => (
       <>
-        <th>Statements</th>
-        <th>Last stated</th>
-        <th>Stated on</th>
+        <Col user={user} id="statement-count"><th>Statements</th></Col>
+        <Col user={user} id="stated-total"><th>Last stated</th></Col>
+        <Col user={user} id="statement-date"><th>Stated on</th></Col>
         <th />
       </>
     ),
