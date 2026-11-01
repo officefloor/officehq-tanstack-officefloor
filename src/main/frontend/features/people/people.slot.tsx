@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { GRADES, peopleKey, peoplePath, usePeople } from './people';
@@ -21,8 +22,8 @@ function People({ sheet, user }: { sheet: string; user: string }) {
   const save = useMutation({
     mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
       id === null
-        ? postJson<Person[]>(peoplePath(sheet), body)
-        : putJson<Person[]>(`${peoplePath(sheet)}/${id}`, body),
+        ? postJson<Person[]>(byUser(peoplePath(sheet), user), body)
+        : putJson<Person[]>(byUser(`${peoplePath(sheet)}/${id}`, user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(peopleKey(sheet), updated);
       setDraft(EMPTY);

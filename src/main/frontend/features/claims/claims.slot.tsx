@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
 import type { Person } from '../people/people';
@@ -22,7 +23,7 @@ function ClaimedHeader() {
 
 // A person's claimed total, then their claims (newest first) under one form that adds a claim or,
 // once a claim's editor is opened, edits it. A blank date takes the sheet's today on the server.
-function PersonClaims({ sheet, person }: { sheet: string; user: string; person: Person }) {
+function PersonClaims({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.person === person.id);
@@ -32,8 +33,8 @@ function PersonClaims({ sheet, person }: { sheet: string; user: string; person: 
   const save = useMutation({
     mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
       id === null
-        ? postJson<Claim[]>(`${peoplePath(sheet)}/${person.id}/claims`, body)
-        : putJson<Claim[]>(`${claimsPath(sheet)}/${id}`, body),
+        ? postJson<Claim[]>(byUser(`${peoplePath(sheet)}/${person.id}/claims`, user), body)
+        : putJson<Claim[]>(byUser(`${claimsPath(sheet)}/${id}`, user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(claimsKey(sheet), updated);
       setDraft(EMPTY);
