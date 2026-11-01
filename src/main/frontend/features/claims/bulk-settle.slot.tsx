@@ -1,0 +1,48 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { byUser } from '../session/session';
+import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { claimsKey, claimsPath } from './claims';
+import type { Claim } from './claims';
+import { clearSelectedClaims, useSelectedClaims } from './selection';
+
+type BulkSettled = { settled: number; refused: number; claims: Claim[] };
+
+// Settles the selected claims together as the signed-in user: the server settles each in list order (people in the
+// order they were added, newest claim first) by the rules of settling one, counting one sent to PENDING as settled,
+// and leaves the rest as they are. Shows how many of each.
+function BulkSettle({ sheet, user }: { sheet: string; user: string }) {
+  const queryClient = useQueryClient();
+  const selected = useSelectedClaims(sheet);
+  const settle = useMutation({
+    mutationFn: (ids: number[]) =>
+      postJson<BulkSettled>(byUser(`${claimsPath(sheet)}/bulk-settle`, user), { claims: ids }),
+    onSuccess: (result) => {
+      queryClient.setQueryData(claimsKey(sheet), result.claims);
+      clearSelectedClaims(sheet);
+    },
+  });
+  const act = useSubmitOnce(settle);
+
+  return (
+    <p>
+      <button type="button" data-testid="bulk-settle" disabled={settle.isPending} onClick={() => act([...selected])}>
+        Settle selected
+      </button>
+      {settle.isSuccess && (
+        <>
+          {' '}Settled <strong data-testid="bulk-settled">{settle.data.settled}</strong>, refused{' '}
+          <strong data-testid="bulk-settle-refused">{settle.data.refused}</strong>
+        </>
+      )}
+      {settle.isError && (
+        <span data-testid="bulk-settle-error" role="alert">
+          {' '}The bulk settle failed.
+        </span>
+      )}
+    </p>
+  );
+}
+
+export const contribution = SheetPanels.fill({ order: 22, Component: BulkSettle });
