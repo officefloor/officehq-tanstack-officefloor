@@ -21,8 +21,7 @@ public class AddPastedClaims {
             Person person = line.person();
             ClaimInput input = line.input();
             Rollup.Snapshot before = rollup.take(sheet);
-            long id = claims.add(sheet, person.id(), input, input.date().plusDays(
-                    settings.terms(sheet, person.gradeOn(input.date()), input.date())));
+            long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
             log.record(sheet, user, id);
             audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
             rollup.record(sheet, user, before);

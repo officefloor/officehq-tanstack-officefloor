@@ -12,10 +12,10 @@ public class BuildPerson {
             @Val PersonRequest request, People people, Audit audit, Rollup rollup, Out<Person> person)
             throws DuplicatePersonNameException {
         Rollup.Snapshot before = rollup.take(sheet);
-        Person added = people.add(sheet, request.name(), request.grade());
+        Person added = people.add(sheet, request.name(), request.grade(), request.termsDays());
         person.set(added);
         audit.record("PERSON_ADDED sheet=" + sheet + " by=" + user + " name=" + added.name() + " grade="
-                + added.grade());
+                + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms()));
         rollup.record(sheet, user, before);
     }
 }

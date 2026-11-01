@@ -49,7 +49,7 @@ public class SplitClaim {
         if (!claims.split(sheet, claim.id(), was, rest)) {
             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
         }
-        LocalDate dueBy = date.plusDays(settings.terms(sheet, person.gradeOn(date), date));
+        LocalDate dueBy = person.dueBy(sheet, date, settings);
         long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), dueBy, claim.shownNumber(), user);
         Claim opened = changer.number(sheet, claims.find(sheet, id));
         log.record(sheet, user, id);

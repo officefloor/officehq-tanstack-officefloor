@@ -16,9 +16,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, name, version, retired_from FROM person";
+    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms FROM person";
 
-    private record Row(long id, String name, long version, String retiredFrom) {
+    private record Row(long id, String name, long version, String retiredFrom, Integer terms) {
     }
 
     private final JdbcTemplate jdbc;
@@ -32,7 +32,8 @@ public class People {
     private List<Person> query(String sheet, String where, Object... args) {
         List<Row> rows = jdbc.query(COLUMNS + " " + where, (rs, i) -> new Row(rs.getLong("id"), rs.getString("name"),
                 rs.getLong("version"),
-                rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString()), args);
+                rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
+                rs.getObject("terms", Integer.class)), args);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -55,7 +56,7 @@ public class People {
         for (Row r : rows) {
             List<GradeFrom> mine = List.copyOf(grades.getOrDefault(r.id(), List.of()));
             people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(),
-                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine));
+                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms()));
         }
         return people;
     }
@@ -86,6 +87,11 @@ public class People {
 
     /** Adds the person with their first grade, which applies from the beginning of time. */
     public Person add(String sheet, String name, String grade) throws DuplicatePersonNameException {
+        return add(sheet, name, grade, null);
+    }
+
+    /** Adds the person with their first grade, which applies from the beginning of time, and their own terms (null: none). */
+    public Person add(String sheet, String name, String grade, Integer terms) throws DuplicatePersonNameException {
         if (nameTaken(sheet, name, null)) {
             throw new DuplicatePersonNameException(name);
         }
@@ -97,6 +103,7 @@ public class People {
         }
         long id = keys.getKey().longValue();
         setGrade(id, grade, null);
+        setTerms(id, terms);
         return find(sheet, id);
     }
 
@@ -116,6 +123,11 @@ public class People {
                 grade, id, date) == 0) {
             jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) VALUES (?, ?, ?)", id, grade, date);
         }
+    }
+
+    /** Sets the person's own terms (null: none). */
+    public void setTerms(long id, Integer terms) {
+        jdbc.update("UPDATE person SET terms = ? WHERE id = ?", terms, id);
     }
 
     /** Retire the person from the date. */

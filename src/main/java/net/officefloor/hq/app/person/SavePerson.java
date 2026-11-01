@@ -19,16 +19,22 @@ public class SavePerson {
         }
         Rollup.Snapshot before = rollup.take(sheet);
         people.update(sheet, new Person(person.id(), request.name(), person.grade(), loaded, person.retiredFrom(),
-                person.holds(), person.grades()));
+                person.holds(), person.grades(), person.terms()));
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the ones already
         // recorded; leaving the grade as the row showed it, with the from-date blank, records nothing.
         if (request.gradeFrom() != null || !request.grade().equals(person.grade())) {
             LocalDate from = request.gradeFrom() == null ? clock.today(sheet) : LocalDate.parse(request.gradeFrom());
             people.setGrade(person.id(), request.grade(), from);
         }
+        // The terms are recorded as the form gave them; only a change from what the row showed is audited.
+        Integer terms = request.termsDays();
+        boolean termsChanged = !java.util.Objects.equals(terms, person.terms());
+        if (termsChanged) {
+            people.setTerms(person.id(), terms);
+        }
         Person saved = people.find(sheet, person.id());
         audit.record("PERSON_EDITED sheet=" + sheet + " by=" + user + " name=" + saved.name() + " grade="
-                + saved.grade());
+                + saved.grade() + (termsChanged ? " terms=" + (terms == null ? "" : terms) : ""));
         rollup.record(sheet, user, before);
     }
 }

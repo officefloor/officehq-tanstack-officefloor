@@ -12,9 +12,10 @@ import { claimsKey } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
 // gradeFrom is the date an edit records the grade from (yyyy-mm-dd; blank for the sheet's today); a person's
-// first grade applies from the beginning of time.
-type Draft = { name: string; grade: Grade; gradeFrom: string };
-const EMPTY: Draft = { name: '', grade: 'A', gradeFrom: '' };
+// first grade applies from the beginning of time. terms are the person's own days (blank for none).
+type Draft = { name: string; grade: Grade; gradeFrom: string; terms: string };
+const EMPTY: Draft = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+const termsText = (p: Person) => (p.terms === null ? '' : String(p.terms));
 
 type Quick = { name: string; amount: string };
 const QUICK_EMPTY: Quick = { name: '', amount: '' };
@@ -97,12 +98,18 @@ function People({ sheet, user }: { sheet: string; user: string }) {
       setEditing(null);
     },
     onError: async (error, { edit }) => {
-      if (edit === null || !(error instanceof HttpError) || error.status !== 412) return;
+      if (edit === null) return;
+      if (!(error instanceof HttpError) || error.status !== 412) {
+        // A refused edit writes nothing and closes the editor, leaving its error shown, so the form adds again.
+        setDraft(EMPTY);
+        setEditing(null);
+        return;
+      }
       // Someone else saved the person: show what is stored now, and edit from that version.
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
       const p = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((c) => c.id === edit.id);
       if (p) {
-        setDraft({ name: p.name, grade: p.grade, gradeFrom: '' });
+        setDraft({ name: p.name, grade: p.grade, gradeFrom: '', terms: termsText(p) });
         setEditing({ id: p.id, version: p.version });
       }
     },
@@ -116,7 +123,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
 
   const open = (p: Person) => {
     setEditing({ id: p.id, version: p.version });
-    setDraft({ name: p.name, grade: p.grade, gradeFrom: '' });
+    setDraft({ name: p.name, grade: p.grade, gradeFrom: '', terms: termsText(p) });
     save.reset();
   };
 
@@ -164,6 +171,15 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             onChange={(e) => change({ gradeFrom: e.target.value })}
           />
         </label>{' '}
+        <label>
+          Terms{' '}
+          <input
+            data-testid="person-form-terms"
+            placeholder="days"
+            value={draft.terms}
+            onChange={(e) => change({ terms: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}
         </button>
@@ -177,7 +193,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             {' '}
             {save.error instanceof HttpError && save.error.status === 412
               ? 'Someone else saved this person since you opened it; the form now shows their values.'
-              : 'A person needs a name not already on the sheet, a grade of A, B or C, and a from-date that is a valid date or blank.'}
+              : 'A person needs a name not already on the sheet, a grade of A, B or C, a from-date that is a valid date or blank, and terms that are a whole number of days or blank.'}
           </span>
         )}
       </form>
@@ -196,6 +212,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Terms</th>
             <PersonColumnHeaders.Slot sheet={sheet} user={user} />
             <th />
           </tr>
@@ -205,6 +222,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-terms">{termsText(p)}</td>
               <PersonColumns.Slot sheet={sheet} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>

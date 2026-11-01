@@ -23,7 +23,7 @@ public class BuildClaim {
         Rollup.Snapshot before = rollup.take(sheet);
         // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
         // stand on that date.
-        long id = claims.add(sheet, person.id(), input, input.date().plusDays(settings.terms(sheet, person.gradeOn(input.date()), input.date())));
+        long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
         log.record(sheet, user, id);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
         rollup.record(sheet, user, before);

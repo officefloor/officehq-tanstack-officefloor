@@ -6,16 +6,17 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.setting.Dated;
+import net.officefloor.hq.app.setting.Settings;
 
 /**
  * A person on a sheet: name (unique on the sheet, ignoring case) and grades (A, B or C), each in force from its
  * from-date; grade is the one in force on the sheet's today. The version is raised by one on every save. The
  * retired-from date (yyyy-mm-dd) is null unless they are retired; once it is set they count as retired, whatever
  * the date. Their holds are listed in the order they were added; their OPEN claims dated within a hold, unless bound
- * by a statement, count in no live total.
+ * by a statement, count in no live total. Their own terms (days) are null when they have none.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
-        List<GradeFrom> grades) {
+        List<GradeFrom> grades, Integer terms) {
 
     /** Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement, and dated within one of their holds. */
     public boolean counts(Claim claim) {
@@ -70,6 +71,14 @@ public record Person(long id, String name, String grade, long version, String re
                 || (then != null && !then.equals(gradeOn(today)) && claim.figure(rates, then, floor) != null)
                 || (then != null && !LocalDate.parse(claim.date()).isAfter(today)
                         && claim.figure(rates, then, floor) != null);
+    }
+
+    /**
+     * The due-by of a claim of theirs dated {@code date}, fixed when it is made: the date plus the first of their own
+     * terms, the terms of their grade then, and the sheet's terms then.
+     */
+    public LocalDate dueBy(String sheet, LocalDate date, Settings settings) {
+        return date.plusDays(terms != null ? terms : settings.terms(sheet, gradeOn(date), date));
     }
 
     /** The grade in force on the claim's date (yyyy-mm-dd). */

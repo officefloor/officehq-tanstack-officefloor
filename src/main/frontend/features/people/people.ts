@@ -23,6 +23,8 @@ export type Person = {
   retiredFrom: string | null;
   holds: Hold[];
   grades: GradeFrom[];
+  /** The person's own terms in days, ahead of their grade's and the sheet's; null when they have none. */
+  terms: number | null;
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */
