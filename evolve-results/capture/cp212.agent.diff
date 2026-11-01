@@ -1,0 +1,43 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index a3fd481b..4ddfd5cd 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -174,8 +174,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+   const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+   const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
+-  // Their score: their settled figures over 100, less 5 for each overdue claim, rounded half to even.
+-  const score = scoreOf(settledSum ?? 0n, late.count);
++  // Their score: their settled figures, corrections left out, over 100, less 5 for each overdue claim, rounded half to even.
++  const scoredSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED' && !c.corrects), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
++  const score = scoreOf(scoredSum ?? 0n, late.count);
+   // Their band by that score, while both the sheet's score thresholds are set.
+   const band = useScoreBand(sheet)(score);
+   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 4d2edcbb..85909c01 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -78,7 +78,8 @@ public class Rollup {
+                 String grade = person.gradeOn(claim.getDate());
+                 BigDecimal figure = figures.due(claim, grade);
+                 if (figures.overdue(claim, grade)) overdueCount++;
+-                if (figure != null && claim.getStatus() == ClaimStatus.SETTLED) settled = settled.add(figure);
++                if (figure != null && claim.getStatus() == ClaimStatus.SETTLED
++                        && claim.getCorrects() == null) settled = settled.add(figure);
+                 if (figure != null) {
+                     due = due.add(figure);
+                     any = true;
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java b/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java
+index 619a6810..d49f2b39 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Snapshot.java
+@@ -6,7 +6,7 @@ import java.util.Map;
+ /** Every person's figures on a sheet at one moment, keyed by person id in the order they were
+  *  added, and the sheet's totals. A due-total is null when it is n/a. An overdue-total is the dues of
+  *  the counting OPEN (or PENDING) claims whose due-by is before the sheet's today (n/a ones skipped). A
+- *  score is the person's counting SETTLED claims' figures over 100, less 5 for each counting overdue
++ *  score is the person's counting SETTLED claims' figures (corrections left out) over 100, less 5 for each counting overdue
+  *  claim, rounded half to even to a whole number, as the screen shows it. */
+ public record Snapshot(Map<Long, PersonFigures> people, BigDecimal claimedTotal, BigDecimal dueTotal, BigDecimal overdueTotal) {
+ 
