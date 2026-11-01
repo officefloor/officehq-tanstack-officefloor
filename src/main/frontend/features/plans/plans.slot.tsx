@@ -16,7 +16,7 @@ import { plansKey, usePlans, type Plan } from './usePlans';
  * resumed (pausing a paused plan or resuming a running one is refused); a plan date on or after the
  * day paused and before the day resumed is skipped, so it is left out of the next dates. A plan's
  * amount can be changed (a bad amount is refused): the new amount applies to the claims made from then
- * on. A plan may name one of the sheet's descendants (any other sheet is refused): its claims are
+ * on, and to the claims it made that are still DRAFT (each edited as the claim form edits it). A plan may name one of the sheet's descendants (any other sheet is refused): its claims are
  * then made for the person of the same name on that sheet. Each plan lists its changes, oldest first, as `<date> amount=<amount>`.
  */
 function PersonPlans({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
@@ -62,7 +62,10 @@ function PersonPlans({ user, sheet, person }: { user: string; sheet: string; per
       postJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${planId}/amount`, { amount, user }),
     onSuccess: async (_data, { planId }) => {
       setNewAmounts((was) => ({ ...was, [planId]: '' }));
-      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: plansKey(sheet) }),
+      ]);
     },
   });
   const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {

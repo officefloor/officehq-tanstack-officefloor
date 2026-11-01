@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
 
 /** Changes the plan's amount from the sheet's today, for the claims it makes from then on (those
- *  already made keep theirs), notes the change and audits it. */
+ *  already made keep theirs, but for its DRAFTs: see {@link ChangePlanDrafts}), notes the change and audits it. */
 public class ChangePlanAmount {
     public void change(@Val Plan plan, @Val PlanAmount amount, @Val Actor actor, Plans plans, People people,
             Sheets sheets, Audit audit) {

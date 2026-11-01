@@ -56,7 +56,7 @@ public class GeneratePlans {
                     continue;
                 }
                 claims.save(claim);
-                plans.markMade(sheetId, plan.id(), date);
+                plans.markMade(sheetId, plan.id(), date, claim.getId());
                 record.record(values, person, claim, log, audit);
                 made++;
             }

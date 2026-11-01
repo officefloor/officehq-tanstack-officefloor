@@ -64,10 +64,17 @@ public class Plans {
         return n != null && n > 0;
     }
 
-    /** Notes the plan has made its claim for that plan date. */
-    public void markMade(String sheetId, long planId, LocalDate date) {
-        jdbc.update("INSERT INTO plan_claim (sheet_id, plan_id, on_date) VALUES (?, ?, ?)", sheetId, planId,
-                Date.valueOf(date));
+    /** Notes the plan has made that claim for that plan date. */
+    public void markMade(String sheetId, long planId, LocalDate date, long claimId) {
+        jdbc.update("INSERT INTO plan_claim (sheet_id, plan_id, on_date, claim_id) VALUES (?, ?, ?, ?)", sheetId,
+                planId, Date.valueOf(date), claimId);
+    }
+
+    /** The ids of the claims the plan has made, in plan date order (none for a plan date made before
+     *  they were kept). */
+    public List<Long> madeClaims(long planId) {
+        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? AND claim_id IS NOT NULL "
+                + "ORDER BY on_date", Long.class, planId);
     }
 
     /** The plan on the sheet with that id, or null when there is none. */
