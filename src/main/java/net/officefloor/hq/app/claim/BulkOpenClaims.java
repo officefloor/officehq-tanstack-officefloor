@@ -35,8 +35,13 @@ public class BulkOpenClaims {
                 selected.add(claim);
             }
         }
+        // Newest first within a person, as the sheet lists them.
+        Map<Long, Integer> listOrder = new HashMap<>();
+        for (Claim claim : claims.list(sheet)) {
+            listOrder.put(claim.id(), listOrder.size());
+        }
         selected.sort(Comparator.comparing((Claim c) -> personOrder.getOrDefault(c.person(), Integer.MAX_VALUE))
-                .thenComparing(Claim::id, Comparator.reverseOrder()));
+                .thenComparing((Claim c) -> listOrder.getOrDefault(c.id(), Integer.MAX_VALUE)));
         int opened = 0;
         for (Claim claim : selected) {
             try {
