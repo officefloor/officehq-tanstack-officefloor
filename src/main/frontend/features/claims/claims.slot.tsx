@@ -30,6 +30,7 @@ import {
 import type { Claim, ClaimStatusChange } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
+import { useTemplates } from '../templates/templates';
 
 type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -694,6 +695,20 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
     },
   });
   const send = useSubmitOnce(save);
+  // A DRAFT claim from a template: its amount and note as they are now, dated like a claim with no date; refused,
+  // like the form, through claim-form-error.
+  const { data: templates = [] } = useTemplates(sheet);
+  const [template, setTemplate] = useState('');
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim[]>(byUser(`${peoplePath(sheet)}/${person.id}/claims/template`, user), { template: name }),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
+  const sendFromTemplate = useSubmitOnce(fromTemplate);
+  const addFromTemplate = () => {
+    save.reset();
+    sendFromTemplate(template);
+  };
 
   const filled = useRef<number | null>(null);
   useEffect(() => {
@@ -712,6 +727,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
     save.reset();
+    fromTemplate.reset();
   };
 
   // Cancel releases this user's lock; the form goes back to adding once the claims show it released.
@@ -721,6 +737,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   });
   const cancel = () => {
     save.reset();
+    fromTemplate.reset();
     if (editing !== null) unlock.mutate(editing);
   };
 
@@ -729,6 +746,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
     // The server refuses an amount that is not a number with up to two decimals, a bad date, or a negative amount
     // (a correction) that does not name a SETTLED claim of this person by number, or a
     // reference already used on the sheet (ignoring case).
+    fromTemplate.reset();
     send({ id: editing, body: draft });
   };
 
@@ -785,9 +803,27 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
-          {save.isError && (
+          <select
+            data-testid="claim-template-select"
+            value={template}
+            onChange={(e) => {
+              setTemplate(e.target.value);
+              fromTemplate.reset();
+            }}
+          >
+            <option value="">template…</option>
+            {templates.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>{' '}
+          <button type="button" data-testid="claim-template-add" disabled={fromTemplate.isPending} onClick={addFromTemplate}>
+            Add from template
+          </button>
+          {(save.isError || fromTemplate.isError) && (
             <span data-testid="claim-form-error" role="alert">
-              {' '}A claim needs an amount with up to two decimals, and a valid date not after the person's retirement date; a negative amount is a correction and must name, by number, a SETTLED claim of this person; a reference may not be one already used on the sheet; only a DRAFT claim can be edited.
+              {' '}A claim needs an amount with up to two decimals, and a valid date not after the person's retirement date; a negative amount is a correction and must name, by number, a SETTLED claim of this person; a reference may not be one already used on the sheet; only a DRAFT claim can be edited; a claim from a template needs one of the sheet's templates chosen.
             </span>
           )}
         </form>
