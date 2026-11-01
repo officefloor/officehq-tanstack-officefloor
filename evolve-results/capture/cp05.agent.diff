@@ -1,0 +1,578 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+new file mode 100644
+index 00000000..62a0c7e3
+--- /dev/null
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -0,0 +1,125 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson, putJson } from '../../api/http';
++import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { peoplePath } from '../people/people';
++import type { Person } from '../people/people';
++import { claimed, claimsKey, claimsPath, useClaims } from './claims';
++import type { Claim } from './claims';
++
++type Draft = { amount: string; date: string; note: string };
++const EMPTY: Draft = { amount: '', date: '', note: '' };
++
++function ClaimedHeader() {
++  return (
++    <>
++      <th>Claimed</th>
++      <th>Claims</th>
++    </>
++  );
++}
++
++// A person's claimed total, then their claims (newest first) under one form that adds a claim or,
++// once a claim's editor is opened, edits it. A blank date takes the sheet's today on the server.
++function PersonClaims({ sheet, person }: { sheet: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const { data: all = [] } = useClaims(sheet);
++  const claims = all.filter((c) => c.person === person.id);
++  const [draft, setDraft] = useState<Draft>(EMPTY);
++  const [editing, setEditing] = useState<number | null>(null);
++
++  const save = useMutation({
++    mutationFn: ({ id, body }: { id: number | null; body: Draft }) =>
++      id === null
++        ? postJson<Claim[]>(`${peoplePath(sheet)}/${person.id}/claims`, body)
++        : putJson<Claim[]>(`${claimsPath(sheet)}/${id}`, body),
++    onSuccess: (updated) => {
++      queryClient.setQueryData(claimsKey(sheet), updated);
++      setDraft(EMPTY);
++      setEditing(null);
++    },
++  });
++
++  const change = (next: Partial<Draft>) => {
++    setDraft((d) => ({ ...d, ...next }));
++    save.reset();
++  };
++
++  const open = (c: Claim) => {
++    setEditing(c.id);
++    setDraft({ amount: c.amount, date: c.date, note: c.note });
++    save.reset();
++  };
++
++  const cancel = () => {
++    setEditing(null);
++    setDraft(EMPTY);
++    save.reset();
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    save.reset();
++    // The server refuses an amount that is not 0.00 or more with up to two decimals, or a bad date.
++    save.mutate({ id: editing, body: draft });
++  };
++
++  return (
++    <>
++      <td data-testid="person-claimed">{claimed(claims)}</td>
++      <td>
++        <form onSubmit={submit}>
++          <input
++            data-testid="claim-form-amount"
++            placeholder="amount"
++            value={draft.amount}
++            onChange={(e) => change({ amount: e.target.value })}
++          />{' '}
++          <input
++            data-testid="claim-form-date"
++            placeholder="yyyy-mm-dd"
++            value={draft.date}
++            onChange={(e) => change({ date: e.target.value })}
++          />{' '}
++          <input
++            data-testid="claim-form-note"
++            placeholder="note"
++            value={draft.note}
++            onChange={(e) => change({ note: e.target.value })}
++          />{' '}
++          <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
++            {editing === null ? 'Add claim' : 'Save claim'}
++          </button>
++          {save.isError && (
++            <span data-testid="claim-form-error" role="alert">
++              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date.
++            </span>
++          )}
++        </form>
++        <ul>
++          {claims.map((c) => (
++            <li key={c.id} data-testid={`claim-row-${c.id}`}>
++              <span data-testid="claim-amount">{c.amount}</span>{' '}
++              <span data-testid="claim-date">{c.date}</span>{' '}
++              <span data-testid="claim-note">{c.note}</span>{' '}
++              <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
++                Edit
++              </button>
++              {editing === c.id && (
++                <button type="button" data-testid="claim-cancel" onClick={cancel}>
++                  Cancel
++                </button>
++              )}
++            </li>
++          ))}
++        </ul>
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeaders.fill({ order: 10, Component: ClaimedHeader }),
++  PersonColumns.fill({ order: 10, Component: PersonClaims }),
++];
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+new file mode 100644
+index 00000000..ac15fea8
+--- /dev/null
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -0,0 +1,26 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A claim: its amount with two decimals, its date (yyyy-MM-dd) and its note. */
++export type Claim = { id: number; person: number; amount: string; date: string; note: string };
++
++export const claimsKey = (sheet: string) => ['claims', sheet] as const;
++
++export const claimsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/claims`;
++
++/** Every claim on the sheet, newest first. */
++export function useClaims(sheet: string) {
++  return useQuery({
++    queryKey: claimsKey(sheet),
++    queryFn: () => getJson<Claim[]>(claimsPath(sheet)),
++  });
++}
++
++/** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
++export function claimed(claims: Claim[]): string {
++  const cents = claims.reduce((sum, c) => {
++    const [whole, frac = ''] = c.amount.split('.');
++    return sum + Number(whole) * 100 + Number(frac.padEnd(2, '0'));
++  }, 0);
++  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
++}
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+new file mode 100644
+index 00000000..0feb2bf4
+--- /dev/null
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -0,0 +1,14 @@
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { claimed, useClaims } from './claims';
++
++// The sheet's claimed-total: everyone's claims added up.
++function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
++  const { data: claims = [] } = useClaims(sheet);
++  return (
++    <p>
++      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims)}</strong>
++    </p>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 20, Component: ClaimedTotal });
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index fd0a262d..147bd950 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { GRADES, peopleKey, peoplePath, usePeople } from './people';
+ import type { Grade, Person } from './people';
+ 
+@@ -11,7 +12,7 @@ const EMPTY: Draft = { name: '', grade: 'A' };
+ 
+ // The sheet's people: listed in the order they were added, with one form that adds a person or,
+ // once a person's editor is opened, edits them.
+-function People({ sheet }: { sheet: string; user: string }) {
++function People({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+   const { data: people = [] } = usePeople(sheet);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+@@ -94,6 +95,7 @@ function People({ sheet }: { sheet: string; user: string }) {
+           <tr>
+             <th>Name</th>
+             <th>Grade</th>
++            <PersonColumnHeaders.Slot sheet={sheet} user={user} />
+             <th />
+           </tr>
+         </thead>
+@@ -102,6 +104,7 @@ function People({ sheet }: { sheet: string; user: string }) {
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+               <td data-testid="person-name">{p.name}</td>
+               <td data-testid="person-grade">{p.grade}</td>
++              <PersonColumns.Slot sheet={sheet} user={user} person={p} />
+               <td>
+                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
+                   Edit
+diff --git a/src/main/frontend/slots/defs/personRow.ts b/src/main/frontend/slots/defs/personRow.ts
+new file mode 100644
+index 00000000..6d113383
+--- /dev/null
++++ b/src/main/frontend/slots/defs/personRow.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++import type { Person } from '../../features/people/people';
++
++/**
++ * Extra columns of the people table. A column fills both regions: its header cell in
++ * PersonColumnHeaders and, per person, its <td> in PersonColumns (inside `person-row-<id>`).
++ */
++export const PersonColumnHeaders = defineSlot<{ sheet: string; user: string }>('person.column-headers');
++export const PersonColumns = defineSlot<{ sheet: string; user: string; person: Person }>('person.columns');
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+new file mode 100644
+index 00000000..a8d0a428
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class BuildClaim {
++    public void build(@PathVariable("sheet") String sheet, @Val Person person, @Val ClaimInput input, Claims claims) {
++        claims.add(sheet, person.id(), input);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+new file mode 100644
+index 00000000..4b16dff9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A claim as the screen shows it: amount with two decimals, date (ISO yyyy-MM-dd) and note. */
++public record Claim(long id, long person, String amount, String date, String note) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+new file mode 100644
+index 00000000..d0356aa7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
++/** A validated claim body: a blank date already defaulted to the sheet's today. */
++public record ClaimInput(BigDecimal amount, LocalDate date, String note) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNotFoundException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNotFoundException.java
+new file mode 100644
+index 00000000..824cb394
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNotFoundException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++/** No claim with this id on the sheet. */
++public class ClaimNotFoundException extends Exception {
++    public ClaimNotFoundException(long id) {
++        super("No such claim: " + id);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+new file mode 100644
+index 00000000..e578fbd9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Body of POST /api/sheets/{sheet}/people/{person}/claims and PUT /api/sheets/{sheet}/claims/{claim}. */
++public record ClaimRequest(String amount, String date, String note) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+new file mode 100644
+index 00000000..c8da81f5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -0,0 +1,45 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.RoundingMode;
++import java.sql.Date;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The claims kept per sheet, each belonging to a person on that sheet. */
++@Repository
++public class Claims {
++
++    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person"),
++            rs.getBigDecimal("amount").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
++            rs.getDate("claimed_on").toLocalDate().toString(), rs.getString("note"));
++
++    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note FROM claim";
++
++    private final JdbcTemplate jdbc;
++
++    public Claims(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Every claim on the sheet, newest first. */
++    public List<Claim> list(String sheet) {
++        return jdbc.query(COLUMNS + " WHERE sheet = ? ORDER BY id DESC", ROW, sheet);
++    }
++
++    public Claim find(String sheet, long id) {
++        List<Claim> found = jdbc.query(COLUMNS + " WHERE sheet = ? AND id = ?", ROW, sheet, id);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    public void add(String sheet, long person, ClaimInput input) {
++        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note) VALUES (?, ?, ?, ?, ?)", sheet, person,
++                input.amount(), Date.valueOf(input.date()), input.note());
++    }
++
++    public void update(String sheet, long id, ClaimInput input) {
++        jdbc.update("UPDATE claim SET amount = ?, claimed_on = ?, note = ? WHERE sheet = ? AND id = ?", input.amount(),
++                Date.valueOf(input.date()), input.note(), sheet, id);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotFound.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotFound.java
+new file mode 100644
+index 00000000..07fa076d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotFound.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimNotFound {
++    public void handle(@Parameter ClaimNotFoundException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleInvalidClaim.java b/src/main/java/net/officefloor/hq/app/claim/HandleInvalidClaim.java
+new file mode 100644
+index 00000000..a0d445ca
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleInvalidClaim.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidClaim {
++    public void handle(@Parameter InvalidClaimException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java
+new file mode 100644
+index 00000000..0308545c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++/** The claim's amount is not a number of 0.00 or more with up to two decimals, or its date is not a date. */
++public class InvalidClaimException extends Exception {
++    public InvalidClaimException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LoadClaim.java b/src/main/java/net/officefloor/hq/app/claim/LoadClaim.java
+new file mode 100644
+index 00000000..3467126d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/LoadClaim.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadClaim {
++    public void load(@PathVariable("sheet") String sheet, @PathVariable("claim") long claim, Claims claims,
++            Out<Claim> loaded) throws ClaimNotFoundException {
++        Claim found = claims.find(sheet, claim);
++        if (found == null) {
++            throw new ClaimNotFoundException(claim);
++        }
++        loaded.set(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+new file mode 100644
+index 00000000..3b7e8c1b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Responds with every claim on the sheet, newest first. */
++public class RespondWithClaims {
++    public void respond(@PathVariable("sheet") String sheet, Claims claims, ObjectResponse<List<Claim>> response) {
++        response.send(claims.list(sheet));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+new file mode 100644
+index 00000000..a123625d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class SaveClaim {
++    public void save(@PathVariable("sheet") String sheet, @Val Claim claim, @Val ClaimInput input, Claims claims) {
++        claims.update(sheet, claim.id(), input);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+new file mode 100644
+index 00000000..91eadc1d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.sheet.SheetClock;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateClaim {
++    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
++
++    public void validate(@PathVariable("sheet") String sheet, @RequestBody ClaimRequest request, SheetClock clock,
++            Out<ClaimInput> body) throws InvalidClaimException {
++        String amount = request == null || request.amount() == null ? "" : request.amount().trim();
++        String date = request == null || request.date() == null ? "" : request.date().trim();
++        String note = request == null || request.note() == null ? "" : request.note().trim();
++        if (!AMOUNT.matcher(amount).matches()) {
++            throw new InvalidClaimException("The amount must be a number of 0.00 or more with up to two decimals");
++        }
++        LocalDate on;
++        try {
++            on = date.isEmpty() ? clock.today(sheet) : LocalDate.parse(date);
++        } catch (DateTimeParseException e) {
++            throw new InvalidClaimException("Not a valid date: " + date);
++        }
++        body.set(new ClaimInput(new BigDecimal(amount), on, note));
++    }
++}
+diff --git a/src/main/resources/db/migration/V4__claim.sql b/src/main/resources/db/migration/V4__claim.sql
+new file mode 100644
+index 00000000..75310589
+--- /dev/null
++++ b/src/main/resources/db/migration/V4__claim.sql
+@@ -0,0 +1,10 @@
++-- Claims a person on a sheet has made, listed newest first (by id).
++CREATE TABLE claim (
++    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet      VARCHAR(200)   NOT NULL,
++    person     BIGINT         NOT NULL REFERENCES person (id),
++    amount     DECIMAL(15, 2) NOT NULL,
++    claimed_on DATE           NOT NULL,
++    note       VARCHAR(2000)  NOT NULL
++);
++CREATE INDEX claim_sheet ON claim (sheet, id);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotFoundException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotFoundException.yml
+new file mode 100644
+index 00000000..3270f08c
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotFoundException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimNotFound
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.InvalidClaimException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.InvalidClaimException.yml
+new file mode 100644
+index 00000000..a37a0bc5
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.InvalidClaimException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleInvalidClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims.GET.yml
+new file mode 100644
+index 00000000..52aa8140
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims.GET.yml
+@@ -0,0 +1,3 @@
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaims
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}.PUT.yml
+new file mode 100644
+index 00000000..a4b6a3b9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}.PUT.yml
+@@ -0,0 +1,15 @@
++# Validate before load so an invalid body is a 400, not masked by a 404. Responds with the sheet's claims.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateClaim
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaims
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/claims.POST.yml
+new file mode 100644
+index 00000000..3d72e1ed
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/claims.POST.yml
+@@ -0,0 +1,15 @@
++# Validate before load so an invalid body is a 400, not masked by a 404. Responds with the sheet's claims.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateClaim
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.claim.BuildClaim
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaims
++  govern: [ transaction ]
