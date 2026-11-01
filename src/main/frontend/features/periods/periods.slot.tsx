@@ -9,18 +9,24 @@ import { gradeOn, usePeople } from '../people/people';
 import { rateOf, twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
 import { claimDueCents, counted, useClaims, useLate } from '../claims/claims';
-import { closePeriodPath, periodOf, periodsKey, periodsPath, usePeriods } from './periods';
+import { closePeriodPath, periodOf, reopenPeriodPath, periodsKey, periodsPath, usePeriods } from './periods';
 import type { Period } from './periods';
 
-// One period with its due-total (fixed once closed) and closed flag, and the button that closes it. The server
-// refuses closing a period already closed; the row shows that error until its next action.
+// One period with its due-total (fixed once closed) and closed flag, and the buttons that close and reopen it. The
+// server refuses closing a period already closed, and reopening one not closed or by anyone but a steward; the row
+// shows that error until its next action.
 function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: string; period: Period; dueCents: bigint }) {
   const queryClient = useQueryClient();
   const close = useMutation({
     mutationFn: () => postJson<Period[]>(byUser(closePeriodPath(sheet, period.name), user), {}),
     onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
   });
-  const act = useSubmitOnce(close);
+  const reopen = useMutation({
+    mutationFn: () => postJson<Period[]>(byUser(reopenPeriodPath(sheet, period.name), user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
+  });
+  const closeOnce = useSubmitOnce(close);
+  const reopenOnce = useSubmitOnce(reopen);
 
   return (
     <tr data-testid={`period-row-${period.name}`}>
@@ -30,12 +36,36 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
       <td data-testid="period-due-total">{period.closed && period.closedTotal !== null ? period.closedTotal : twoDecimals(dueCents)}</td>
       <td data-testid="period-closed">{period.closed ? 'yes' : 'no'}</td>
       <td>
-        <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => act(undefined)}>
+        <button
+          type="button"
+          data-testid="period-close"
+          disabled={close.isPending || reopen.isPending}
+          onClick={() => {
+            reopen.reset();
+            closeOnce(undefined);
+          }}
+        >
           Close
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-reopen"
+          disabled={close.isPending || reopen.isPending}
+          onClick={() => {
+            close.reset();
+            reopenOnce(undefined);
+          }}
+        >
+          Reopen
         </button>
         {close.isError && (
           <span data-testid="period-error" role="alert">
             {' '}This period cannot be closed: it is already closed.
+          </span>
+        )}
+        {reopen.isError && (
+          <span data-testid="period-error" role="alert">
+            {' '}This period cannot be reopened: it is not closed, or you are not a steward.
           </span>
         )}
       </td>

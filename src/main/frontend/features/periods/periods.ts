@@ -13,6 +13,10 @@ export const periodsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(
 export const closePeriodPath = (sheet: string, name: string) =>
   `${periodsPath(sheet)}/${encodeURIComponent(name)}/close`;
 
+/** Where a closed period is reopened (a steward only). */
+export const reopenPeriodPath = (sheet: string, name: string) =>
+  `${periodsPath(sheet)}/${encodeURIComponent(name)}/reopen`;
+
 /** Every period on the sheet, by from-date; no two overlap. */
 export function usePeriods(sheet: string) {
   return useQuery({

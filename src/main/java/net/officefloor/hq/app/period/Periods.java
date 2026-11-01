@@ -69,4 +69,10 @@ public class Periods {
         return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed",
                 total, sheet, name) == 1;
     }
+
+    /** Reopens the period, dropping its fixed due-total; false when it was not closed (or is gone). */
+    public boolean reopen(String sheet, String name) {
+        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet = ? AND name = ? AND closed",
+                sheet, name) == 1;
+    }
 }
