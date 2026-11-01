@@ -1,0 +1,64 @@
+{
+  "checkpoint": 111,
+  "stack": {
+    "repo": "/home/daniel/officehq-tanstack-officefloor",
+    "origin": "git@github.com:officefloor/officehq-tanstack-officefloor.git",
+    "name": "officehq-tanstack-officefloor",
+    "base_ref": "base-empty",
+    "base_commit": "0db228df6732aec155107d75aa5bacd004c1475a"
+  },
+  "checkpoint_id": "cp111_transfer-person",
+  "phase": "mid",
+  "type": "additive",
+  "mutates": [],
+  "replaced_tests": [],
+  "request": {
+    "spec": "A steward can transfer a person to another sheet by id (an entry and a button on the row; anyone\nelse, a retired person, this sheet's own id, is refused with an error on the row). The person\narrives on the other sheet with every grade they were given (and its from-date), their terms,\ncontact, aliases and tags, and their claims with their status, dates, notes, frozen figures and\nlogs; each claim that had a number receives the next number of the other sheet, in the order the\nclaims were opened (by the sheet's today when each was opened, then by the order they were added);\nfigures a statement bound are lost and the statement count starts at 0; references are not carried.\nA name, alias or contact already on the other sheet refuses the transfer. The person leaves this\nsheet entirely (patron links, pool memberships, plans and watches dropped). This sheet writes\nPERSON_TRANSFERRED name=<name> to=<sheet id>, the other PERSON_TRANSFERRED name=<name> from=<sheet\nid>, each followed by that sheet's rollup lines.\n",
+    "prompt": "You are implementing ONE change to this application.\n\nFIRST read AGENTS.md \u2014 it states the working rules and how the app is tested, and sends you to\nDESIGN.md for the app's stack and conventions. Follow both.\n\nTHE CHANGE REQUEST:\nA steward can transfer a person to another sheet by id (an entry and a button on the row; anyone\nelse, a retired person, this sheet's own id, is refused with an error on the row). The person\narrives on the other sheet with every grade they were given (and its from-date), their terms,\ncontact, aliases and tags, and their claims with their status, dates, notes, frozen figures and\nlogs; each claim that had a number receives the next number of the other sheet, in the order the\nclaims were opened (by the sheet's today when each was opened, then by the order they were added);\nfigures a statement bound are lost and the statement count starts at 0; references are not carried.\nA name, alias or contact already on the other sheet refuses the transfer. The person leaves this\nsheet entirely (patron links, pool memberships, plans and watches dropped). This sheet writes\nPERSON_TRANSFERRED name=<name> to=<sheet id>, the other PERSON_TRANSFERRED name=<name> from=<sheet\nid>, each followed by that sheet's rollup lines.\n\nYour work is verified by an automated Playwright UI test already installed under e2e/specs/.\nRead that spec: it declares the exact data-testid anchors, values, test data and any audit\nrecords it expects \u2014 match them. Run `bin/e2e` to build the app, start it, and run the test as\nyou work; iterate until it passes. Change whatever the request needs across the app \u2014 its stored\ndata, its server and its front end. Do NOT edit bin/build, bin/start, bin/stop, bin/e2e,\nAGENTS.md, CLAUDE.md, DESIGN.md, e2e/support/ or the test spec.\n"
+  },
+  "commit_sha": "2d79e1b735126ac935cd195f11de1234e4990f1d",
+  "reset_sha": "",
+  "preagent_sha": "3b4fef38077689de9b64681e4d9888305f908d28",
+  "prev_sha": "3b4fef38077689de9b64681e4d9888305f908d28",
+  "base_sha": "0db228df6732aec155107d75aa5bacd004c1475a",
+  "agent": {
+    "ok": true,
+    "cost_usd": 2.8153794,
+    "input_tokens": 98,
+    "output_tokens": 32218,
+    "cache_read_tokens": 5062697,
+    "cache_creation_tokens": 144761,
+    "num_turns": 50,
+    "duration_ms": 1230880,
+    "duration_api_ms": 439089,
+    "model": "claude-opus-5-5",
+    "session_id": "f8853a4f-3e16-4baa-82c2-59f5c742cb6b",
+    "stop_reason": "success",
+    "result_text": "The transfer is in place, and `bin/e2e` now passes all 4 tests in the spec: the transfer test and the three regression scenarios.\n\n**What a transfer does**\n- **Screen:** each person row has a sheet-id entry (`person-transfer-to`) and a Transfer button (`person-transfer`). A refusal shows `person-error` on the row, and changing the entry or pressing again clears it.\n- **Refused, with nothing written:** anyone who isn't a steward, a retired person, this sheet's own id, an archived target sheet, or a target that already has the person's name, one of their aliases (as a name or alias), or their contact.\n- **On the other sheet:** the person is added as its newest person, with all their grades and from-dates, terms, contact and aliases. Their claims are copied with status, dates, notes, frozen figures, logs, comments and void reasons, in the order they were listed.\n- **Numbers:** each claim that had a number gets the other sheet's next one. They go in the order the claims were opened (the date on their first OPEN log line), then the order they were added. If the other sheet numbers by period, they get period numbers.\n- **What's lost:** statement bindings and the claim reference. Locks and settle-batch numbers also don't come across.\n- **On this sheet:** the person and everything tied to them are removed \u2014 claims, aliases, patron links both ways, pool memberships, holds, closed-period totals, statements and watches.\n- **Audit:** this sheet writes `PERSON_TRANSFERRED \u2026 to=<id>` and the other writes `PERSON_TRANSFERRED \u2026 from=<id>`, each followed by that sheet's ROLLUP/TOTALS lines.\n\nThe server side is `person/PersonTransferrer.java`, plus small request and step classes and `people/{person}/transfer.POST.yml`. The front end is `features/people/transfer.slot.tsx`.\n\n**Calls I made where the request was open**\n- A claim's \"corrects\" and \"split from\" point at other claims by number. Where that claim came along too, they now show its new number; otherwise they're cleared.\n- Holds aren't in the request's list of things carried over, so they're dropped.\n- Claims are copied by reading the claim table's columns from the database, so a claim column added later comes along without changing this code.\n\n**A separate fix you should know about:** scenarios 2 and 3 failed on the original app too. I checked by moving my files aside and running them. While the screen is shown as of a date, the spec expects the consolidated panel to keep showing the figures as they are now, but the app applied the as-of date to it as well. I added `query/live.ts`, a context that the five basic read hooks (people, claims, rates, sheet, settings) now use. Inside the consolidated panel, and only while an as-of date is set, they read the live figures under separate cache keys. With no as-of date, nothing changes for any screen. This touches files outside the transfer feature; it's needed for the spec to pass.",
+    "error": "",
+    "attempts": [
+      {
+        "ok": true,
+        "limit_reached": false,
+        "retryable": false,
+        "timed_out": false,
+        "cost_usd": 2.8153794,
+        "num_turns": 50,
+        "duration_ms": 1230880,
+        "duration_api_ms": 439089,
+        "error": ""
+      }
+    ]
+  },
+  "agent_stream_file": "cp111.agent.jsonl",
+  "agent_diff_file": "cp111.agent.diff",
+  "build_log_file": null,
+  "tests": {
+    "gated": false,
+    "queued": true
+  },
+  "probe": null,
+  "pinned_touched": [],
+  "acceptance_touched": [],
+  "impact_gate": null
+}
