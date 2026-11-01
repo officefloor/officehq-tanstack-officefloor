@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { useReadScope } from '../../query/live';
 import { hundredths } from '../rates/rates';
 
 /** The sheet's settings: the clerk limit with two decimals, the most due a clerk may settle ('' for no limit);
@@ -103,9 +103,10 @@ export const settingsKey = (sheet: string) => ['settings', sheet] as const;
 export const settingsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/settings`;
 
 export function useSettings(sheet: string) {
+  const read = useReadScope(settingsKey(sheet));
   return useQuery({
-    queryKey: settingsKey(sheet),
-    queryFn: () => getJson<Settings>(settingsPath(sheet)),
+    queryKey: read.key,
+    queryFn: () => read.get<Settings>(settingsPath(sheet)),
   });
 }
 

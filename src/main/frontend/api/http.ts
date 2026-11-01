@@ -20,8 +20,8 @@ function withAsOf(path: string): string {
   return asOf ? `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}` : path;
 }
 
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(withAsOf(path), init);
+async function send<T>(path: string, init?: RequestInit, now = false): Promise<T> {
+  const res = await fetch(now ? path : withAsOf(path), init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
   }
@@ -30,6 +30,11 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
+}
+
+/** A read answered as the sheet is now, whatever the screen's as-of date. */
+export function getJsonNow<T>(path: string): Promise<T> {
+  return send<T>(path, undefined, true);
 }
 
 export function postJson<T>(path: string, body: unknown): Promise<T> {

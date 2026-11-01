@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { useReadScope } from '../../query/live';
 import type { Grade } from '../people/people';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
@@ -24,9 +24,10 @@ export const ratePreviewPath = (sheet: string, grade: Grade, pct: string) =>
 /** Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level;
  *  a grade with no rate is absent. */
 export function useRates(sheet: string) {
+  const read = useReadScope(ratesKey(sheet));
   return useQuery({
-    queryKey: ratesKey(sheet),
-    queryFn: () => getJson<Rate[]>(ratesPath(sheet)),
+    queryKey: read.key,
+    queryFn: () => read.get<Rate[]>(ratesPath(sheet)),
   });
 }
 

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { useReadScope } from '../../query/live';
 import { asFlag, useSearchParam } from '../../url/useSearchParam';
 
 export type Grade = 'A' | 'B' | 'C';
@@ -64,9 +64,10 @@ export const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(s
 
 /** Everyone on the sheet, in the order they were added. */
 export function usePeople(sheet: string) {
+  const read = useReadScope(peopleKey(sheet));
   return useQuery({
-    queryKey: peopleKey(sheet),
-    queryFn: () => getJson<Person[]>(peoplePath(sheet)),
+    queryKey: read.key,
+    queryFn: () => read.get<Person[]>(peoplePath(sheet)),
   });
 }
 

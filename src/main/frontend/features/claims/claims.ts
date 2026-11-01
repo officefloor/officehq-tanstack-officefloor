@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { useReadScope } from '../../query/live';
 import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
@@ -96,9 +96,10 @@ export const claimsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(s
 
 /** Every claim on the sheet, newest first. */
 export function useClaims(sheet: string) {
+  const read = useReadScope(claimsKey(sheet));
   return useQuery({
-    queryKey: claimsKey(sheet),
-    queryFn: () => getJson<Claim[]>(claimsPath(sheet)),
+    queryKey: read.key,
+    queryFn: () => read.get<Claim[]>(claimsPath(sheet)),
   });
 }
 
