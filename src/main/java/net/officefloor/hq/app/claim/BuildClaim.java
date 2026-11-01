@@ -26,6 +26,10 @@ public class BuildClaim {
         long id = claims.add(sheet, person.id(), input, person.dueBy(sheet, input.date(), settings));
         log.record(sheet, user, id);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+        if (periods.softClosedOn(sheet, input.date())) {
+            claims.setLateEntry(sheet, id);
+            audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+        }
         rollup.record(sheet, user, before);
     }
 }

@@ -49,6 +49,14 @@ public class PeriodCloser {
 
     /** Closes the period found open on the sheet; false when it was already closed. An auto close is audited auto=yes. */
     public boolean close(String sheet, String user, Period found, boolean auto) {
+        return close(sheet, user, found, auto, false);
+    }
+
+    /**
+     * Closes the period found open (or soft-closed) on the sheet, or soft-closes it, fixing its figures afresh; false
+     * when it was already closed, or for a soft close already soft-closed.
+     */
+    public boolean close(String sheet, String user, Period found, boolean auto, boolean soft) {
         LocalDate from = LocalDate.parse(found.from());
         LocalDate to = LocalDate.parse(found.to());
         Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, (p) -> p));
@@ -70,10 +78,10 @@ public class PeriodCloser {
                 perPerson.merge(person.id(), due, BigDecimal::add);
             }
         }
-        if (!periods.close(sheet, found.name(), total, perPerson)) {
+        if (!periods.close(sheet, found.name(), total, perPerson, soft)) {
             return false;
         }
-        audit.record("PERIOD_CLOSED sheet=" + sheet + " by=" + user + " period=" + found.name() + " total="
+        audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheet + " by=" + user + " period=" + found.name() + " total="
                 + total.toPlainString() + (auto ? " auto=yes" : ""));
         return true;
     }

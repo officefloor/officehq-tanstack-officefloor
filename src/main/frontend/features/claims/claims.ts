@@ -67,6 +67,8 @@ export type Claim = {
   splitFrom: string | null;
   /** The user whose open editor locks the claim against everyone else's edit button (null when none does). */
   lockedBy: string | null;
+  /** Whether it was added while the period its date falls in was soft-closed. */
+  lateEntry: boolean;
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the

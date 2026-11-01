@@ -18,9 +18,9 @@ public class Periods {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
-            Map.of());
+            Map.of(), rs.getBoolean("soft"));
 
-    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total FROM period";
+    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft FROM period";
 
     private final JdbcTemplate jdbc;
 
@@ -36,7 +36,7 @@ public class Periods {
 
     /** The period with its people's due-totals fixed when it was closed. */
     private Period withPeople(String sheet, Period period) {
-        if (!period.closed()) {
+        if (!period.fixed()) {
             return period;
         }
         Map<Long, String> people = new LinkedHashMap<>();
@@ -44,7 +44,8 @@ public class Periods {
                 (rs) -> {
                     people.put(rs.getLong("person"), rs.getBigDecimal("total").toPlainString());
                 }, sheet, period.name());
-        return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people);
+        return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
+                period.soft());
     }
 
     /** The sheet's period of the name, or null when there is none. */
@@ -57,6 +58,14 @@ public class Periods {
     public boolean closedOn(String sheet, LocalDate date) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM period WHERE sheet = ? AND closed AND from_date <= ? AND to_date >= ?",
+                Integer.class, sheet, Date.valueOf(date), Date.valueOf(date));
+        return n != null && n > 0;
+    }
+
+    /** Whether the date falls inside a soft-closed period of the sheet. */
+    public boolean softClosedOn(String sheet, LocalDate date) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM period WHERE sheet = ? AND soft AND from_date <= ? AND to_date >= ?",
                 Integer.class, sheet, Date.valueOf(date), Date.valueOf(date));
         return n != null && n > 0;
     }
@@ -88,10 +97,15 @@ public class Periods {
                 Date.valueOf(input.from()), Date.valueOf(input.to()));
     }
 
-    /** Closes the period with its due-total and each person's (by id) fixed; false when it was already closed (or is gone). */
-    public boolean close(String sheet, String name, BigDecimal total, Map<Long, BigDecimal> people) {
-        if (jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed",
-                total, sheet, name) != 1) {
+    /**
+     * Closes the period (or soft-closes it) with its due-total and each person's (by id) fixed afresh; false when it was
+     * already closed, or for a soft close already soft-closed (or is gone). Closing a soft-closed period is allowed.
+     */
+    public boolean close(String sheet, String name, BigDecimal total, Map<Long, BigDecimal> people, boolean soft) {
+        String sql = soft
+                ? "UPDATE period SET soft = TRUE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed AND NOT soft"
+                : "UPDATE period SET closed = TRUE, soft = FALSE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed";
+        if (jdbc.update(sql, total, sheet, name) != 1) {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
@@ -101,9 +115,10 @@ public class Periods {
         return true;
     }
 
-    /** Reopens the period, dropping its fixed due-totals; false when it was not closed (or is gone). */
+    /** Reopens the closed or soft-closed period, dropping its fixed due-totals; false when it was neither (or is gone). */
     public boolean reopen(String sheet, String name) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet = ? AND name = ? AND closed",
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet = ? AND name = ?"
+                + " AND (closed OR soft)",
                 sheet, name) != 1) {
             return false;
         }

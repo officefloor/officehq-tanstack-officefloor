@@ -15,15 +15,17 @@ import {
   periodDueCents,
   shownDueTotal,
   reopenPeriodPath,
+  softClosePeriodPath,
   periodsKey,
   periodsPath,
   usePeriods,
 } from './periods';
 import type { Generated, Period } from './periods';
 
-// One period with its due-total (fixed once closed) and closed flag, and the buttons that close and reopen it. The
-// server refuses closing a period already closed, and reopening one not closed; and either by a role the permission matrix does not allow; the row
-// shows that error until its next action.
+// One period with its due-total (fixed once closed or soft-closed) and closed flag (yes, soft or no), and the buttons
+// that close, soft-close and reopen it. The server refuses closing a period already closed, soft-closing one already
+// closed or soft-closed, and reopening one neither; and any of them by a role the permission matrix does not allow;
+// the row shows that error until its next action.
 function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: string; period: Period; dueCents: bigint }) {
   const queryClient = useQueryClient();
   const close = useMutation({
@@ -34,7 +36,13 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
     mutationFn: () => postJson<Period[]>(byUser(reopenPeriodPath(sheet, period.name), user), {}),
     onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
   });
+  const softClose = useMutation({
+    mutationFn: () => postJson<Period[]>(byUser(softClosePeriodPath(sheet, period.name), user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
+  });
   const closeOnce = useSubmitOnce(close);
+  const softCloseOnce = useSubmitOnce(softClose);
+  const pending = close.isPending || softClose.isPending || reopen.isPending;
   const reopenOnce = useSubmitOnce(reopen);
 
   return (
@@ -43,13 +51,14 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
       <td data-testid="period-from">{period.from}</td>
       <td data-testid="period-to">{period.to}</td>
       <td data-testid="period-due-total">{shownDueTotal(period, dueCents)}</td>
-      <td data-testid="period-closed">{period.closed ? 'yes' : 'no'}</td>
+      <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
       <td>
         <button
           type="button"
           data-testid="period-close"
-          disabled={close.isPending || reopen.isPending}
+          disabled={pending}
           onClick={() => {
+            softClose.reset();
             reopen.reset();
             closeOnce(undefined);
           }}
@@ -58,10 +67,23 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
         </button>{' '}
         <button
           type="button"
-          data-testid="period-reopen"
-          disabled={close.isPending || reopen.isPending}
+          data-testid="period-soft-close"
+          disabled={pending}
           onClick={() => {
             close.reset();
+            reopen.reset();
+            softCloseOnce(undefined);
+          }}
+        >
+          Soft close
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-reopen"
+          disabled={pending}
+          onClick={() => {
+            close.reset();
+            softClose.reset();
             reopenOnce(undefined);
           }}
         >
@@ -72,9 +94,14 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
             {' '}This period cannot be closed: it is already closed, or your role may not close it.
           </span>
         )}
+        {softClose.isError && (
+          <span data-testid="period-error" role="alert">
+            {' '}This period cannot be soft-closed: it is already closed or soft-closed, or your role may not close it.
+          </span>
+        )}
         {reopen.isError && (
           <span data-testid="period-error" role="alert">
-            {' '}This period cannot be reopened: it is not closed, or your role may not reopen it.
+            {' '}This period cannot be reopened: it is not closed or soft-closed, or your role may not reopen it.
           </span>
         )}
       </td>

@@ -10,7 +10,8 @@ import type { DatedCents } from '../settings/settings';
 
 /** A period on the sheet: its name (unique on the sheet) and its from and to date (yyyy-MM-dd), inclusive;
  *  whether it is closed, its due-total fixed when closed (two decimals; null while open), and each person's due-total
- *  for it fixed then (by person id; empty while open, and a person added since has none). */
+ *  for it fixed then (by person id; empty while open, and a person added since has none); and whether it is
+ *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change. */
 export type Period = {
   name: string;
   from: string;
@@ -18,6 +19,7 @@ export type Period = {
   closed: boolean;
   closedTotal: string | null;
   closedPeople: Record<string, string>;
+  soft: boolean;
 };
 
 export const periodsKey = (sheet: string) => ['periods', sheet] as const;
@@ -34,7 +36,11 @@ export type Generated = { made: number; periods: Period[] };
 export const closePeriodPath = (sheet: string, name: string) =>
   `${periodsPath(sheet)}/${encodeURIComponent(name)}/close`;
 
-/** Where a closed period is reopened (a steward only). */
+/** Where a period is soft-closed. */
+export const softClosePeriodPath = (sheet: string, name: string) =>
+  `${periodsPath(sheet)}/${encodeURIComponent(name)}/soft-close`;
+
+/** Where a closed or soft-closed period is reopened (a steward only). */
 export const reopenPeriodPath = (sheet: string, name: string) =>
   `${periodsPath(sheet)}/${encodeURIComponent(name)}/reopen`;
 
@@ -93,13 +99,18 @@ export function personPeriodDueCents(
   return totals;
 }
 
-/** A person's due-total for a period as shown: the one fixed when it was closed (0.00 for a person added since), else
- *  their live one. */
-export function shownPersonDueTotal(period: Period, personId: number, liveCents: bigint): string {
-  return period.closed ? (period.closedPeople[String(personId)] ?? '0.00') : twoDecimals(liveCents);
+/** Whether a period's figures are fixed: closed or soft-closed. */
+export function isFixed(period: Period): boolean {
+  return period.closed || period.soft;
 }
 
-/** A period's due-total as shown: the one fixed when it was closed, else its live one. */
+/** A person's due-total for a period as shown: the one fixed when it was (soft-)closed (0.00 for a person added since), else
+ *  their live one. */
+export function shownPersonDueTotal(period: Period, personId: number, liveCents: bigint): string {
+  return isFixed(period) ? (period.closedPeople[String(personId)] ?? '0.00') : twoDecimals(liveCents);
+}
+
+/** A period's due-total as shown: the one fixed when it was (soft-)closed, else its live one. */
 export function shownDueTotal(period: Period, liveCents: bigint): string {
-  return period.closed && period.closedTotal !== null ? period.closedTotal : twoDecimals(liveCents);
+  return isFixed(period) && period.closedTotal !== null ? period.closedTotal : twoDecimals(liveCents);
 }

@@ -174,6 +174,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
       {claim.splitFrom !== null && 'split from #'}
       <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
+      late entry <span data-testid="claim-late-entry">{claim.lateEntry ? 'yes' : 'no'}</span>{' '}
       proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       <button
         type="button"
