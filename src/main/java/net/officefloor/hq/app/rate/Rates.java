@@ -145,6 +145,23 @@ public class Rates {
                 .stream().filter(p -> p != null).findFirst().orElse(null);
     }
 
+    /** Withdraw the newest version of the grade's rate for its from-date: the version before it, when there
+     *  is one, is in force again; with none, the grade has no rate for that from-date. */
+    public void withdraw(RateWithdrawal withdrawal) {
+        Date from = withdrawal.from() != null ? Date.valueOf(withdrawal.from()) : null;
+        String key = "sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?";
+        jdbc.update("DELETE FROM rate WHERE " + key, withdrawal.sheetId(), withdrawal.grade(), from);
+        Integer previous = jdbc.queryForObject("SELECT MAX(version) FROM rate_version WHERE " + key, Integer.class,
+                withdrawal.sheetId(), withdrawal.grade(), from);
+        if (previous == null) return;
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, forward_after) "
+                + "SELECT sheet_id, grade, pct, from_date, to_date, version, forward_after FROM rate_version "
+                + "WHERE " + key + " AND version = ?",
+                withdrawal.sheetId(), withdrawal.grade(), from, previous);
+        jdbc.update("DELETE FROM rate_version WHERE " + key + " AND version = ?",
+                withdrawal.sheetId(), withdrawal.grade(), from, previous);
+    }
+
     /** Set the grade's rate from its from-date as its newest version: the one it had for that from-date
      *  is kept as an older version. Saved with a from-date on or after the sheet's `today`, it is
      *  forward-only: it applies only to the claims added from now on (see {@link Rate#forwardAfter}). */

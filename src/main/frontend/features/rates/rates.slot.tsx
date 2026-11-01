@@ -29,6 +29,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const calendar = today === '' ? [] : Array.from({ length: 12 }, (_, i) => `${today.slice(0, 4)}-${String(i + 1).padStart(2, '0')}`);
 
   const submitOnce = useSubmitOnce();
+  const withdrawOnce = useSubmitOnce();
   const save = useMutation({
     mutationFn: (r: { grade: string; pct: string; from: string; to: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
@@ -40,9 +41,19 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
     },
   });
 
-  // An error goes as soon as its form is changed or submitted again.
+  // Only a steward may withdraw a rate: the newest version of its grade and from-date goes, the one before applies again.
+  const withdraw = useMutation({
+    mutationFn: (r: { grade: string; from: string }) =>
+      postJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates/withdraw`, { ...r, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
+    },
+  });
+
+  // An error goes as soon as its form is changed or submitted again, or the next withdrawal is taken.
   const clearError = () => {
     save.reset();
+    withdraw.reset();
     setInvalid(false);
   };
 
@@ -60,6 +71,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setInvalid(false);
+          withdraw.reset();
           submitOnce(() => save.mutateAsync({ grade, pct: pct.trim(), from: from.trim(), to: to.trim() }));
         }}
       >
@@ -119,12 +131,14 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
-        {(invalid || save.isError) && (
+        {(invalid || save.isError || withdraw.isError) && (
           <span data-testid="rate-form-error" role="alert">
             {' '}
             {invalid
               ? 'The rate must be a percent, 0.00 or more, with up to two decimals.'
-              : 'Could not set this rate.'}
+              : withdraw.isError
+                ? 'Could not withdraw this rate.'
+                : 'Could not set this rate.'}
           </span>
         )}
       </form>
@@ -175,6 +189,7 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             <th>To</th>
             <th>Rate %</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -187,6 +202,19 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
                 <span data-testid="rate-pct">{r.pct}</span>
               </td>
               <td data-testid="rate-version">{r.version}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  disabled={withdraw.isPending}
+                  onClick={() => {
+                    clearError();
+                    withdrawOnce(() => withdraw.mutateAsync({ grade: r.grade, from: r.from ?? '' }));
+                  }}
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
