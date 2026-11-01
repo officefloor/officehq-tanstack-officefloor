@@ -1,0 +1,89 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 4fa1a894..f7f94afb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -65,6 +65,17 @@ public record Claim(long id, long person, String amount, String date, String not
+         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+     }
+ 
++    /** The date it was last settled: its status log's last SETTLED line (null when the log has none). */
++    public LocalDate settledOn() {
++        LocalDate on = null;
++        for (ClaimLogLine line : log == null ? List.<ClaimLogLine>of() : log) {
++            if (line.status() == ClaimStatus.SETTLED) {
++                on = LocalDate.parse(line.on());
++            }
++        }
++        return on;
++    }
++
+     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
+     public String shownNumber() {
+         return periodNumber != null ? periodNumber : number == null ? null : number.toString();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 9ed3eb73..3ecc53f8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -2,7 +2,8 @@ package net.officefloor.hq.app.claim;
+ 
+ /**
+  * Where a claim is in its life: only OPEN, PENDING and SETTLED claims count toward the totals. A clerk's settle of a
+- * due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
++ * due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). A steward
++ * may void a SETTLED claim within 7 days of its settlement.
+  */
+ public enum ClaimStatus {
+     DRAFT, OPEN, PENDING, SETTLED, VOID;
+@@ -15,7 +16,7 @@ public enum ClaimStatus {
+             case PEND -> this == OPEN ? PENDING : null;
+             case APPROVE -> this == PENDING ? SETTLED : null;
+             case REJECT -> this == PENDING ? OPEN : null;
+-            case VOID -> this == DRAFT || this == OPEN || this == PENDING ? VOID : null;
++            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED ? VOID : null;
+         };
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index a96b0dc0..9e56d298 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -21,6 +21,9 @@ import org.springframework.stereotype.Service;
+ @Service
+ public class ClaimStatusChanger {
+ 
++    /** How many days after its settlement a steward may still void a SETTLED claim. */
++    public static final int VOID_SETTLED_DAYS = 7;
++
+     private final Claims claims;
+     private final People people;
+     private final Rates rates;
+@@ -74,6 +77,18 @@ public class ClaimStatusChanger {
+         if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+             throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
+         }
++        // A steward voids a SETTLED claim only within 7 days of its settlement (its status log's last SETTLED date).
++        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
++            if (!Role.STEWARD.equals(roles.of(sheet, user))) {
++                throw new InvalidClaimStatusChangeException("Only a steward voids a settled claim");
++            }
++            LocalDate settled = claim.settledOn();
++            LocalDate today = clock.today(sheet);
++            if (settled == null || today.isBefore(settled) || today.isAfter(settled.plusDays(VOID_SETTLED_DAYS))) {
++                throw new InvalidClaimStatusChangeException(
++                        "A settled claim may be voided only within " + VOID_SETTLED_DAYS + " days of its settlement");
++            }
++        }
+         if (requested == ClaimStatusChange.SETTLE && claim.deferred()) {
+             throw new InvalidClaimStatusChangeException("A deferred claim cannot be settled until its date");
+         }
+@@ -138,6 +153,10 @@ public class ClaimStatusChanger {
+             claims.setSettledDue(sheet, claim.id(), due);
+             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+         }
++        // Voiding a SETTLED claim reverses its frozen figure out of every total.
++        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
++            fields += " reversed=" + (claim.settledDue() == null ? "n/a" : claim.settledDue());
++        }
+         if (requested == ClaimStatusChange.REJECT) {
+             fields += " reason=" + reason.trim();
+         }
