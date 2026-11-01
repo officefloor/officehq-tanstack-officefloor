@@ -23,7 +23,8 @@ type Froms = Record<string, string>;
  * its policy date (a claim dated before it rounds half up, on or after it half to even; blank is
  * the sheet's today), its period numbering from (while it is a date on or before the sheet's
  * today, a claim opened is numbered within its period; blank is off), its cap (a person's due-total
- * is at most it, the rest their excess; blank is no cap), its proof threshold (a claim whose due is above
+ * is at most it less their cut total, not below 0.00, and their excess what their due-total before the
+ * cap plus their cut total is over it; blank is no cap), its proof threshold (a claim whose due is above
  * the one on its date cannot be settled or approved without a proof; blank is none), its note threshold (a claim
  * whose due is above the one on its date cannot be opened with an empty note; blank is none), its review threshold (a claim
  * whose due is above the one on its date goes to REVIEW when opened, until a steward reviews it; blank is none), its rounding mode

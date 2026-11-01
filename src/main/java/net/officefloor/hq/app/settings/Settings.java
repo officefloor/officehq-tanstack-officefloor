@@ -557,10 +557,13 @@ public class Settings {
         return valueOn(sheetId, REVIEW_THRESHOLD, date, null);
     }
 
-    /** A person's due-total at most the sheet's cap; n/a (null) is not capped. */
-    public BigDecimal capped(String sheetId, BigDecimal dueTotal) {
+    /** A person's due-total at most the sheet's cap less their cut total (not below 0.00); n/a (null)
+     *  is not capped. */
+    public BigDecimal capped(String sheetId, BigDecimal dueTotal, BigDecimal cutTotal) {
         BigDecimal cap = cap(sheetId);
-        return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+        if (dueTotal == null || cap == null) return dueTotal;
+        BigDecimal most = cap.subtract(cutTotal == null ? BigDecimal.ZERO : cutTotal).max(BigDecimal.ZERO).setScale(2);
+        return dueTotal.compareTo(most) <= 0 ? dueTotal : most;
     }
 
     /** The roles set for `action` on the sheet, comma separated; null when blank (the standing rule). */

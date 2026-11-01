@@ -8,6 +8,7 @@ import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
+import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.AsOf;
@@ -17,7 +18,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
- *  each raised to the floor before its late charge (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
+ *  each raised to the floor before its late charge (n/a when there is no rate today and none has a figure), at most the sheet's cap less their cut total (not below 0.00), dated the sheet's today. Every claim
  *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its due as shown now, late charge and floor included (one bound already keeps its bound due); every other one is unbound.
  *  Taken as of a date (on or before the sheet's today), all of it is worked out on the sheet as it
  *  stood at the end of that date (see {@link AsOf}): the claims that counted then are bound to their
@@ -25,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
  *  one the person was not yet on the sheet. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, Claims claims, Figures figures,
-            Rates rates, Sheets sheets, Settings settings, People people, AsOf asOf, Out<Statement> statement)
+            Rates rates, Sheets sheets, Settings settings, People people, Pools pools, AsOf asOf, Out<Statement> statement)
             throws InvalidSheetRequestException {
         LocalDate date = asOfDate(request);
         String sheetId = person.getSheetId();
@@ -34,10 +35,10 @@ public class TakeStatement {
         }
         Person locked = people.lock(sheetId, person.getId());
         person.setStatementCount(locked.getStatementCount());
-        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings)
+        Taken taken = date == null ? work(person, claims, figures, rates, sheets, settings, pools)
                 : asOf.at(sheetId, date, () -> {
                     Person then = people.find(sheetId, person.getId());
-                    return then == null ? null : work(then, claims, figures, rates, sheets, settings);
+                    return then == null ? null : work(then, claims, figures, rates, sheets, settings, pools);
                 });
         if (taken == null) {
             throw new InvalidSheetRequestException("This person was not on the sheet on " + date);
@@ -58,7 +59,7 @@ public class TakeStatement {
     /** The statement of the person as the sheet stands (live, or as of a date): the figure each
      *  counting claim is bound to, by id, and their due-total, dated the sheet's today. */
     private static Taken work(Person person, Claims claims, Figures figures, Rates rates, Sheets sheets,
-            Settings settings) {
+            Settings settings, Pools pools) {
         String sheetId = person.getSheetId();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean any = false;
@@ -76,7 +77,7 @@ public class TakeStatement {
         }
         LocalDate today = sheets.today(sheetId);
         BigDecimal dueTotal = !any && rates.pct(sheetId, person.gradeOn(today), today) == null ? null
-                : settings.capped(sheetId, total);
+                : settings.capped(sheetId, total, pools.cutTotals(sheetId).get(person.getId()));
         return new Taken(bound, dueTotal, today);
     }
 

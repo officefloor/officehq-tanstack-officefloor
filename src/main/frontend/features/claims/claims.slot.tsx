@@ -12,6 +12,7 @@ import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { useTemplates } from '../templates/useTemplates';
 import { Col } from '../columns/useColumns';
+import { useCutTotal } from '../pools/usePools';
 import { ClaimTimeline } from './ClaimTimeline';
 import {
   AMOUNT,
@@ -173,6 +174,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const floor = useFloor(sheet);
   const lateBy = useLate(sheet);
   const cap = useCap(sheet);
+  const cut = useCutTotal(sheet)(person.id);
   // The claims they carry: their own less the holders' parts, and their parts of those shared with them
   // (each live by its own person, at its own person's rate).
   const carriedClaims = carried(live(all, heldOnBy(everyone, today)), person.id);
@@ -180,7 +182,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     const owner = everyone.find((p) => p.id === c.personId);
     return owner === undefined ? undefined : claimRateOn(rates, gradeOn(owner, c.date), c);
   };
-  // The sum of their figures; their due-total is at most the cap, the rest their excess.
+  // The sum of their figures; their due-total is at most the cap less their cut total, and their excess
+  // what that sum plus their cut total is over the cap.
   const dueSum = personDueCents(carriedClaims, floor, pct, ownRate, lateBy, undefined, person.id);
   // The due-total before the cap, split (an n/a part shows 0.00): their SETTLED claims' figures, and their OPEN and PENDING ones'.
   const settledSum = personDueCents(carriedClaims.filter((c) => c.status === 'SETTLED'), floor, pct, ownRate, lateBy, undefined, person.id);
@@ -690,8 +693,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   return (
     <>
       <Col user={user} id="claimed"><td data-testid="person-claimed">{claimed(claimedClaims)}</td></Col>
-      <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap))}</td></Col>
-      <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap))}</td></Col>
+      <Col user={user} id="due-total"><td data-testid="person-due-total">{showDue(capCents(dueSum, cap, cut))}</td></Col>
+      <Col user={user} id="excess"><td data-testid="person-excess">{showDue(excessCents(dueSum, cap, cut))}</td></Col>
       <td data-testid="person-settled-total">{showDue(settledSum ?? 0n)}</td>
       <td data-testid="person-open-total">{showDue(openSum ?? 0n)}</td>
       <Col user={user} id="overdue-count"><td data-testid="person-overdue-count">{late.count}</td></Col>

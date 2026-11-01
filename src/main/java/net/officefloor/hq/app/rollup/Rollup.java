@@ -16,6 +16,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
@@ -41,8 +42,9 @@ public class Rollup {
     private final Sheets sheets;
     private final Audit audit;
     private final Settings settings;
+    private final Pools pools;
 
-    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit, Settings settings) {
+    public Rollup(People people, Claims claims, Figures figures, Rates rates, Sheets sheets, Audit audit, Settings settings, Pools pools) {
         this.people = people;
         this.claims = claims;
         this.figures = figures;
@@ -50,13 +52,14 @@ public class Rollup {
         this.sheets = sheets;
         this.audit = audit;
         this.settings = settings;
+        this.pools = pools;
     }
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures, less
      *  the parts their share holders carry, plus their parts of the counting claims shared with them (a
      *  person's OPEN claims once today reaches their retirement date do not count, unless a statement
      *  binds them; a hold takes nothing out),
-     *  n/a when there is no rate today and none has a figure, at most the sheet's cap (n/a is not
+     *  n/a when there is no rate today and none has a figure, at most the sheet's cap less their cut total (not below 0.00; n/a is not
      *  capped); the sheet's skips the n/a ones, and its due and overdue totals leave out the single
      *  highest and lowest person's figure when three or more have one. */
     public Snapshot snapshot(String sheetId) {
@@ -67,6 +70,7 @@ public class Rollup {
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
         List<Person> everyone = people.onSheet(sheetId);
+        Map<Long, BigDecimal> cuts = pools.cutTotals(sheetId);
         // Each counting claim's figure (by its own person's grade), for the parts its share holders carry.
         Map<Long, BigDecimal> shared = new java.util.HashMap<>();
         for (Claim claim : all) {
@@ -114,7 +118,7 @@ public class Rollup {
                 }
             }
             if (!any && rates.pct(sheetId, person.gradeOn(today), today) == null) due = null;
-            due = settings.capped(sheetId, due);
+            due = settings.capped(sheetId, due, cuts.get(person.getId()));
             figuresOf.put(person.getId(), new Snapshot.PersonFigures(person.getName(), claimed, due, overdue,
                     settled.subtract(BigDecimal.valueOf(500L * overdueCount)).divide(HUNDRED, 0, RoundingMode.HALF_EVEN)));
             claimedTotal = claimedTotal.add(claimed);

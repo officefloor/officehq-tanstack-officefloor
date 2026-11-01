@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.rollup.Actor;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,7 +20,8 @@ public class ValidatePoolMember {
     private static final BigDecimal MAX = new BigDecimal("100.00");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolMemberRequest request,
-            Pools pools, Out<PoolMember> member) throws InvalidSheetRequestException {
+            Pools pools, Out<PoolMember> member, Out<Actor> actor) throws InvalidSheetRequestException {
+        actor.set(new Actor(request == null ? null : request.user()));
         if (request == null || request.pool() == null || !pools.has(sheetId, request.pool())) {
             throw new InvalidSheetRequestException("No such pool");
         }

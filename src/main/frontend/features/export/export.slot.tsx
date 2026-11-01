@@ -2,6 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
 import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
+import { useCutTotal } from '../pools/usePools';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { downloadCsv, useSheetRead } from './csv';
@@ -20,6 +21,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const cap = useCap(sheet);
+  const cutOf = useCutTotal(sheet);
 
   const read = useSheetRead(sheet);
 
@@ -34,6 +36,8 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
         (c) => claimRateOn(rates, gradeOn(p, c.date), c),
         late,
         cap,
+        undefined,
+        cutOf(p.id),
       );
       lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', showDue(due)]);
     }

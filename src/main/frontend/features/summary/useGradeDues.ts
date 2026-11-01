@@ -1,6 +1,7 @@
 import { live, personDueCents, useClaims } from '../claims/useClaims';
 import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { claimRateOn, rateOn, useRates } from '../rates/useRates';
+import { useCutTotal } from '../pools/usePools';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
@@ -17,6 +18,7 @@ export function useGradeDues(sheet: string) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const cap = useCap(sheet);
+  const cutOf = useCutTotal(sheet);
   const people = everyone.filter((p) => !p.retired);
   const dueOf = (p: (typeof people)[number]) =>
     personDueCents(
@@ -26,6 +28,8 @@ export function useGradeDues(sheet: string) {
       (c) => claimRateOn(rates, gradeOn(p, c.date), c),
       late,
       cap,
+      undefined,
+      cutOf(p.id),
     );
   return Object.fromEntries(
     GRADES.map((g) => {

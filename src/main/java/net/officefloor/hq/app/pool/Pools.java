@@ -93,6 +93,18 @@ public class Pools {
         return pools;
     }
 
+    /** Each person's cut total: the cuts of the pools' person members added up, by person id (a person
+     *  with no cut is not in it). A member pool, or a member with no cut, adds nothing. */
+    public Map<Long, BigDecimal> cutTotals(String sheetId) {
+        Map<Long, BigDecimal> totals = new HashMap<>();
+        for (PoolResponse pool : onSheet(sheetId)) {
+            for (PoolMemberResponse m : pool.members()) {
+                if (m.personId() != null && m.cut() != null) totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
+            }
+        }
+        return totals;
+    }
+
     /** Adds each crew of the sheet (in the order added) as a pool of its name: its lead (when still on
      *  the sheet) then its members in the order added, 100.00 split equally among them as patrons' shares
      *  are (each rounded half to even to two decimals, the remainder on the lead, or on the first

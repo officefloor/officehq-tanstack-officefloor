@@ -55,3 +55,9 @@ export function cutTotalCents(pools: Pool[], personId?: number): bigint {
     .filter((m) => m.personId !== null && m.cut !== null && (personId === undefined || m.personId === personId))
     .reduce((sum, m) => sum + hundredths(m.cut as string), 0n);
 }
+
+/** Each person's cut total, in cents, by person id (0 for one with no cut), as the pools now stand. */
+export function useCutTotal(sheet: string): (personId: number) => bigint {
+  const { data: pools = [] } = usePools(sheet);
+  return (personId) => cutTotalCents(pools, personId);
+}

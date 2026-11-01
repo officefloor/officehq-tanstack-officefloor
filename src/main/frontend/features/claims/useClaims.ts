@@ -240,10 +240,10 @@ export function carriedCents(claim: Claim, due: bigint, personId: number): bigin
  *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim)` (the rate that applies to it on its date), plus any late charge and at least `floor`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
- *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
- *  is not capped). With `personId`, the claims are those the person carries (see `carried`), each
+ *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap less `cut`, the
+ *  person's cut total in cents (not below 0; an n/a one is not capped). With `personId`, the claims are those the person carries (see `carried`), each
  *  counting what of its due they carry (see `carriedCents`); `pctOn` then gives each claim's rate by its own person. */
-export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (claim: Claim) => string | undefined, late?: Late, cap?: string | null, personId?: number): bigint | null {
+export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (claim: Claim) => string | undefined, late?: Late, cap?: string | null, personId?: number, cut?: bigint): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
@@ -253,20 +253,24 @@ export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | un
     any = true;
   }
   if (pct === undefined && !any) return null;
-  return capCents(sum, cap);
+  return capCents(sum, cap, cut);
 }
 
-/** A due-total at most the sheet's `cap` (null or blank: no cap); n/a is not capped. */
-export function capCents(due: bigint | null, cap?: string | null): bigint | null {
+/** A due-total at most the sheet's `cap` less the person's `cut` total in cents (not below 0; null or
+ *  blank cap: no cap); n/a is not capped. */
+export function capCents(due: bigint | null, cap?: string | null, cut: bigint = 0n): bigint | null {
   if (due === null || cap == null || cap === '') return due;
-  const most = hundredths(cap);
+  const less = hundredths(cap) - cut;
+  const most = less > 0n ? less : 0n;
   return due > most ? most : due;
 }
 
-/** How much a due-total is over the sheet's `cap`: 0 when it is not (or is n/a, or there is no cap). */
-export function excessCents(due: bigint | null, cap?: string | null): bigint {
-  const capped = capCents(due, cap);
-  return due === null || capped === null ? 0n : due - capped;
+/** How much a due-total plus the person's `cut` total is over the sheet's `cap`: 0 when it is not (or
+ *  the due-total is n/a, or there is no cap). */
+export function excessCents(due: bigint | null, cap?: string | null, cut: bigint = 0n): bigint {
+  if (due === null || cap == null || cap === '') return 0n;
+  const over = due + cut - hundredths(cap);
+  return over > 0n ? over : 0n;
 }
 
 /** Whether a claim is overdue: it is OPEN (or PENDING), not deferred, and its due-by plus its grace

@@ -1,5 +1,6 @@
 import { gradeOn, heldOnBy, retiredOut, usePeople } from '../people/usePeople';
 import { claimRateOn, rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
+import { useCutTotal } from '../pools/usePools';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { carried, claimed, claimedLive, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
@@ -22,6 +23,7 @@ export function useSheetTotals(sheet: string) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const cap = useCap(sheet);
+  const cutOf = useCutTotal(sheet);
   // A claim's rate by its own person's grade on its date (a share holder's part is of that due).
   const byId = new Map(people.map((p) => [p.id, p]));
   const ownRate = (c: (typeof claims)[number]) => {
@@ -29,7 +31,7 @@ export function useSheetTotals(sheet: string) {
     return owner === undefined ? undefined : claimRateOn(rates, gradeOn(owner, c.date), c);
   };
   const dues = people.map((p) =>
-    personDueCents(carried(claims, p.id), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, cap, p.id),
+    personDueCents(carried(claims, p.id), floor, rateOn(rates, gradeOn(p, today), today), ownRate, late, cap, p.id, cutOf(p.id)),
   );
   // Everyone's due-total before the cap, split into its SETTLED and its OPEN-and-PENDING part.
   const part = (keep: (c: (typeof claims)[number]) => boolean) =>
