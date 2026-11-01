@@ -25,10 +25,11 @@ public class BuildClaim {
             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
         }
         input.checkCorrects(sheet, person.id(), claims);
+        input.checkRef(sheet, null, claims);
         Rollup.Snapshot before = rollup.take(sheet);
         long id = claims.add(sheet, person.id(), input, dueBy);
         log.record(sheet, user, id);
-        audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+        audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
         if (periods.softClosedOn(sheet, dueBy)) {
             claims.setLateEntry(sheet, id);
             audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));

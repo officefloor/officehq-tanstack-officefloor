@@ -27,7 +27,7 @@ public class AddPastedClaims {
             LocalDate dueBy = person.dueBy(sheet, input.date(), settings, holidays);
             long id = claims.add(sheet, person.id(), input, dueBy);
             log.record(sheet, user, id);
-            audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));
+            audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
             if (periods.softClosedOn(sheet, dueBy)) {
                 claims.setLateEntry(sheet, id);
                 audit.record("LATE_ENTRY sheet=" + sheet + " by=" + user + " " + input.auditFields(person.name()));

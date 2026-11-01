@@ -6,12 +6,25 @@ import java.time.LocalDate;
 
 /**
  * A validated claim body: a blank date already defaulted to the sheet's entry date (none set: its today); a negative amount (a correction) with
- * the number the claim it corrects shows (on the sheet, or within its period), which is null for any other claim.
+ * the number the claim it corrects shows (on the sheet, or within its period), which is null for any other claim; and its
+ * external reference, trimmed (null when blank).
  */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
 
     public ClaimInput(BigDecimal amount, LocalDate date, String note) {
-        this(amount, date, note, null);
+        this(amount, date, note, null, null);
+    }
+
+    /** The audit fields of the claim as added: {@link #auditFields} then ref=<reference> when it has one. */
+    public String addedAuditFields(String person) {
+        return auditFields(person) + (ref == null ? "" : " ref=" + ref);
+    }
+
+    /** Refuses a reference another claim on the sheet (any but the one excluded, null for none) already has, ignoring case. */
+    public void checkRef(String sheet, Long excluded, Claims claims) throws InvalidClaimException {
+        if (ref != null && claims.refUsed(sheet, ref, excluded)) {
+            throw new InvalidClaimException("The reference " + ref + " is already used on the sheet");
+        }
     }
 
     /** The audit fields of this claim for the named person: amount as the screen shows it, ISO date. */

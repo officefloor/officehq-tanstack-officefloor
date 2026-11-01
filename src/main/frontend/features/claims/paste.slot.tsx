@@ -10,7 +10,7 @@ import type { Claim } from './claims';
 type Pasted = { added: number; claims: Claim[] };
 
 // The paste box: lines of name,amount,date,note (the note may hold commas; a blank date is the sheet's today; the
-// note may be absent) each add a DRAFT claim, in order, for the person of that name on the sheet (ignoring case).
+// note may be absent; a note ending in " #<reference>" gives the claim's reference) each add a DRAFT claim, in order, for the person of that name on the sheet (ignoring case).
 // The server checks every line by the claim form's rules first, so a refusal adds nothing. Shows how many were added.
 function PasteClaims({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();

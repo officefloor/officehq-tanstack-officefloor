@@ -30,8 +30,8 @@ import {
 import type { Claim, ClaimStatusChange } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 
-type Draft = { amount: string; date: string; note: string; corrects: string };
-const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '' };
+type Draft = { amount: string; date: string; note: string; corrects: string; ref: string };
+const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '' };
 
 function ClaimedHeader() {
   return (
@@ -156,7 +156,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     setEditRefused(false);
     lockMutation.reset();
   };
-  // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note and corrects kept),
+  // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note, corrects and reference kept),
   // so the server refuses it by the same rules (the amount's form, a claim that is not a DRAFT, one due inside a
   // closed period, one another user's editor holds, a viewer).
   const [inlineAmount, setInlineAmount] = useState('');
@@ -167,6 +167,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         date: claim.date,
         note: claim.note,
         corrects: claim.corrects ?? '',
+        ref: claim.ref ?? '',
       }),
     onSuccess: (updated) => {
       setInlineAmount('');
@@ -200,6 +201,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       {claim.corrects !== null && 'corrects #'}
       <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
+      {claim.ref !== null && 'ref '}
+      <span data-testid="claim-ref">{claim.ref ?? ''}</span>{' '}
       deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
       {claim.deferredUntil !== null && (claim.deferred ? 'until ' : 'last until ')}
       <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
@@ -606,7 +609,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
     setDraft(
       locked === undefined
         ? EMPTY
-        : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '' },
+        : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '', ref: locked.ref ?? '' },
     );
     save.reset();
     // Only a move to another claim (or none) refills the form; the draft typed meanwhile is the user's.
@@ -631,7 +634,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const submit = (e: FormEvent) => {
     e.preventDefault();
     // The server refuses an amount that is not a number with up to two decimals, a bad date, or a negative amount
-    // (a correction) that does not name a SETTLED claim of this person by number.
+    // (a correction) that does not name a SETTLED claim of this person by number, or a
+    // reference already used on the sheet (ignoring case).
     send({ id: editing, body: draft });
   };
 
@@ -673,12 +677,18 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
             value={draft.corrects}
             onChange={(e) => change({ corrects: e.target.value })}
           />{' '}
+          <input
+            data-testid="claim-form-ref"
+            placeholder="reference"
+            value={draft.ref}
+            onChange={(e) => change({ ref: e.target.value })}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
           {save.isError && (
             <span data-testid="claim-form-error" role="alert">
-              {' '}A claim needs an amount with up to two decimals, and a valid date not after the person's retirement date; a negative amount is a correction and must name, by number, a SETTLED claim of this person; only a DRAFT claim can be edited.
+              {' '}A claim needs an amount with up to two decimals, and a valid date not after the person's retirement date; a negative amount is a correction and must name, by number, a SETTLED claim of this person; a reference may not be one already used on the sheet; only a DRAFT claim can be edited.
             </span>
           )}
         </form>

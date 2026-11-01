@@ -19,6 +19,7 @@ public class ValidateClaim {
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
         String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
+        String ref = request == null || request.ref() == null ? "" : request.ref().trim();
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidClaimException("The amount must be a number with up to two decimals");
         }
@@ -37,7 +38,8 @@ public class ValidateClaim {
         } catch (DateTimeParseException e) {
             throw new InvalidClaimException("Not a valid date: " + date);
         }
-        body.set(new ClaimInput(value, on, note, value.signum() < 0 ? numbered(corrects) : null));
+        body.set(new ClaimInput(value, on, note, value.signum() < 0 ? numbered(corrects) : null,
+                ref.isEmpty() ? null : ref));
     }
 
     /** The number as a claim shows it: a number on the sheet without leading zeros, a period number as given. */

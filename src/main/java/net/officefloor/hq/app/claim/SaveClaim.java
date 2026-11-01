@@ -27,6 +27,7 @@ public class SaveClaim {
             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
         }
         input.checkCorrects(sheet, owner.id(), claims);
+        input.checkRef(sheet, claim.id(), claims);
         Rollup.Snapshot before = rollup.take(sheet);
         if (claim.lockedBy() != null && !claim.lockedBy().equals(user)) {
             throw new InvalidClaimException("The claim is being edited by " + claim.lockedBy());

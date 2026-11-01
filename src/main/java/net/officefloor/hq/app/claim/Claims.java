@@ -32,14 +32,15 @@ public class Claims {
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getString("locked_by"), rs.getBoolean("late_entry"),
-            rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString());
+            rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
+            rs.getString("ref"));
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     // It is deferred while OPEN with its deferred-until after the sheet's today (the real date until one is set).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -94,8 +95,8 @@ public class Claims {
     public long add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, listed)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, ref, listed)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", new String[] { "id" });
             ps.setString(1, sheet);
             ps.setLong(2, person);
             ps.setBigDecimal(3, input.amount());
@@ -103,10 +104,18 @@ public class Claims {
             ps.setString(5, input.note());
             ps.setString(6, input.corrects());
             ps.setDate(7, Date.valueOf(dueBy));
-            ps.setString(8, sheet);
+            ps.setString(8, input.ref());
+            ps.setString(9, sheet);
             return ps;
         }, keys);
         return keys.getKey().longValue();
+    }
+
+    /** Whether a claim on the sheet other than the one excluded (null for none) has the reference, ignoring case. */
+    public boolean refUsed(String sheet, String ref, Long excluded) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+                Integer.class, sheet, ref, excluded == null ? -1L : excluded);
+        return n != null && n > 0;
     }
 
     /** Marks the claim a late entry: added while the period its due-by falls in was soft-closed. */
@@ -156,9 +165,9 @@ public class Claims {
      */
     public boolean update(String sheet, long id, ClaimInput input, String user) {
         return jdbc.update(
-                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet = ? AND id = ?"
+                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ?, ref = ?, locked_by = NULL WHERE sheet = ? AND id = ?"
                         + " AND status = 'DRAFT' AND (locked_by IS NULL OR locked_by = ?)",
-                input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), sheet, id, user) == 1;
+                input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), input.ref(), sheet, id, user) == 1;
     }
 
     /**

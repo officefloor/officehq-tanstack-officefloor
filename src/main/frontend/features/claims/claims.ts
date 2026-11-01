@@ -71,6 +71,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The sheet's today it was last reminded on (null when never): an OPEN or PENDING claim is reminded once per day. */
   remindedOn: string | null;
+  /** Its external reference, trimmed (null for none): no two claims on the sheet share one, ignoring case. */
+  ref: string | null;
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
