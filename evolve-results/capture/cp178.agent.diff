@@ -1,0 +1,113 @@
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+new file mode 100644
+index 00000000..2faa76c1
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -0,0 +1,32 @@
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { useClaims } from '../claims/useClaims';
++import { useSheetTotals } from '../claims/useSheetTotals';
++import { useRoleOf } from '../settings/useSettings';
++
++/**
++ * A steward's dashboard: how many of the sheet's claims are PENDING, how many are in REVIEW, and how
++ * many of the claims that count are overdue (as the totals count them). Empty for a user who is not
++ * a steward. Under an as-of date, the counts as they stood then, for the role the user had then.
++ */
++function StewardDashboard({ user, sheet }: { user: string; sheet: string }) {
++  const { data: all = [] } = useClaims(sheet);
++  const { overdueCount } = useSheetTotals(sheet);
++  const steward = useRoleOf(sheet, user) === 'steward';
++  const count = (n: number) => (steward ? String(n) : '');
++  return (
++    <section data-testid="steward-dashboard">
++      <h2>Steward dashboard</h2>
++      <span>
++        Pending: <strong data-testid="dash-pending-count">{count(all.filter((c) => c.status === 'PENDING').length)}</strong>
++      </span>{' '}
++      <span>
++        Review: <strong data-testid="dash-review-count">{count(all.filter((c) => c.status === 'REVIEW').length)}</strong>
++      </span>{' '}
++      <span>
++        Overdue: <strong data-testid="dash-overdue-count">{count(overdueCount)}</strong>
++      </span>
++    </section>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 2, Component: StewardDashboard });
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 1236d2fa..f303b2af 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -112,6 +112,18 @@ export function useLate(sheet: string): Late {
+ 
+ export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+ 
++/** The user's role on the sheet as every rule takes it: steward while a delegation to them covers
++ *  the sheet's today, else the role given to their name (clerk unless given another). Under an as-of
++ *  date, the role they had then. Null until the settings are read. */
++export function useRoleOf(sheet: string, user: string): string | null {
++  const settings = useSettings(sheet).data;
++  const today = useSheetToday(sheet);
++  if (settings === undefined || today === '') return null;
++  if ((settings.delegations ?? []).some((d) => d.name === user && d.from <= today && today <= d.to)) return 'steward';
++  return settings.roles.find((r) => r.name === user)?.role ?? 'clerk';
++}
++
++
+ /** A clerk limit the server accepts: an amount with up to two decimals, or blank for no limit. */
+ export const LIMIT = /^(\d{1,10}(\.\d{1,2})?)?$/;
+ 
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 5832ebd5..7365e3e0 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -14,7 +14,7 @@ import { Col } from '../columns/useColumns';
+  * button takes it as of that date (on or before the sheet's today): the claims that counted at the
+  * end of it are bound to their figures as they stood then, and the statement is dated it. A steward can
+  * cancel the last statement: the claims it bound become live again, and the row shows the one
+- * before it (or nothing). Each statement still standing shows as a line, oldest first:
++ * before it (or nothing). Each statement still standing shows as a line, in the order taken:
+  * `<statement date> <due-total>`.
+  */
+ function PersonStatement({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 859399d5..6d14b25b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -56,7 +56,7 @@ public class People {
+                     snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
+                 }, sheetId);
+         Map<Long, List<String>> statementLines = new HashMap<>();
+-        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? ORDER BY statement_date, seq",
++        jdbc.query("SELECT person_id, statement_date, stated_total FROM person_statement WHERE sheet_id = ? ORDER BY person_id, seq",
+                 (ResultSet rs) -> {
+                     statementLines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(statementLine(rs));
+                 }, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 7ff48026..e8b20ae0 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -170,7 +170,7 @@ public class Person {
+     /** The person's snapshot lines, oldest first: the day being left and their due-total then (n/a). */
+     public List<String> getSnapshots() { return snapshots; }
+     public void setSnapshots(List<String> snapshots) { this.snapshots = snapshots; }
+-    /** The person's statements still standing, oldest first (by date, then as taken): the statement's
++    /** The person's statements still standing, in the order taken: the statement's
+      *  date and its due-total (n/a). */
+     public List<String> getStatementLines() { return statementLines; }
+     public void setStatementLines(List<String> statementLines) { this.statementLines = statementLines; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 199a9658..4cb39609 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -14,7 +14,7 @@ import java.util.List;
+  *  their name or an alias is used on another sheet of their sheet's tree; `origin` the sheet they were
+  *  transferred from (null: they were not); `tags` their tags, sorted (empty: none);
+  *  `snapshots` their snapshot lines, oldest first ("<day left> <due-total>");
+- *  `statementLines` their statements still standing, oldest first ("<statement date> <due-total>");
++ *  `statementLines` their statements still standing, in the order taken ("<statement date> <due-total>");
+  *  `ownTerms` their own terms from the beginning of time (null: none); `datedTerms` every dated terms
+  *  recorded, by from-date (`terms` null: none from then). */
+ public record PersonResponse(long id, String name, String grade, int version, int statementCount,
