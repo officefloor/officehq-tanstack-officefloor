@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
+import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { GRADES, peopleKey, peoplePath, usePeople } from './people';
 import type { Grade, Person } from './people';
 
@@ -11,7 +12,7 @@ const EMPTY: Draft = { name: '', grade: 'A' };
 
 // The sheet's people: listed in the order they were added, with one form that adds a person or,
 // once a person's editor is opened, edits them.
-function People({ sheet }: { sheet: string; user: string }) {
+function People({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: people = [] } = usePeople(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -94,6 +95,7 @@ function People({ sheet }: { sheet: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <PersonColumnHeaders.Slot sheet={sheet} user={user} />
             <th />
           </tr>
         </thead>
@@ -102,6 +104,7 @@ function People({ sheet }: { sheet: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <PersonColumns.Slot sheet={sheet} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                   Edit
