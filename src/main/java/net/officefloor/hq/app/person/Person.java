@@ -110,11 +110,12 @@ public class Person {
     public Integer getTermsInForce() { return today == null ? terms : termsOn(today); }
     public boolean isTermsChanged() { return termsChanged; }
     /** Give the person these terms (null: none) from the beginning of time with the next save,
-     *  noting whether they change: from their own terms, or from the terms in force they had. */
+     *  noting whether they change: their own terms, or the terms in force. */
     public void changeTerms(Integer terms) {
-        this.termsChanged = !java.util.Objects.equals(this.terms, terms)
-                || !java.util.Objects.equals(getTermsInForce(), terms);
+        Integer inForce = getTermsInForce();
+        boolean own = !java.util.Objects.equals(this.terms, terms);
         this.terms = terms;
+        this.termsChanged = own || !java.util.Objects.equals(inForce, getTermsInForce());
     }
     /** Record these terms (null: none) from `from` with the next save, replacing any from that date. */
     public void recordTerms(Integer terms, LocalDate from) {
