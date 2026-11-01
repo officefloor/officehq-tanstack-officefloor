@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey } from '../claims/useClaims';
+import { peopleKey } from '../people/usePeople';
 import { periodsKey } from '../periods/usePeriods';
 import { settingsKey, useSettings } from '../settings/useSettings';
 import { sheetKey, useSheet, type Sheet } from './useSheet';
@@ -29,6 +30,8 @@ function SheetToday({ user, sheet }: { user: string; sheet: string }) {
         queryClient.invalidateQueries({ queryKey: settingsKey(sheet) }),
         // A today past a period's grace days closes it.
         queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+        // A moved today keeps a snapshot line on each person.
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
       ]);
     },
   });
