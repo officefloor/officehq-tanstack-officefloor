@@ -1,0 +1,94 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index be0bb248..8f5b0dc7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -12,7 +12,8 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Edits the claim and releases its editor's lock, refusing when another user's editor locks it, or it is no longer a DRAFT, or is due by in a closed period (its due-by, fixed when it was added, stays as it is),
+  *  or types another amount than its lines add up to (a claim with lines takes its amount from them),
+- *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person.
++ *  or would be dated after its person's retirement date, or would be a correction of no SETTLED claim of its person
++ *  or exceed what remains of it.
+  *  The editing user becomes the claim's last editor, who may not settle or approve it. */
+ public class ApplyClaim {
+     public void apply(@Val ClaimValues values, @Val Claim claim, Sheets sheets, ClosedPeriods closedPeriods,
+@@ -29,7 +30,7 @@ public class ApplyClaim {
+         closedPeriods.refuse(claim.getSheetId(), claim.getDueBy());
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         if (person != null) person.refuseRetired(date);
+-        BuildClaim.refuseUncorrected(values, claim.getSheetId(), claim.getPersonId(), claims);
++        BuildClaim.refuseUncorrected(values, claim.getSheetId(), claim.getPersonId(), claim.getId(), claims);
+         BuildClaim.refuseUsedRef(values.ref(), claim.getSheetId(), claim.getId(), claims);
+         claim.setAmount(values.amount());
+         claim.setDate(date);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 2c0510fc..9835a543 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.holiday.Holidays;
+ import net.officefloor.hq.app.period.ClosedPeriods;
+@@ -28,7 +29,7 @@ public class BuildClaim {
+         LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), date, terms);
+         closedPeriods.refuse(person.getSheetId(), dueBy);
+         person.refuseRetired(date);
+-        refuseUncorrected(values, person.getSheetId(), person.getId(), claims);
++        refuseUncorrected(values, person.getSheetId(), person.getId(), null, claims);
+         refuseUsedRef(values.ref(), person.getSheetId(), null, claims);
+         Claim built = new Claim(null, person.getSheetId(), person.getId(), values.amount(), date, values.note(),
+                 ClaimStatus.DRAFT, null, null, null);
+@@ -48,11 +49,19 @@ public class BuildClaim {
+         }
+     }
+ 
+-    /** Refuses a correction whose number is not a SETTLED claim of the same person. */
+-    static void refuseUncorrected(ClaimValues values, String sheetId, long personId, Claims claims)
++    /** Refuses a correction whose number is not a SETTLED claim of the same person, or that exceeds what
++     *  remains of that claim after the other corrections (not `ownId`) already made against it. */
++    static void refuseUncorrected(ClaimValues values, String sheetId, long personId, Long ownId, Claims claims)
+             throws InvalidSheetRequestException {
+         if (values.corrects() != null && !claims.settled(sheetId, personId, values.corrects())) {
+             throw new InvalidSheetRequestException("A correction must name a settled claim of the same person: " + values.corrects());
+         }
++        if (values.corrects() != null) {
++            BigDecimal remaining = claims.remaining(sheetId, personId, values.corrects(), ownId);
++            if (values.amount().negate().compareTo(remaining) > 0) {
++                throw new InvalidSheetRequestException("A correction may not exceed what remains of " + values.corrects()
++                        + ": " + remaining.toPlainString());
++            }
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 381695a5..721b0c75 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
+ import java.sql.ResultSet;
+ import java.sql.SQLException;
+ import java.sql.Types;
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -54,6 +55,16 @@ public class Claims {
+         return n != null && n > 0;
+     }
+ 
++    /** What remains of the person's SETTLED claim with this number: its amount less the corrections
++     *  already made against it (VOID or DELETED ones, and the claim `ownId` (null: none), left out). */
++    public BigDecimal remaining(String sheetId, long personId, String number, Long ownId) {
++        BigDecimal amount = jdbc.query("SELECT amount FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ? AND status = 'SETTLED'",
++                (rs, i) -> rs.getBigDecimal("amount"), sheetId, personId, number).stream().findFirst().orElse(BigDecimal.ZERO);
++        BigDecimal corrections = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ? AND corrects = ? "
++                + "AND status NOT IN ('VOID', 'DELETED') AND id <> ?", BigDecimal.class, sheetId, personId, number, ownId != null ? ownId : -1L);
++        return amount.add(corrections);
++    }
++
+     /** Whether a claim on the sheet other than `ownId` (null: any) has this reference, without regard to case. */
+     public boolean refUsed(String sheetId, String ref, Long ownId) {
+         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
