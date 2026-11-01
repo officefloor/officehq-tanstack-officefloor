@@ -1,0 +1,128 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 00000000..89d88dc4
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,46 @@
++import { useCallback, useEffect, useState } from 'react';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { usePeople } from '../people/people';
++import { twoDecimals } from '../rates/rates';
++import { useSheetTotals } from '../claims/claims';
++import { useFamily } from './consolidated';
++
++type Figures = { people: number; due: bigint; overdue: bigint };
++
++// One sheet's figures as that sheet shows them in its header: its people (retired ones included), its due-total and
++// its overdue-total, each figured from the same helpers. Renders nothing; it reports them up.
++function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string, f: Figures) => void }) {
++  const { data: people = [] } = usePeople(sheet);
++  const { due, overdue } = useSheetTotals(sheet);
++  const count = people.length;
++  const cents = overdue.cents;
++  useEffect(() => report(sheet, { people: count, due, overdue: cents }), [sheet, report, count, due, cents]);
++  return null;
++}
++
++// The consolidated figures over the sheet and all its descendants (see useFamily): the people, the due-total and the
++// overdue-total of each, added up. A sheet with no children shows its own.
++function Consolidated({ sheet }: { sheet: string; user: string }) {
++  const { data: family = [sheet] } = useFamily(sheet);
++  const [figures, setFigures] = useState<Map<string, Figures>>(new Map());
++  const report = useCallback(
++    (s: string, f: Figures) => setFigures((prev) => new Map(prev).set(s, f)),
++    [],
++  );
++  const shown = family.map((s) => figures.get(s)).filter((f): f is Figures => f !== undefined);
++  const people = shown.reduce((n, f) => n + f.people, 0);
++  const due = shown.reduce((n, f) => n + f.due, 0n);
++  const overdue = shown.reduce((n, f) => n + f.overdue, 0n);
++  return (
++    <p>
++      {family.map((s) => (
++        <SheetFigures key={s} sheet={s} report={report} />
++      ))}
++      Consolidated: people <strong data-testid="consolidated-people-count">{people}</strong>, due total{' '}
++      <strong data-testid="consolidated-due-total">{twoDecimals(due)}</strong>, overdue total{' '}
++      <strong data-testid="consolidated-overdue-total">{twoDecimals(overdue)}</strong>
++    </p>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: -9, Component: Consolidated });
+diff --git a/src/main/frontend/features/consolidated/consolidated.ts b/src/main/frontend/features/consolidated/consolidated.ts
+new file mode 100644
+index 00000000..a1c1e4cb
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.ts
+@@ -0,0 +1,13 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++export const familyKey = (sheet: string) => ['family', sheet] as const;
++
++/** The sheet's id then those of all its descendants: its children (the sheets naming it as their parent), theirs,
++ *  and so on, each once. */
++export function useFamily(sheet: string) {
++  return useQuery({
++    queryKey: familyKey(sheet),
++    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/family`),
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithFamily.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithFamily.java
+new file mode 100644
+index 00000000..697c2148
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithFamily.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Responds with the sheet's id then those of all its descendants (the sheets below it by parent). */
++public class RespondWithFamily {
++    public void respond(@PathVariable("sheet") String sheet, Settings settings,
++            ObjectResponse<List<String>> response) {
++        response.send(settings.family(sheet));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index bfb3c167..71e6b1c0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -294,6 +294,23 @@ public class Settings {
+         return found.isEmpty() ? "" : found.get(0);
+     }
+ 
++    /** The sheet's children: the sheets naming it as their parent, by id. */
++    public List<String> children(String sheet) {
++        return jdbc.queryForList("SELECT child FROM sheet_parent WHERE parent = ? ORDER BY child", String.class, sheet);
++    }
++
++    /** The sheet then all its descendants (its children, theirs, and so on), each once. */
++    public List<String> family(String sheet) {
++        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>(List.of(sheet));
++        java.util.ArrayDeque<String> left = new java.util.ArrayDeque<>(List.of(sheet));
++        while (!left.isEmpty()) {
++            for (String child : children(left.pop())) {
++                if (found.add(child)) left.add(child);
++            }
++        }
++        return List.copyOf(found);
++    }
++
+     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
+     public boolean permits(String sheet, String action, String role) {
+         String roles = get(sheet, perm(action));
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/family.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/family.GET.yml
+new file mode 100644
+index 00000000..887517f8
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/family.GET.yml
+@@ -0,0 +1,4 @@
++# The sheet then all its descendants: its children (the sheets naming it as their parent), theirs, and so on.
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithFamily
++  govern: [ readonly-transaction ]
