@@ -1,0 +1,474 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 9b7e6788..24327e18 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -109,6 +109,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+   });
+   const addProof = useSubmitOnce(proofMutation);
++  // An OPEN claim splits off an amount, typed beside the Split button, into a new OPEN claim.
++  const [splitAmount, setSplitAmount] = useState('');
++  const splitMutation = useMutation({
++    mutationFn: (amount: string) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/split`, user), { amount }),
++    onSuccess: (updated) => {
++      setSplitAmount('');
++      queryClient.setQueryData(claimsKey(sheet), updated);
++    },
++  });
++  const split = useSubmitOnce(splitMutation);
+   const selected = useSelectedClaims(sheet).has(claim.id);
+   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
+   const [editRefused, setEditRefused] = useState(false);
+@@ -141,6 +151,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+       deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
+       {claim.deferredUntil !== null && (claim.deferred ? 'until ' : 'last until ')}
+       <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
++      {claim.splitFrom !== null && 'split from #'}
++      <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
+       proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+       <button
+         type="button"
+@@ -152,6 +164,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           move.reset();
+           resettleMutation.reset();
+           deferMutation.reset();
++          splitMutation.reset();
+           addProof(undefined);
+         }}
+       >
+@@ -168,6 +181,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+             move.reset();
+             resettleMutation.reset();
+             deferMutation.reset();
++            splitMutation.reset();
+             proofMutation.reset();
+             act(change);
+           }}
+@@ -183,6 +197,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           setReason(e.target.value);
+           status.reset();
+           move.reset();
++          splitMutation.reset();
+         }}
+       />{' '}
+       <button
+@@ -194,6 +209,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           move.reset();
+           resettleMutation.reset();
+           deferMutation.reset();
++          splitMutation.reset();
+           proofMutation.reset();
+           act('reject');
+         }}
+@@ -208,6 +224,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           move.reset();
+           resettleMutation.reset();
+           deferMutation.reset();
++          splitMutation.reset();
+           proofMutation.reset();
+           if (claim.status !== 'DRAFT') {
+             setEditRefused(true);
+@@ -225,6 +242,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+         onChange={(e) => {
+           setMoveTo(e.target.value);
+           move.reset();
++          splitMutation.reset();
+         }}
+       >
+         <option value="">move to…</option>
+@@ -245,6 +263,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           status.reset();
+           resettleMutation.reset();
+           deferMutation.reset();
++          splitMutation.reset();
+           proofMutation.reset();
+           reassign(Number(moveTo));
+         }}
+@@ -260,6 +279,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           status.reset();
+           move.reset();
+           deferMutation.reset();
++          splitMutation.reset();
+           proofMutation.reset();
+           resettle(undefined);
+         }}
+@@ -273,6 +293,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+         onChange={(e) => {
+           setDeferTo(e.target.value);
+           deferMutation.reset();
++          splitMutation.reset();
+         }}
+       />{' '}
+       <button
+@@ -285,11 +306,37 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           move.reset();
+           resettleMutation.reset();
+           proofMutation.reset();
++          splitMutation.reset();
+           defer(deferTo);
+         }}
+       >
+         Defer
+       </button>{' '}
++      <input
++        data-testid="claim-split-amount"
++        placeholder="split off amount"
++        value={splitAmount}
++        onChange={(e) => {
++          setSplitAmount(e.target.value);
++          splitMutation.reset();
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="claim-split"
++        disabled={splitMutation.isPending}
++        onClick={() => {
++          setEditRefused(false);
++          status.reset();
++          move.reset();
++          resettleMutation.reset();
++          deferMutation.reset();
++          proofMutation.reset();
++          split(splitAmount);
++        }}
++      >
++        Split
++      </button>{' '}
+       {editing && (
+         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
+           Cancel
+@@ -327,6 +374,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+           {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one dated inside a closed period).
+         </span>
+       )}
++      {splitMutation.isError && (
++        <span data-testid="claim-error" role="alert">
++          {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor dated inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
++        </span>
++      )}
+       {move.isError && (
+         <span data-testid="claim-error" role="alert">
+           {' '}A {claim.status} claim cannot be reassigned (only a role the permission matrix lets, by default a steward, moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 26f03720..39d33d3a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -42,7 +42,7 @@ export function bound(claim: Claim): boolean {
+  * its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date, and
+  * its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
+  * deferred now (OPEN with that date after the sheet's today: it counts in no total, is not overdue and cannot be
+- * settled). */
++ * settled), and the number the claim it was split off shows (null unless it was split off one). */
+ export type Claim = {
+   id: number;
+   person: number;
+@@ -64,6 +64,7 @@ export type Claim = {
+   deferred: boolean;
+   /** How many proofs the claim has: one above the sheet's proof threshold needs one to be settled or approved. */
+   proofs: number;
++  splitFrom: string | null;
+ };
+ 
+ /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 1c909192..54deaeaa 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -17,11 +17,13 @@ import net.officefloor.hq.app.setting.Dated;
+  * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise),
+  * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date,
+  * and its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
+- * deferred now: OPEN with that date after the sheet's today.
++ * deferred now: OPEN with that date after the sheet's today, and its proofs count, and the number (as it shows) of
++ * the claim it was split off (null unless it was).
+  */
+ public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
+         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
+-        String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log, String deferredUntil, boolean deferred, int proofs) {
++        String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log, String deferredUntil, boolean deferred, int proofs,
++        String splitFrom) {
+ 
+     /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
+     public boolean correction() {
+@@ -35,27 +37,32 @@ public record Claim(long id, long person, String amount, String date, String not
+ 
+     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
+     public Claim withNumber(Integer number) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+     }
+ 
+     /** This claim, numbered within its period: its audit fields end with number=<period number>. */
+     public Claim withPeriodNumber(String periodNumber) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
++    }
++
++    /** This claim with another amount (two decimals), as its remaining amount once split. */
++    public Claim withAmount(String amount) {
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+     }
+ 
+     /** This claim, settled with its due fixed (null when its grade had no rate). */
+     public Claim withSettledDue(String settledDue) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+     }
+ 
+     /** This claim as an OPEN claim bound by no statement and with no due fixed: the figure it would have live. */
+     public Claim asOpenUnbound() {
+-        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
++        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+     }
+ 
+     /** This claim, with its status log (oldest first). */
+     public Claim withLog(List<ClaimLogLine> log) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom);
+     }
+ 
+     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index c9829728..e85f1cee 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -117,16 +117,7 @@ public class ClaimStatusChanger {
+         // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
+         Claim changed = claim;
+         if (requested == ClaimStatusChange.OPEN) {
+-            LocalDate from = settings.periodNumberingFrom(sheet);
+-            if (from != null && !clock.today(sheet).isBefore(from)) {
+-                String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
+-                String key = period == null ? "" : period;
+-                changed = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
+-                claims.setPeriodNumber(sheet, claim.id(), changed.periodNumber());
+-            } else {
+-                changed = claim.withNumber(claims.nextNumber(sheet));
+-                claims.setNumber(sheet, claim.id(), changed.number());
+-            }
++            changed = number(sheet, claim);
+             claims.setOpenedBy(sheet, claim.id(), user);
+         }
+         String fields = changed.statusAuditFields(person.name());
+@@ -145,4 +136,22 @@ public class ClaimStatusChanger {
+         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+         rollup.record(sheet, user, before);
+     }
++
++    /**
++     * Gives an opening claim the sheet's next number, or, while the sheet numbers by period from on or before its
++     * today, the next number in the claim's period (X for none); returns the claim so numbered.
++     */
++    public Claim number(String sheet, Claim claim) {
++        LocalDate from = settings.periodNumberingFrom(sheet);
++        if (from != null && !clock.today(sheet).isBefore(from)) {
++            String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
++            String key = period == null ? "" : period;
++            Claim numbered = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
++            claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
++            return numbered;
++        }
++        Claim numbered = claim.withNumber(claims.nextNumber(sheet));
++        claims.setNumber(sheet, claim.id(), numbered.number());
++        return numbered;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 9362ade3..6f6d3fef 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -30,14 +30,14 @@ public class Claims {
+             rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
+             rs.getString("period_number"), rs.getDate("due_by").toLocalDate().toString(), List.of(),
+             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
+-            rs.getBoolean("deferred"), rs.getInt("proofs"));
++            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"));
+ 
+     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
+     // It is deferred while OPEN with its deferred-until after the sheet's today (the real date until one is set).
+     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
+             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
+             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
+-            + " claim.deferred_until, claim.proofs, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
++            + " claim.deferred_until, claim.proofs, claim.split_from, (claim.status = 'OPEN' AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
+             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
+             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
+@@ -107,6 +107,42 @@ public class Claims {
+         return keys.getKey().longValue();
+     }
+ 
++    /**
++     * Adds the OPEN claim split off another: the amount, with the date and note of the claim it was split from (by
++     * the number that claim shows), opened by the user, with its due-by fixed now; returns its id.
++     */
++    public long addSplit(String sheet, long person, BigDecimal amount, LocalDate date, String note, LocalDate dueBy,
++            String splitFrom, String openedBy) {
++        GeneratedKeyHolder keys = new GeneratedKeyHolder();
++        jdbc.update(con -> {
++            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, due_by, status,"
++                    + " split_from, opened_by, listed) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, " + NEXT_LISTED + ")",
++                    new String[] { "id" });
++            ps.setString(1, sheet);
++            ps.setLong(2, person);
++            ps.setBigDecimal(3, amount);
++            ps.setDate(4, Date.valueOf(date));
++            ps.setString(5, note);
++            ps.setDate(6, Date.valueOf(dueBy));
++            ps.setString(7, splitFrom);
++            ps.setString(8, openedBy);
++            ps.setString(9, sheet);
++            return ps;
++        }, keys);
++        return keys.getKey().longValue();
++    }
++
++    /**
++     * Leaves an OPEN claim the rest of its amount once split, unbound from any statement; conditional on the
++     * amount read and on it still being OPEN and not deferred: false when it no longer is.
++     */
++    public boolean split(String sheet, long id, BigDecimal was, BigDecimal rest) {
++        return jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE sheet = ? AND id = ?"
++                + " AND status = 'OPEN' AND amount = ? AND (deferred_until IS NULL OR deferred_until <="
++                + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE))",
++                rest, sheet, id, was) == 1;
++    }
++
+     /** Edits a draft claim: false when it is no longer a draft. */
+     public boolean update(String sheet, long id, ClaimInput input) {
+         return jdbc.update(
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+new file mode 100644
+index 00000000..1915e8e2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -0,0 +1,62 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.Periods;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.Roles;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor dated inside a
++ * closed period; only a role that may open a claim may, as the new claim is theirs to open. The claim keeps the rest
++ * and loses any figure a statement bound it to; the new OPEN claim has the same date and note, the next number,
++ * the user as its opener, a due-by fixed now from the terms in force on its date, and the claim's number as split-from.
++ */
++public class SplitClaim {
++    public void split(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val BigDecimal amount,
++            @Val Claim claim, Claims claims, People people, Periods periods, Roles roles, Settings settings,
++            ClaimStatusChanger changer, ClaimLog log, Audit audit, Rollup rollup)
++            throws InvalidClaimStatusChangeException {
++        if (Role.VIEWER.equals(roles.of(sheet, user)) || !settings.permits(sheet, "open", roles.of(sheet, user))) {
++            throw new InvalidClaimStatusChangeException("Your role may not open a claim, so may not split one");
++        }
++        if (claim.status() != ClaimStatus.OPEN) {
++            throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be split");
++        }
++        if (claim.deferred()) {
++            throw new InvalidClaimStatusChangeException("A deferred claim cannot be split");
++        }
++        LocalDate date = LocalDate.parse(claim.date());
++        if (periods.closedOn(sheet, date)) {
++            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot be split");
++        }
++        BigDecimal was = new BigDecimal(claim.amount());
++        if (amount.signum() <= 0 || amount.compareTo(was) >= 0) {
++            throw new InvalidClaimStatusChangeException("A split amount is more than 0.00 and less than the claim's amount");
++        }
++        Person person = people.find(sheet, claim.person());
++        Rollup.Snapshot before = rollup.take(sheet);
++        BigDecimal rest = was.subtract(amount);
++        // Conditional on the amount and status read, so a concurrent change by another user is refused, not overwritten.
++        if (!claims.split(sheet, claim.id(), was, rest)) {
++            throw new InvalidClaimStatusChangeException("The claim changed since it was read");
++        }
++        LocalDate dueBy = date.plusDays(settings.terms(sheet, person.gradeOn(date), date));
++        long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), dueBy, claim.shownNumber(), user);
++        Claim opened = changer.number(sheet, claims.find(sheet, id));
++        log.record(sheet, user, id);
++        audit.record("CLAIM_SPLIT sheet=" + sheet + " by=" + user + " "
++                + claim.withAmount(rest.toPlainString()).statusAuditFields(person.name()) + " into=" + opened.shownNumber());
++        audit.record(ClaimStatusChange.OPEN.event() + " sheet=" + sheet + " by=" + user + " "
++                + opened.statusAuditFields(person.name()));
++        rollup.record(sheet, user, before);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitRequest.java b/src/main/java/net/officefloor/hq/app/claim/SplitRequest.java
+new file mode 100644
+index 00000000..1eade1db
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Body of POST /api/sheets/{sheet}/claims/{claim}/split: the amount split off the claim. */
++public record SplitRequest(String amount) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java b/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java
+new file mode 100644
+index 00000000..886d1e1b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.util.regex.Pattern;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the split body once, refusing one that names no amount with up to two decimals. */
++public class ValidateSplit {
++    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
++
++    public void validate(@RequestBody SplitRequest request, Out<BigDecimal> amount)
++            throws InvalidClaimStatusChangeException {
++        String typed = request == null || request.amount() == null ? "" : request.amount().trim();
++        if (!AMOUNT.matcher(typed).matches()) {
++            throw new InvalidClaimStatusChangeException("A split names an amount with up to two decimals");
++        }
++        amount.set(new BigDecimal(typed).setScale(2));
++    }
++}
+diff --git a/src/main/resources/db/migration/V32__claim_split_from.sql b/src/main/resources/db/migration/V32__claim_split_from.sql
+new file mode 100644
+index 00000000..50eff328
+--- /dev/null
++++ b/src/main/resources/db/migration/V32__claim_split_from.sql
+@@ -0,0 +1,2 @@
++-- The number (as it shows) of the claim a claim was split from (null unless it was split off one).
++ALTER TABLE claim ADD COLUMN split_from VARCHAR(220);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/split.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/split.POST.yml
+new file mode 100644
+index 00000000..5cb9da19
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/split.POST.yml
+@@ -0,0 +1,15 @@
++# Split an amount off an OPEN claim ({"amount": "n.nn"}) into a new OPEN claim. Responds with the sheet's claims.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateSplit
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: split
++split:
++  class: net.officefloor.hq.app.claim.SplitClaim
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaims
++  govern: [ transaction ]
