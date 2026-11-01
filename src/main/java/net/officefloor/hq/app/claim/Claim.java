@@ -103,9 +103,10 @@ public class Claim {
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     /** Whether the claim is deferred now: the sheet's today (as it was when the claim was read) is
      *  before its deferred-until date (only an OPEN claim is deferred, and a voided one keeps showing
-     *  it). A deferred claim counts in no total, is not overdue, cannot be settled and is left
-     *  unbound by a statement. */
-    public boolean isDeferred() { return deferred; }
+     *  it), and no statement binds it: a deferral of a bound claim takes effect only once the binding
+     *  ends (the statement is cancelled, or the next statement leaves it unbound). A deferred claim
+     *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+    public boolean isDeferred() { return deferred && !stated; }
     public void setDeferred(boolean deferred) { this.deferred = deferred; }
     /** How many proofs the claim has: a claim whose due is above the sheet's proof threshold on its
      *  date cannot be settled or approved while it has none. */

@@ -53,7 +53,8 @@ export type Claim = {
    *  "<STATUS> by <user> on <date> due=<due>" (the sheet's today and the claim's due then). */
   log: string[];
   /** Whether the claim is deferred now: OPEN, and the sheet's today is before its deferred-until
-   *  date. A deferred claim counts in no total, is not overdue and cannot be settled. */
+   *  date, and no statement binds it (a bound claim's deferral takes effect once the binding ends).
+   *  A deferred claim counts in no total, is not overdue and cannot be settled. */
   deferred: boolean;
   /** The date (yyyy-mm-dd) the claim was last deferred until (kept once that date is reached); null when it never was. */
   deferredUntil: string | null;

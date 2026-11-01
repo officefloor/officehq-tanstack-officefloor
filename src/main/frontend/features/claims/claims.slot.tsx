@@ -127,7 +127,8 @@ function scoreOf(settledCents: bigint, overdue: number): string {
  * A steward can re-date an OPEN or PENDING claim (not one due by in a closed period, nor after its person's
  * retirement): its due-by and any figure a statement bound stay, and so do its period and number.
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
- * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
+ * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled —
+ * but while a statement binds it, the deferral waits until the binding ends.
  * A steward can assign a REVIEW claim's review to a user: the claim shows that user from then on.
  * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
