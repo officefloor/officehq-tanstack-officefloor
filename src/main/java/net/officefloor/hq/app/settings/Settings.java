@@ -221,6 +221,24 @@ public class Settings {
                 }, sheetId);
     }
 
+    /** Each of the sheet's policy versions, in version order (oldest first). */
+    public List<PolicyVersion> policyVersionList(String sheetId) {
+        return jdbc.query("SELECT version, from_date, setting_key, setting_value FROM policy_version WHERE sheet_id = ? ORDER BY version",
+                (rs, i) -> {
+                    Date from = rs.getDate("from_date");
+                    String key = rs.getString("setting_key");
+                    BigDecimal value = rs.getBigDecimal("setting_value");
+                    String shown = value == null ? "" : ROUNDING.equals(key) ? roundingName(value)
+                            : TERMS.equals(key) ? String.valueOf(value.intValue()) : value.toPlainString();
+                    return new PolicyVersion(rs.getInt("version"), from != null ? from.toLocalDate() : null, key, shown);
+                }, sheetId);
+    }
+
+    /** A policy version: its number, its from-date (null for none: in force on every date), and the key
+     *  and value it set, as the screen shows it (empty for blank). */
+    public record PolicyVersion(int version, LocalDate from, String key, String value) {
+    }
+
     /** The rounding modes a sheet can set, by the name the screen and audit show; stored as a code. */
     private static final Map<String, RoundingMode> ROUNDING_MODES = Map.of("half-up", RoundingMode.HALF_UP,
             "half-even", RoundingMode.HALF_EVEN);
