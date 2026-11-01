@@ -165,7 +165,7 @@ public class ApplyClaimStatus {
             // The person's grade's own limit on the sheet's today when one is set, else the sheet's.
             BigDecimal limit = settings.clerkLimit(claim.getSheetId(), grade);
             pending = change.action() == ClaimAction.SETTLE && limit != null && due != null && due.compareTo(limit) > 0
-                    && settings.role(claim.getSheetId(), change.user()) == Role.CLERK;
+                    && java.util.EnumSet.of(Role.CLERK, Role.RESTRICTED).contains(settings.role(claim.getSheetId(), change.user()));
         }
         claim.setStatus(pending ? ClaimStatus.PENDING : review ? ClaimStatus.REVIEW : change.action().to());
         // Settled one at a time: in no batch (a bulk settle sets its batch after this).

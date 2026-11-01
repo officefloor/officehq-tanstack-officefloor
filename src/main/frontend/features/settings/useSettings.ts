@@ -110,7 +110,7 @@ export function useLate(sheet: string): Late {
   };
 }
 
-export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'] as const;
 
 /** The user's role on the sheet as every rule takes it: steward while a delegation to them covers
  *  the sheet's today, else the role given to their name (clerk unless given another). Under an as-of

@@ -10,6 +10,29 @@ import { SortBy, useSortedPeople } from './SortBy';
 import { useSheetToday } from '../sheet/useSheet';
 import { GRADES, gradeOn, peopleKey, shownName, usePeople, type Person } from './usePeople';
 import { Col } from '../columns/useColumns';
+import { useCrews } from '../crews/useCrews';
+import { useRoleOf } from '../settings/useSettings';
+
+/** Whether a person has a row on this user's list: anyone's for every role but restricted. A
+ *  restricted user sees the people with their name (or an alias of it, as names are compared: case
+ *  and the spaces around it ignored) and the leads and members of every crew such a person leads or
+ *  belongs to. No one is listed until the user's role is read. */
+function useVisiblePeople(user: string, sheet: string): (id: number) => boolean {
+  const role = useRoleOf(sheet, user);
+  const { data: everyone = [] } = usePeople(sheet);
+  const { data: crews } = useCrews(sheet);
+  if (role === null) return () => false;
+  if (role !== 'restricted') return () => true;
+  if (crews === undefined) return () => false;
+  const key = (n: string) => n.trim().toLowerCase();
+  const mine = new Set(everyone.filter((p) => [p.name, ...p.aliases].some((n) => key(n) === key(user))).map((p) => p.id));
+  const ids = new Set(mine);
+  for (const c of crews) {
+    const crewIds = [c.leadId, ...c.members.map((m) => m.personId)];
+    if (crewIds.some((id) => mine.has(id))) crewIds.forEach((id) => ids.add(id));
+  }
+  return (id) => ids.has(id);
+}
 
 /** The sheet's people: one form to add a person or edit the one whose editor is open, and the list. */
 function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
@@ -17,7 +40,10 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const { data: everyone = [] } = usePeople(sheet);
   // Retired people have no row unless they are shown; their claims still count in every total.
   const [showRetired] = useShowRetired();
-  const listed = showRetired ? everyone : everyone.filter((p) => !p.retired);
+  const shown = showRetired ? everyone : everyone.filter((p) => !p.retired);
+  // A restricted user's list holds only their own crews' people; every other figure is over everyone.
+  const visible = useVisiblePeople(user, sheet);
+  const listed = shown.filter((p) => visible(p.id));
   // This user's screen may sort the list; only what is shown changes, not the list order.
   const people = useSortedPeople(sheet, listed);
   const [editing, setEditing] = useState<number | null>(null);

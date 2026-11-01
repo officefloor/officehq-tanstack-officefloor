@@ -38,7 +38,7 @@ type Froms = Record<string, string>;
  * charge counted, only from its due-by plus the grace in force on its date; blank is none),
  * its entry date (while set, the default date of a new claim in place of the sheet's today; blank is off; not dated),
  * its fiscal year start month (1 to 12, 1 unless set; a fiscal year FY<yyyy> starts on its first day in yyyy; not dated),
- * and the roles given to user names (clerk, the default, steward, or viewer — who sees everything and can change nothing),
+ * and the roles given to user names (clerk, the default, steward, viewer — who sees everything and can change nothing — or restricted, who sees only their crews' people),
  * and the delegations of the steward role (a steward delegates it to a user from a from-date to a to-date, inclusive,
  * by the sheet's today; a blank from-date is the sheet's today, a blank to-date the from-date). A save sets only the settings
  * whose fields were touched since the last one. The clerk limit (the sheet's and each grade's), the floor, the terms (the sheet's and
@@ -754,7 +754,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           Role{' '}
           <input
             data-testid="role-form-role"
-            placeholder="clerk, steward or viewer"
+            placeholder="clerk, steward, viewer or restricted"
             list="role-options"
             value={role}
             onChange={(e) => {
@@ -773,7 +773,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
         </button>
         {(roleInvalid || saveRole.isError) && (
           <span data-testid="role-form-error" role="alert">
-            {' '}Give a user name the role clerk, steward or viewer.
+            {' '}Give a user name the role clerk, steward, viewer or restricted.
           </span>
         )}
       </form>
