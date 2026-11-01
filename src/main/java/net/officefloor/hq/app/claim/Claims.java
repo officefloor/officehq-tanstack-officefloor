@@ -242,6 +242,12 @@ public class Claims {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet = ? AND id = ?", stated, due, sheet, id);
     }
 
+    /** Unbinds every claim of the person bound by their last statement, so each is live again. */
+    public void unbindPerson(String sheet, long person) {
+        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet = ? AND person = ? AND stated",
+                sheet, person);
+    }
+
     /** Records the user who opened the claim. */
     public void setOpenedBy(String sheet, long id, String user) {
         jdbc.update("UPDATE claim SET opened_by = ? WHERE sheet = ? AND id = ?", user, sheet, id);

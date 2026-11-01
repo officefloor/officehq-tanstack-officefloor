@@ -21,8 +21,9 @@ function StatementHeader() {
   );
 }
 
-// A person's statements: how many, the last one's due-total and date, and the button that takes the next. Taking
-// one binds their counting claims to their figures now, so the claims are re-read before the count moves on.
+// A person's statements: how many, the last one's due-total and date, the button that takes the next and the one
+// that cancels the last. Taking one binds their counting claims to their figures now, and cancelling one makes the
+// claims it bound live again, so the claims are re-read before the count moves on.
 function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: all = [] } = useStatements(sheet);
@@ -36,8 +37,19 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
       queryClient.setQueryData(statementsKey(sheet), updated);
     },
   });
+  const cancel = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () =>
+      postJson<StatementSummary[]>(byUser(`${peoplePath(sheet)}/${person.id}/unstate`, user), {}),
+    onSuccess: async (updated) => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      queryClient.setQueryData(statementsKey(sheet), updated);
+    },
+  });
   const act = useSubmitOnce(take);
+  const actCancel = useSubmitOnce(cancel);
   const latest = useIsLatest(personActionKey(sheet, person.id), take.submittedAt);
+  const latestCancel = useIsLatest(personActionKey(sheet, person.id), cancel.submittedAt);
 
   return (
     <>
@@ -47,10 +59,18 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
       <td>
         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => act()}>
           Statement
+        </button>{' '}
+        <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => actCancel()}>
+          Cancel statement
         </button>
         {take.isError && latest && (
           <span data-testid="person-error" role="alert">
             {' '}The statement could not be taken.
+          </span>
+        )}
+        {cancel.isError && latestCancel && !(take.isError && latest) && (
+          <span data-testid="person-error" role="alert">
+            {' '}The statement could not be cancelled.
           </span>
         )}
       </td>

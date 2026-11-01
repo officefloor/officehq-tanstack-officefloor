@@ -87,7 +87,7 @@ public class PeriodCloser {
     }
 
     /**
-     * Closes, in order of their to-dates, every open period of the sheet whose to-date plus the grace days is before
+     * Closes, in order of their to-dates, every open (neither closed nor soft-closed) period of the sheet whose to-date plus the grace days is before
      * the sheet's today; none when the sheet has no grace days.
      */
     public void autoClose(String sheet, String user) {
@@ -97,7 +97,7 @@ public class PeriodCloser {
         }
         LocalDate today = clock.today(sheet);
         List<Period> due = periods.list(sheet).stream()
-                .filter((p) -> !p.closed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
+                .filter((p) -> !p.fixed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
                 .sorted(Comparator.comparing(Period::to)).toList();
         for (Period period : due) {
             close(sheet, user, period, true);

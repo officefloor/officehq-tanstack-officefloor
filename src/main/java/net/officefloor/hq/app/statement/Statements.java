@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -36,5 +37,21 @@ public class Statements {
     public void add(String sheet, long person, BigDecimal dueTotal, LocalDate takenOn) {
         jdbc.update("INSERT INTO statement (sheet, person, due_total, taken_on) VALUES (?, ?, ?, ?)", sheet, person,
                 dueTotal, Date.valueOf(takenOn));
+    }
+
+    /** The person's last statement, if they have one. */
+    public Optional<Taken> last(String sheet, long person) {
+        return jdbc.query("SELECT id, due_total FROM statement WHERE sheet = ? AND person = ? ORDER BY id DESC LIMIT 1",
+                (rs, i) -> new Taken(rs.getLong("id"), rs.getBigDecimal("due_total")), sheet, person)
+                .stream().findFirst();
+    }
+
+    /** Removes the statement. */
+    public void delete(String sheet, long id) {
+        jdbc.update("DELETE FROM statement WHERE sheet = ? AND id = ?", sheet, id);
+    }
+
+    /** A statement taken: its id and due-total (null when n/a). */
+    public record Taken(long id, BigDecimal dueTotal) {
     }
 }
