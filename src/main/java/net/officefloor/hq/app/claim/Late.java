@@ -44,9 +44,10 @@ public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, Lis
     }
 
     /**
-     * The claim's late charge on its figure: for each full 30 days it is overdue, the late percent in force on that
-     * boundary (its {@link #graceBy} plus 30, 60, 90 ... days) of the figure, rounded in hundredths by the claim's {@link #rounding},
-     * the charges added up (a boundary at 0.00 adds nothing); 0.00 when it is not overdue, and always for a correction.
+     * The claim's late charge on its figure, compounding: for each full 30 days it is overdue, the late percent in force
+     * on that boundary (its {@link #graceBy} plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
+     * before it, rounded in hundredths by the claim's {@link #rounding}, the charges added up (a boundary at 0.00 adds
+     * nothing); 0.00 when it is not overdue, and always for a correction.
      */
     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -58,7 +59,7 @@ public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, Lis
         for (long k = 1; k <= periods; k++) {
             BigDecimal boundaryPct = pct.on(dueBy.plusDays(30 * k));
             if (boundaryPct.signum() != 0) {
-                total = total.add(figure.multiply(boundaryPct).movePointLeft(2).setScale(2, rounding(claim)));
+                total = total.add(figure.add(total).multiply(boundaryPct).movePointLeft(2).setScale(2, rounding(claim)));
             }
         }
         return total;

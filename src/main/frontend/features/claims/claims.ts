@@ -188,8 +188,9 @@ function plusDays(day: string, days: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** A claim's late charge on its figure (in hundredths): for each full 30 days it is overdue, the late percent in
- *  force on that boundary (its due-by plus its grace plus 30, 60, 90 ... days) of the figure, rounded as the claim's live figures
+/** A claim's late charge on its figure (in hundredths), compounding: for each full 30 days it is overdue, the late
+ *  percent in force on that boundary (its due-by plus its grace plus 30, 60, 90 ... days) of the figure plus the
+ *  charges of the boundaries before it, rounded as the claim's live figures
  *  are (see {@link roundsHalfUp}), the charges added up; a correction has none. */
 export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
   if (correction(claim)) return 0n;
@@ -198,7 +199,7 @@ export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
   for (let k = 1; k <= periods; k++) {
     const pct = late.pct(plusDays(late.graceBy(claim), 30 * k));
     if (pct === 0n) continue;
-    const product = figure * pct;
+    const product = (figure + total) * pct;
     const quotient = product / 10000n;
     const remainder = product % 10000n;
     const up = remainder > 5000n || (remainder === 5000n && (roundsHalfUp(claim, late) || quotient % 2n === 1n));
