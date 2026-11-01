@@ -1,0 +1,325 @@
+diff --git a/src/main/frontend/features/approver/approver.slot.tsx b/src/main/frontend/features/approver/approver.slot.tsx
+new file mode 100644
+index 00000000..b6926131
+--- /dev/null
++++ b/src/main/frontend/features/approver/approver.slot.tsx
+@@ -0,0 +1,69 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
++import { peopleKey, type Person } from '../people/usePeople';
++import { useRowAction } from '../people/useRowAction';
++
++/**
++ * A person's approver: the user shown, and the entry and button to set it (blank: none). The approver
++ * may approve or reject the person's PENDING claims as a steward may, but not one they opened or last edited.
++ */
++function PersonApprover({ user, sheet, person }: { user: string; sheet: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [approver, setApprover] = useState('');
++  const save = useMutation({
++    mutationFn: (a: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/approver`, { approver: a, user }),
++    onSuccess: () => setApprover(''),
++    onSettled: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++  });
++  const actionTaken = useRowAction(sheet, person.id, save.reset);
++  return (
++    <>
++      <td data-testid="person-approver">{person.approver ?? ''}</td>
++      <td>
++        <input
++          type="text"
++          placeholder="approver"
++          data-testid="person-approver-input"
++          value={approver}
++          onChange={(e) => {
++            setApprover(e.target.value);
++            save.reset();
++          }}
++        />{' '}
++        <button
++          type="button"
++          data-testid="person-approver-save"
++          disabled={save.isPending}
++          onClick={() => {
++            actionTaken();
++            save.mutate(approver);
++          }}
++        >
++          Set approver
++        </button>
++        {save.isError && (
++          <span data-testid="person-error" role="alert">
++            {' '}
++            Could not set the approver.
++          </span>
++        )}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonColumns.fill({
++    order: 36.6,
++    Component: () => (
++      <>
++        <th>Approver</th>
++        <th />
++      </>
++    ),
++  }),
++  PersonCells.fill({ order: 36.6, Component: PersonApprover }),
++];
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 6a89fed8..2e039940 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -55,6 +55,8 @@ export type Person = {
+   /** The reason of the person's flag while it is in force (the sheet's today on or before its
+    *  until-date), null when none is; only a steward may open their claims then. */
+   flag: string | null;
++  /** The user who may approve or reject the person's PENDING claims as a steward may, null when none. */
++  approver: string | null;
+ };
+ 
+ /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index d0ab5d20..f91e455e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -16,8 +16,8 @@ import net.officefloor.plugin.variable.Val;
+  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
+  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. Settled as of a date, the figure is its due as it stood at the end of that date instead (see {@link ValidateClaimStatus}). The user who opened a claim, or last edited it, may not settle it.
+  *  When a clerk settles a claim whose due is over the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's) (a due of n/a is within any
+- *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward
+- *  approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
++ *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward,
++ *  or its person's approver, approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
+  *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, still bound by the last
+  *  statement if that bound it.
+  *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
+@@ -123,8 +123,9 @@ public class ApplyClaimStatus {
+             if (change.user().equals(claim.getEditedBy())) {
+                 throw new ClaimStatusRefusedException("The user who last edited a claim cannot approve it");
+             }
+-            if (settings.role(claim.getSheetId(), change.user()) != Role.STEWARD) {
+-                throw new ClaimStatusRefusedException("Only a steward can approve a pending claim");
++            if (settings.role(claim.getSheetId(), change.user()) != Role.STEWARD
++                    && !change.user().equals(people.find(claim.getSheetId(), claim.getPersonId()).getApprover())) {
++                throw new ClaimStatusRefusedException("Only a steward or the person's approver can approve a pending claim");
+             }
+         }
+         if (change.action() == ClaimAction.REVIEW && settings.role(claim.getSheetId(), change.user()) != Role.STEWARD) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApproverChange.java b/src/main/java/net/officefloor/hq/app/person/ApproverChange.java
+new file mode 100644
+index 00000000..49b6319d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApproverChange.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A validated approver: the user name, trimmed (null: none), and who makes the change. */
++public record ApproverChange(String approver, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApproverRequest.java b/src/main/java/net/officefloor/hq/app/person/ApproverRequest.java
+new file mode 100644
+index 00000000..376803d4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApproverRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of setting a person's approver, as typed: the approver's user name (blank: none) and who makes the change. */
++public record ApproverRequest(String approver, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 99453a1a..4376e682 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class People {
+ 
+-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, dated_terms, origin_sheet, origin_name, flag_reason, flag_until, "
++    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, dated_terms, origin_sheet, origin_name, flag_reason, flag_until, approver, "
+             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
+ 
+     /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
+@@ -334,6 +334,11 @@ public class People {
+         return past;
+     }
+ 
++    /** Record the person's approver. Not an edit: the person's version is untouched. */
++    public void saveApprover(Person person) {
++        jdbc.update("UPDATE person SET approver = ? WHERE id = ?", person.getApprover(), person.getId());
++    }
++
+     /** Record the person's flag. Not an edit: the person's version is untouched. */
+     public void saveFlag(Person person) {
+         jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", person.getFlagReason(),
+@@ -541,6 +546,7 @@ public class People {
+         person.setDatedTerms(datedTerms(rs.getString("dated_terms")));
+         Date flagUntil = rs.getDate("flag_until");
+         person.setFlag(rs.getString("flag_reason"), flagUntil != null ? flagUntil.toLocalDate() : null);
++        person.setApprover(rs.getString("approver"));
+         Date today = rs.getDate("sheet_today");
+         person.setToday(today != null ? today.toLocalDate() : LocalDate.now());
+         return person;
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 6d4b16fd..b59faeba 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -47,6 +47,8 @@ public class Person {
+     /** The person's flag: its reason and the date it is in force until, inclusive (null: never flagged). */
+     private String flagReason;
+     private LocalDate flagUntil;
++    /** The user who may approve or reject the person's PENDING claims as a steward may (null: none). */
++    private String approver;
+     private List<String> snapshots = new ArrayList<>();
+     private List<String> statementLines = new ArrayList<>();
+     private List<Long> patronIds = new ArrayList<>();
+@@ -174,6 +176,8 @@ public class Person {
+     public boolean isFlagged() {
+         return flagUntil != null && (today == null || !today.isAfter(flagUntil));
+     }
++    public String getApprover() { return approver; }
++    public void setApprover(String approver) { this.approver = approver; }
+     public boolean isHeld() { return !holds.isEmpty(); }
+     /** The person's holds, in the order they were added. */
+     public List<Hold> getHolds() { return holds; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 83506373..84739a52 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -17,13 +17,15 @@ import java.util.List;
+  *  `statementLines` their statements still standing, in the order taken ("<statement date> <due-total>");
+  *  `ownTerms` their own terms from the beginning of time (null: none); `datedTerms` every dated terms
+  *  recorded, by from-date (`terms` null: none from then); `flag` the reason of their flag while it is
+- *  in force (null: none in force). */
++ *  in force (null: none in force); `approver` the user who may approve or reject their PENDING
++ *  claims as a steward may (null: none). */
+ public record PersonResponse(long id, String name, String grade, int version, int statementCount,
+         String statedTotal, String statementDate, boolean retired, String retiredFrom,
+         List<RetirementDates> pastRetirements,
+         boolean held, List<HoldDates> holds, List<Long> patrons, List<GradeFrom> grades, Integer terms,
+         String contact, List<String> aliases, boolean clashing, String origin, List<String> tags,
+-        List<String> snapshots, List<String> statementLines, Integer ownTerms, List<TermsFrom> datedTerms, String flag) {
++        List<String> snapshots, List<String> statementLines, Integer ownTerms, List<TermsFrom> datedTerms, String flag,
++        String approver) {
+ 
+     /** A hold's dates (yyyy-mm-dd; `to` null: open-ended). */
+     public record HoldDates(String from, String to) {
+@@ -63,6 +65,6 @@ public record PersonResponse(long id, String name, String grade, int version, in
+                 person.getDatedTerms().entrySet().stream()
+                         .map(e -> new TermsFrom(e.getValue(), e.getKey().toString()))
+                         .toList(),
+-                person.isFlagged() ? person.getFlagReason() : null);
++                person.isFlagged() ? person.getFlagReason() : null, person.getApprover());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordApproverSet.java b/src/main/java/net/officefloor/hq/app/person/RecordApproverSet.java
+new file mode 100644
+index 00000000..268618f1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordApproverSet.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.plugin.variable.Val;
++
++/** Runs after the approver is saved: APPROVER_SET with the approver's user name (empty: none). */
++public class RecordApproverSet {
++    public void record(@Val Person person, @Val Actor actor, Audit audit) {
++        audit.record("APPROVER_SET sheet=" + person.getSheetId() + " by=" + actor.user() + " name=" + person.getName()
++                + " user=" + (person.getApprover() == null ? "" : person.getApprover()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/SetApprover.java b/src/main/java/net/officefloor/hq/app/person/SetApprover.java
+new file mode 100644
+index 00000000..0e1648f3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/SetApprover.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Sets the person's approver, replacing any they had. Not an edit: the person's version is untouched. */
++public class SetApprover {
++    public void set(@PathVariable("sheetId") String sheetId, @PathVariable("personId") long personId,
++            @Val ApproverChange change, People people, Out<Person> personOut) throws PersonNotFoundException {
++        Person person = people.lock(sheetId, personId);
++        if (person == null) throw new PersonNotFoundException(personId);
++        person.setApprover(change.approver());
++        people.saveApprover(person);
++        personOut.set(person);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateApprover.java b/src/main/java/net/officefloor/hq/app/person/ValidateApprover.java
+new file mode 100644
+index 00000000..a33a53b5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateApprover.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.rollup.Actor;
++import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Binds the body: a blank approver clears the person's approver. */
++public class ValidateApprover {
++    public void validate(@RequestBody ApproverRequest request, Out<ApproverChange> body, Out<Actor> actor)
++            throws InvalidSheetRequestException {
++        String user = request != null ? request.user() : null;
++        if (user == null || user.isBlank()) throw new InvalidSheetRequestException("Who sets the approver is needed");
++        String approver = request.approver() == null ? "" : request.approver().trim();
++        if (approver.contains(" ")) throw new InvalidSheetRequestException("Not a user name: " + approver);
++        body.set(new ApproverChange(approver.isEmpty() ? null : approver, user));
++        actor.set(new Actor(user));
++    }
++}
+diff --git a/src/main/resources/db/migration/V99__person_approver.sql b/src/main/resources/db/migration/V99__person_approver.sql
+new file mode 100644
+index 00000000..e6fe205e
+--- /dev/null
++++ b/src/main/resources/db/migration/V99__person_approver.sql
+@@ -0,0 +1,8 @@
++-- A person may have an approver: a user who may approve or reject their PENDING claims as a steward
++-- may. Null when none.
++ALTER TABLE public.person ADD COLUMN approver VARCHAR(255);
++ALTER TABLE asof.person ADD COLUMN approver VARCHAR(255);
++ALTER TABLE asof_hist.person ADD COLUMN approver VARCHAR(255);
++-- The history trigger keeps the column list it was created with: create it again to see the new one.
++DROP TRIGGER public.person_history;
++CREATE TRIGGER person_history AFTER INSERT, UPDATE, DELETE ON public.person FOR EACH ROW CALL 'net.officefloor.hq.app.sheet.History';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.POST.yml
+new file mode 100644
+index 00000000..93d45a7f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/approver.POST.yml
+@@ -0,0 +1,16 @@
++# Sets a person's approver: a user who may approve or reject their PENDING claims as a steward may.
++validate:
++  class: net.officefloor.hq.app.person.ValidateApprover
++  next: set
++set:
++  class: net.officefloor.hq.app.person.SetApprover
++  govern: [ transaction ]
++  next: record
++# Audit only once the approver is saved.
++record:
++  class: net.officefloor.hq.app.person.RecordApproverSet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
