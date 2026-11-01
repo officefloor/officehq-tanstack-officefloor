@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { isHeld, peopleKey, peoplePath } from './people';
+import { isHeld, peopleKey, peoplePath, personActionKey } from './people';
 import type { Person } from './people';
 
 function HoldHeader() {
@@ -25,6 +26,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const hold = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
     mutationFn: (dates: { from: string; to: string }) =>
       postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/hold`, user), dates),
     onSuccess: (updated) => {
@@ -34,6 +36,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
     },
   });
   const act = useSubmitOnce(hold);
+  const latest = useIsLatest(personActionKey(sheet, person.id), hold.submittedAt);
 
   return (
     <>
@@ -74,7 +77,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
         >
           Hold
         </button>
-        {hold.isError && (
+        {hold.isError && latest && (
           <span data-testid="person-error" role="alert">
             {' '}That hold was refused.
           </span>

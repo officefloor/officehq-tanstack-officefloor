@@ -46,6 +46,9 @@ export const isRetired = (p: Person) => p.retiredFrom !== null;
 
 export const peopleKey = (sheet: string) => ['people', sheet] as const;
 
+/** The mutation key every action on a person's row shares, so the row shows only its latest action's refusal. */
+export const personActionKey = (sheet: string, person: number) => ['person-action', sheet, person] as const;
+
 export const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
 /** Everyone on the sheet, in the order they were added. */

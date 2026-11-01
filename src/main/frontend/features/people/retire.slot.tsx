@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { isRetired, peopleKey, peoplePath } from './people';
+import { isRetired, peopleKey, peoplePath, personActionKey } from './people';
 import type { Person } from './people';
 
 function RetireHeader() {
@@ -23,6 +24,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const retire = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
     mutationFn: (date: string) =>
       postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/retire`, user), { from: date }),
     onSuccess: (updated) => {
@@ -31,6 +33,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
     },
   });
   const act = useSubmitOnce(retire);
+  const latest = useIsLatest(personActionKey(sheet, person.id), retire.submittedAt);
 
   return (
     <>
@@ -50,7 +53,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
         <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={() => act(from.trim())}>
           Retire
         </button>
-        {retire.isError && (
+        {retire.isError && latest && (
           <span data-testid="person-error" role="alert">
             {' '}That retirement date was refused.
           </span>

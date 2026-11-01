@@ -53,6 +53,10 @@ public class ClaimStatusChanger {
     /** Applies the change to the claim (a reject gives its reason), writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
+        // A viewer changes nothing.
+        if (Role.VIEWER.equals(roles.of(sheet, user))) {
+            throw new InvalidClaimStatusChangeException("A viewer cannot change a claim");
+        }
         // The permission matrix says which roles open, settle and void a claim.
         if ((requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.VOID)
                 && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {

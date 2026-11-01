@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
+import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { peoplePath } from '../people/people';
+import { peoplePath, personActionKey } from '../people/people';
 import type { Person } from '../people/people';
 import { claimsKey } from '../claims/claims';
 import { statementsKey, useStatements } from './statements';
@@ -27,6 +28,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
   const { data: all = [] } = useStatements(sheet);
   const mine = all.find((s) => s.person === person.id);
   const take = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
     mutationFn: () =>
       postJson<StatementSummary[]>(byUser(`${peoplePath(sheet)}/${person.id}/statement`, user), {}),
     onSuccess: async (updated) => {
@@ -35,6 +37,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
     },
   });
   const act = useSubmitOnce(take);
+  const latest = useIsLatest(personActionKey(sheet, person.id), take.submittedAt);
 
   return (
     <>
@@ -45,7 +48,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => act()}>
           Statement
         </button>
-        {take.isError && (
+        {take.isError && latest && (
           <span data-testid="person-error" role="alert">
             {' '}The statement could not be taken.
           </span>

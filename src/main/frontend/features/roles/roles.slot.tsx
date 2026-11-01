@@ -11,7 +11,7 @@ import type { Role } from './roles';
 type Draft = { user: string; role: string };
 const EMPTY: Draft = { user: '', role: '' };
 
-// The roles given on the sheet, and a form that gives a user name a role (clerk or steward). Any name not
+// The roles given on the sheet, and a form that gives a user name a role (clerk, steward or viewer). Any name not
 // listed is a clerk.
 function Roles({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -34,7 +34,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    // The server refuses a blank name or a role that is not clerk or steward.
+    // The server refuses a blank name or a role that is not clerk, steward or viewer.
     send(draft);
   };
 
@@ -50,7 +50,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
           Role{' '}
           <input
             data-testid="role-form-role"
-            placeholder="clerk or steward"
+            placeholder="clerk, steward or viewer"
             value={draft.role}
             onChange={(e) => change({ role: e.target.value })}
           />
@@ -60,7 +60,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="role-form-error" role="alert">
-            {' '}A role needs a user name and a role of clerk or steward.
+            {' '}A role needs a user name and a role of clerk, steward or viewer.
           </span>
         )}
       </form>
