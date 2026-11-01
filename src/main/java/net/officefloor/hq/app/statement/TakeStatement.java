@@ -40,7 +40,7 @@ public class TakeStatement {
         for (Claim claim : mine) {
             if (claim.counts(person.held())) {
                 // The statement binds the figure; the late charge keeps following the sheet's today.
-                claims.setStated(sheet, claim.id(), true, claim.figure(sheetRates, person.gradeOn(claim.date()), floor));
+                claims.setStated(sheet, claim.id(), true, claim.figure(sheetRates, person.gradeOn(claim.date()), floor, late.rounding(claim)));
                 BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 total = due == null ? total : total.add(due);
                 count++;

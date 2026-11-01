@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.rate.Rate;
@@ -10,10 +11,12 @@ import net.officefloor.hq.app.rate.Rate;
  * the sheet (given when opened and kept once voided; null while a draft), and its due fixed when settled (two decimals;
  * null until settled, and when the grade had no rate then), and the user who opened it (null until opened), and
  * whether its person's last statement bound it, with the figure it bound (null when the grade had no rate then), and
- * the number of the claim it corrects (null unless it is a correction).
+ * the number of the claim it corrects (null unless it is a correction), and the date it rounds on: its own, or for
+ * a correction the date of the claim it corrects.
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
-        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, Integer corrects) {
+        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, Integer corrects,
+        String roundsOn) {
 
     /** Whether this claim is a correction: a negative amount, naming the number of the settled claim it corrects. */
     public boolean correction() {
@@ -27,12 +30,12 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
     public Claim withNumber(Integer number) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn);
     }
 
     /** This claim, settled with its due fixed (null when its grade had no rate). */
     public Claim withSettledDue(String settledDue) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn);
     }
 
     /** The audit fields of a status change: {@link #auditFields} then number=<number> when it has one. */
@@ -63,7 +66,7 @@ public record Claim(long id, long person, String amount, String date, String not
      * in); null when there is no figure.
      */
     public BigDecimal due(List<Rate> rates, String grade, BigDecimal floor, Late late) {
-        BigDecimal figure = figure(rates, grade, floor);
+        BigDecimal figure = figure(rates, grade, floor, late.rounding(this));
         return figure == null || settledDue != null ? figure : figure.add(late.charge(this, figure));
     }
 
@@ -73,13 +76,18 @@ public record Claim(long id, long person, String amount, String date, String not
      * there is none.
      */
     public BigDecimal figure(List<Rate> rates, String grade, BigDecimal floor) {
+        return figure(rates, grade, floor, RoundingMode.HALF_EVEN);
+    }
+
+    /** This claim's {@link #figure}, its live figure rounded by the mode. */
+    public BigDecimal figure(List<Rate> rates, String grade, BigDecimal floor, RoundingMode rounding) {
         if (settledDue != null) {
             return new BigDecimal(settledDue);
         }
         if (stated) {
             return statedDue == null ? null : new BigDecimal(statedDue);
         }
-        BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)));
+        BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)), rounding);
         return live == null || correction() ? live : live.max(floor);
     }
 }

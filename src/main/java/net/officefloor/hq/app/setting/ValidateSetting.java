@@ -2,6 +2,8 @@ package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,8 +16,20 @@ public class ValidateSetting {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
-                && !Settings.LATE_PCT.equals(key)) {
+                && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
+        }
+        // The policy date is a date; blank follows the sheet's today.
+        if (Settings.POLICY_DATE.equals(key)) {
+            if (!value.isEmpty()) {
+                try {
+                    value = LocalDate.parse(value).toString();
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("The policy date must be a date (yyyy-mm-dd), or blank");
+                }
+            }
+            body.set(new SettingInput(key, value));
+            return;
         }
         // The terms are a whole number of days; blank takes the default.
         if (Settings.TERMS.equals(key)) {

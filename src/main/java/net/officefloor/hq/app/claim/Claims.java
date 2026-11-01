@@ -22,9 +22,13 @@ public class Claims {
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
-            rs.getObject("corrects", Integer.class));
+            rs.getObject("corrects", Integer.class), rs.getDate("rounds_on").toLocalDate().toString());
 
-    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by, stated, stated_due, corrects FROM claim";
+    // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
+    private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
+            + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
+            + " COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on FROM claim"
+            + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND corrected.number_on_sheet = claim.corrects";
 
     private final JdbcTemplate jdbc;
 
@@ -34,17 +38,17 @@ public class Claims {
 
     /** Every claim on the sheet, newest first. */
     public List<Claim> list(String sheet) {
-        return jdbc.query(COLUMNS + " WHERE sheet = ? ORDER BY id DESC", ROW, sheet);
+        return jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.id DESC", ROW, sheet);
     }
 
     public Claim find(String sheet, long id) {
-        List<Claim> found = jdbc.query(COLUMNS + " WHERE sheet = ? AND id = ?", ROW, sheet, id);
+        List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
     /** The claim with this number on the sheet, or null when no claim has it. */
     public Claim findByNumber(String sheet, int number) {
-        List<Claim> found = jdbc.query(COLUMNS + " WHERE sheet = ? AND number_on_sheet = ?", ROW, sheet, number);
+        List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.number_on_sheet = ?", ROW, sheet, number);
         return found.isEmpty() ? null : found.get(0);
     }
 

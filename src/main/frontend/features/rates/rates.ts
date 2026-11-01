@@ -45,15 +45,16 @@ export function twoDecimals(cents: bigint): string {
 }
 
 /** An amount times a percent, divided by 100, in hundredths rounded half to even (1.025 -> 1.02,
- *  1.035 -> 1.04); undefined when there is no rate. Worked in whole numbers so no float error shows. */
-export function dueCents(amount: string, pct: string | undefined): bigint | undefined {
+ *  1.035 -> 1.04), or half up when `halfUp` (1.025 -> 1.03); undefined when there is no rate. Worked in whole
+ *  numbers so no float error shows. */
+export function dueCents(amount: string, pct: string | undefined, halfUp = false): bigint | undefined {
   if (pct === undefined) return undefined;
   const product = hundredths(amount) * hundredths(pct);
   // Rounded on the magnitude, so a negative amount (a correction) rounds as its positive would.
   const abs = product < 0n ? -product : product;
   let quotient = abs / 10000n;
   const remainder = abs % 10000n;
-  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
+  if (remainder > 5000n || (remainder === 5000n && (halfUp || quotient % 2n === 1n))) quotient += 1n;
   return product < 0n ? -quotient : quotient;
 }
 

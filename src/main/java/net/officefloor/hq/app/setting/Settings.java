@@ -23,6 +23,9 @@ public class Settings {
     /** The percent of an overdue claim's figure charged for every full 30 days it is overdue (two decimals). */
     public static final String LATE_PCT = "late-pct";
 
+    /** The date before which a claim rounds half up, on or after it half to even (yyyy-MM-dd); blank: the sheet's today. */
+    public static final String POLICY_DATE = "policy-date";
+
     /** The late percent a sheet starts with. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -76,11 +79,12 @@ public class Settings {
 
     /** What makes the sheet's late charges on its today. */
     public Late late(String sheet, LocalDate today) {
-        return new Late(latePct(sheet), terms(sheet), today);
+        String policy = get(sheet, POLICY_DATE);
+        return new Late(latePct(sheet), terms(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy));
     }
 
     public SettingsResponse all(String sheet) {
         return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
-                Integer.toString(terms(sheet)), latePct(sheet).toPlainString());
+                Integer.toString(terms(sheet)), latePct(sheet).toPlainString(), get(sheet, POLICY_DATE));
     }
 }

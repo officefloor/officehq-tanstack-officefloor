@@ -5,11 +5,12 @@ import { hundredths } from '../rates/rates';
 /** The sheet's settings: the clerk limit with two decimals, the most due a clerk may settle ('' for no limit);
  *  the floor with two decimals, the least a claim's live due is; and the terms, the whole days after its date by
  *  which a claim is due; and the late percent with two decimals, charged on an overdue claim's figure for every
- *  full 30 days it is overdue. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string };
+ *  full 30 days it is overdue; and the policy date (yyyy-MM-dd; '' for the sheet's today): a claim dated before it
+ *  rounds half up, on or after it half to even. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
-export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct';
+export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date';
 
 /** The floor a sheet starts with. */
 export const DEFAULT_FLOOR = '1.00';
@@ -48,4 +49,10 @@ export function useTerms(sheet: string): number {
 export function useLatePctCents(sheet: string): bigint {
   const { data } = useSettings(sheet);
   return hundredths(data?.latePct ?? DEFAULT_LATE_PCT);
+}
+
+/** The sheet's policy date (yyyy-MM-dd), or '' when it is the sheet's today. */
+export function usePolicyDate(sheet: string): string {
+  const { data } = useSettings(sheet);
+  return data?.policyDate ?? '';
 }

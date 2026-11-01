@@ -8,8 +8,17 @@ import java.time.temporal.ChronoUnit;
 /**
  * What makes an overdue claim's late charge: the sheet's late percent (two decimals), its terms (days after a claim's
  * date by which it is due) and its today. The charge is never bound by a statement: it follows the sheet's today.
+ * It also carries the sheet's policy date, which decides how a claim's live figures round.
  */
-public record Late(BigDecimal pct, int terms, LocalDate today) {
+public record Late(BigDecimal pct, int terms, LocalDate today, LocalDate policy) {
+
+    /**
+     * How the claim's live figures round: half up when it rounds on a date (its own, or for a correction the date of
+     * the claim it corrects) before the policy date, half to even on or after it.
+     */
+    public RoundingMode rounding(Claim claim) {
+        return LocalDate.parse(claim.roundsOn()).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+    }
 
     /** Whether the claim is overdue: OPEN with its due-by (its date plus the terms) before the sheet's today. */
     public boolean overdue(Claim claim) {
@@ -18,7 +27,7 @@ public record Late(BigDecimal pct, int terms, LocalDate today) {
 
     /**
      * The claim's late charge on its figure: the late percent of the figure for every full 30 days it is overdue,
-     * rounded half to even in hundredths; 0.00 when it is not overdue, and always for a correction.
+     * rounded in hundredths by the claim's {@link #rounding}; 0.00 when it is not overdue, and always for a correction.
      */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         if (figure == null || claim.correction() || !overdue(claim)) {
@@ -26,6 +35,6 @@ public record Late(BigDecimal pct, int terms, LocalDate today) {
         }
         long days = ChronoUnit.DAYS.between(LocalDate.parse(claim.date()).plusDays(terms), today);
         return figure.multiply(pct).multiply(BigDecimal.valueOf(days / 30)).movePointLeft(2).setScale(2,
-                RoundingMode.HALF_EVEN);
+                rounding(claim));
     }
 }
