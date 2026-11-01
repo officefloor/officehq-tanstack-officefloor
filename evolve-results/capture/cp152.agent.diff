@@ -1,0 +1,271 @@
+diff --git a/src/main/frontend/features/claims/paste.slot.tsx b/src/main/frontend/features/claims/paste.slot.tsx
+index 011ec621..bd46aff3 100644
+--- a/src/main/frontend/features/claims/paste.slot.tsx
++++ b/src/main/frontend/features/claims/paste.slot.tsx
+@@ -5,12 +5,14 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { claimsKey } from './useClaims';
+ 
+ /**
+- * Paste lines of name,amount,date,note: a DRAFT claim per line, in order, for the person of that
+- * name (the note may hold commas, the date may be blank for the sheet's today, the note absent).
++ * Paste lines of name,amount,date,note: a claim per line, in order, for the person of that name
++ * (the note may hold commas, the date may be blank for the sheet's today, the note absent), opened
++ * as the open button would. A line whose date and note match a DRAFT of that person updates the
++ * newest such DRAFT to its amount and opens it instead; a match with no DRAFT refuses the paste.
+  * A note ending in ` #<reference>` gives the claim that external reference instead (not part of the note).
+- * Every line is checked by the claim form's rules first: one refused line, or a reference already
++ * One refused line (by the claim form's rules or the open button's), or a reference already
+  * used on the sheet or repeated in the paste, refuses the whole paste.
+- * Shows how many were added; the count goes while the next press runs.
++ * Shows how many lines went through; the count goes while the next press runs.
+  */
+ function PasteClaims({ user, sheet }: { user: string; sheet: string }) {
+   const queryClient = useQueryClient();
+@@ -46,12 +48,12 @@ function PasteClaims({ user, sheet }: { user: string; sheet: string }) {
+           paste.mutate(text);
+         }}
+       >
+-        Add pasted claims
++        Add and open pasted claims
+       </button>
+       {paste.isSuccess && (
+         <span>
+           {' '}
+-          Added <strong data-testid="paste-added">{paste.data.added}</strong>
++          Went through <strong data-testid="paste-added">{paste.data.added}</strong>
+         </span>
+       )}
+       {paste.isError && (
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 9880fc25..cc26abec 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -1,7 +1,11 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.HashSet;
+ import java.util.List;
++import java.util.Objects;
++import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.holiday.Holidays;
+ import net.officefloor.hq.app.period.ClosedPeriods;
+@@ -9,32 +13,122 @@ import net.officefloor.hq.app.period.PeriodClosedException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRetiredException;
++import net.officefloor.hq.app.person.Watches;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Snapshot;
+ import net.officefloor.hq.app.settings.Settings;
+ import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
+ import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.hq.app.voidreason.VoidReasons;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Builds every pasted claim first, as the claim form would for its named person, so one refused
+- *  line refuses the whole paste before anything is saved; then saves and audits each in order. */
++/** Each pasted line, in order, as the claim form and the open button would for its named person:
++ *  a line whose date and note match a claim of that person as they stood before the paste (no VOID
++ *  or DELETED one) updates the newest such DRAFT to its amount (CLAIM_EDITED when that changes),
++ *  else is added as a new claim (CLAIM_ADDED); either is then opened (CLAIM_OPENED, numbered in paste
++ *  order), then the figures it moved are audited. A line whose matches hold no DRAFT, or any
++ *  refusal the add, edit or open would give, refuses the whole paste: its own transaction is
++ *  rolled back and the held audit lines are never written. */
+ public class AddPastedClaims {
+     public void add(@PathVariable("sheetId") String sheetId, @Val PastedClaims paste, People people, Sheets sheets,
+             ClosedPeriods closedPeriods, Claims claims, Settings settings, Holidays holidays, ClaimLog log, Audit audit,
+-            Out<PasteClaimsResult> result) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+-        List<Person> persons = new ArrayList<>();
+-        List<Claim> built = new ArrayList<>();
++            ClaimNumbers numbers, Figures figures, Rollup rollup, Watches watches, VoidReasons voidReasons,
++            ClaimLines claimLines, PlatformTransactionManager transactionManager, Out<PasteClaimsResult> result)
++            throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException,
++            ClaimStatusRefusedException, ClaimLockedException {
++        BufferedAudit held = new BufferedAudit(settings);
++        // In a transaction of its own, rolled back when any line is refused: nothing is kept.
++        Exception refused = new TransactionTemplate(transactionManager).execute(status -> {
++            try {
++                paste(sheetId, paste, people, sheets, closedPeriods, claims, settings, holidays, log, held, numbers,
++                        figures, rollup, watches, voidReasons, claimLines);
++                return null;
++            } catch (PeriodClosedException | PersonRetiredException | InvalidSheetRequestException
++                    | ClaimStatusRefusedException | ClaimLockedException e) {
++                status.setRollbackOnly();
++                return e;
++            }
++        });
++        if (refused instanceof PeriodClosedException e) throw e;
++        if (refused instanceof PersonRetiredException e) throw e;
++        if (refused instanceof InvalidSheetRequestException e) throw e;
++        if (refused instanceof ClaimStatusRefusedException e) throw e;
++        if (refused instanceof ClaimLockedException e) throw e;
++        held.flush(audit);
++        result.set(new PasteClaimsResult(paste.lines().size()));
++    }
++
++    private static void paste(String sheetId, PastedClaims paste, People people, Sheets sheets,
++            ClosedPeriods closedPeriods, Claims claims, Settings settings, Holidays holidays, ClaimLog log,
++            BufferedAudit held, ClaimNumbers numbers, Figures figures, Rollup rollup, Watches watches,
++            VoidReasons voidReasons, ClaimLines claimLines)
++            throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException,
++            ClaimStatusRefusedException, ClaimLockedException {
++        List<Claim> before = claims.onSheet(sheetId);
++        ClaimStatusChange open = new ClaimStatusChange(ClaimAction.OPEN, paste.user());
++        ApplyClaimStatus apply = new ApplyClaimStatus();
++        RecordClaimAdded added = new RecordClaimAdded();
++        RecordClaimStatusChanged opened = new RecordClaimStatusChanged();
++        Set<Long> used = new HashSet<>();
++        int n = 0;
+         for (PastedLine line : paste.lines()) {
++            n++;
+             Person person = people.named(sheetId, line.name());
+             if (person == null) throw new InvalidSheetRequestException("No one on the sheet is named " + line.name());
+-            persons.add(person);
+-            built.add(BuildClaim.built(line.values(), person, sheets, closedPeriods, claims, settings, holidays));
+-        }
+-        RecordClaimAdded record = new RecordClaimAdded();
+-        for (int i = 0; i < built.size(); i++) {
+-            claims.save(built.get(i));
+-            record.record(paste.lines().get(i).values(), persons.get(i), built.get(i), log, audit);
++            ClaimValues values = line.values();
++            LocalDate date = values.date() != null ? values.date() : settings.claimDate(sheetId);
++            Claim draft = null;
++            boolean matched = false;
++            for (Claim was : before) { // newest first
++                if (was.getPersonId() != person.getId() || !was.getDate().equals(date)
++                        || !note(was.getNote()).equals(note(values.note()))
++                        || was.getStatus() == ClaimStatus.VOID || was.getStatus() == ClaimStatus.DELETED) continue;
++                matched = true;
++                if (was.getStatus() == ClaimStatus.DRAFT && !used.contains(was.getId())) {
++                    draft = was;
++                    break;
++                }
++            }
++            if (matched && draft == null) {
++                throw new InvalidSheetRequestException("Line " + n + ": " + line.name()
++                        + " has a claim on " + date + " with that note, but none still a DRAFT");
++            }
++            Snapshot snapshot = rollup.snapshot(sheetId);
++            Claim claim;
++            if (draft != null) {
++                used.add(draft.getId());
++                claim = claims.find(sheetId, draft.getId());
++                ApplyClaimLock.refuseLocked(claim, paste.user());
++                if (values.amount().compareTo(claim.getAmount()) != 0) {
++                    if (claimLines.any(claim)) {
++                        throw new InvalidSheetRequestException("Line " + n + ": a claim with lines takes its amount from them: "
++                                + claim.getAmount().toPlainString());
++                    }
++                    closedPeriods.refuse(sheetId, claim.getDueBy());
++                    claim.setAmount(values.amount());
++                    claim.setEditedBy(paste.user());
++                    claims.save(claim);
++                    held.record("CLAIM_EDITED sheet=" + sheetId + " by=" + paste.user()
++                            + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
++                            + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : ""));
++                }
++            } else {
++                claim = BuildClaim.built(values, person, sheets, closedPeriods, claims, settings, holidays);
++                claims.save(claim);
++                added.record(values, person, claim, log, held);
++            }
++            apply.apply(open, claim, numbers, people, figures, closedPeriods, settings, log, sheets, voidReasons);
++            claims.save(claim);
++            opened.record(open, claim, people, log, watches, held);
++            rollup.record(sheetId, snapshot, paste.user(), held);
+         }
+-        result.set(new PasteClaimsResult(built.size()));
++    }
++
++    private static String note(String note) {
++        return Objects.requireNonNullElse(note, "").trim();
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BufferedAudit.java b/src/main/java/net/officefloor/hq/app/claim/BufferedAudit.java
+new file mode 100644
+index 00000000..2d44d4b0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BufferedAudit.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.settings.Settings;
++
++/** Holds the lines of a change that may yet be refused as a whole, writing them to the audit file
++ *  only once the whole change has gone through: a refused change writes nothing. */
++class BufferedAudit extends Audit {
++    private final List<String> lines = new ArrayList<>();
++
++    BufferedAudit(Settings settings) {
++        super("", settings);
++    }
++
++    @Override
++    public synchronized void record(String entry) {
++        lines.add(entry);
++    }
++
++    /** Write the held lines, in order, to the audit file. */
++    void flush(Audit audit) {
++        lines.forEach(audit::record);
++        lines.clear();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 2da9e7d6..4acce8a5 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -99,6 +99,11 @@ public class Rollup {
+ 
+     /** Audit the figures that moved between `before` and the sheet now. */
+     public void record(String sheetId, Snapshot before, String user) {
++        record(sheetId, before, user, audit);
++    }
++
++    /** Audit the figures that moved between `before` and the sheet now, to the given audit. */
++    public void record(String sheetId, Snapshot before, String user, Audit audit) {
+         Snapshot after = snapshot(sheetId);
+         String prefix = " sheet=" + sheetId + " by=" + user;
+         after.people().forEach((id, now) -> {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index d6974144..9fd0649a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -1,22 +1,13 @@
+-# Paste lines of name,amount,date,note: a DRAFT claim per line, in order, for the named person.
+-# Every line is checked by the claim form's rules before any is saved: one refused line refuses the
+-# paste and writes nothing.
++# Paste lines of name,amount,date,note: per line, in order, for the named person, the claim the
++# claim form would add (or the matching DRAFT updated to the line's amount), then opened as the open
++# button would. One refused line refuses the paste and writes nothing.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidatePasteClaims
+-  next: snapshot
+-# Keep the figures as they were, so the change can audit the ones it moves.
+-snapshot:
+-  class: net.officefloor.hq.app.rollup.SnapshotRollup
+-  govern: [ transaction ]
+   next: add
++# Runs in a transaction of its own (not governed), so a refused line rolls back the lines before it;
++# audits each line's changes, then the figures they moved, only once the whole paste went through.
+ add:
+   class: net.officefloor.hq.app.claim.AddPastedClaims
+-  govern: [ transaction ]
+-  next: rollup
+-rollup:
+-  class: net.officefloor.hq.app.rollup.RecordRollup
+-  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithPasteClaims
+-  govern: [ transaction ]
