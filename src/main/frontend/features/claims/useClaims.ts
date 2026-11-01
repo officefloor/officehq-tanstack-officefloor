@@ -74,6 +74,8 @@ export type Claim = {
   remindedOn: string | null;
   /** Whether a steward has waived the claim's late charge: it bears none from then on. */
   waived: boolean;
+  /** Whether the claim is held: while OPEN or PENDING it counts in no live total, unless a statement binds it. */
+  held: boolean;
   /** The claim's external reference, unique on the sheet without regard to case; null when it has none. */
   ref: string | null;
   /** The claim's tags, lower-cased and sorted; empty when it has none. */
@@ -127,11 +129,11 @@ export function counted(claims: Claim[]): Claim[] {
 }
 
 /** The claims that count in the live totals: OPEN, PENDING and SETTLED ones, but not deferred ones,
- *  nor the OPEN or PENDING ones dated within a hold of their person's (`heldOn` tells, by person id and date),
+ *  nor the OPEN or PENDING ones held, or dated within a hold of their person's (`heldOn` tells, by person id and date),
  *  unless a statement binds them. */
 export function live(claims: Claim[], heldOn: (personId: number, date: string) => boolean): Claim[] {
   return counted(claims).filter(
-    (c) => !c.deferred && (!isOpen(c) || c.stated || !heldOn(c.personId, c.date)),
+    (c) => !c.deferred && (!isOpen(c) || c.stated || !(c.held || heldOn(c.personId, c.date))),
   );
 }
 

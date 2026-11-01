@@ -199,7 +199,7 @@ public class Person {
     public void setClashing(boolean clashing) { this.clashing = clashing; }
 
     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
-     *  but not a deferred one, nor an OPEN or PENDING one dated within one of the person's holds, nor
+     *  but not a deferred one, nor an OPEN or PENDING one that is held or dated within one of the person's holds, nor
      *  one once the sheet's today has reached their retirement date, unless a statement binds it. */
     public boolean counts(Claim claim) {
         return counts(claim, claim.getStatus());
@@ -210,7 +210,7 @@ public class Person {
     public boolean counts(Claim claim, ClaimStatus status) {
         if (status == null) return false;
         if (!status.counts() || claim.isDeferred()) return false;
-        if (!status.isOpen() || !(heldOn(claim.getDate()) || retiredOut())) return true;
+        if (!status.isOpen() || !(claim.isHeld() || heldOn(claim.getDate()) || retiredOut())) return true;
         return claim.isStated();
     }
 

@@ -30,6 +30,7 @@ public class Claim {
     private boolean escalated;
     private boolean escalatedNow;
     private boolean waived;
+    private boolean held;
     private String ref;
     private String tags;
     private String tagsUsed;
@@ -133,6 +134,9 @@ public class Claim {
     /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
     public boolean isWaived() { return waived; }
     public void setWaived(boolean waived) { this.waived = waived; }
+    /** Whether the claim is held: while OPEN or PENDING it counts in no live total, unless a statement binds it. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
     /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

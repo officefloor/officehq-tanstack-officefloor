@@ -55,6 +55,7 @@ const LOCKED = 'Another user is editing this claim: it is locked until they save
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
 const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.';
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
+const CANNOT_HOLD = "Only an OPEN or PENDING claim can be held or released.";
 const CANNOT_WAIVE = "Only a steward can waive a claim's late charge, only on an OPEN or PENDING claim, and only once.";
 const EMPTY_COMMENT = 'A comment cannot be empty.';
 const BAD_LINE = "A line needs a label, a whole quantity of at least 1 and a unit amount with up to two decimals.";
@@ -110,6 +111,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
  * charge from then on, whatever its overdue state.
+ * An OPEN or PENDING claim can be held, and released, with its hold toggle: it shows held yes or no, and while
+ * held it counts in no live total, as a held person's claims do, unless a statement binds it.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
  * cannot be settled or approved while it has none. A proof's kind, receipt or photo, is chosen when it is added
@@ -308,6 +311,22 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
           : e instanceof HttpError && e.body.includes('archived')
             ? ARCHIVED
             : CANNOT_REMIND,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // An OPEN or PENDING claim is held, or a held one released.
+  const holdClaim = useMutation({
+    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/hold`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('viewer')
+          ? VIEWER
+          : e instanceof HttpError && e.body.includes('archived')
+            ? ARCHIVED
+            : CANNOT_HOLD,
       }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
@@ -736,6 +755,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => waive.mutate({ id: c.id })}
               >
                 Waive late charge
+              </button>{' '}
+              <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+              <button
+                type="button"
+                data-testid="claim-hold"
+                disabled={holdClaim.isPending}
+                onClick={() => holdClaim.mutate({ id: c.id })}
+              >
+                {c.held ? 'Release' : 'Hold'}
               </button>{' '}
               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
               <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}

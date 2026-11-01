@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, held, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -101,6 +101,11 @@ public class Claims {
         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(claim.getDueBy()), claim.getId());
     }
 
+    /** Record whether the claim is held. */
+    public void hold(Claim claim) {
+        jdbc.update("UPDATE claim SET held = ? WHERE id = ?", claim.isHeld(), claim.getId());
+    }
+
     /** Record that the claim's late charge is waived. */
     public void waive(Claim claim) {
         jdbc.update("UPDATE claim SET waived = ? WHERE id = ?", claim.isWaived(), claim.getId());
@@ -182,6 +187,7 @@ public class Claims {
         claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setWaived(rs.getBoolean("waived"));
+        claim.setHeld(rs.getBoolean("held"));
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");
         claim.setDeferredUntil(until != null ? until.toLocalDate() : null);
