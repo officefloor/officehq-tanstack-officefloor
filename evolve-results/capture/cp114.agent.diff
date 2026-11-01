@@ -1,0 +1,148 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 11dfdcd6..16df0d2d 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -58,6 +58,9 @@ const CHANGES: { change: ClaimStatusChange; label: string }[] = [
+   { change: 'settle', label: 'Settle' },
+   { change: 'void', label: 'Void' },
+   { change: 'approve', label: 'Approve' },
++  // A DRAFT outside a closed period is deleted (it then counts nowhere); restored to a DRAFT only on the sheet's today it was deleted.
++  { change: 'delete', label: 'Delete' },
++  { change: 'restore', label: 'Restore' },
+ ];
+ 
+ // One claim with its status and the buttons that change it. Every button is offered; the server
+@@ -610,7 +613,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+       )}
+       {status.isError && (
+         <span data-testid="claim-error" role="alert">
+-          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, and one whose due is above the note threshold needs a note to be opened).
++          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, and one whose due is above the note threshold needs a note to be opened; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted).
+         </span>
+       )}
+       {resettleMutation.isError && (
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index c412d65a..1fba3776 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -7,10 +7,11 @@ import { useSheetToday } from '../sheet/sheet';
+ import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
+ 
+ /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
+- *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++ *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
++ *  A DRAFT may be DELETED: it counts nowhere, and is restored to a DRAFT only on the sheet's today it was deleted. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+-/** Every status, in the order the screen lists them. */
++/** Every status the screen counts, in the order it lists them (a DELETED claim counts nowhere). */
+ export const CLAIM_STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+ 
+ /** How many of the claims have the status (every claim, whoever's). */
+@@ -19,7 +20,7 @@ export function statusCount(claims: Claim[], status: ClaimStatus): number {
+ }
+ 
+ /** A status change a claim's row offers; the server refuses one its status does not allow. */
+-export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject';
++export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore';
+ 
+ /** Whether a claim is still open: OPEN, or PENDING (handled like OPEN, but not bound by a statement). */
+ export function isOpen(claim: Claim): boolean {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 16d1f6ff..f7a8bb86 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -97,6 +97,17 @@ public record Claim(long id, long person, String amount, String date, String not
+         return on;
+     }
+ 
++    /** The date it was last deleted: its status log's last DELETED line (null when the log has none). */
++    public LocalDate deletedOn() {
++        LocalDate on = null;
++        for (ClaimLogLine line : log == null ? List.<ClaimLogLine>of() : log) {
++            if (line.status() == ClaimStatus.DELETED) {
++                on = LocalDate.parse(line.on());
++            }
++        }
++        return on;
++    }
++
+     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
+     public String shownNumber() {
+         return periodNumber != null ? periodNumber : number == null ? null : number.toString();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 3ecc53f8..5fdcd6e9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -3,10 +3,11 @@ package net.officefloor.hq.app.claim;
+ /**
+  * Where a claim is in its life: only OPEN, PENDING and SETTLED claims count toward the totals. A clerk's settle of a
+  * due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). A steward
+- * may void a SETTLED claim within 7 days of its settlement.
++ * may void a SETTLED claim within 7 days of its settlement. A DRAFT may be DELETED (counting nowhere, not editable,
++ * openable nor voidable), and restored to a DRAFT on the sheet-today it was deleted.
+  */
+ public enum ClaimStatus {
+-    DRAFT, OPEN, PENDING, SETTLED, VOID;
++    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+ 
+     /** The status a change takes this claim to, or null when the change is not allowed from here. */
+     public ClaimStatus after(ClaimStatusChange change) {
+@@ -17,6 +18,8 @@ public enum ClaimStatus {
+             case APPROVE -> this == PENDING ? SETTLED : null;
+             case REJECT -> this == PENDING ? OPEN : null;
+             case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED ? VOID : null;
++            case DELETE -> this == DRAFT ? DELETED : null;
++            case RESTORE -> this == DELETED ? DRAFT : null;
+         };
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index c242df7f..2d46fe5b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
+ /** A change of a claim's status, named by the last path segment, with the audit event it writes. */
+ public enum ClaimStatusChange {
+     OPEN("CLAIM_OPENED"), SETTLE("CLAIM_SETTLED"), VOID("CLAIM_VOIDED"), APPROVE("CLAIM_APPROVED"),
+-    REJECT("CLAIM_REJECTED"),
++    REJECT("CLAIM_REJECTED"), DELETE("CLAIM_DELETED"), RESTORE("CLAIM_RESTORED"),
+     /** Not named in a path: a clerk's settle of a due above the clerk limit becomes this. */
+     PEND("CLAIM_PENDING");
+ 
+@@ -17,7 +17,7 @@ public enum ClaimStatusChange {
+         return event;
+     }
+ 
+-    /** The change named in the path (open, settle, void, approve or reject), or null when there is no such change. */
++    /** The change named in the path (open, settle, void, approve, reject, delete or restore), or null when there is no such change. */
+     public static ClaimStatusChange of(String name) {
+         for (ClaimStatusChange change : values()) {
+             if (change != PEND && change.name().equalsIgnoreCase(name)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index e289a9b5..6802f8b3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -144,6 +144,11 @@ public class ClaimStatusChanger {
+                         "A settled claim may be voided only within " + VOID_SETTLED_DAYS + " days of its settlement");
+             }
+         }
++        // A DELETED claim is restored only on the sheet's today it was deleted (its status log's last DELETED date).
++        if (requested == ClaimStatusChange.RESTORE && claim.status() == ClaimStatus.DELETED
++                && !clock.today(sheet).equals(claim.deletedOn())) {
++            throw new InvalidClaimStatusChangeException("A deleted claim may be restored only on the day it was deleted");
++        }
+         if (requested == ClaimStatusChange.SETTLE && claim.deferred()) {
+             throw new InvalidClaimStatusChangeException("A deferred claim cannot be settled until its date");
+         }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/{change}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/{change}.POST.yml
+index 947ca65c..d957b1a7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/{change}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/{change}.POST.yml
+@@ -1,4 +1,4 @@
+-# Change a claim's status: {change} is open, settle, void, approve or reject (with {"reason"} in the body). Responds with the sheet's claims.
++# Change a claim's status: {change} is open, settle, void, approve, reject, delete or restore (a reject with {"reason"} in the body). Responds with the sheet's claims.
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
