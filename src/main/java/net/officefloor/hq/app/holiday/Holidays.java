@@ -25,6 +25,12 @@ public class Holidays {
                 (rs, i) -> rs.getDate("holiday_on").toLocalDate().toString(), sheet);
     }
 
+    /** Every holiday on the sheet. */
+    public Set<LocalDate> on(String sheet) {
+        return new HashSet<>(jdbc.query("SELECT holiday_on FROM holiday WHERE sheet = ?",
+                (rs, i) -> rs.getDate("holiday_on").toLocalDate(), sheet));
+    }
+
     /** Whether the date is already on the sheet's list. */
     public boolean has(String sheet, LocalDate date) {
         Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM holiday WHERE sheet = ? AND holiday_on = ?", Integer.class,

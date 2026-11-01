@@ -52,7 +52,8 @@ public class SplitClaim {
             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
         }
         LocalDate dueBy = person.dueBy(sheet, date, settings, holidays);
-        long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), claim.tags(), dueBy, claim.shownNumber(), user);
+        long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), claim.tags(), dueBy,
+                person.termsOn(sheet, date, settings), claim.shownNumber(), user);
         // Judged by the claim split alone: the new claim is a late entry when that claim is one.
         if (claim.lateEntry()) {
             claims.setLateEntry(sheet, id);

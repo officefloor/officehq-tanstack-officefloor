@@ -96,7 +96,12 @@ public record Person(long id, String name, String grade, long version, String re
      * terms, the terms of their grade then, and the sheet's terms then.
      */
     public LocalDate dueBy(String sheet, LocalDate date, Settings settings, Holidays holidays) {
-        return holidays.businessDaysAfter(sheet, date, terms != null ? terms : settings.terms(sheet, gradeOn(date), date));
+        return holidays.businessDaysAfter(sheet, date, termsOn(sheet, date, settings));
+    }
+
+    /** The terms a claim of theirs dated {@code date} is fixed with: their own, else their grade's then, else the sheet's then. */
+    public int termsOn(String sheet, LocalDate date, Settings settings) {
+        return terms != null ? terms : settings.terms(sheet, gradeOn(date), date);
     }
 
     /** The grade in force on the claim's date (yyyy-mm-dd). */

@@ -8,7 +8,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
+import net.officefloor.hq.app.holiday.Holidays;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -126,12 +128,15 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Adds the claim with its due-by, fixed now and never moved after; returns its id. */
-    public long add(String sheet, long person, ClaimInput input, LocalDate dueBy) {
+    /**
+     * Adds the claim with its due-by and the terms it was fixed with; the due-by moves after only when a holiday is
+     * added (see {@link #refixDueBy}); returns its id.
+     */
+    public long add(String sheet, long person, ClaimInput input, LocalDate dueBy, int terms) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, ref, tags, tags_ever, listed)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, due_by, ref, tags, tags_ever, due_terms, listed)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")", new String[] { "id" });
             ps.setString(1, sheet);
             ps.setLong(2, person);
             ps.setBigDecimal(3, input.amount());
@@ -142,10 +147,30 @@ public class Claims {
             ps.setString(8, input.ref());
             ps.setString(9, kept(input.tags()));
             ps.setString(10, kept(input.tags()));
-            ps.setString(11, sheet);
+            ps.setInt(11, terms);
+            ps.setString(12, sheet);
             return ps;
         }, keys);
         return keys.getKey().longValue();
+    }
+
+    private record Fixed(long id, LocalDate date, int terms) {
+    }
+
+    /**
+     * Re-fixes the due-by of every claim on the sheet that is not SETTLED or VOID and whose due-by is on or after the
+     * date: the terms-th business day after its date, with the terms it was fixed with, skipping weekends and the
+     * holidays given.
+     */
+    public void refixDueBy(String sheet, LocalDate from, Set<LocalDate> holidays) {
+        List<Fixed> fixed = jdbc.query("SELECT id, claimed_on, due_terms FROM claim WHERE sheet = ?"
+                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ?",
+                (rs, i) -> new Fixed(rs.getLong("id"), rs.getDate("claimed_on").toLocalDate(), rs.getInt("due_terms")),
+                sheet, Date.valueOf(from));
+        for (Fixed claim : fixed) {
+            LocalDate dueBy = Holidays.businessDaysAfter(claim.date(), claim.terms(), holidays);
+            jdbc.update("UPDATE claim SET due_by = ? WHERE sheet = ? AND id = ?", Date.valueOf(dueBy), sheet, claim.id());
+        }
     }
 
     /** Whether a claim on the sheet other than the one excluded (null for none) has the reference, ignoring case. */
@@ -165,11 +190,12 @@ public class Claims {
      * (by the number that claim shows), opened by the user, with its due-by fixed now; returns its id.
      */
     public long addSplit(String sheet, long person, BigDecimal amount, LocalDate date, String note, List<String> tags,
-            LocalDate dueBy, String splitFrom, String openedBy) {
+            LocalDate dueBy, int terms, String splitFrom, String openedBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement("INSERT INTO claim (sheet, person, amount, claimed_on, note, due_by, status,"
-                    + " split_from, opened_by, tags, tags_ever, listed) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, " + NEXT_LISTED + ")",
+                    + " split_from, opened_by, tags, tags_ever, due_terms, listed) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, "
+                    + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, sheet);
             ps.setLong(2, person);
@@ -181,7 +207,8 @@ public class Claims {
             ps.setString(8, openedBy);
             ps.setString(9, kept(tags));
             ps.setString(10, kept(tags));
-            ps.setString(11, sheet);
+            ps.setInt(11, terms);
+            ps.setString(12, sheet);
             return ps;
         }, keys);
         return keys.getKey().longValue();

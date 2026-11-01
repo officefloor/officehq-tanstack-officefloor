@@ -8,7 +8,8 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { holidaysKey, holidaysPath, useHolidays } from './holidays';
 
 // The sheet's holidays, and a form that adds a date to them. A claim's due-by, fixed when the claim is added, is
-// moved past the holidays on the sheet then; a holiday added later leaves existing due-by dates as they are.
+// moved past the holidays on the sheet then; adding a holiday works out again the due-by of every claim not SETTLED
+// or VOID due on or after it, which may move the sheet's figures.
 function Holidays({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: holidays = [] } = useHolidays(sheet);
@@ -19,6 +20,10 @@ function Holidays({ sheet, user }: { sheet: string; user: string }) {
     onSuccess: (updated) => {
       queryClient.setQueryData(holidaysKey(sheet), updated);
       setDate('');
+      // Due-by dates, and everything figured from them, may have moved: re-read the rest of the sheet.
+      void queryClient.invalidateQueries({
+        predicate: (q) => q.queryKey.includes(sheet) && q.queryKey[0] !== 'holidays' && q.queryKey[0] !== 'sheet',
+      });
     },
   });
   const send = useSubmitOnce(add);

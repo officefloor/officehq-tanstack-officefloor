@@ -27,7 +27,7 @@ public class BuildClaim {
         input.checkCorrects(sheet, person.id(), claims);
         input.checkRef(sheet, null, claims);
         Rollup.Snapshot before = rollup.take(sheet);
-        long id = claims.add(sheet, person.id(), input, dueBy);
+        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, input.date(), settings));
         log.record(sheet, user, id);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
         if (periods.softClosedOn(sheet, dueBy)) {
