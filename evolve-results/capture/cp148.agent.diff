@@ -1,0 +1,57 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index cb623431..d4cebdfd 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -90,7 +90,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle',
+  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
+  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
+  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
+- * PENDING ones dated within one of the person's holds, unless a statement binds them.
++ * PENDING ones dated within one of the person's holds, unless a statement binds them; claimed leaves out
++ * claims that correct another.
+  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
+  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
+  * Each claim shows its due-by (fixed when it was added: the terms-th business day after its date, from the terms of its person's grade) and whether it is overdue (OPEN and
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index cdbf1d81..1942694b 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -125,9 +125,10 @@ export function live(claims: Claim[], heldOn: (personId: number, date: string) =
+   );
+ }
+ 
+-/** The sum of these claims' amounts, with two decimals. Added up in cents, so it is exact. */
++/** The sum of these claims' amounts, leaving out those that correct another, with two decimals.
++ *  Added up in cents, so it is exact. */
+ export function claimed(claims: Claim[]): string {
+-  const cents = claims.reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => c.corrects === null).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+ 
+diff --git a/src/main/frontend/features/claims/useSheetTotals.ts b/src/main/frontend/features/claims/useSheetTotals.ts
+index c3165937..7bd9c958 100644
+--- a/src/main/frontend/features/claims/useSheetTotals.ts
++++ b/src/main/frontend/features/claims/useSheetTotals.ts
+@@ -6,7 +6,7 @@ import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from
+ 
+ /**
+  * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
+- * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
++ * (not OPEN ones dated within their person's hold, unless stated, nor those that correct another), and its due-total, everyone's due-total
+  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
+  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
+  * lowest person's figure when three or more people have one. Its settled-total and open-total are
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 549cbac4..2da9e7d6 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -68,7 +68,7 @@ public class Rollup {
+             boolean any = false;
+             for (Claim claim : all) {
+                 if (claim.getPersonId() != person.getId() || !person.counts(claim)) continue;
+-                claimed = claimed.add(claim.getAmount());
++                if (claim.getCorrects() == null) claimed = claimed.add(claim.getAmount());
+                 String grade = person.gradeOn(claim.getDate());
+                 BigDecimal figure = figures.due(claim, grade);
+                 if (figure != null) {
