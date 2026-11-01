@@ -1,0 +1,229 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 0d11de8f..dc244f8c 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -1,15 +1,15 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson } from '../../api/http';
++import { getJson, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { GRADES } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+ import type { Grade } from '../people/people';
+-import { rateOf, ratesKey, ratesPath, useRates } from './rates';
+-import type { Rate } from './rates';
++import { rateOf, ratePreviewPath, ratesKey, ratesPath, useRates } from './rates';
++import type { Rate, RatePreview } from './rates';
+ 
+ type Draft = { grade: Grade; pct: string; from: string; to: string };
+ const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
+@@ -43,6 +43,18 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
+     send(draft);
+   };
+ 
++  // The preview of a candidate rate: read-only, it saves nothing and audits nothing.
++  const [previewGrade, setPreviewGrade] = useState<Grade>('A');
++  const [previewPct, setPreviewPct] = useState('');
++  const preview = useMutation({
++    mutationFn: ({ grade, pct }: { grade: Grade; pct: string }) =>
++      getJson<RatePreview>(ratePreviewPath(sheet, grade, pct)),
++  });
++  const runPreview = () => {
++    preview.reset();
++    preview.mutate({ grade: previewGrade, pct: previewPct });
++  };
++
+   return (
+     <section>
+       <h2>Rates</h2>
+@@ -92,6 +104,50 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
+           </span>
+         )}
+       </form>
++      <div>
++        <label>
++          Preview grade{' '}
++          <select
++            data-testid="rate-preview-grade"
++            value={previewGrade}
++            onChange={(e) => {
++              setPreviewGrade(e.target.value as Grade);
++              preview.reset();
++            }}
++          >
++            {GRADES.map((g) => (
++              <option key={g} value={g}>
++                {g}
++              </option>
++            ))}
++          </select>
++        </label>{' '}
++        <label>
++          Candidate rate %{' '}
++          <input
++            data-testid="rate-preview-pct"
++            value={previewPct}
++            onChange={(e) => {
++              setPreviewPct(e.target.value);
++              preview.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="button" data-testid="rate-preview" disabled={preview.isPending} onClick={runPreview}>
++          Preview
++        </button>
++        {preview.data && (
++          <span>
++            {' '}Claims changed: <span data-testid="rate-preview-count">{preview.data.count}</span>, difference:{' '}
++            <span data-testid="rate-preview-diff">{preview.data.diff}</span>
++          </span>
++        )}
++        {preview.isError && (
++          <span data-testid="rate-preview-error" role="alert">
++            {' '}A preview needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals.
++          </span>
++        )}
++      </div>
+       <table>
+         <thead>
+           <tr>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index dcb90423..91416c9c 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -10,6 +10,13 @@ export const ratesKey = (sheet: string) => ['rates', sheet] as const;
+ 
+ export const ratesPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/rates`;
+ 
++/** What a candidate rate for a grade would do: how many OPEN and PENDING claims would show a different due, and the
++ *  sum of the differences (new due minus current due, two decimals; negative when lower). */
++export type RatePreview = { count: number; diff: string };
++
++export const ratePreviewPath = (sheet: string, grade: Grade, pct: string) =>
++  `${ratesPath(sheet)}/preview?grade=${encodeURIComponent(grade)}&pct=${encodeURIComponent(pct)}`;
++
+ /** Every rate on the sheet, by grade then from-date (the one with none first); a grade with no rate is absent. */
+ export function useRates(sheet: string) {
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RatePreview.java b/src/main/java/net/officefloor/hq/app/rate/RatePreview.java
+new file mode 100644
+index 00000000..6eb6c673
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RatePreview.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.rate;
++
++/**
++ * What a candidate rate for a grade would do: the count of OPEN and PENDING claims whose due would differ, and the
++ * sum of the differences (new due minus current due, two decimals; negative when lower).
++ */
++public record RatePreview(int count, String diff) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
+new file mode 100644
+index 00000000..fd1b786e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
+@@ -0,0 +1,70 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Set;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.claim.Late;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.setting.Dated;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Responds with a preview of a candidate rate applied to a grade on every date: the OPEN and PENDING claims of
++ * people on that grade (the one in force on the claim's date) whose due would differ, and the sum of the
++ * differences. A claim bound by a statement keeps its figure; a settled one is not counted. Nothing is written.
++ */
++public class RespondWithRatePreview {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++    private static final Pattern PCT = Pattern.compile("\\d{1,7}(\\.\\d{1,2})?");
++
++    public void respond(@PathVariable("sheet") String sheet,
++            @RequestParam(value = "grade", required = false) String grade,
++            @RequestParam(value = "pct", required = false) String pct, Rates rates, People people, Claims claims,
++            Settings settings, SheetClock clock, ObjectResponse<RatePreview> response) throws InvalidRateException {
++        String g = grade == null ? "" : grade.trim();
++        String p = pct == null ? "" : pct.trim();
++        if (!GRADES.contains(g)) {
++            throw new InvalidRateException("Grade must be A, B or C");
++        }
++        if (!PCT.matcher(p).matches()) {
++            throw new InvalidRateException("The rate must be a percent of 0.00 or more with up to two decimals");
++        }
++        List<Rate> current = rates.list(sheet);
++        List<Rate> candidate = new ArrayList<>(current.stream().filter((r) -> !r.grade().equals(g)).toList());
++        candidate.add(new Rate(g, new BigDecimal(p).setScale(2).toPlainString(), null, null));
++        LocalDate today = clock.today(sheet);
++        Dated floor = settings.floor(sheet);
++        Late late = settings.late(sheet, today);
++        List<Claim> all = claims.list(sheet);
++        int count = 0;
++        BigDecimal diff = BigDecimal.ZERO.setScale(2);
++        for (Person person : people.list(sheet)) {
++            for (Claim claim : all) {
++                if (claim.person() != person.id()
++                        || (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING)
++                        || claim.bound() || !g.equals(person.gradeOn(claim.date()))) {
++                    continue;
++                }
++                BigDecimal was = claim.due(current, g, floor, late);
++                BigDecimal now = claim.due(candidate, g, floor, late);
++                if (was == null ? now != null : now == null || was.compareTo(now) != 0) {
++                    count++;
++                    diff = diff.add(now == null ? BigDecimal.ZERO : now)
++                            .subtract(was == null ? BigDecimal.ZERO : was);
++                }
++            }
++        }
++        response.send(new RatePreview(count, diff.setScale(2).toPlainString()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/rates/preview.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/rates/preview.GET.yml
+new file mode 100644
+index 00000000..d87093c9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/rates/preview.GET.yml
+@@ -0,0 +1,4 @@
++# A read: a bad grade or percent is a 400 (InvalidRateException). Writes nothing and audits nothing.
++respond:
++  class: net.officefloor.hq.app.rate.RespondWithRatePreview
++  govern: [ readonly-transaction ]
+diff --git a/tmp_e2e/e2e5.log b/tmp_e2e/e2e5.log
+new file mode 100644
+index 00000000..80785af7
+--- /dev/null
++++ b/tmp_e2e/e2e5.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › rate preview › rate preview (17.5s)
++  ✓  2 [chromium] › acceptance.spec.ts:83:7 › rate preview › rate preview scenario 1 (23.9s)
++  ✓  3 [chromium] › acceptance.spec.ts:535:7 › rate preview › rate preview scenario 2 (37.9s)
++  ✓  4 [chromium] › acceptance.spec.ts:835:7 › rate preview › rate preview scenario 3 (27.4s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.8m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (1.8m)
