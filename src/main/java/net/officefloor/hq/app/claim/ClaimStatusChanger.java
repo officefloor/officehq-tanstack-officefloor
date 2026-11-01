@@ -119,6 +119,19 @@ public class ClaimStatusChanger {
                 }
             }
         }
+        // A claim whose due is above the note threshold in force on its date is opened only with a note (a due of n/a
+        // is above no threshold).
+        if (requested == ClaimStatusChange.OPEN && (claim.note() == null || claim.note().isBlank())) {
+            BigDecimal threshold = settings.noteThreshold(sheet, LocalDate.parse(claim.date()));
+            if (threshold != null) {
+                BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+                        settings.late(sheet, clock.today(sheet)));
+                if (due != null && due.compareTo(threshold) > 0) {
+                    throw new InvalidClaimStatusChangeException(
+                            "A claim whose due is above the note threshold needs a note before it is opened");
+                }
+            }
+        }
         // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit); above
         // it the claim goes to PENDING for a steward to approve. A steward settles anything.
         if (requested == ClaimStatusChange.SETTLE && claim.status() == ClaimStatus.OPEN

@@ -18,7 +18,8 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // days) fix the due-by of a claim added for a person of that grade; blank makes the grade take the sheet's terms. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit. The cap is the most a person's due-total is (two
 // decimals); blank means no cap. A claim whose due is above the proof threshold in force on its date (two decimals;
-// blank means none) needs a proof before it is settled or approved. Each setting that carries a figure (all but the policy date and the period numbering
+// blank means none) needs a proof before it is settled or approved. A claim whose due is above the note threshold in force on its date (two decimals;
+// blank means none) cannot be opened with an empty note. Each setting that carries a figure (all but the policy date and the period numbering
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
 // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
 // for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
@@ -30,6 +31,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [clerkLimit, setClerkLimit] = useState('');
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
+  const [noteThreshold, setNoteThreshold] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
@@ -54,6 +56,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setClerkLimit('');
       setCap('');
       setProofThreshold('');
+      setNoteThreshold('');
       setFloor('');
       setTerms('');
       setLatePct('');
@@ -98,7 +101,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     const values: Record<SettingKey, string> = {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
-      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold,
+      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
       'grace-days': graceDays };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => (isDated(key) ? { key, value: values[key], from: froms[key] ?? '' } : { key, value: values[key] })));
@@ -154,6 +157,22 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </label>{' '}
         {from('proof-threshold')}
         now <span data-testid="setting-proof-threshold-current">{data?.proofThreshold ?? ''}</span>{' '}
+        <label>
+          Note threshold{' '}
+          <input
+            data-testid="setting-note-threshold"
+            placeholder="0.00 (blank: none)"
+            value={noteThreshold}
+            onChange={(e) => {
+              setNoteThreshold(e.target.value);
+              touch('note-threshold');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('note-threshold')}
+          />
+        </label>{' '}
+        {from('note-threshold')}
+        now <span data-testid="setting-note-threshold-current">{data?.noteThreshold ?? ''}</span>{' '}
         <label>
           Floor{' '}
           <input
@@ -288,7 +307,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
+            {' '}The clerk limit, the cap, the proof threshold, the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
           </span>
         )}
       </form>

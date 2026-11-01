@@ -414,7 +414,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, and a claim whose due is above the proof threshold needs a proof).
+          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a claim whose due is above the proof threshold needs a proof, and one whose due is above the note threshold needs a note to be opened).
         </span>
       )}
       {resettleMutation.isError && (

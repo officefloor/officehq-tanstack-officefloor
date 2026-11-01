@@ -15,7 +15,7 @@ import { hundredths } from '../rates/rates';
  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
-  proofThreshold: string; graceDays: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  proofThreshold: string; noteThreshold: string; graceDays: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -44,7 +44,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'cap' | 'proof-threshold' | 'grace-days' | `perm-${PermAction}`;
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | `perm-${PermAction}`;
 
 /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
 export const PERMISSIONS = [
