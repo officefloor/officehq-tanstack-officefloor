@@ -22,6 +22,8 @@ export type Period = {
   closedPersonCarried: Record<string, string>;
   soft: boolean;
   cap: number | null;
+  /** Each person's opening balance for the period, by person id; a person with none is absent. */
+  openings: Record<string, string>;
 };
 
 export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as const;
@@ -107,13 +109,15 @@ export function personPeriodDueCents(period: Period, person: Person, claims: Cla
 /** A person's carried figure for a period, in cents: the one fixed when the period was closed (0 for
  *  a person added since), else the dues, as shown now, of their claims that
  *  count (as in `countsIn`) which belong, by due-by, to a period ending before this one starts and
- *  were still OPEN or PENDING at the end of this period's last day (by their status log). */
+ *  were still OPEN or PENDING at the end of this period's last day (by their status log), plus their
+ *  opening balance for it. */
 export function personPeriodCarriedCents(period: Period, periods: Period[], person: Person, claims: Claim[], rates: Rate[], floor: FloorOn, late: Late, today: string): bigint {
   if (period.closed) {
     const fixed = period.closedPersonCarried?.[String(person.id)];
     return fixed === undefined ? 0n : hundredths(fixed);
   }
-  return claims
+  const opening = period.openings?.[String(person.id)];
+  return (opening === undefined ? 0n : hundredths(opening)) + claims
     .filter((c) => {
       const home = periodOf(periods, c.dueBy);
       if (c.personId !== person.id || c.deferred || home === undefined || home.to >= period.from) return false;

@@ -12,6 +12,6 @@ public class RespondWithPeriods {
             @RequestParam(value = "asOf", required = false) String asOf, Periods periods, AsOf asOfSheet,
             ObjectResponse<List<PeriodResponse>> response) throws InvalidSheetRequestException {
         response.send(asOfSheet.view(sheetId, asOf, () -> periods.onSheet(sheetId).stream()
-                .map(p -> PeriodResponse.from(p, periods.personTotals(p), periods.personCarried(p))).toList()));
+                .map(p -> PeriodResponse.from(p, periods.personTotals(p), periods.personCarried(p), periods.openings(p))).toList()));
     }
 }

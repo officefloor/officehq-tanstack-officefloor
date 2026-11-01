@@ -100,6 +100,24 @@ public class Periods {
         return carried;
     }
 
+    /** Each person's opening balance for the period, by person id; a person with none is absent. */
+    public Map<Long, BigDecimal> openings(Period period) {
+        Map<Long, BigDecimal> openings = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, amount FROM period_opening WHERE sheet_id = ? AND period_name = ?"
+                + " ORDER BY person_id", rs -> {
+                    openings.put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+                }, period.sheetId(), period.name());
+        return openings;
+    }
+
+    /** Add the amount to the person's opening balance for the period. */
+    public void addOpening(Period period, long personId, BigDecimal amount) {
+        jdbc.update("MERGE INTO period_opening (sheet_id, period_name, person_id, amount) KEY (sheet_id, period_name, person_id) "
+                + "VALUES (?, ?, ?, COALESCE((SELECT amount FROM period_opening WHERE sheet_id = ? AND period_name = ? "
+                + "AND person_id = ?), 0) + ?)", period.sheetId(), period.name(), personId,
+                period.sheetId(), period.name(), personId, amount);
+    }
+
     /** Reopen the period: its due-total, and each person's due-total and carried figure, is live again. */
     public void reopen(Period period) {
         jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",

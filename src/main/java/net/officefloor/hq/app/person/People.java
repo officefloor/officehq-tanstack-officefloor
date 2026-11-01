@@ -414,6 +414,16 @@ public class People {
                 sheetId, fromId, sheetId, intoId);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
                 intoId, sheetId, fromId);
+        jdbc.update("UPDATE period_opening t SET amount = amount + (SELECT f.amount FROM period_opening f "
+                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?) "
+                + "WHERE t.sheet_id = ? AND t.person_id = ? AND t.period_name IN "
+                + "(SELECT period_name FROM period_opening WHERE sheet_id = ? AND person_id = ?)",
+                fromId, sheetId, intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND person_id = ? AND period_name IN "
+                + "(SELECT period_name FROM period_opening WHERE sheet_id = ? AND person_id = ?)",
+                sheetId, fromId, sheetId, intoId);
+        jdbc.update("UPDATE period_opening SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                intoId, sheetId, fromId);
         for (String table : List.of("person_statement", "person_hold", "person_watch", "person_grade", "person_snapshot")) {
             jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", fromId);
         }

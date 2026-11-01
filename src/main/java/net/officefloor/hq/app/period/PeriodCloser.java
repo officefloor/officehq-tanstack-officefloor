@@ -20,7 +20,8 @@ import org.springframework.stereotype.Service;
  *  ones open then and dated within their person's hold, unless stated — n/a ones skipped. Each
  *  person's due-total for it is fixed too, and the period's is their sum; and so is each person's
  *  carried figure for it: the figures of their counted claims belonging, by due-by, to a period ending
- *  before this one starts that were still OPEN or PENDING at the end of its last day. Used by a close by hand
+ *  before this one starts that were still OPEN or PENDING at the end of its last day, and their opening
+ *  balance for it. Used by a close by hand
  *  and by the auto close of a today change. */
 @Service
 public class PeriodCloser {
@@ -79,6 +80,9 @@ public class PeriodCloser {
             BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
             if (figure != null) personCarried.merge(person.getId(), figure, BigDecimal::add);
         }
+        periods.openings(period).forEach((id, amount) -> {
+            if (personCarried.containsKey(id)) personCarried.merge(id, amount, BigDecimal::add);
+        });
         return personCarried;
     }
 }

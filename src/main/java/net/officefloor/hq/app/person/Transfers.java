@@ -81,6 +81,7 @@ public class Transfers {
         jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", fromId);
         jdbc.update("DELETE FROM plan WHERE person_id = ?", fromId);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", person.getSheetId(), fromId);
+        jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND person_id = ?", person.getSheetId(), fromId);
         for (String table : List.of("person_alias", "person_statement", "person_hold", "person_watch", "person_grade", "person_snapshot")) {
             jdbc.update("DELETE FROM " + table + " WHERE person_id = ?", fromId);
         }
