@@ -1,0 +1,433 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 4640428c..82fe24a5 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -7,8 +7,21 @@ export class HttpError extends Error {
+   }
+ }
+ 
++/** The date the screen shows the sheet as of (search param `asof`), or '' when it shows it as it is now. */
++export function currentAsOf(): string {
++  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
++  return raw.replace(/^"|"$/g, '');
++}
++
++/** Every request carries the screen's as-of date: the server answers each read as the sheet stood then, and
++ *  refuses every write while it is set. */
++function withAsOf(path: string): string {
++  const asOf = currentAsOf();
++  return asOf ? `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}` : path;
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const res = await fetch(path, init);
++  const res = await fetch(withAsOf(path), init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+   }
+diff --git a/src/main/frontend/features/asof/asof.slot.tsx b/src/main/frontend/features/asof/asof.slot.tsx
+new file mode 100644
+index 00000000..0690ffb8
+--- /dev/null
++++ b/src/main/frontend/features/asof/asof.slot.tsx
+@@ -0,0 +1,49 @@
++import { useEffect, useRef, useState } from 'react';
++import type { FormEvent } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The date this screen shows the sheet as of (search param `asof`, so it is this user's screen only). While it is
++// set every request carries it (api/http.ts): every read answers as the sheet stood at the end of that date, with
++// the date for its today, and every change is refused.
++function AsOf() {
++  const queryClient = useQueryClient();
++  const [asof, setAsof] = useSearchParam('asof', asString);
++  const [draft, setDraft] = useState('');
++  const shown = useRef(asof);
++
++  // Once the URL carries the new date, everything on screen is read again for it.
++  useEffect(() => {
++    if (shown.current === asof) return;
++    shown.current = asof;
++    void queryClient.resetQueries();
++  }, [asof, queryClient]);
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const date = draft.trim();
++    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) setAsof(date);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      As of: <strong data-testid="sheet-asof">{asof}</strong>{' '}
++      <input
++        data-testid="asof-date"
++        type="text"
++        placeholder="yyyy-mm-dd"
++        value={draft}
++        onChange={(e) => setDraft(e.target.value)}
++      />
++      <button type="submit" data-testid="asof-set">
++        Show as of
++      </button>
++      <button type="button" data-testid="asof-clear" onClick={() => setAsof(undefined)}>
++        Show now
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 1, Component: AsOf });
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 2d9b0943..dd517d9e 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -25,8 +25,8 @@ function StatementHeader() {
+ // A person's statements: how many, the last one's due-total and date, the button that takes the next and the one
+ // that cancels the last. Taking one binds their counting claims to their figures now, and cancelling one makes the
+ // claims it bound live again, so the claims are re-read before the count moves on. A date beside the button takes
+-// the statement as of that date (blank: now); it is cleared once the statement is taken, and changing it clears the
+-// statement's error.
++// the statement as of that date (blank: now); it is cleared once the statement is taken or refused, so a refused date
++// never carries into the next press, and changing it clears the statement's error.
+ function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const { data: all = [] } = useStatements(sheet);
+@@ -39,8 +39,8 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
+     onSuccess: async (updated) => {
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+       queryClient.setQueryData(statementsKey(sheet), updated);
+-      setAsof('');
+     },
++    onSettled: () => setAsof(''),
+   });
+   const cancel = useMutation({
+     mutationKey: personActionKey(sheet, person.id),
+diff --git a/src/main/java/net/officefloor/hq/app/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/ViewerGuard.java
+index 90e01525..d3cc2b3a 100644
+--- a/src/main/java/net/officefloor/hq/app/ViewerGuard.java
++++ b/src/main/java/net/officefloor/hq/app/ViewerGuard.java
+@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
+ import java.util.Set;
+ import java.util.regex.Matcher;
+ import java.util.regex.Pattern;
++import net.officefloor.hq.app.asof.AsOfView;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.sheet.SheetArchive;
+@@ -22,7 +23,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
+  * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
+  * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
+  * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done.
+- * An archived sheet refuses every write the same way, whoever makes it.
++ * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
++ * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
+  */
+ @Component
+ @Order(Ordered.HIGHEST_PRECEDENCE)
+@@ -46,6 +48,11 @@ public class ViewerGuard extends OncePerRequestFilter {
+             throws ServletException, IOException {
+         String method = request.getMethod();
+         String user = request.getParameter("user");
++        if (("POST".equals(method) || "PUT".equals(method)) && request.getParameter(AsOfView.PARAM) != null
++                && SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length())).matches()) {
++            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Nothing changes while the sheet is shown as of a date");
++            return;
++        }
+         if (("POST".equals(method) || "PUT".equals(method)) && user != null) {
+             Matcher m = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
+             if (m.matches() && !BULK.contains(m.group(2) == null ? "" : m.group(2))) {
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+new file mode 100644
+index 00000000..30c46d1e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -0,0 +1,80 @@
++package net.officefloor.hq.app.asof;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.net.URLDecoder;
++import java.nio.charset.StandardCharsets;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import org.springframework.core.Ordered;
++import org.springframework.core.annotation.Order;
++import org.springframework.stereotype.Component;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * A screen showing the sheet as of a date (?asOf=yyyy-MM-dd on its reads): each read of the sheet runs in a
++ * transaction that first puts the sheet as it stood at the end of that date (see {@link SheetSnapshots#show}) and is
++ * always rolled back, so every figure the endpoints make is made from that state, with the date for the sheet's
++ * today, and nothing is ever written. Every change sent while the as-of date is set is refused (see ViewerGuard).
++ */
++@Component
++@Order(Ordered.HIGHEST_PRECEDENCE + 1)
++public class AsOfView extends OncePerRequestFilter {
++
++    public static final String PARAM = "asOf";
++
++    private static final Pattern SHEET = Pattern.compile("^/api/sheets/([^/]+)(/.*)?$");
++
++    private final SheetSnapshots snapshots;
++    private final TransactionTemplate transaction;
++
++    public AsOfView(SheetSnapshots snapshots, PlatformTransactionManager transactions) {
++        this.snapshots = snapshots;
++        this.transaction = new TransactionTemplate(transactions);
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String raw = request.getParameter(PARAM);
++        Matcher m = SHEET.matcher(request.getRequestURI().substring(request.getContextPath().length()));
++        if (raw == null || raw.isBlank() || !"GET".equals(request.getMethod()) || !m.matches()) {
++            chain.doFilter(request, response);
++            return;
++        }
++        LocalDate date;
++        try {
++            date = LocalDate.parse(raw.trim());
++        } catch (DateTimeParseException e) {
++            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Not a valid as-of date: " + raw);
++            return;
++        }
++        String sheet = URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
++        try {
++            transaction.executeWithoutResult((status) -> {
++                status.setRollbackOnly();
++                snapshots.show(sheet, date);
++                try {
++                    chain.doFilter(request, response);
++                } catch (IOException | ServletException e) {
++                    throw new IllegalStateException(e);
++                }
++            });
++        } catch (IllegalStateException e) {
++            if (e.getCause() instanceof IOException io) {
++                throw io;
++            }
++            if (e.getCause() instanceof ServletException se) {
++                throw se;
++            }
++            throw e;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java b/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
+new file mode 100644
+index 00000000..f92ab7e4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
+@@ -0,0 +1,153 @@
++package net.officefloor.hq.app.asof;
++
++import java.sql.DatabaseMetaData;
++import java.sql.Date;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.Statement;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import net.officefloor.hq.app.sheet.SheetClock;
++import org.springframework.boot.context.event.ApplicationReadyEvent;
++import org.springframework.context.event.EventListener;
++import org.springframework.jdbc.core.ConnectionCallback;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.support.GeneratedKeyHolder;
++import org.springframework.stereotype.Repository;
++
++/**
++ * Every row a sheet holds, kept as its today moves on (sheet_snapshot), so the sheet can be shown as it stood at the
++ * end of a date. The tables kept are found on boot: every table with a sheet column (the sheet table by its id) and
++ * every table of rows kept per person (a person_id column); each gets a shadow table {@code <table>__ASOF} with the
++ * same columns (bar the generated ones) and a snapshot_id. A table added later is kept with no change here.
++ */
++@Repository
++public class SheetSnapshots {
++
++    private static final String SHADOW = "__ASOF";
++
++    /** Tables that are history themselves, never part of what a sheet shows. */
++    private static final Set<String> SKIP = Set.of("FLYWAY_SCHEMA_HISTORY", "SHEET_STATE", "SHEET_SNAPSHOT");
++
++    /** A table kept per sheet: its stored columns and how its rows of one sheet are found. */
++    private record Kept(String table, String columns, String scope) {
++    }
++
++    private final JdbcTemplate jdbc;
++    private final SheetClock clock;
++
++    /** In the order a parent comes before the rows that reference it. */
++    private volatile List<Kept> kept = List.of();
++
++    public SheetSnapshots(JdbcTemplate jdbc, SheetClock clock) {
++        this.jdbc = jdbc;
++        this.clock = clock;
++    }
++
++    /** Finds the tables kept per sheet and makes their shadow tables (DDL, so once on boot, outside any change). */
++    @EventListener(ApplicationReadyEvent.class)
++    public synchronized void prepare() {
++        List<Kept> found = jdbc.execute((ConnectionCallback<List<Kept>>) (con) -> {
++            DatabaseMetaData meta = con.getMetaData();
++            Map<String, List<String>> columns = new LinkedHashMap<>();
++            try (ResultSet rs = meta.getColumns(null, "PUBLIC", "%", "%")) {
++                while (rs.next()) {
++                    String table = rs.getString("TABLE_NAME");
++                    if (SKIP.contains(table) || table.endsWith(SHADOW)) {
++                        continue;
++                    }
++                    List<String> list = columns.computeIfAbsent(table, (k) -> new ArrayList<>());
++                    if (!"YES".equals(rs.getString("IS_GENERATEDCOLUMN"))) {
++                        list.add(rs.getString("COLUMN_NAME"));
++                    }
++                }
++            }
++            Map<String, Set<String>> parents = new HashMap<>();
++            for (String table : columns.keySet()) {
++                Set<String> mine = new HashSet<>();
++                try (ResultSet rs = meta.getImportedKeys(null, "PUBLIC", table)) {
++                    while (rs.next()) {
++                        mine.add(rs.getString("PKTABLE_NAME"));
++                    }
++                }
++                mine.remove(table);
++                parents.put(table, mine);
++            }
++            List<Kept> out = new ArrayList<>();
++            Set<String> placed = new HashSet<>();
++            List<String> left = new ArrayList<>(columns.keySet());
++            while (!left.isEmpty()) {
++                String next = left.stream().filter((t) -> placed.containsAll(
++                        parents.get(t).stream().filter(columns::containsKey).toList())).findFirst().orElse(left.get(0));
++                left.remove(next);
++                placed.add(next);
++                List<String> cols = columns.get(next);
++                String scope = "SHEET".equals(next) ? "ID = ?"
++                        : cols.contains("SHEET") ? "SHEET = ?"
++                        : cols.contains("PERSON_ID") ? "PERSON_ID IN (SELECT ID FROM PERSON WHERE SHEET = ?)" : null;
++                if (scope != null) {
++                    out.add(new Kept(next, String.join(", ", cols), scope));
++                }
++            }
++            try (Statement st = con.createStatement()) {
++                for (Kept k : out) {
++                    st.execute("CREATE TABLE IF NOT EXISTS " + k.table() + SHADOW + " AS SELECT CAST(NULL AS BIGINT)"
++                            + " AS SNAPSHOT_ID, " + k.columns() + " FROM " + k.table() + " WHERE FALSE");
++                    st.execute("CREATE INDEX IF NOT EXISTS " + k.table() + SHADOW + "_SNAPSHOT ON " + k.table()
++                            + SHADOW + " (SNAPSHOT_ID)");
++                }
++            }
++            return out;
++        });
++        kept = List.copyOf(found);
++    }
++
++    /** Keeps every row the sheet holds now, as its today moves from one date to another. */
++    public void keep(String sheet, LocalDate from, LocalDate to) {
++        GeneratedKeyHolder key = new GeneratedKeyHolder();
++        jdbc.update((con) -> {
++            PreparedStatement ps = con.prepareStatement(
++                    "INSERT INTO sheet_snapshot (sheet, from_today, to_today) VALUES (?, ?, ?)", new String[] { "id" });
++            ps.setString(1, sheet);
++            ps.setDate(2, Date.valueOf(from));
++            ps.setDate(3, Date.valueOf(to));
++            return ps;
++        }, key);
++        long id = key.getKey().longValue();
++        for (Kept k : kept) {
++            jdbc.update("INSERT INTO " + k.table() + SHADOW + " (SNAPSHOT_ID, " + k.columns() + ") SELECT ?, "
++                    + k.columns() + " FROM " + k.table() + " WHERE " + k.scope(), id, sheet);
++        }
++    }
++
++    /**
++     * Puts the sheet, inside the caller's transaction, as it stood at the end of the date: the rows kept when its today
++     * first moved from on or before the date to after it; what it holds now when its today has never moved past the
++     * date; nothing when its today was never on or before it. The date then stands in for its today. The caller must
++     * roll back.
++     */
++    public void show(String sheet, LocalDate date) {
++        List<Long> found = jdbc.queryForList("SELECT id FROM sheet_snapshot WHERE sheet = ? AND from_today <= ?"
++                + " AND to_today > ? ORDER BY id LIMIT 1", Long.class, sheet, Date.valueOf(date), Date.valueOf(date));
++        boolean now = found.isEmpty() && !clock.today(sheet).isAfter(date);
++        if (!now) {
++            for (int i = kept.size() - 1; i >= 0; i--) {
++                Kept k = kept.get(i);
++                jdbc.update("DELETE FROM " + k.table() + " WHERE " + k.scope(), sheet);
++            }
++            if (!found.isEmpty()) {
++                for (Kept k : kept) {
++                    jdbc.update("INSERT INTO " + k.table() + " (" + k.columns() + ") SELECT " + k.columns() + " FROM "
++                            + k.table() + SHADOW + " WHERE SNAPSHOT_ID = ?", found.get(0));
++                }
++            }
++        }
++        clock.setToday(sheet, date);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
+index e21bc433..d5d8b870 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.asof.SheetSnapshots;
+ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.period.PeriodCloser;
+ import net.officefloor.hq.app.rollup.Rollup;
+@@ -10,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class SaveToday {
+     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val LocalDate today,
+-            SheetClock clock, PeriodCloser closer, Rollup rollup, Claims claims, SheetStates states) {
++            SheetClock clock, PeriodCloser closer, Rollup rollup, Claims claims, SheetStates states, SheetSnapshots snapshots) {
+         Rollup.Snapshot before = rollup.take(sheet);
+         // A change of today releases every claim editor's lock on the sheet.
+         LocalDate was = clock.today(sheet);
+@@ -18,6 +19,8 @@ public class SaveToday {
+             claims.unlockAll(sheet);
+             // What the sheet holds at the end of its old today is kept, for a statement taken as of that date.
+             states.keep(sheet, was, today);
++            // Every row it holds is kept too, for the screen shown as of that date.
++            snapshots.keep(sheet, was, today);
+         }
+         clock.setToday(sheet, today);
+         // Periods past their grace days close before the figures the today change moved are audited.
+diff --git a/src/main/resources/db/migration/V40__sheet_snapshot.sql b/src/main/resources/db/migration/V40__sheet_snapshot.sql
+new file mode 100644
+index 00000000..9e1d5849
+--- /dev/null
++++ b/src/main/resources/db/migration/V40__sheet_snapshot.sql
+@@ -0,0 +1,11 @@
++-- The sheet as it stood when its today moved from from_today to to_today: every change made while the sheet's today
++-- was from_today counts in it, and none made after. Unlike sheet_state it keeps every row the sheet holds: each table
++-- kept per sheet has a shadow table <table>__ASOF (made on boot, from the table's own columns) whose snapshot_id
++-- names the row here, so the whole screen can be shown as it stood on a date.
++CREATE TABLE sheet_snapshot (
++    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet      VARCHAR(200) NOT NULL,
++    from_today DATE         NOT NULL,
++    to_today   DATE         NOT NULL
++);
++CREATE INDEX sheet_snapshot_sheet ON sheet_snapshot (sheet, id);
