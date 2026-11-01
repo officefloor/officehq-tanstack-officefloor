@@ -87,7 +87,7 @@ function countsIn(period: Period, person: Person, claim: Claim, today: string, n
 function countedAs(person: Person, claim: Claim, status: ClaimStatus | null, today: string): boolean {
   if (status !== 'OPEN' && status !== 'PENDING' && status !== 'SETTLED') return false;
   if (status === 'SETTLED' || !heldOn(person, claim.date, today)) return true;
-  return claim.stated && status !== 'PENDING';
+  return claim.stated;
 }
 
 /** A person's due-total for a period, in cents: the one fixed when the period was closed (0 for a

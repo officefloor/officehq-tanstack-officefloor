@@ -61,10 +61,10 @@ public class Figures {
     }
 
     /** The claim's figure without any late charge or floor: the fixed due, else the bound figure, else live.
-     *  A PENDING claim is not bound by a statement: it keeps its binding but shows its live figure. */
+     *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
     public BigDecimal figure(Claim claim, String grade) {
         if (claim.getDue() != null) return claim.getDue();
-        if (claim.isStated() && claim.getStatus() != ClaimStatus.PENDING) return claim.getStatedDue();
+        if (claim.isStated()) return claim.getStatedDue();
         return live(claim, grade);
     }
 

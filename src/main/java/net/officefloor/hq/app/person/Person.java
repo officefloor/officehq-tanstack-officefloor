@@ -200,7 +200,7 @@ public class Person {
         if (status == null) return false;
         if (!status.counts() || claim.isDeferred()) return false;
         if (!status.isOpen() || !(heldOn(claim.getDate()) || retiredOut())) return true;
-        return claim.isStated() && status != ClaimStatus.PENDING;
+        return claim.isStated();
     }
 
     /** Refuses a claim dated after the person's retirement date, or after the from and before the

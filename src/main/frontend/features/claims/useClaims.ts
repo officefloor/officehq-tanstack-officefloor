@@ -125,7 +125,7 @@ export function counted(claims: Claim[]): Claim[] {
  *  unless a statement binds them. */
 export function live(claims: Claim[], heldOn: (personId: number, date: string) => boolean): Claim[] {
   return counted(claims).filter(
-    (c) => !c.deferred && (!isOpen(c) || (c.stated && c.status !== 'PENDING') || !heldOn(c.personId, c.date)),
+    (c) => !c.deferred && (!isOpen(c) || c.stated || !heldOn(c.personId, c.date)),
   );
 }
 
@@ -151,9 +151,9 @@ export function claimDueCents(claim: Claim, floor: FloorOn, pct: string | undefi
 
 /** A claim's figure without any late charge or floor, in cents: the figure its person's last statement
  *  bound it to, or else live at `pct` (null, n/a, when there is no rate).
- *  A PENDING claim is not bound by a statement: it shows its live figure. */
+ *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
 function claimFigureCents(claim: Claim, pct: string | undefined): bigint | null {
-  if (claim.stated && claim.status !== 'PENDING') return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
+  if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
   return dueCents(claim.amount, pct, claim.halfUp);
 }
 

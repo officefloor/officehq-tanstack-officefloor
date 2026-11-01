@@ -16,9 +16,9 @@ import net.officefloor.plugin.variable.Val;
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. The user who opened a claim, or last edited it, may not settle it.
  *  When a clerk settles a claim whose due is over the sheet's clerk limit (a due of n/a is within any
- *  limit) it goes PENDING instead, its due still live; a steward settles anything. Only a steward
- *  approves a PENDING claim (it settles, its due fixed at its live figure then, plus its late charge, at least the floor),
- *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, bound again by the last
+ *  limit) it goes PENDING instead, its due not yet fixed (still bound by a statement that binds it); a steward settles anything. Only a steward
+ *  approves a PENDING claim (it settles, its due fixed at its figure then, bound or live, plus its late charge, at least the floor),
+ *  and never the user who opened it or last edited it; a rejection sends it back to OPEN, still bound by the last
  *  statement if that bound it.
  *  A claim whose due is above the proof threshold in force on its date (its person's grade's then when
  *  one is set, else the sheet's) cannot be settled or
@@ -128,7 +128,7 @@ public class ApplyClaimStatus {
         boolean pending = false;
         if (change.action() == ClaimAction.SETTLE || change.action() == ClaimAction.APPROVE) {
             String grade = people.find(claim.getSheetId(), claim.getPersonId()).gradeOn(claim.getDate());
-            // Figures.due: from the bound figure for an OPEN claim, the live one for a PENDING claim.
+            // Figures.due: from the bound figure when a statement binds the claim (OPEN or PENDING), else live.
             due = figures.due(claim, grade);
             // Before the clerk limit: a claim refused for want of a proof never goes PENDING.
             BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
