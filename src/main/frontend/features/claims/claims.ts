@@ -244,6 +244,25 @@ export function uncappedPersonDueCents(
   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
 }
 
+/** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
+ *  frozen figures, corrections included) and of their OPEN and PENDING ones that count (see {@link counted}). Together
+ *  they make the due-total before the cap; a claim with no due adds nothing. */
+export function splitDueCents(
+  claims: Claim[],
+  rates: Rate[],
+  person: Person,
+  floor: DatedCents,
+  late: Late,
+): { settled: bigint; open: bigint } {
+  const split = { settled: 0n, open: 0n };
+  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
+    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    if (c.status === 'SETTLED') split.settled += due;
+    else if (isOpen(c)) split.open += due;
+  }
+  return split;
+}
+
 /** A person's recent settled figure: the sum of their SETTLED claims' frozen figures dated within the 90 days up to
  *  and including the sheet's today (today and the 89 days before it); a claim settled with no figure adds nothing. */
 export function recentSettledCents(claims: Claim[], person: Person, today: string | undefined): bigint {
@@ -323,8 +342,14 @@ export function trimmedSum(figures: bigint[]): bigint {
 
 /** The sheet's totals: its claimed-total (everyone's counted claims added up), its due-total (everyone's due-total
  *  added up, skipping the people whose due-total is n/a, trimmed — see trimmedSum), and how many of the counted claims
- *  are overdue, with their total (each person's overdue-total, trimmed). */
-export function useSheetTotals(sheet: string): { claimed: string; due: bigint; overdue: { count: number; cents: bigint } } {
+ *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total and open-total. */
+export function useSheetTotals(sheet: string): {
+  claimed: string;
+  due: bigint;
+  overdue: { count: number; cents: bigint };
+  settled: bigint;
+  open: bigint;
+} {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
   const { data: rates = [] } = useRates(sheet);
@@ -339,5 +364,13 @@ export function useSheetTotals(sheet: string): { claimed: string; due: bigint; o
   );
   const overdue = overdueCents(all, people, rates, late, floor);
   const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
-  return { claimed: claimed(counted(all, people)), due, overdue: { count: overdue.count, cents: trimmedSum(perPerson) } };
+  // The settled-total and open-total: everyone's added up, not trimmed.
+  const split = people.map((p) => splitDueCents(all, rates, p, floor, late));
+  return {
+    claimed: claimed(counted(all, people)),
+    due,
+    overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
+    settled: split.reduce((s, x) => s + x.settled, 0n),
+    open: split.reduce((s, x) => s + x.open, 0n),
+  };
 }
