@@ -24,6 +24,12 @@ export const periodsKey = (sheet: string) => ['periods', sheet] as const;
 
 export const periodsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/periods`;
 
+/** Where monthly periods are generated between two dates. */
+export const generatePeriodsPath = (sheet: string) => `${periodsPath(sheet)}/generate`;
+
+/** How many periods a generate made, with every period on the sheet after it. */
+export type Generated = { made: number; periods: Period[] };
+
 /** Where a period is closed. */
 export const closePeriodPath = (sheet: string, name: string) =>
   `${periodsPath(sheet)}/${encodeURIComponent(name)}/close`;

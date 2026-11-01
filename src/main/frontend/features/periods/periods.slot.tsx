@@ -9,8 +9,17 @@ import { usePeople } from '../people/people';
 import { twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
 import { useClaims, useLate } from '../claims/claims';
-import { closePeriodPath, periodDueCents, shownDueTotal, reopenPeriodPath, periodsKey, periodsPath, usePeriods } from './periods';
-import type { Period } from './periods';
+import {
+  closePeriodPath,
+  generatePeriodsPath,
+  periodDueCents,
+  shownDueTotal,
+  reopenPeriodPath,
+  periodsKey,
+  periodsPath,
+  usePeriods,
+} from './periods';
+import type { Generated, Period } from './periods';
 
 // One period with its due-total (fixed once closed) and closed flag, and the buttons that close and reopen it. The
 // server refuses closing a period already closed, and reopening one not closed; and either by a role the permission matrix does not allow; the row
@@ -75,6 +84,71 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
 
 type Draft = { name: string; from: string; to: string };
 const EMPTY: Draft = { name: '', from: '', to: '' };
+
+type Range = { from: string; to: string };
+const NO_RANGE: Range = { from: '', to: '' };
+
+// Generates one period per calendar month from the from-date's month to the to-date's, named yyyy-mm; the server leaves
+// out a month whose name is already a period or that overlaps one, and refuses a to-date before the from-date. Shows how
+// many were made.
+function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [range, setRange] = useState<Range>(NO_RANGE);
+  const generate = useMutation({
+    mutationFn: (body: Range) => postJson<Generated>(byUser(generatePeriodsPath(sheet), user), body),
+    onSuccess: (result) => {
+      queryClient.setQueryData(periodsKey(sheet), result.periods);
+      setRange(NO_RANGE);
+    },
+  });
+  const send = useSubmitOnce(generate);
+
+  const change = (next: Partial<Range>) => {
+    setRange((r) => ({ ...r, ...next }));
+    generate.reset();
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    send(range);
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <label>
+        Generate monthly from{' '}
+        <input
+          data-testid="period-generate-from"
+          placeholder="yyyy-mm-dd (blank: today)"
+          value={range.from}
+          onChange={(e) => change({ from: e.target.value })}
+        />
+      </label>{' '}
+      <label>
+        to{' '}
+        <input
+          data-testid="period-generate-to"
+          placeholder="yyyy-mm-dd"
+          value={range.to}
+          onChange={(e) => change({ to: e.target.value })}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+        Generate periods
+      </button>
+      {generate.isSuccess && (
+        <>
+          {' '}Made <strong data-testid="period-generated">{generate.data.made}</strong>
+        </>
+      )}
+      {generate.isError && (
+        <span data-testid="period-generate-error" role="alert">
+          {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from.
+        </span>
+      )}
+    </form>
+  );
+}
 
 // The sheet's periods, each with its due-total: the due now of the claims that counted at the end of its last day (see countedOn) whose date
 // falls in it (a claim with no rate adds nothing), fixed when the period is closed. The form adds one; the server refuses a name already on
@@ -145,6 +219,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
           </span>
         )}
       </form>
+      <GeneratePeriods sheet={sheet} user={user} />
       <table>
         <thead>
           <tr>
