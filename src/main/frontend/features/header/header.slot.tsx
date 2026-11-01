@@ -4,6 +4,7 @@ import { showDue, totalDue } from '../rates/useRates';
 import { crewDues, useCrews } from '../crews/useCrews';
 import { useSheetTotals } from '../claims/useSheetTotals';
 import { usePeople } from '../people/usePeople';
+import { useWatches } from '../watch/useWatches';
 
 /**
  * The sheet's header, shown at all times: how many people are on the sheet (retired ones
@@ -13,7 +14,8 @@ import { usePeople } from '../people/usePeople';
  * are compared: case and the spaces around it ignored); blank when there is no such person. And the
  * user's crew total: the due-totals of the crews led by a person with the user's name, added up
  * (n/a ones skipped); blank when no such person leads a crew. And how many REVIEW claims are
- * assigned to the user for review.
+ * assigned to the user for review. And the user's watched total: the due-totals of the people the
+ * user watches, added up (n/a ones skipped); 0.00 when watching no one.
  */
 function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
@@ -25,6 +27,8 @@ function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
   const me = perPerson.find(({ person }) => isMine(person));
   const myIds = new Set(perPerson.filter(({ person }) => isMine(person)).map(({ person }) => person.id));
   const ledCrews = crews.filter((c) => myIds.has(c.leadId));
+  const { data: watched = [] } = useWatches(sheet, user);
+  const watchedDues = perPerson.filter(({ person }) => watched.includes(person.id)).map(({ due }) => due);
   return (
     <header data-testid="sheet-header">
       <span>
@@ -59,6 +63,10 @@ function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
       <span>
         {' '}
         My reviews: <strong data-testid="my-reviews-count">{all.filter((c) => c.status === 'REVIEW' && c.reviewAssigned === user).length}</strong>
+      </span>
+      <span>
+        {' '}
+        Watched due: <strong data-testid="watched-due-total">{totalDue(watchedDues)}</strong>
       </span>
     </header>
   );
