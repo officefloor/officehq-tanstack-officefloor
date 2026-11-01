@@ -12,6 +12,7 @@ import { useFloor, useLate } from '../settings/useSettings';
 
 /**
  * The rate in force on the sheet's today for each grade, every rate set (by grade, then from-date),
+ * a calendar of the rate in force on the first of each month of today's calendar year for each grade,
  * and one form to set a grade's rate, from a date or (left blank) from the beginning of time, through a date or (left blank) with no end.
  */
 function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
@@ -23,6 +24,8 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [invalid, setInvalid] = useState(false);
+  // The months (yyyy-mm) of the sheet's today's calendar year.
+  const calendar = today === '' ? [] : Array.from({ length: 12 }, (_, i) => `${today.slice(0, 4)}-${String(i + 1).padStart(2, '0')}`);
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
@@ -137,6 +140,28 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{rateOn(rates, g, today) ?? 'n/a'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="rate-calendar">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            {calendar.map((m) => (
+              <th key={m}>{m}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              {calendar.map((m) => (
+                <td key={m} data-testid={`rate-month-${g}-${m}`}>
+                  {rateOn(rates, g, `${m}-01`) ?? 'n/a'}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
