@@ -22,8 +22,10 @@ public class Person {
     /** A grade this save records, from its date (null: the save records none). */
     private DatedGrade newGrade;
     private int version;
-    /** The person's own terms in days (null: none). */
+    /** The person's own terms in days from the beginning of time (null: none). */
     private Integer terms;
+    /** The person's own terms by the date each is in force from (a null value: none from then). */
+    private TreeMap<LocalDate, Integer> datedTerms = new TreeMap<>();
     /** Whether this save changes the person's own terms. */
     private boolean termsChanged;
     /** The person's contact (null: none). */
@@ -87,14 +89,31 @@ public class Person {
         LocalDate key = grades.isEmpty() ? LocalDate.MIN : from;
         grades.put(key, grade);
     }
-    /** The person's own terms in days; null when they have none. */
+    /** The person's own terms in days from the beginning of time; null when they have none. */
     public Integer getTerms() { return terms; }
     public void setTerms(Integer terms) { this.terms = terms; }
+    /** The person's own terms by from-date (a null value: none from then). */
+    public TreeMap<LocalDate, Integer> getDatedTerms() { return datedTerms; }
+    public void setDatedTerms(TreeMap<LocalDate, Integer> datedTerms) { this.datedTerms = datedTerms; }
+    /** The person's own terms in force on `date`: those from the latest from-date on or before it,
+     *  else those from the beginning of time (null: none). */
+    public Integer termsOn(LocalDate date) {
+        Map.Entry<LocalDate, Integer> e = datedTerms.floorEntry(date);
+        return e != null ? e.getValue() : terms;
+    }
+    /** The person's own terms in force on the sheet's today (null: none). */
+    public Integer getTermsInForce() { return today == null ? terms : termsOn(today); }
     public boolean isTermsChanged() { return termsChanged; }
-    /** Give the person these terms (null: none) with the next save, noting whether they change. */
+    /** Give the person these terms (null: none) from the beginning of time with the next save,
+     *  noting whether they change. */
     public void changeTerms(Integer terms) {
         this.termsChanged = !java.util.Objects.equals(this.terms, terms);
         this.terms = terms;
+    }
+    /** Record these terms (null: none) from `from` with the next save, replacing any from that date. */
+    public void recordTerms(Integer terms, LocalDate from) {
+        this.termsChanged = !datedTerms.containsKey(from) || !java.util.Objects.equals(datedTerms.get(from), terms);
+        datedTerms.put(from, terms);
     }
     /** The person's contact; null when they have none. */
     public String getContact() { return contact; }

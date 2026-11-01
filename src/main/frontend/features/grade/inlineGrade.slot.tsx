@@ -23,7 +23,7 @@ function PersonInlineGrade({ user, sheet, person }: { user: string; sheet: strin
         name: person.name,
         grade: g,
         gradeFrom: '',
-        terms: person.terms === null ? '' : String(person.terms),
+        terms: person.ownTerms === null ? '' : String(person.ownTerms),
         contact: person.contact ?? '',
         tags: null,
         version: person.version,

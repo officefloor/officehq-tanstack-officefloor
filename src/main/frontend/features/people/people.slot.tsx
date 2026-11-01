@@ -29,6 +29,8 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const [gradeFrom, setGradeFrom] = useState('');
   // The person's own terms in days; blank for none.
   const [terms, setTerms] = useState('');
+  // The date the form's terms are in force from; blank for the beginning of time.
+  const [termsFrom, setTermsFrom] = useState('');
   // The person's contact; blank for none.
   const [contact, setContact] = useState('');
   // The person's tags, comma separated; blank for none.
@@ -39,10 +41,10 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (p: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string; version: number }) =>
+    mutationFn: (p: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string; version: number }) =>
       p.id === null
-        ? postJson<Person>(base, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, contact: p.contact, tags: p.tags, user })
-        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, contact: p.contact, tags: p.tags, version: p.version, user }),
+        ? postJson<Person>(base, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, termsFrom: p.termsFrom, contact: p.contact, tags: p.tags, user })
+        : putJson<Person>(`${base}/${p.id}`, { name: p.name, grade: p.grade, gradeFrom: p.gradeFrom, terms: p.terms, termsFrom: p.termsFrom, contact: p.contact, tags: p.tags, version: p.version, user }),
     onError: async (e) => {
       // Someone else saved this person since the editor loaded it: the form shows what is stored
       // now (and that version), and the list is re-read so a fresh editor loads it too.
@@ -50,7 +52,8 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
         const current = JSON.parse(e.body) as Person;
         setName(current.name);
         setGrade(gradeOn(current, today));
-        setTerms(current.terms === null ? '' : String(current.terms));
+        setTerms(current.ownTerms === null ? '' : String(current.ownTerms));
+        setTermsFrom('');
         setContact(current.contact ?? '');
         setTags(current.tags.join(', '));
         setVersion(current.version);
@@ -64,6 +67,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setTermsFrom('');
       setContact('');
       setTags('');
     },
@@ -73,6 +77,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setTermsFrom('');
       setContact('');
       setTags('');
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
@@ -92,7 +97,8 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
     setName(p.name);
     setGrade(gradeOn(p, today));
     setGradeFrom('');
-    setTerms(p.terms === null ? '' : String(p.terms));
+    setTerms(p.ownTerms === null ? '' : String(p.ownTerms));
+    setTermsFrom('');
     setContact(p.contact ?? '');
     setTags(p.tags.join(', '));
   };
@@ -103,6 +109,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
     setGrade('A');
     setGradeFrom('');
     setTerms('');
+    setTermsFrom('');
     setContact('');
     setTags('');
   };
@@ -121,7 +128,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setBlank(false);
-          submitOnce(() => save.mutateAsync({ id: editing, name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim(), tags, version }));
+          submitOnce(() => save.mutateAsync({ id: editing, name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), termsFrom: termsFrom.trim(), contact: contact.trim(), tags, version }));
         }}
       >
         <label>
@@ -173,6 +180,18 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
             value={terms}
             onChange={(e) => {
               setTerms(e.target.value);
+              clearError();
+            }}
+          />
+        </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="person-form-terms-from"
+            placeholder="always"
+            value={termsFrom}
+            onChange={(e) => {
+              setTermsFrom(e.target.value);
               clearError();
             }}
           />

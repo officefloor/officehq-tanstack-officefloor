@@ -18,10 +18,10 @@ public final class DueBy {
         return holidays.businessDaysAfter(person.getSheetId(), date, terms(person, date, settings));
     }
 
-    /** The terms a claim of `person` dated `date` is fixed with: the person's own, else those of their
-     *  grade then, else the sheet's then. */
+    /** The terms a claim of `person` dated `date` is fixed with: the person's own in force then, else
+     *  those of their grade then, else the sheet's then. */
     public static int terms(Person person, LocalDate date, Settings settings) {
-        Integer own = person.getTerms();
+        Integer own = person.termsOn(date);
         return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date);
     }
 }

@@ -15,7 +15,9 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  reaches their retirement date, unless a statement binds them. `patrons` are the ids of the people they have named as patrons, in
  *  the order they were named. `grade` is the grade in force on the sheet's today when they were read;
  *  `grades` every grade recorded, by from-date (null: from the beginning of time, first). `terms` are
- *  the person's own terms in days (null: none), ahead of their grade's and the sheet's.
+ *  the person's own terms in days in force on the sheet's today (null: none), ahead of their grade's
+ *  and the sheet's; `ownTerms` their own terms from the beginning of time (null: none), and
+ *  `datedTerms` every dated terms recorded, by from-date (`terms` null: none from then).
  *  `contact` is the person's contact, trimmed and lower-cased (null: none). `aliases` are the
  *  person's aliases, sorted as names are compared; the quick-add bar and the paste box find a
  *  person by an alias as well as by the name. `clashing` is whether their name or an alias is used
@@ -39,6 +41,8 @@ export type Person = {
   holds: { from: string; to: string | null }[];
   patrons: number[];
   terms: number | null;
+  ownTerms: number | null;
+  datedTerms: { terms: number | null; from: string }[];
   contact: string | null;
   aliases: string[];
   clashing: boolean;

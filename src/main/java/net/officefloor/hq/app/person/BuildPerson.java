@@ -20,7 +20,8 @@ public class BuildPerson {
             throw new InvalidSheetRequestException("The contact is already in use on this sheet");
         }
         Person built = new Person(null, sheetId, request.name(), request.grade());
-        built.setTerms(request.termsDays());
+        if (request.termsFromDate() != null) built.getDatedTerms().put(request.termsFromDate(), request.termsDays());
+        else built.setTerms(request.termsDays());
         built.setContact(request.contactKey());
         built.setTags(request.tagsKey());
         return built;

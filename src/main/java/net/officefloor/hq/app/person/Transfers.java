@@ -33,7 +33,7 @@ public class Transfers {
     }
 
     /** Transfer the person to sheet `to`, answering their id there. They arrive with every grade they
-     *  were given (and its from-date), their terms, contact and aliases, and their claims (listed in
+     *  were given (and its from-date), their terms (dated ones too), contact and aliases, and their claims (listed in
      *  the order they were) with their status, dates, notes, tags, frozen figures, logs and comments;
      *  each claim that had a number takes the other sheet's next one, in the order the claims were
      *  opened (by the sheet's today when each was opened, then by the order they were added). Each claim
@@ -103,8 +103,8 @@ public class Transfers {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet, origin_name, position) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, origin_sheet, origin_name, dated_terms, position) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
                             + People.END_POSITION + ")", new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, person.getName());
@@ -114,7 +114,8 @@ public class Transfers {
             ps.setString(6, person.getTags());
             ps.setString(7, person.getSheetId());
             ps.setString(8, person.getName());
-            ps.setString(9, to);
+            ps.setString(9, People.datedTerms(person.getDatedTerms()));
+            ps.setString(10, to);
             return ps;
         }, keys);
         long toId = keys.getKey().longValue();
