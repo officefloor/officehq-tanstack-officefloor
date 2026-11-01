@@ -12,7 +12,9 @@ import net.officefloor.hq.app.voidreason.VoidReasons;
 import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
- *  Opening gives the claim its number (see {@link ClaimNumbers}); a voided claim keeps it (and it is never reused).
+ *  Settling (not left PENDING) or approving gives the claim its number when it has none yet (see {@link ClaimNumbers}:
+ *  the next in the sequence its due-by places it in then); an OPEN, PENDING or REVIEW claim has none (a claim
+ *  numbered before numbering moved to settlement keeps its number). A voided claim keeps its number (and it is never reused).
  *  Settling fixes the claim's due at the figure it has then: the one its person's last statement
  *  bound it to, else its person's grade's rate in force on the claim's date, plus its late charge then, at least the sheet's floor; with no rate it stays live. Settled as of a date, the figure is its due as it stood at the end of that date instead (see {@link ValidateClaimStatus}). The user who opened a claim, or last edited it, may not settle it.
  *  When a clerk settles a claim whose due is over the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's) (a due of n/a is within any
@@ -26,8 +28,7 @@ import net.officefloor.plugin.variable.Val;
  *  A claim whose due is above the sheet's note threshold in force on its date cannot be opened while
  *  its note is empty.
  *  A claim whose due is above the sheet's review threshold in force on its date goes to REVIEW when
- *  opened instead of OPEN: it records who opened it but has no number yet. Only a steward reviews it,
- *  which opens it (it gets its number then).
+ *  opened instead of OPEN: it records who opened it. Only a steward reviews it, which opens it.
  *  A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
  *  Only a steward may void a SETTLED claim, and only while the sheet's today is within 7 days of its
  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
@@ -171,14 +172,11 @@ public class ApplyClaimStatus {
         // Settled one at a time: in no batch (a bulk settle sets its batch after this).
         if (change.action() == ClaimAction.SETTLE) claim.setBatch(null);
         if (change.action() == ClaimAction.VOID) claim.setVoidReason(voidReason);
-        if (change.action() == ClaimAction.OPEN) {
-            // A claim gone to REVIEW gets its number only once a steward reviews it.
-            if (!review) claim.setNumber(numbers.next(claim));
-            claim.setOpenedBy(change.user());
-        }
-        if (change.action() == ClaimAction.REVIEW) claim.setNumber(numbers.next(claim));
+        if (change.action() == ClaimAction.OPEN) claim.setOpenedBy(change.user());
         if ((change.action() == ClaimAction.SETTLE && !pending) || change.action() == ClaimAction.APPROVE) {
             claim.setDue(due);
+            // Numbered at settlement; a claim numbered already (before numbering moved here) keeps its number.
+            if (claim.getNumber() == null) claim.setNumber(numbers.next(claim));
         }
     }
 }

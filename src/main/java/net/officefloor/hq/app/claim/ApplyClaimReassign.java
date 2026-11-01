@@ -11,8 +11,9 @@ import net.officefloor.plugin.variable.Val;
 
 /** Moves a DRAFT, OPEN or PENDING claim to another person on the sheet; only the roles the permission matrix allows may (a steward by
  *  default). The
- *  claim keeps its date, takes the next number in its sequence (see {@link ClaimNumbers}; its old
- *  number is never used again, and a draft has none to renumber), but loses any figure a statement bound it to: it is live again
+ *  claim keeps its date, has no number to keep (it gets one when settled; one numbered
+ *  before numbering moved to settlement takes the next number in its sequence, see {@link ClaimNumbers}, its old
+ *  number never used again), but loses any figure a statement bound it to: it is live again
  *  until its new person's next statement. A SETTLED or VOID claim cannot move, nor a claim dated in
  *  a closed period, nor one dated after its new person's retirement date. */
 public class ApplyClaimReassign {

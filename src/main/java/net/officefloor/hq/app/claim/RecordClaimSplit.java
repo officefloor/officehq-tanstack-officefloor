@@ -15,9 +15,9 @@ public class RecordClaimSplit {
         audit.record("CLAIM_SPLIT sheet=" + claim.getSheetId() + " by=" + split.user()
                 + " person=" + person.getName() + " amount=" + claim.getAmount().toPlainString()
                 + " date=" + claim.getDate() + (claim.getNumber() != null ? " number=" + claim.getNumber() : "")
-                + " into=" + into.getNumber());
+                + " into=" + (into.getNumber() != null ? into.getNumber() : ""));
         audit.record(ClaimAction.OPEN.event() + " sheet=" + into.getSheetId() + " by=" + split.user()
                 + " person=" + person.getName() + " amount=" + into.getAmount().toPlainString()
-                + " date=" + into.getDate() + " number=" + into.getNumber());
+                + " date=" + into.getDate() + (into.getNumber() != null ? " number=" + into.getNumber() : ""));
     }
 }

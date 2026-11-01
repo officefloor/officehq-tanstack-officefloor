@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Splits an amount off an OPEN claim (not deferred, nor due by in a closed period), for a user whose
  *  role may open a claim, and less than its amount: the claim keeps the rest, unbound from any
- *  statement; the new OPEN claim has the amount split off, the same date, note and tags, the next number,
+ *  statement; the new OPEN claim has the amount split off, the same date, note and tags, no number (it gets one when settled),
  *  is opened by the user, its due-by fixed from its date with the terms in force on the day it is split off (the sheet's today) (a late entry when a
  *  soft-closed period contains it), and names the original's number as the one it was split from.
  *  Whether a closed period refuses the split is judged by the original claim alone. */
@@ -40,7 +40,6 @@ public class ApplyClaimSplit {
         into.setLateEntry(closedPeriods.late(claim.getSheetId(), into.getDueBy()));
         into.setSplitFrom(claim.getNumber());
         into.setTags(claim.getTags());
-        into.setNumber(numbers.next(into));
         split.into(into);
     }
 }

@@ -7,7 +7,7 @@ import net.officefloor.hq.app.settings.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
-/** The number a claim gets when it is opened. While the sheet's period numbering from is set and
+/** The number a claim gets when it is settled or approved. While the sheet's period numbering from is set and
  *  the sheet's today is on or after it, the claim is numbered within the period its due-by falls in
  *  (<period name>-<n>), or X-<n> when it falls in none; otherwise it takes the next number within
  *  the fiscal year its due-by falls in (FY<yyyy>-<n>, counting from 1 each fiscal year, the sequence
