@@ -184,7 +184,7 @@ export const SCORE = /^(-?\d{1,6})?$/;
 export const FROM_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The actions of the permission matrix: each may be given the roles allowed to take it. */
-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
 
 /** A permission the server accepts: a comma separated list of roles, or blank for the standing rule. */
 export const PERM_ROLES = /^(\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*)?$/i;

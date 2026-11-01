@@ -38,7 +38,7 @@ public class Settings {
             REVIEW_THRESHOLD = "review-threshold";
 
     /** The actions of the permission matrix, in order. */
-    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     /** The key a permission is set under: perm-<action>. */
     public static String permKey(String action) {
@@ -600,7 +600,8 @@ public class Settings {
     }
 
     /** Whether the user's role may take `action` on the sheet: the roles set for it, else the standing
-     *  rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. A
+     *  rule — open, settle, void, close and today (changing the sheet's today) by clerk and steward;
+     *  reassign and reopen by steward. A
      *  viewer may take none, and no one may on an archived sheet. */
     public boolean allows(String sheetId, String action, String user) {
         if (sheets.archived(sheetId)) return false;

@@ -31,8 +31,8 @@ type Froms = Record<string, string>;
  * (half-up or half-even: a claim dated when one is in force rounds every live figure by it; blank is none: the policy date decides),
  * the proof threshold of each grade (when set on a claim's date, it is the one in force for a claim of a person of
  * that grade then, in place of the sheet's; blank uses the sheet's),
- * its permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may
- * take it, comma separated; blank keeps the standing rule: open, settle, void and close by clerk and
+ * its permission matrix (for each of open, settle, void, reassign, close, reopen and today, the roles that may
+ * take it, comma separated; blank keeps the standing rule: open, settle, void, close and today by clerk and
  * steward, reassign and reopen by steward; not dated), its grace days (when its today is changed, every open
  * period whose to-date plus them is before the new today is closed; blank is off; not dated), its escalation gap (reminding a claim whose previous reminder was at least that many days before its today escalates the claim, once ever; blank is off; not dated),
  * the grace days of each grade (a claim of a person of that grade on its date is overdue, and its late
