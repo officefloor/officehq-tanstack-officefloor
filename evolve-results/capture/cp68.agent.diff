@@ -1,0 +1,68 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 15410a17..313e2c18 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -237,6 +237,16 @@ export function uncappedPersonDueCents(
+   return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
+ }
+ 
++/** A person's recent settled figure: the sum of their SETTLED claims' frozen figures dated within the 90 days up to
++ *  and including the sheet's today (today and the 89 days before it); a claim settled with no figure adds nothing. */
++export function recentSettledCents(claims: Claim[], person: Person, today: string | undefined): bigint {
++  if (today === undefined) return 0n;
++  const since = plusDays(today, -89);
++  return claims
++    .filter((c) => c.person === person.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
++    .reduce((sum, c) => sum + (c.settledDue === null ? 0n : hundredths(c.settledDue)), 0n);
++}
++
+ /** Whether a person is active: they have an OPEN or PENDING claim that counts (see {@link counted}) dated within the
+  *  30 days up to and including the sheet's today (today and the 29 days before it). */
+ export function isActive(claims: Claim[], person: Person, today: string | undefined): boolean {
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index e81552ea..76e31b5d 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -6,9 +6,8 @@ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { peoplePath, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+-import { personDueCents, useClaims, useLate } from '../claims/claims';
+-import { twoDecimals, useRates } from '../rates/rates';
+-import { useCapCents, useFloorCents } from '../settings/settings';
++import { recentSettledCents, useClaims } from '../claims/claims';
++import { twoDecimals } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+ import { patronsKey, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
+@@ -23,19 +22,15 @@ function PatronsHeader() {
+   );
+ }
+ 
+-// A person's patrons (names sorted, comma separated) and their backing: the patrons' due-totals added up,
+-// skipping those that are n/a. A patron is picked from the others on the sheet and named one at a time; the
++// A person's patrons (names sorted, comma separated) and their backing: the patrons' settled figures added up
++// over their SETTLED claims dated within the 90 days up to and including the sheet's today (0.00 with none). A patron is picked from the others on the sheet and named one at a time; the
+ // server refuses a patron already named.
+ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const { data: everyone = [] } = usePeople(sheet);
+   const { data: patrons = [] } = usePatrons(sheet);
+   const { data: claims = [] } = useClaims(sheet);
+-  const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+-  const floor = useFloorCents(sheet);
+-  const cap = useCapCents(sheet);
+-  const late = useLate(sheet);
+   const [picked, setPicked] = useState('');
+ 
+   const mine = patrons
+@@ -43,7 +38,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
+     .map((p) => everyone.find((e) => e.id === p.patron))
+     .filter((p): p is Person => p !== undefined);
+   const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
+-  const backing = mine.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
++  const backing = mine.reduce((sum, p) => sum + recentSettledCents(claims, p, today), 0n);
+   const others = everyone.filter((p) => p.id !== person.id);
+ 
+   const add = useMutation({
