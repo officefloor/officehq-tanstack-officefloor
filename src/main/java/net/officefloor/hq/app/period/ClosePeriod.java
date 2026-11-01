@@ -2,6 +2,7 @@ package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Closes the period, fixing its due-total now: the due of the counted (OPEN and SETTLED, but not an unbound OPEN one dated
+ * Closes the period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due of the counted (OPEN and SETTLED, but not an unbound OPEN one dated
  * within its person's hold) claims dated in it (a
  * claim with no rate adds nothing). Refuses a period not on the sheet or already closed.
  */
@@ -42,6 +43,8 @@ public class ClosePeriod {
         BigDecimal floor = settings.floor(sheet);
         Late late = settings.late(sheet, clock.today(sheet));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+        byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
         for (Claim claim : claims.list(sheet)) {
             LocalDate date = LocalDate.parse(claim.date());
             Person person = byId.get(claim.person());
@@ -49,9 +52,12 @@ public class ClosePeriod {
                 continue;
             }
             BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
-            total = due == null ? total : total.add(due);
+            if (due != null) {
+                total = total.add(due);
+                perPerson.merge(person.id(), due, BigDecimal::add);
+            }
         }
-        if (!periods.close(sheet, period, total)) {
+        if (!periods.close(sheet, period, total, perPerson)) {
             throw new InvalidPeriodException("The period " + period + " is already closed");
         }
         audit.record("PERIOD_CLOSED sheet=" + sheet + " by=" + user + " period=" + period + " total="

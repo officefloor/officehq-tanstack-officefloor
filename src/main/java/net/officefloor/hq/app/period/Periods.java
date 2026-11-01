@@ -3,7 +3,9 @@ package net.officefloor.hq.app.period;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -15,7 +17,8 @@ public class Periods {
     private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getString("name"),
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"),
-            rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString());
+            rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
+            Map.of());
 
     private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total FROM period";
 
@@ -27,7 +30,21 @@ public class Periods {
 
     /** Every period on the sheet, by from-date. */
     public List<Period> list(String sheet) {
-        return jdbc.query(COLUMNS + " WHERE sheet = ? ORDER BY from_date", ROW, sheet);
+        return jdbc.query(COLUMNS + " WHERE sheet = ? ORDER BY from_date", ROW, sheet).stream()
+                .map((p) -> withPeople(sheet, p)).toList();
+    }
+
+    /** The period with its people's due-totals fixed when it was closed. */
+    private Period withPeople(String sheet, Period period) {
+        if (!period.closed()) {
+            return period;
+        }
+        Map<Long, String> people = new LinkedHashMap<>();
+        jdbc.query("SELECT person, total FROM period_person_total WHERE sheet = ? AND period = ? ORDER BY person",
+                (rs) -> {
+                    people.put(rs.getLong("person"), rs.getBigDecimal("total").toPlainString());
+                }, sheet, period.name());
+        return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people);
     }
 
     /** The sheet's period of the name, or null when there is none. */
@@ -71,15 +88,26 @@ public class Periods {
                 Date.valueOf(input.from()), Date.valueOf(input.to()));
     }
 
-    /** Closes the period with its due-total fixed; false when it was already closed (or is gone). */
-    public boolean close(String sheet, String name, BigDecimal total) {
-        return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed",
-                total, sheet, name) == 1;
+    /** Closes the period with its due-total and each person's (by id) fixed; false when it was already closed (or is gone). */
+    public boolean close(String sheet, String name, BigDecimal total, Map<Long, BigDecimal> people) {
+        if (jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed",
+                total, sheet, name) != 1) {
+            return false;
+        }
+        jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
+        people.forEach((person, due) -> jdbc.update(
+                "INSERT INTO period_person_total (sheet, period, person, total) VALUES (?, ?, ?, ?)", sheet, name,
+                person, due));
+        return true;
     }
 
-    /** Reopens the period, dropping its fixed due-total; false when it was not closed (or is gone). */
+    /** Reopens the period, dropping its fixed due-totals; false when it was not closed (or is gone). */
     public boolean reopen(String sheet, String name) {
-        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet = ? AND name = ? AND closed",
-                sheet, name) == 1;
+        if (jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet = ? AND name = ? AND closed",
+                sheet, name) != 1) {
+            return false;
+        }
+        jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
+        return true;
     }
 }
