@@ -6,6 +6,7 @@ import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
 import type { Person } from '../people/people';
+import { dueCents, rateOf, showDue, useRates } from '../rates/rates';
 import { claimed, claimsKey, claimsPath, useClaims } from './claims';
 import type { Claim } from './claims';
 
@@ -16,6 +17,7 @@ function ClaimedHeader() {
   return (
     <>
       <th>Claimed</th>
+      <th>Due total</th>
       <th>Claims</th>
     </>
   );
@@ -27,6 +29,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.person === person.id);
+  const { data: rates = [] } = useRates(sheet);
+  const rate = rateOf(rates, person.grade);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -69,6 +73,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(claims)}</td>
+      <td data-testid="person-due-total">{showDue(dueCents(claimed(claims), rate))}</td>
       <td>
         <form onSubmit={submit}>
           <input
@@ -104,6 +109,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              due <span data-testid="claim-due">{showDue(dueCents(c.amount, rate))}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
