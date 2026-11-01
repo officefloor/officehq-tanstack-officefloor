@@ -67,6 +67,56 @@ public class ClaimStatusChanger {
      *  writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
+        requested = vet(sheet, user, claim, requested, reason);
+        String voidReason = requested == ClaimStatusChange.VOID && voidReasons.any(sheet) ? reason.trim() : null;
+        Person person = people.find(sheet, claim.person());
+        Rollup.Snapshot before = rollup.take(sheet);
+        ClaimStatus next = claim.status().after(requested);
+        // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
+        if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
+            throw new InvalidClaimStatusChangeException(
+                    "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+        }
+        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
+        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
+        Claim changed = claim;
+        if (requested == ClaimStatusChange.OPEN) {
+            changed = number(sheet, claim);
+            claims.setOpenedBy(sheet, claim.id(), user);
+        }
+        String fields = changed.statusAuditFields(person.name());
+        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
+        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
+        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+                    settings.late(sheet, clock.today(sheet)));
+            claims.setSettledDue(sheet, claim.id(), due);
+            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+        }
+        // Voiding a SETTLED claim reverses its frozen figure out of every total.
+        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
+            fields += " reversed=" + (claim.settledDue() == null ? "n/a" : claim.settledDue());
+        }
+        if (requested == ClaimStatusChange.REJECT) {
+            fields += " reason=" + reason.trim();
+        }
+        if (voidReason != null) {
+            voidReasons.voided(sheet, claim.id(), voidReason);
+            fields += " reason=" + voidReason;
+        }
+        log.record(sheet, user, claim.id());
+        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+        // Settling or approving tells each user watching the person, before the rollup lines.
+        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+            watches.notify(sheet, user, person.id(), person.name(), changed.shownNumber());
+        }
+        rollup.record(sheet, user, before);
+    }
+
+    /** Refuses the change the user may not make to the claim as it is now, writing nothing; otherwise gives the change
+     *  it makes (a clerk's settle above the clerk limit is a move to PENDING). */
+    public ClaimStatusChange vet(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
+            throws InvalidClaimStatusChangeException {
         // A viewer changes nothing.
         if (Role.VIEWER.equals(roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("A viewer cannot change a claim");
@@ -116,9 +166,8 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException("A reject needs a reason");
         }
         // While the sheet has void reasons, a void needs one chosen from them (with none, a void takes no reason).
-        String voidReason = null;
         if (requested == ClaimStatusChange.VOID && voidReasons.any(sheet)) {
-            voidReason = reason == null ? "" : reason.trim();
+            String voidReason = reason == null ? "" : reason.trim();
             if (voidReason.isEmpty() || !voidReasons.has(sheet, voidReason)) {
                 throw new InvalidClaimStatusChangeException("A void needs a reason from the sheet's void reasons");
             }
@@ -163,47 +212,11 @@ public class ClaimStatusChanger {
                 requested = ClaimStatusChange.PEND;
             }
         }
-        Rollup.Snapshot before = rollup.take(sheet);
-        ClaimStatus next = claim.status().after(requested);
-        // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
-        if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
+        if (claim.status().after(requested) == null) {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
-        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
-        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
-        Claim changed = claim;
-        if (requested == ClaimStatusChange.OPEN) {
-            changed = number(sheet, claim);
-            claims.setOpenedBy(sheet, claim.id(), user);
-        }
-        String fields = changed.statusAuditFields(person.name());
-        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
-        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
-        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
-            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
-                    settings.late(sheet, clock.today(sheet)));
-            claims.setSettledDue(sheet, claim.id(), due);
-            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
-        }
-        // Voiding a SETTLED claim reverses its frozen figure out of every total.
-        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
-            fields += " reversed=" + (claim.settledDue() == null ? "n/a" : claim.settledDue());
-        }
-        if (requested == ClaimStatusChange.REJECT) {
-            fields += " reason=" + reason.trim();
-        }
-        if (voidReason != null) {
-            voidReasons.voided(sheet, claim.id(), voidReason);
-            fields += " reason=" + voidReason;
-        }
-        log.record(sheet, user, claim.id());
-        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
-        // Settling or approving tells each user watching the person, before the rollup lines.
-        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
-            watches.notify(sheet, user, person.id(), person.name(), changed.shownNumber());
-        }
-        rollup.record(sheet, user, before);
+        return requested;
     }
 
     /**

@@ -1,11 +1,14 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.web.ObjectResponse;
@@ -16,13 +19,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Settles each selected claim in list order (people in the order they were added, newest claim first within a
  * person) by the rules of settling one claim, as the signed-in user; one a clerk's settle sends to PENDING counts as
- * settled, one that cannot be settled is left as it is and counted refused. When at least one is settled the bulk
- * settle is the sheet's next batch, and each claim it settled carries the batch's number.
+ * settled. It is all or nothing: when any selected claim cannot be settled none is, every one counts refused and
+ * nothing is written. Otherwise the bulk settle is the sheet's next batch, each claim it settled carries the batch's
+ * number, and after the claims' own lines a BATCH_SETTLED line gives its count and the frozen figures of those
+ * SETTLED added up.
  */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @RequestBody BulkSettleRequest request, Claims claims, People people, ClaimStatusChanger changer,
-            SettleBatches batches,
+            SettleBatches batches, Audit audit,
             ObjectResponse<BulkSettleResponse> response) {
         Map<Long, Integer> personOrder = new HashMap<>();
         for (Person person : people.list(sheet)) {
@@ -45,8 +50,22 @@ public class BulkSettleClaims {
         }
         selected.sort(Comparator.comparing((Claim c) -> personOrder.getOrDefault(c.person(), Integer.MAX_VALUE))
                 .thenComparing((Claim c) -> listOrder.getOrDefault(c.id(), Integer.MAX_VALUE)));
+        // All or nothing: when any selected claim cannot be settled by the user, none is and every one counts refused.
+        boolean refusal = refused > 0;
+        for (Claim claim : selected) {
+            try {
+                changer.vet(sheet, user, claim, ClaimStatusChange.SETTLE, null);
+            } catch (InvalidClaimStatusChangeException e) {
+                refusal = true;
+            }
+        }
+        if (refusal) {
+            response.send(new BulkSettleResponse(0, refused + selected.size(), claims.list(sheet), batches.last(sheet)));
+            return;
+        }
         int settled = 0;
         Integer batch = null;
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : selected) {
             try {
                 // Re-read so each claim is settled as the store holds it after the ones before it.
@@ -56,9 +75,17 @@ public class BulkSettleClaims {
                 }
                 claims.setBatch(sheet, claim.id(), batch);
                 settled++;
-            } catch (InvalidClaimStatusChangeException refusal) {
+                Claim after = claims.find(sheet, claim.id());
+                if (after.status() == ClaimStatus.SETTLED && after.settledDue() != null) {
+                    total = total.add(new BigDecimal(after.settledDue()));
+                }
+            } catch (InvalidClaimStatusChangeException lost) {
                 refused++;
             }
+        }
+        if (batch != null) {
+            audit.record("BATCH_SETTLED sheet=" + sheet + " by=" + user + " batch=" + batch + " count=" + settled
+                    + " total=" + total.setScale(2, RoundingMode.HALF_UP).toPlainString());
         }
         response.send(new BulkSettleResponse(settled, refused, claims.list(sheet), batches.last(sheet)));
     }
