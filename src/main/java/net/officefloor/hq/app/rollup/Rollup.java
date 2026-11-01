@@ -78,7 +78,8 @@ public class Rollup {
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = figures.due(claim, grade);
                 if (figures.overdue(claim, grade)) overdueCount++;
-                if (figure != null && claim.getStatus() == ClaimStatus.SETTLED) settled = settled.add(figure);
+                if (figure != null && claim.getStatus() == ClaimStatus.SETTLED
+                        && claim.getCorrects() == null) settled = settled.add(figure);
                 if (figure != null) {
                     due = due.add(figure);
                     any = true;

@@ -174,8 +174,9 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
   const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
-  // Their score: their settled figures over 100, less 5 for each overdue claim, rounded half to even.
-  const score = scoreOf(settledSum ?? 0n, late.count);
+  // Their score: their settled figures, corrections left out, over 100, less 5 for each overdue claim, rounded half to even.
+  const scoredSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED' && !c.corrects), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+  const score = scoreOf(scoredSum ?? 0n, late.count);
   // Their band by that score, while both the sheet's score thresholds are set.
   const band = useScoreBand(sheet)(score);
   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
