@@ -193,6 +193,10 @@ public class ValidateSettings {
         if (scoreLog != null && !scoreLog.isEmpty() && !scoreLog.equals("on")) {
             throw new InvalidSheetRequestException("The score log must be on, or blank");
         }
+        String maxOpen = request == null || request.maxOpen() == null ? null : request.maxOpen().trim();
+        if (maxOpen != null && !maxOpen.isEmpty() && !DAYS.matcher(maxOpen).matches()) {
+            throw new InvalidSheetRequestException("The maximum of open claims must be a whole number, or blank");
+        }
         String proofKinds = null;
         if (request != null && request.proofKinds() != null) {
             List<String> kinds = new ArrayList<>();
@@ -288,6 +292,7 @@ public class ValidateSettings {
                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade, gradeClerkLimit,
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
                 scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh),
-                scoreLog != null, "on".equals(scoreLog)));
+                scoreLog != null, "on".equals(scoreLog),
+                maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.parseInt(maxOpen)));
     }
 }

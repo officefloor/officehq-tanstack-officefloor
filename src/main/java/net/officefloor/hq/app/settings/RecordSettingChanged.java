@@ -103,6 +103,9 @@ public class RecordSettingChanged {
         if (change.setsScoreLog()) {
             audit.record(prefix + " key=score-log value=" + (change.scoreLog() ? "on" : ""));
         }
+        if (change.setsMaxOpen()) {
+            audit.record(prefix + " key=max-open value=" + (change.maxOpen() != null ? change.maxOpen() : ""));
+        }
         if (change.setsProofKinds()) {
             audit.record(prefix + " key=proof-kinds value=" + (change.proofKinds() != null ? change.proofKinds() : ""));
         }

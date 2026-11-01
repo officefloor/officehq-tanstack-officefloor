@@ -419,6 +419,27 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, score_mid) KEY (sheet_id) VALUES (?, ?)", sheetId, score);
     }
 
+    /** The sheet's maximum of open claims per person: a claim cannot be opened while its person already has
+     *  that many OPEN or PENDING claims. Null for none. Not dated. */
+    public Integer maxOpen(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT max_open FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("max_open", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setMaxOpen(String sheetId, Integer max) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, max_open) KEY (sheet_id) VALUES (?, ?)", sheetId, max);
+    }
+
+    /** Whether the person already has as many OPEN or PENDING claims as the sheet's maximum allows. */
+    public boolean atMaxOpen(String sheetId, long personId) {
+        Integer max = maxOpen(sheetId);
+        if (max == null) return false;
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND status IN ('OPEN', 'PENDING')", Integer.class, sheetId, personId);
+        return n != null && n >= max;
+    }
+
     /** The sheet's high score threshold: while both thresholds are set, a person whose score is at or above it
      *  is in the HIGH band. Null when unset. Not dated. */
     public Integer scoreHigh(String sheetId) {
