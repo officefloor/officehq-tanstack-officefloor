@@ -1,0 +1,99 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index e6f07bdd..1edb93a6 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -138,21 +138,21 @@ export function claimed(claims: Claim[]): string {
+   return (cents / 100).toFixed(2);
+ }
+ 
+-/** What is due on one claim, in cents: the due fixed when it was settled, or else the greater of the
+- *  sheet's `floor` on the claim's date and its figure (the one its person's last statement bound it to,
+- *  or else live at `pct`) plus its late charge (null, n/a, when there is no rate). A correction has
++/** What is due on one claim, in cents: the due fixed when it was settled, or else the due its person's
++ *  last statement bound it to (as shown then, late charge and floor included), or else the greater of the
++ *  sheet's `floor` on the claim's date and its figure live at `pct` plus its late charge (null, n/a, when there is no rate). A correction has
+  *  neither floor nor charge. */
+ export function claimDueCents(claim: Claim, floor: FloorOn, pct: string | undefined, late?: Late): bigint | null {
+   if (claim.due !== null) return hundredths(claim.due);
+   const figure = claimFigureCents(claim, pct);
+-  if (figure === null || isCorrection(claim)) return figure;
++  // A bound due already holds the late charge and floor it had when the statement was taken.
++  if (figure === null || claim.stated || isCorrection(claim)) return figure;
+   const due = late === undefined ? figure : figure + lateChargeCents(claim, figure, late);
+   const least = hundredths(floor(claim.date));
+   return due < least ? least : due;
+ }
+ 
+-/** A claim's figure without any late charge or floor, in cents: the figure its person's last statement
+- *  bound it to, or else live at `pct` (null, n/a, when there is no rate).
++/** A claim's figure, in cents: the due its person's last statement bound it to, or else live at `pct` (null, n/a, when there is no rate).
+  *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
+ function claimFigureCents(claim: Claim, pct: string | undefined): bigint | null {
+   if (claim.stated) return claim.statedDue !== null ? hundredths(claim.statedDue) : null;
+@@ -182,7 +182,7 @@ export function overdueFrom(claim: Claim, late: Late): string {
+  *  counted from its due-by plus its grace, the late percent in force on that boundary date (the due-by
+  *  plus the grace plus 30, 60, 90 ... days) of it plus the charges of the boundaries before it (compounding), each
+  *  rounded by the claim's rounding (`halfUp`), added up; a boundary at 0.00 adds nothing. Nothing
+- *  while it is not overdue, or its charge is waived. Never bound by a statement: it follows the sheet's today. */
++ *  while it is not overdue, or its charge is waived. It follows the sheet's today; a statement binds it into the claim's due. */
+ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
+   if (!overdue(claim, late) || isCorrection(claim) || claim.waived) return 0n;
+   const from = overdueFrom(claim, late);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Figures.java b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+index 74d89bb0..693921ef 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Figures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Figures.java
+@@ -53,14 +53,16 @@ public class Figures {
+ 
+     /** The claim's due as the screen shows and totals it: its figure plus its late charge while it
+      *  is overdue, raised to the sheet's floor in force on the claim's date when it is below it (a
+-     *  correction has neither). A settled claim's fixed due already holds the charge and floor it had then. */
++     *  correction has neither). A settled claim's fixed due already holds the charge and floor it had then;
++     *  a claim bound by a statement shows the due bound then, its late charge no longer following today. */
+     public BigDecimal due(Claim claim, String grade) {
+         BigDecimal figure = figure(claim, grade);
+-        if (figure == null || claim.getDue() != null || claim.isCorrection()) return figure;
++        if (figure == null || claim.getDue() != null || claim.isStated() || claim.isCorrection()) return figure;
+         return figure.add(charge(claim, grade, figure)).max(settings.floor(claim.getSheetId(), claim.getDate()));
+     }
+ 
+-    /** The claim's figure without any late charge or floor: the fixed due, else the bound figure, else live.
++    /** The claim's figure: the fixed due, else the bound due (with the late charge and floor it had when
++     *  bound), else live without any late charge or floor.
+      *  A PENDING claim is bound by a statement like any other: it shows its bound figure. */
+     public BigDecimal figure(Claim claim, String grade) {
+         if (claim.getDue() != null) return claim.getDue();
+@@ -86,7 +88,7 @@ public class Figures {
+      *  when it was added) plus its grace is before the sheet's today (a correction, or a claim whose charge is waived, has none); then, for every full 30 days it is
+      *  overdue, counted from its due-by plus its grace, the sheet's late percent in force on that boundary date (the due-by plus
+      *  the grace plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it (compounding), each rounded by the claim's rounding to two decimals, added up. A
+-     *  boundary whose percent is 0.00 adds nothing. Never bound by a statement: it follows the sheet's today. */
++     *  boundary whose percent is 0.00 adds nothing. It follows the sheet's today; a statement binds it into the claim's due (see {@link #due}). */
+     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
+         BigDecimal none = BigDecimal.ZERO.setScale(2);
+         if (figure == null || !claim.getStatus().isOpen() || claim.isDeferred() || claim.isCorrection() || claim.isWaived()) return none;
+diff --git a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+index a053e011..1f729bd3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/person/TakeStatement.java
+@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Takes the person's statement: their due-total now, the sum of their counting claims' figures
+  *  with any late charges, each at least the floor (n/a when there is no rate today and none has a figure), at most the sheet's cap, dated the sheet's today. Every claim
+- *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its rate figure now, without its late charge or the floor; every other one is unbound.
++ *  of theirs that counts (not an OPEN one dated within one of their holds) is bound to its due as shown now, late charge and floor included (one bound already keeps its bound due); every other one is unbound.
+  *  Taken as of a date (on or before the sheet's today), all of it is worked out on the sheet as it
+  *  stood at the end of that date (see {@link AsOf}): the claims that counted then are bound to their
+  *  figures then, and the statement is dated that date. Refused: a date after the sheet's today, or
+@@ -65,9 +65,9 @@ public class TakeStatement {
+         Map<Long, BigDecimal> bound = new HashMap<>();
+         for (Claim claim : claims.ofPerson(sheetId, person.getId())) {
+             if (person.counts(claim)) {
+-                // The statement binds the rate figure; the late charge and floor on top keep following today.
+-                bound.put(claim.getId(), figures.figure(claim, person.gradeOn(claim.getDate())));
++                // The statement binds the due as shown, late charge and floor included.
+                 BigDecimal figure = figures.due(claim, person.gradeOn(claim.getDate()));
++                bound.put(claim.getId(), figure);
+                 if (figure != null) {
+                     total = total.add(figure);
+                     any = true;
