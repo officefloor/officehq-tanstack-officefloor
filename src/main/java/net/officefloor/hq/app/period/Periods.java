@@ -118,6 +118,22 @@ public class Periods {
                 period.sheetId(), period.name(), personId, amount);
     }
 
+    /** Take the amount back off the person's opening balance for the period (a balance left at zero goes). */
+    public void takeOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        jdbc.update("UPDATE period_opening SET amount = amount - ? WHERE sheet_id = ? AND period_name = ? AND person_id = ?",
+                amount, sheetId, periodName, personId);
+        jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND period_name = ? AND person_id = ? AND amount = 0",
+                sheetId, periodName, personId);
+    }
+
+    /** Remove the period, with every figure kept for it. */
+    public void remove(String sheetId, String name) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
+    }
+
     /** Reopen the period: its due-total, each person's due-total and carried figure, and each pool
      *  member's cut for it, is live again. */
     public void reopen(Period period) {

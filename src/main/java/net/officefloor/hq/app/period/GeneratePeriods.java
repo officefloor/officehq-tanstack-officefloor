@@ -17,7 +17,7 @@ public class GeneratePeriods {
             Periods periods, Audit audit, Out<GeneratePeriodsResult> result) {
         List<Period> existing = new ArrayList<>(periods.onSheet(sheetId));
         YearMonth last = YearMonth.from(LocalDate.parse(request.to()));
-        int made = 0;
+        List<String> made = new ArrayList<>();
         for (YearMonth month = YearMonth.from(LocalDate.parse(request.from())); !month.isAfter(last);
                 month = month.plusMonths(1)) {
             Period period = new Period(sheetId, month.toString(), month.atDay(1), month.atEndOfMonth());
@@ -28,8 +28,8 @@ public class GeneratePeriods {
             existing.add(period);
             audit.record("PERIOD_ADDED sheet=" + sheetId + " by=" + request.user()
                     + " period=" + period.name() + " from=" + period.from() + " to=" + period.to());
-            made++;
+            made.add(period.name());
         }
-        result.set(new GeneratePeriodsResult(made));
+        result.set(new GeneratePeriodsResult(made.size(), made));
     }
 }

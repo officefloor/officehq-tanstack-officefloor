@@ -10,6 +10,10 @@ import { periodsKey, YEAR } from './usePeriods';
  * last period is added to their carried figure for the new year's first period. A year with no
  * periods, anyone but a steward, or a bad year is refused. Shows how many periods were made; the
  * count goes while the next press runs.
+ *
+ * The steward who made the last rollover can undo it on the sheet's today it was made: the periods
+ * it generated go and the opening balances it set are taken back. Anyone else, a later day, or a
+ * generated period a claim belongs to is refused.
  */
 function Rollover({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
@@ -20,8 +24,15 @@ function Rollover({ user, sheet }: { user: string; sheet: string }) {
       postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheet)}/rollover`, { year: y, user }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
+  const undoing = useMutation({
+    mutationFn: () => postJson<{ fy: number; removed: number }>(
+      `/api/sheets/${encodeURIComponent(sheet)}/rollover-undo`, { user }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+  const failed = rolling.isError ? rolling.error : undoing.isError ? undoing.error : null;
   const clear = () => {
     rolling.reset();
+    undoing.reset();
     setInvalid(null);
   };
   return (
@@ -53,20 +64,33 @@ function Rollover({ user, sheet }: { user: string; sheet: string }) {
         </label>{' '}
         <button type="submit" data-testid="rollover" disabled={rolling.isPending}>
           Roll over
-        </button>
+        </button>{' '}
         {rolling.isSuccess && (
           <span>
             {' '}
             Made <strong data-testid="rollover-made">{rolling.data.made}</strong>
           </span>
         )}
-        {(invalid !== null || rolling.isError) && (
+        <button
+          type="button"
+          data-testid="rollover-undo"
+          disabled={undoing.isPending}
+          onClick={() => {
+            clear();
+            undoing.mutate();
+          }}
+        >
+          Undo last rollover
+        </button>
+        {(invalid !== null || failed !== null) && (
           <span data-testid="rollover-error" role="alert">
             {' '}
             {invalid ??
-              (rolling.error instanceof HttpError && rolling.error.body
-                ? rolling.error.body
-                : 'Could not roll this year over.')}
+              (failed instanceof HttpError && failed.body
+                ? failed.body
+                : rolling.isError
+                  ? 'Could not roll this year over.'
+                  : 'Could not undo the last rollover.')}
           </span>
         )}
       </form>
