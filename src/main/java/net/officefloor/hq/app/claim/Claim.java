@@ -55,9 +55,14 @@ public record Claim(long id, long person, String amount, String date, String not
         return auditFields(person) + (shown == null ? "" : " number=" + shown);
     }
 
-    /** Whether this claim counts toward the totals: OPEN and SETTLED claims do. */
+    /** Whether this claim counts toward the totals: OPEN, PENDING and SETTLED claims do. */
     public boolean counts() {
-        return status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED;
+        return status == ClaimStatus.OPEN || status == ClaimStatus.PENDING || status == ClaimStatus.SETTLED;
+    }
+
+    /** Whether this claim's statement binds its figure: it is stated, and not PENDING (which shows its live figure). */
+    public boolean bound() {
+        return stated && status != ClaimStatus.PENDING;
     }
 
     /** Whether this claim counts toward the live totals when its person is {@code held}: then only SETTLED does. */
@@ -67,10 +72,10 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /**
      * Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement (a claim
-     * settled or bound when its grade had no rate keeps none).
+     * settled or bound when its grade had no rate keeps none; a PENDING claim is not bound).
      */
     public boolean fixed() {
-        return settledDue != null || (stated && statedDue != null);
+        return settledDue != null || (bound() && statedDue != null);
     }
 
     /**
@@ -83,7 +88,7 @@ public record Claim(long id, long person, String amount, String date, String not
     }
 
     /**
-     * This claim's figure: the due fixed when settled, else the one its statement bound, else its amount at the
+     * This claim's figure: the due fixed when settled, else the one its statement bound (unless PENDING), else its amount at the
      * grade's rate in force on its date, raised to at least the sheet's floor (a correction has no floor); null when
      * there is none.
      */
@@ -96,7 +101,7 @@ public record Claim(long id, long person, String amount, String date, String not
         if (settledDue != null) {
             return new BigDecimal(settledDue);
         }
-        if (stated) {
+        if (bound()) {
             return statedDue == null ? null : new BigDecimal(statedDue);
         }
         BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)), rounding);

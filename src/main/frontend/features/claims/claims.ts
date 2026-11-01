@@ -6,11 +6,22 @@ import { dueCents, hundredths, rateOf, twoDecimals, type Rate } from '../rates/r
 import { useSheetToday } from '../sheet/sheet';
 import { useLatePctCents, usePolicyDate, useTerms } from '../settings/settings';
 
-/** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
+ *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
-export type ClaimStatusChange = 'open' | 'settle' | 'void';
+export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+
+/** Whether a claim is still open: OPEN, or PENDING (handled like OPEN, but not bound by a statement). */
+export function isOpen(claim: Claim): boolean {
+  return claim.status === 'OPEN' || claim.status === 'PENDING';
+}
+
+/** Whether a claim's statement binds its figure: it is stated and not PENDING (which shows its live figure). */
+export function bound(claim: Claim): boolean {
+  return claim.stated && claim.status !== 'PENDING';
+}
 
 /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
  * the sheet (given when it is opened; null while a draft; kept once voided), and its due fixed when it was
@@ -49,11 +60,11 @@ export function useClaims(sheet: string) {
   });
 }
 
-/** The claims that count toward claimed, due-total and every total: the OPEN and SETTLED ones, but not the OPEN
- *  ones of a person on hold. */
+/** The claims that count toward claimed, due-total and every total: the OPEN, PENDING and SETTLED ones, but not
+ *  the OPEN or PENDING ones of a person on hold. */
 export function counted(claims: Claim[], people: Person[]): Claim[] {
   const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held.has(c.person)));
+  return claims.filter((c) => c.status === 'SETTLED' || (isOpen(c) && !held.has(c.person)));
 }
 
 /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
@@ -69,7 +80,7 @@ export function correction(claim: Claim): boolean {
 /** Whether a claim keeps its figure whatever the rates: fixed when settled, or bound by a statement (a claim
  *  settled or bound when its grade had no rate keeps none). */
 export function fixed(claim: Claim): boolean {
-  return claim.settledDue !== null || (claim.stated && claim.statedDue !== null);
+  return claim.settledDue !== null || (bound(claim) && claim.statedDue !== null);
 }
 
 /** What makes an overdue claim's late charge: the sheet's late percent (in hundredths), its terms and its today.
@@ -94,7 +105,7 @@ export function roundsHalfUp(claim: Claim, late: Late): boolean {
  *  grade's rate in force on its date, raised to at least the sheet's floor (in hundredths; a correction has no floor). */
 export function claimFigureCents(claim: Claim, pct: string | undefined, floor: bigint, halfUp = false): bigint | undefined {
   if (claim.settledDue !== null) return hundredths(claim.settledDue);
-  if (claim.stated) return claim.statedDue === null ? undefined : hundredths(claim.statedDue);
+  if (bound(claim)) return claim.statedDue === null ? undefined : hundredths(claim.statedDue);
   const live = dueCents(claim.amount, pct, halfUp);
   return live === undefined || correction(claim) || live >= floor ? live : floor;
 }
@@ -153,9 +164,9 @@ export function dueBy(claim: Claim, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: OPEN with its due-by before the sheet's today. */
+/** Whether a claim is overdue: OPEN or PENDING with its due-by before the sheet's today. */
 export function overdue(claim: Claim, terms: number, today: string | undefined): boolean {
-  return claim.status === 'OPEN' && today !== undefined && dueBy(claim, terms) < today;
+  return isOpen(claim) && today !== undefined && dueBy(claim, terms) < today;
 }
 
 /** The overdue claims that count (see {@link counted}) among a person's or the sheet's claims, and the sum of

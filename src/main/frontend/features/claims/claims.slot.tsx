@@ -47,6 +47,7 @@ const CHANGES: { change: ClaimStatusChange; label: string }[] = [
   { change: 'open', label: 'Open' },
   { change: 'settle', label: 'Settle' },
   { change: 'void', label: 'Void' },
+  { change: 'approve', label: 'Approve' },
 ];
 
 // One claim with its status and the buttons that change it. Every button is offered; the server
@@ -69,7 +70,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   const late = useLate(sheet);
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
-      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), change === 'reject' ? { reason } : {}),
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
 
@@ -77,6 +78,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
+  // A steward rejects a PENDING claim with a reason, typed beside the Reject button.
+  const [reason, setReason] = useState('');
 
   return (
     <li data-testid={`claim-row-${claim.id}`}>
@@ -115,6 +118,26 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           {label}
         </button>
       ))}{' '}
+      <input
+        data-testid="claim-reject-reason"
+        placeholder="reject reason"
+        value={reason}
+        onChange={(e) => {
+          setReason(e.target.value);
+          status.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-reject"
+        disabled={status.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          act('reject');
+        }}
+      >
+        Reject
+      </button>{' '}
       <button
         type="button"
         data-testid="claim-edit"
@@ -142,7 +165,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle it, and a clerk cannot settle a due above the clerk limit).
+          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, and a reject needs a reason).
         </span>
       )}
     </li>

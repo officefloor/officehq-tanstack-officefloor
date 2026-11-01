@@ -45,22 +45,38 @@ public class ClaimStatusChanger {
     /** Applies the change to the claim, writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested)
             throws InvalidClaimStatusChangeException {
+        change(sheet, user, claim, requested, null);
+    }
+
+    /** Applies the change to the claim (a reject gives its reason), writing nothing when it is refused. */
+    public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
+            throws InvalidClaimStatusChangeException {
         if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
             throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
         }
-        // Four eyes: the user who opened a claim may not settle it.
-        if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
-            throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
+        // Four eyes: the user who opened a claim may not settle it, nor approve it.
+        if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
+                && user.equals(claim.openedBy())) {
+            throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle or approve it");
+        }
+        // Only a steward approves or rejects a PENDING claim; a reject gives a reason.
+        if ((requested == ClaimStatusChange.APPROVE || requested == ClaimStatusChange.REJECT)
+                && !Role.STEWARD.equals(roles.of(sheet, user))) {
+            throw new InvalidClaimStatusChangeException("Only a steward approves or rejects a claim");
+        }
+        if (requested == ClaimStatusChange.REJECT && (reason == null || reason.isBlank())) {
+            throw new InvalidClaimStatusChangeException("A reject needs a reason");
         }
         Person person = people.find(sheet, claim.person());
-        // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit);
-        // a steward settles anything.
-        if (requested == ClaimStatusChange.SETTLE && Role.CLERK.equals(roles.of(sheet, user))) {
+        // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit); above
+        // it the claim goes to PENDING for a steward to approve. A steward settles anything.
+        if (requested == ClaimStatusChange.SETTLE && claim.status() == ClaimStatus.OPEN
+                && Role.CLERK.equals(roles.of(sheet, user))) {
             BigDecimal limit = settings.clerkLimit(sheet);
             BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));
             if (limit != null && due != null && due.compareTo(limit) > 0) {
-                throw new InvalidClaimStatusChangeException("A clerk cannot settle a due above the clerk limit");
+                requested = ClaimStatusChange.PEND;
             }
         }
         Rollup.Snapshot before = rollup.take(sheet);
@@ -87,13 +103,16 @@ public class ClaimStatusChanger {
             claims.setOpenedBy(sheet, claim.id(), user);
         }
         String fields = changed.statusAuditFields(person.name());
-        // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
+        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
         // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
-        if (requested == ClaimStatusChange.SETTLE) {
+        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
             BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+        }
+        if (requested == ClaimStatusChange.REJECT) {
+            fields += " reason=" + reason.trim();
         }
         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
         rollup.record(sheet, user, before);

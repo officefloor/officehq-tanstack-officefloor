@@ -20,9 +20,9 @@ public record Late(BigDecimal pct, int terms, LocalDate today, LocalDate policy)
         return LocalDate.parse(claim.roundsOn()).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether the claim is overdue: OPEN with its due-by (its date plus the terms) before the sheet's today. */
+    /** Whether the claim is overdue: OPEN or PENDING with its due-by (its date plus the terms) before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return claim.status() == ClaimStatus.OPEN && LocalDate.parse(claim.date()).plusDays(terms).isBefore(today);
+        return (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING) && LocalDate.parse(claim.date()).plusDays(terms).isBefore(today);
     }
 
     /**
