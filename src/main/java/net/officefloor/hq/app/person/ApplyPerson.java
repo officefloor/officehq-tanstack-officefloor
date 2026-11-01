@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Val;
@@ -12,12 +13,13 @@ import net.officefloor.plugin.variable.Val;
  *  (blank from-date: from the beginning of time). Their contact and tags become the form's (blank:
  *  none; tags not given: kept). */
 public class ApplyPerson {
-    public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets)
+    public void apply(@Val PersonRequest request, @Val Person person, People people, Sheets sheets, Grades grades)
             throws InvalidSheetRequestException, PersonConflictException {
         if (request.version() != null && request.version() != person.getVersion()) {
             throw new PersonConflictException(PersonResponse.from(person));
         }
         check(request, person, people);
+        checkGrade(request, person, sheets, grades);
         applied(request, person, sheets);
     }
 
@@ -36,6 +38,15 @@ public class ApplyPerson {
                 && people.contactTaken(person.getSheetId(), request.contactKey(), person.getId())) {
             throw new InvalidSheetRequestException("The contact is already in use on this sheet");
         }
+    }
+
+    /** Refused when the edit chooses a retired grade: a save leaving the grade as the row showed it,
+     *  with the from-date blank, chooses none, so a person on a retired grade keeps it. */
+    static void checkGrade(PersonRequest request, Person person, Sheets sheets, Grades grades)
+            throws InvalidSheetRequestException {
+        person.setToday(sheets.today(person.getSheetId()));
+        if (request.gradeFromDate() == null && request.grade().equals(person.getGrade())) return;
+        grades.refuseRetired(person.getSheetId(), request.grade());
     }
 
     /** Makes the checked edit to the person, ready to be saved. */

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -7,7 +8,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 public class BuildPerson {
     public void build(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
-            People people, Out<Person> person) throws InvalidSheetRequestException {
+            People people, Grades grades, Out<Person> person) throws InvalidSheetRequestException {
+        grades.refuseRetired(sheetId, request.grade());
         person.set(built(sheetId, request, people));
     }
 

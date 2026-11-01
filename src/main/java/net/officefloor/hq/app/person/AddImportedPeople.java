@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Snapshot;
 import net.officefloor.hq.app.sheet.InvalidSheetRequestException;
@@ -21,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  the figures it moved, as the form does. */
 public class AddImportedPeople {
     public void add(@PathVariable("sheetId") String sheetId, @Val ImportedPeople imported, People people,
-            Sheets sheets, Rollup rollup, Audit audit, Out<ImportPeopleResult> result)
+            Sheets sheets, Rollup rollup, Audit audit, Grades grades, Out<ImportPeopleResult> result)
             throws InvalidSheetRequestException, PersonConflictException {
         List<PersonRequest> requests = new ArrayList<>();
         List<Person> targets = new ArrayList<>();
@@ -32,6 +33,7 @@ public class AddImportedPeople {
             Person existing = people.named(sheetId, line.name());
             try {
                 if (existing == null) {
+                    grades.refuseRetired(sheetId, line.grade());
                     requests.add(line);
                     targets.add(BuildPerson.built(sheetId, line, people));
                     continue;
@@ -44,6 +46,7 @@ public class AddImportedPeople {
                                 : existing.getTerms() != null ? String.valueOf(existing.getTerms()) : "",
                         line.contactKey() != null ? line.contactKey() : existing.getContact());
                 ApplyPerson.check(edit, existing, people);
+                ApplyPerson.checkGrade(edit, existing, sheets, grades);
                 requests.add(edit);
                 targets.add(existing);
             } catch (InvalidSheetRequestException e) {

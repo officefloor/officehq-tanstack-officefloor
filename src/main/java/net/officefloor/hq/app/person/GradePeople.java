@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Snapshot;
 import net.officefloor.hq.app.settings.Role;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  grades no one. */
 public class GradePeople {
     public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGrade bulk, People people, Sheets sheets,
-            Rollup rollup, Settings settings, Audit audit, Out<BulkGradeResult> result) {
+            Rollup rollup, Settings settings, Audit audit, Grades grades, Out<BulkGradeResult> result) {
         if (sheets.archived(sheetId) || settings.role(sheetId, bulk.user()) == Role.VIEWER) {
             result.set(new BulkGradeResult(0));
             return;
@@ -35,7 +36,7 @@ public class GradePeople {
                     person.getContact());
             Snapshot before = rollup.snapshot(sheetId);
             try {
-                apply.apply(request, person, people, sheets);
+                apply.apply(request, person, people, sheets, grades);
                 save.save(person, people);
             } catch (InvalidSheetRequestException | PersonConflictException e) {
                 continue;
