@@ -29,6 +29,11 @@ public class Settings {
     /** The due above which a claim needs a proof before it is settled or approved (two decimals); blank: none. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
 
+    /** The key of a grade's own proof threshold (two decimals); blank: none, so the grade takes the sheet's. */
+    public static String gradeProofThreshold(String grade) {
+        return PROOF_THRESHOLD + "-" + grade;
+    }
+
     /** The due above which a claim with an empty note cannot be opened (two decimals); blank: none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
@@ -187,6 +192,15 @@ public class Settings {
         return threshold.isEmpty() ? null : new BigDecimal(threshold);
     }
 
+    /**
+     * The proof threshold of the grade in force on the date: its own when it has one then, else the sheet's (a null
+     * grade takes the sheet's); null when there is none.
+     */
+    public BigDecimal proofThreshold(String sheet, String grade, LocalDate date) {
+        String own = grade == null ? "" : on(sheet, gradeProofThreshold(grade), date);
+        return own.isEmpty() ? proofThreshold(sheet, date) : new BigDecimal(own);
+    }
+
     /** The sheet's note threshold in force on the date, or null when there is none. */
     public BigDecimal noteThreshold(String sheet, LocalDate date) {
         String threshold = on(sheet, NOTE_THRESHOLD, date);
@@ -264,7 +278,7 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
-        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, NOTE_THRESHOLD)) {
+        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD)) {
             dated.put(key, history(sheet, key));
         }
         Map<String, String> perms = new LinkedHashMap<>();
@@ -276,6 +290,8 @@ public class Settings {
                 get(sheet, PERIOD_NUMBERING_FROM), on(sheet, gradeTerms("A"), today), on(sheet, gradeTerms("B"), today),
                 on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), perms, dated,
                 get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE),
-                on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today));
+                on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
+                on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
+                on(sheet, gradeProofThreshold("C"), today));
     }
 }

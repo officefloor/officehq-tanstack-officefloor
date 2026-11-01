@@ -5,7 +5,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADE_GRACE, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
+import { GRADE_GRACE, GRADE_PROOF_THRESHOLD, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
 import type { PermAction, SettingKey, Settings as SheetSettings } from './settings';
 
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
@@ -18,7 +18,8 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // days) fix the due-by of a claim added for a person of that grade; blank makes the grade take the sheet's terms. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit. The cap is the most a person's due-total is (two
 // decimals); blank means no cap. A claim whose due is above the proof threshold in force on its date (two decimals;
-// blank means none) needs a proof before it is settled or approved. A claim whose due is above the note threshold in force on its date (two decimals;
+// blank means none) needs a proof before it is settled or approved; a grade's own proof threshold (two decimals, dated;
+// blank means none) in force on a claim's date takes the place of the sheet's for a claim whose person has that grade then. A claim whose due is above the note threshold in force on its date (two decimals;
 // blank means none) cannot be opened with an empty note. Each setting that carries a figure (all but the policy date and the period numbering
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
 // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
@@ -44,6 +45,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [entryDate, setEntryDate] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
+  const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
   const [froms, setFroms] = useState<Partial<Record<SettingKey, string>>>({});
@@ -71,6 +73,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setEntryDate('');
       setGradeTerms({});
       setGradeGrace({});
+      setGradeProofThreshold({});
       setPerms({});
       setFroms({});
       setChanged([]);
@@ -110,7 +113,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
       'grace-days': graceDays, 'entry-date': entryDate, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
-      'grace-C': gradeGrace.C ?? '' };
+      'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
+      'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => (isDated(key) ? { key, value: values[key], from: froms[key] ?? '' } : { key, value: values[key] })));
   };
@@ -251,6 +255,27 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
           </span>
         ))}
+        {GRADE_PROOF_THRESHOLD.map(({ grade, key, field }) => (
+          <span key={key}>
+            <label>
+              Proof threshold for grade {grade}{' '}
+              <input
+                data-testid={`setting-${key}`}
+                placeholder="0.00 (blank: the sheet's)"
+                value={gradeProofThreshold[grade] ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setGradeProofThreshold((thresholds) => ({ ...thresholds, [grade]: value }));
+                  touch(key);
+                }}
+                // As the policy date: clearing an already blank field must still send the blank.
+                onFocus={() => touch(key)}
+              />
+            </label>{' '}
+            {from(key)}
+            now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input
@@ -351,7 +376,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold, the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
           </span>
         )}
       </form>

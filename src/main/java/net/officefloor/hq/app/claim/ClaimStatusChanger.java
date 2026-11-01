@@ -124,10 +124,12 @@ public class ClaimStatusChanger {
             }
         }
         Person person = people.find(sheet, claim.person());
-        // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has
+        // A claim whose due is above the proof threshold in force on its date (its person's grade's then when it has
+        // one, else the sheet's) is settled or approved only once it has
         // a proof (a due of n/a is above no threshold); checked before the clerk limit, so it never goes to PENDING.
         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
-            BigDecimal threshold = settings.proofThreshold(sheet, LocalDate.parse(claim.date()));
+            BigDecimal threshold = settings.proofThreshold(sheet, person.gradeOn(claim.date()),
+                    LocalDate.parse(claim.date()));
             if (threshold != null && claim.proofs() == 0) {
                 BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                         settings.late(sheet, clock.today(sheet)));
