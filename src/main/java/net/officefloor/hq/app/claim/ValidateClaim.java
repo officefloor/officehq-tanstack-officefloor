@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateClaim {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
-    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}|\\S{1,200}-\\d{1,9}");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody ClaimRequest request, SheetClock clock,
             Out<ClaimInput> body) throws InvalidClaimException {
@@ -22,7 +22,8 @@ public class ValidateClaim {
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidClaimException("The amount must be a number with up to two decimals");
         }
-        // A negative amount is a correction: it must name, by number, the claim it corrects; no other claim may.
+        // A negative amount is a correction: it must name, by the number it shows (on the sheet, or
+        // within its period: <period>-<n>), the claim it corrects; no other claim may.
         BigDecimal value = new BigDecimal(amount);
         if (value.signum() < 0 && !NUMBER.matcher(corrects).matches()) {
             throw new InvalidClaimException("A negative amount must name the number of the claim it corrects");
@@ -36,6 +37,11 @@ public class ValidateClaim {
         } catch (DateTimeParseException e) {
             throw new InvalidClaimException("Not a valid date: " + date);
         }
-        body.set(new ClaimInput(value, on, note, value.signum() < 0 ? Integer.valueOf(corrects) : null));
+        body.set(new ClaimInput(value, on, note, value.signum() < 0 ? numbered(corrects) : null));
+    }
+
+    /** The number as a claim shows it: a number on the sheet without leading zeros, a period number as given. */
+    private static String numbered(String corrects) {
+        return corrects.chars().allMatch(Character::isDigit) ? Integer.toString(Integer.parseInt(corrects)) : corrects;
     }
 }

@@ -16,9 +16,10 @@ export type ClaimStatusChange = 'open' | 'settle' | 'void';
  * the sheet (given when it is opened; null while a draft; kept once voided), and its due fixed when it was
  * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
  * user who opened it (null until opened; that user may not settle it), and whether its person's last statement
- * bound it, with the figure it bound (null when its grade had no rate then), and the number of the claim it
- * corrects (null unless it is a correction: a negative amount), and the date it rounds on (its own, or for a
- * correction the date of the claim it corrects). */
+ * bound it, with the figure it bound (null when its grade had no rate then), and the number the claim it
+ * corrects shows (null unless it is a correction: a negative amount), and the date it rounds on (its own, or for a
+ * correction the date of the claim it corrects), and its number within its period (<period>-<n>, or X-<n> in no
+ * period) when it was opened while the sheet numbered by period, shown in place of its number (null otherwise). */
 export type Claim = {
   id: number;
   person: number;
@@ -31,8 +32,9 @@ export type Claim = {
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
-  corrects: number | null;
+  corrects: string | null;
   roundsOn: string;
+  periodNumber: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['claims', sheet] as const;

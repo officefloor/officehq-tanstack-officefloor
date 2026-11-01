@@ -13,7 +13,8 @@ import type { SettingKey, Settings as SheetSettings } from './settings';
 // decimals); blank takes its default, 1.00. The terms are the whole days after its date by which a claim is due;
 // blank takes its default, 14. The late percent (two decimals) is charged on an overdue claim's figure for every
 // full 30 days it is overdue; blank takes its default, 0.00. A claim dated before the policy date rounds half up, on
-// or after it half to even; blank makes it the sheet's today. Saving sends each setting whose field was changed; with none changed it
+// or after it half to even; blank makes it the sheet's today. While the sheet's today is on or after the period
+// numbering from-date, a claim opened is numbered within its period; blank turns that off. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -23,6 +24,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
+  const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [changed, setChanged] = useState<SettingKey[]>([]);
 
   const save = useMutation({
@@ -40,6 +42,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setTerms('');
       setLatePct('');
       setPolicyDate('');
+      setPeriodNumberingFrom('');
       setChanged([]);
     },
   });
@@ -53,7 +56,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     // The server refuses a value that is not 0.00 or more with up to two decimals.
-    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate };
+    const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
+      'period-numbering-from': periodNumberingFrom };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => ({ key, value: values[key] })));
   };
@@ -130,12 +134,27 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-policy-date-current">{data?.policyDate ?? ''}</span>{' '}
+        <label>
+          Period numbering from{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="yyyy-mm-dd (blank: off)"
+            value={periodNumberingFrom}
+            onChange={(e) => {
+              setPeriodNumberingFrom(e.target.value);
+              touch('period-numbering-from');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('period-numbering-from')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-period-numbering-from-current">{data?.periodNumberingFrom ?? ''}</span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the floor and the late percent must be 0.00 or more with up to two decimals, the terms a whole number of days, the policy date a date, or blank.
+            {' '}The clerk limit, the floor and the late percent must be 0.00 or more with up to two decimals, the terms a whole number of days, the policy date and the period numbering from-date dates, or blank.
           </span>
         )}
       </form>

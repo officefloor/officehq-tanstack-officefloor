@@ -22,13 +22,15 @@ public class Claims {
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
                     : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
-            rs.getObject("corrects", Integer.class), rs.getDate("rounds_on").toLocalDate().toString());
+            rs.getString("corrects"), rs.getDate("rounds_on").toLocalDate().toString(),
+            rs.getString("period_number"));
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
-            + " COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on FROM claim"
-            + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND corrected.number_on_sheet = claim.corrects";
+            + " claim.period_number, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on FROM claim"
+            + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
+            + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
 
     private final JdbcTemplate jdbc;
 
@@ -46,9 +48,10 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The claim with this number on the sheet, or null when no claim has it. */
-    public Claim findByNumber(String sheet, int number) {
-        List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.number_on_sheet = ?", ROW, sheet, number);
+    /** The claim showing this number on the sheet (within its period, or on the sheet), or null when none does. */
+    public Claim findByNumber(String sheet, String number) {
+        List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ?"
+                + " AND COALESCE(claim.period_number, CAST(claim.number_on_sheet AS VARCHAR)) = ?", ROW, sheet, number);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -88,6 +91,31 @@ public class Claims {
     /** Sets the claim's number on the sheet, or clears it with null. */
     public void setNumber(String sheet, long id, Integer number) {
         jdbc.update("UPDATE claim SET number_on_sheet = ? WHERE sheet = ? AND id = ?", number, sheet, id);
+    }
+
+    /** Sets the claim's number within its period. */
+    public void setPeriodNumber(String sheet, long id, String periodNumber) {
+        jdbc.update("UPDATE claim SET period_number = ? WHERE sheet = ? AND id = ?", periodNumber, sheet, id);
+    }
+
+    /**
+     * Takes the next number in the sheet's period of the name ("" for the claims in no period): 1 first, then 2,
+     * and so on, each period counting on its own. Locked as {@link #nextNumber}.
+     */
+    public int nextPeriodNumber(String sheet, String period) {
+        while (true) {
+            if (jdbc.update("UPDATE claim_period_number SET last_number = last_number + 1 WHERE sheet = ? AND period = ?",
+                    sheet, period) == 1) {
+                return jdbc.queryForObject("SELECT last_number FROM claim_period_number WHERE sheet = ? AND period = ?",
+                        Integer.class, sheet, period);
+            }
+            try {
+                jdbc.update("INSERT INTO claim_period_number (sheet, period, last_number) VALUES (?, ?, 1)", sheet, period);
+                return 1;
+            } catch (DuplicateKeyException raced) {
+                // Another user took the period's first number at the same moment: take the one after it.
+            }
+        }
     }
 
     /**

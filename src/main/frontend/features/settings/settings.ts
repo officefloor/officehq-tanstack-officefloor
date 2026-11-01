@@ -6,11 +6,12 @@ import { hundredths } from '../rates/rates';
  *  the floor with two decimals, the least a claim's live due is; and the terms, the whole days after its date by
  *  which a claim is due; and the late percent with two decimals, charged on an overdue claim's figure for every
  *  full 30 days it is overdue; and the policy date (yyyy-MM-dd; '' for the sheet's today): a claim dated before it
- *  rounds half up, on or after it half to even. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
+ *  rounds half up, on or after it half to even; and the period numbering from-date (yyyy-MM-dd; '' for off): while
+ *  the sheet's today is on or after it, a claim opened is numbered within its period. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string };
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
-export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date';
+export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from';
 
 /** The floor a sheet starts with. */
 export const DEFAULT_FLOOR = '1.00';

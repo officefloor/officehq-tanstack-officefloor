@@ -70,11 +70,20 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
-        // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
+        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
+        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
         Claim changed = claim;
         if (requested == ClaimStatusChange.OPEN) {
-            changed = claim.withNumber(claims.nextNumber(sheet));
-            claims.setNumber(sheet, claim.id(), changed.number());
+            LocalDate from = settings.periodNumberingFrom(sheet);
+            if (from != null && !clock.today(sheet).isBefore(from)) {
+                String period = periods.nameOn(sheet, LocalDate.parse(claim.date()));
+                String key = period == null ? "" : period;
+                changed = claim.withPeriodNumber((period == null ? "X" : period) + "-" + claims.nextPeriodNumber(sheet, key));
+                claims.setPeriodNumber(sheet, claim.id(), changed.periodNumber());
+            } else {
+                changed = claim.withNumber(claims.nextNumber(sheet));
+                claims.setNumber(sheet, claim.id(), changed.number());
+            }
             claims.setOpenedBy(sheet, claim.id(), user);
         }
         String fields = changed.statusAuditFields(person.name());

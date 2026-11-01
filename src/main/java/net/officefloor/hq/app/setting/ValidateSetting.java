@@ -16,7 +16,8 @@ public class ValidateSetting {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
-                && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)) {
+                && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
+                && !Settings.PERIOD_NUMBERING_FROM.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         // The policy date is a date; blank follows the sheet's today.
@@ -26,6 +27,18 @@ public class ValidateSetting {
                     value = LocalDate.parse(value).toString();
                 } catch (DateTimeParseException e) {
                     throw new InvalidSettingException("The policy date must be a date (yyyy-mm-dd), or blank");
+                }
+            }
+            body.set(new SettingInput(key, value));
+            return;
+        }
+        // The period numbering from-date is a date; blank turns it off.
+        if (Settings.PERIOD_NUMBERING_FROM.equals(key)) {
+            if (!value.isEmpty()) {
+                try {
+                    value = LocalDate.parse(value).toString();
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("The period numbering from-date must be a date (yyyy-mm-dd), or blank");
                 }
             }
             body.set(new SettingInput(key, value));

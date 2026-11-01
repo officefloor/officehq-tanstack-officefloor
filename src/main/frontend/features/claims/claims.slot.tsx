@@ -95,8 +95,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       period <span data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</span>{' '}
-      {claim.number !== null && '#'}
-      <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
+      {(claim.periodNumber ?? claim.number) !== null && '#'}
+      <span data-testid="claim-number">{claim.periodNumber ?? claim.number ?? ''}</span>{' '}
       {claim.openedBy !== null && 'opened by '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       {claim.corrects !== null && 'corrects #'}

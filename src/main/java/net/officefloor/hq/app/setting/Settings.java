@@ -26,6 +26,9 @@ public class Settings {
     /** The date before which a claim rounds half up, on or after it half to even (yyyy-MM-dd); blank: the sheet's today. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The date from which (on the sheet's today) a claim opened is numbered within its period (yyyy-MM-dd); blank: off. */
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     /** The late percent a sheet starts with. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -83,8 +86,15 @@ public class Settings {
         return new Late(latePct(sheet), terms(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy));
     }
 
+    /** The date from which claims opened are numbered within their period, or null when they are not. */
+    public LocalDate periodNumberingFrom(String sheet) {
+        String from = get(sheet, PERIOD_NUMBERING_FROM);
+        return from.isEmpty() ? null : LocalDate.parse(from);
+    }
+
     public SettingsResponse all(String sheet) {
         return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
-                Integer.toString(terms(sheet)), latePct(sheet).toPlainString(), get(sheet, POLICY_DATE));
+                Integer.toString(terms(sheet)), latePct(sheet).toPlainString(), get(sheet, POLICY_DATE),
+                get(sheet, PERIOD_NUMBERING_FROM));
     }
 }

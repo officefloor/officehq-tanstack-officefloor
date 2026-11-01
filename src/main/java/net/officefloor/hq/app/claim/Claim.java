@@ -12,13 +12,14 @@ import net.officefloor.hq.app.rate.Rate;
  * null until settled, and when the grade had no rate then), and the user who opened it (null until opened), and
  * whether its person's last statement bound it, with the figure it bound (null when the grade had no rate then), and
  * the number of the claim it corrects (null unless it is a correction), and the date it rounds on: its own, or for
- * a correction the date of the claim it corrects.
+ * a correction the date of the claim it corrects, and its number within its period (<period>-<n>, or X-<n> in no
+ * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise).
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
-        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, Integer corrects,
-        String roundsOn) {
+        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
+        String roundsOn, String periodNumber) {
 
-    /** Whether this claim is a correction: a negative amount, naming the number of the settled claim it corrects. */
+    /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
     public boolean correction() {
         return amount.startsWith("-");
     }
@@ -30,17 +31,28 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
     public Claim withNumber(Integer number) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber);
+    }
+
+    /** This claim, numbered within its period: its audit fields end with number=<period number>. */
+    public Claim withPeriodNumber(String periodNumber) {
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber);
     }
 
     /** This claim, settled with its due fixed (null when its grade had no rate). */
     public Claim withSettledDue(String settledDue) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber);
+    }
+
+    /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
+    public String shownNumber() {
+        return periodNumber != null ? periodNumber : number == null ? null : number.toString();
     }
 
     /** The audit fields of a status change: {@link #auditFields} then number=<number> when it has one. */
     public String statusAuditFields(String person) {
-        return auditFields(person) + (number == null ? "" : " number=" + number);
+        String shown = shownNumber();
+        return auditFields(person) + (shown == null ? "" : " number=" + shown);
     }
 
     /** Whether this claim counts toward the totals: OPEN and SETTLED claims do. */

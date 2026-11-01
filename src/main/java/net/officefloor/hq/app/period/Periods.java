@@ -44,6 +44,13 @@ public class Periods {
         return n != null && n > 0;
     }
 
+    /** The name of the sheet's period the date falls inside, or null when it is in none. */
+    public String nameOn(String sheet, LocalDate date) {
+        List<String> found = jdbc.queryForList("SELECT name FROM period WHERE sheet = ? AND from_date <= ? AND to_date >= ?",
+                String.class, sheet, Date.valueOf(date), Date.valueOf(date));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether the sheet has a period of the name. */
     public boolean named(String sheet, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet = ? AND name = ?", Integer.class,
