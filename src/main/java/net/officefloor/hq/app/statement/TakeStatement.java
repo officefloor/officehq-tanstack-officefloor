@@ -34,11 +34,11 @@ public class TakeStatement {
         Late late = settings.late(sheet, today);
         List<Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id()).toList();
         boolean na = Rate.on(sheetRates, person.grade(), today) == null
-                && mine.stream().noneMatch((c) -> c.counts(person.held()) && person.figureApartFrom(c, today, sheetRates, floor));
+                && mine.stream().noneMatch((c) -> person.counts(c) && person.figureApartFrom(c, today, sheetRates, floor));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         int count = 0;
         for (Claim claim : mine) {
-            if (claim.counts(person.held())) {
+            if (person.counts(claim)) {
                 // The statement binds the figure; the late charge keeps following the sheet's today.
                 claims.setStated(sheet, claim.id(), true, claim.figure(sheetRates, person.gradeOn(claim.date()), floor, late.rounding(claim)));
                 BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);

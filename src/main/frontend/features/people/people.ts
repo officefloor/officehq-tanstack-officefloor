@@ -10,14 +10,18 @@ export type GradeFrom = { grade: Grade; from: string | null };
 
 // grade is the one in force on the sheet's today; grades are every one recorded, by from-date.
 // retiredFrom is null unless the person is retired; once set, they count as retired whatever the date.
-// While held, their OPEN claims count in no live total; their SETTLED ones still do.
+/** One of a person's holds: from its from-date to its to-date, both included (yyyy-MM-dd; to is null when it never ends). */
+export type Hold = { from: string; to: string | null };
+
+// holds are every one added, in that order; their OPEN claims dated within a hold count in no live total, unless
+// bound by a statement; their other claims still do.
 export type Person = {
   id: number;
   name: string;
   grade: Grade;
   version: number;
   retiredFrom: string | null;
-  held: boolean;
+  holds: Hold[];
   grades: GradeFrom[];
 };
 
@@ -30,6 +34,13 @@ export function gradeOn(person: Person, date: string): Grade | undefined {
   }
   return found?.grade;
 }
+
+/** Whether the person has any hold. */
+export const isHeld = (p: Person) => p.holds.length > 0;
+
+/** Whether a date (yyyy-MM-dd) is within one of the person's holds. */
+export const heldOn = (p: Person, date: string) =>
+  p.holds.some((h) => date >= h.from && (h.to === null || date <= h.to));
 
 export const isRetired = (p: Person) => p.retiredFrom !== null;
 

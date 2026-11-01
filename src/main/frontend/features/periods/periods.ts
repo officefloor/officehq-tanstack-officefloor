@@ -36,8 +36,8 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-/** Each period's live due-total (in hundredths, by name): the due of the counted (OPEN and SETTLED, but not a held
- *  person's OPEN) claims whose date falls in it (a claim with no rate adds nothing). */
+/** Each period's live due-total (in hundredths, by name): the due of the counted (OPEN and SETTLED, but not an unbound
+ *  OPEN one within its person's hold) claims whose date falls in it (a claim with no rate adds nothing). */
 export function periodDueCents(
   periods: Period[],
   claims: Claim[],

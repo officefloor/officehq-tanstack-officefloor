@@ -16,9 +16,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, name, version, retired_from, held FROM person";
+    private static final String COLUMNS = "SELECT id, name, version, retired_from FROM person";
 
-    private record Row(long id, String name, long version, String retiredFrom, boolean held) {
+    private record Row(long id, String name, long version, String retiredFrom) {
     }
 
     private final JdbcTemplate jdbc;
@@ -32,8 +32,7 @@ public class People {
     private List<Person> query(String sheet, String where, Object... args) {
         List<Row> rows = jdbc.query(COLUMNS + " " + where, (rs, i) -> new Row(rs.getLong("id"), rs.getString("name"),
                 rs.getLong("version"),
-                rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
-                rs.getBoolean("held")), args);
+                rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString()), args);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -44,12 +43,19 @@ public class People {
                             .add(new GradeFrom(rs.getString("grade"),
                                     rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString()));
                 }, sheet);
+        Map<Long, List<Hold>> holds = new HashMap<>();
+        jdbc.query("SELECT h.person_id, h.from_date, h.to_date FROM person_hold h JOIN person p ON p.id = h.person_id"
+                + " WHERE p.sheet = ? ORDER BY h.person_id, h.id", (rs) -> {
+                    holds.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new Hold(rs.getDate("from_date").toLocalDate().toString(),
+                                    rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString()));
+                }, sheet);
         LocalDate today = clock.today(sheet);
         List<Person> people = new ArrayList<>();
         for (Row r : rows) {
             List<GradeFrom> mine = List.copyOf(grades.getOrDefault(r.id(), List.of()));
-            people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(), r.held(),
-                    mine));
+            people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(),
+                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine));
         }
         return people;
     }
@@ -117,9 +123,10 @@ public class People {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet = ? AND id = ?", Date.valueOf(from), sheet, id);
     }
 
-    /** Put the person on hold, or take them off it. */
-    public void hold(String sheet, long id, boolean held) {
-        jdbc.update("UPDATE person SET held = ? WHERE sheet = ? AND id = ?", held, sheet, id);
+    /** Adds a hold to the person. */
+    public void hold(long id, Hold hold) {
+        jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
+                Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()));
     }
 
     /** Save the person's name over the version it carries, raising the version; refused when it has moved on. */

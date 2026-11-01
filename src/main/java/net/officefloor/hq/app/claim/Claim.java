@@ -72,11 +72,6 @@ public record Claim(long id, long person, String amount, String date, String not
         return stated && status != ClaimStatus.PENDING;
     }
 
-    /** Whether this claim counts toward the live totals when its person is {@code held}: then only SETTLED does. */
-    public boolean counts(boolean held) {
-        return held ? status == ClaimStatus.SETTLED : counts();
-    }
-
     /**
      * Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement (a claim
      * settled or bound when its grade had no rate keeps none; a PENDING claim is not bound).

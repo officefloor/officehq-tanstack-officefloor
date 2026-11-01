@@ -62,7 +62,7 @@ public class Rollup {
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheet)) {
-            List<Claim> mine = all.stream().filter((c) -> c.person() == person.id() && c.counts(person.held())).toList();
+            List<Claim> mine = all.stream().filter((c) -> c.person() == person.id() && person.counts(c)).toList();
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             for (Claim claim : mine) {

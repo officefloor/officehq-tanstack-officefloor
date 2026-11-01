@@ -19,8 +19,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Closes the period, fixing its due-total now: the due of the counted (OPEN and SETTLED, but not a held person's
- * OPEN) claims dated in it (a
+ * Closes the period, fixing its due-total now: the due of the counted (OPEN and SETTLED, but not an unbound OPEN one dated
+ * within its person's hold) claims dated in it (a
  * claim with no rate adds nothing). Refuses a period not on the sheet or already closed.
  */
 public class ClosePeriod {
@@ -45,7 +45,7 @@ public class ClosePeriod {
         for (Claim claim : claims.list(sheet)) {
             LocalDate date = LocalDate.parse(claim.date());
             Person person = byId.get(claim.person());
-            if (person == null || !claim.counts(person.held()) || date.isBefore(from) || date.isAfter(to)) {
+            if (person == null || !person.counts(claim) || date.isBefore(from) || date.isAfter(to)) {
                 continue;
             }
             BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);

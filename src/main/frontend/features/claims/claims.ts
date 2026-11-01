@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { gradeOn } from '../people/people';
+import { gradeOn, heldOn } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, twoDecimals, type Rate } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
@@ -69,10 +69,15 @@ export function useClaims(sheet: string) {
 }
 
 /** The claims that count toward claimed, due-total and every total: the OPEN, PENDING and SETTLED ones, but not
- *  the OPEN or PENDING ones of a person on hold. */
+ *  the OPEN or PENDING ones dated within a hold of their person, unless bound by a statement. */
 export function counted(claims: Claim[], people: Person[]): Claim[] {
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => c.status === 'SETTLED' || (isOpen(c) && !held.has(c.person)));
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return claims.filter((c) => {
+    if (c.status === 'SETTLED') return true;
+    if (!isOpen(c)) return false;
+    const person = byId.get(c.person);
+    return bound(c) || person === undefined || !heldOn(person, c.date);
+  });
 }
 
 /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */

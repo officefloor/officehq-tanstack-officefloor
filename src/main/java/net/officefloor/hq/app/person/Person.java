@@ -4,16 +4,29 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.rate.Rate;
 
 /**
  * A person on a sheet: name (unique on the sheet, ignoring case) and grades (A, B or C), each in force from its
  * from-date; grade is the one in force on the sheet's today. The version is raised by one on every save. The
  * retired-from date (yyyy-mm-dd) is null unless they are retired; once it is set they count as retired, whatever
- * the date. While held, their OPEN claims count in no live total.
+ * the date. Their holds are listed in the order they were added; their OPEN claims dated within a hold, unless bound
+ * by a statement, count in no live total.
  */
-public record Person(long id, String name, String grade, long version, String retiredFrom, boolean held,
+public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
         List<GradeFrom> grades) {
+
+    /** Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement, and dated within one of their holds. */
+    public boolean counts(Claim claim) {
+        if (!claim.counts()) {
+            return false;
+        }
+        if (claim.status() == ClaimStatus.SETTLED || claim.bound()) {
+            return true;
+        }
+        return holds.stream().noneMatch((h) -> h.covers(claim.date()));
+    }
 
     /** Whether a claim dated {@code date} is after this person's retirement, and so refused. */
     public boolean retiredBefore(LocalDate date) {
