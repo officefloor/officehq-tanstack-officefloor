@@ -1,0 +1,93 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java
+index bdec60f9..9a3fbc25 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimSplit.java
+@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Splits an amount off an OPEN claim (not deferred, nor due by in a closed period), for a user whose
+  *  role may open a claim, and less than its amount: the claim keeps the rest, unbound from any
+  *  statement; the new OPEN claim has the amount split off, the same date, note and tags, the next number,
+- *  is opened by the user, its due-by fixed from the terms in force on its date (a late entry when a
++ *  is opened by the user, its due-by fixed from its date with the terms in force on the day it is split off (the sheet's today) (a late entry when a
+  *  soft-closed period contains it), and names the original's number as the one it was split from.
+  *  Whether a closed period refuses the split is judged by the original claim alone. */
+ public class ApplyClaimSplit {
+@@ -35,7 +35,7 @@ public class ApplyClaimSplit {
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         Claim into = new Claim(null, claim.getSheetId(), claim.getPersonId(), split.amount(), claim.getDate(),
+                 claim.getNote(), ClaimStatus.OPEN, null, null, split.user());
+-        into.setDueTerms(DueBy.terms(person, claim.getDate(), settings));
++        into.setDueTerms(DueBy.terms(person, settings));
+         into.setDueBy(holidays.businessDaysAfter(claim.getSheetId(), claim.getDate(), into.getDueTerms()));
+         into.setLateEntry(closedPeriods.late(claim.getSheetId(), into.getDueBy()));
+         into.setSplitFrom(claim.getNumber());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 9835a543..fafc6b39 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.Sheets;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade in force on its date, a late entry when a soft-closed period contains its due-by, refusing one due by in a closed period or after its person's retirement date,
++/** Builds the new claim, its due-by fixed from its person's own terms, else those of their grade, else the sheet's, in force on the day it is created (the sheet's today), a late entry when a soft-closed period contains its due-by, refusing one due by in a closed period or after its person's retirement date,
+  *  and a correction that does not name a SETTLED claim of the same person. */
+ public class BuildClaim {
+     public void build(@Val ClaimValues values, @Val Person person, Sheets sheets, ClosedPeriods closedPeriods,
+@@ -25,7 +25,7 @@ public class BuildClaim {
+     static Claim built(ClaimValues values, Person person, Sheets sheets, ClosedPeriods closedPeriods,
+             Claims claims, Settings settings, Holidays holidays) throws PeriodClosedException, PersonRetiredException, InvalidSheetRequestException {
+         LocalDate date = values.date() != null ? values.date() : settings.claimDate(person.getSheetId());
+-        int terms = DueBy.terms(person, date, settings);
++        int terms = DueBy.terms(person, settings);
+         LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), date, terms);
+         closedPeriods.refuse(person.getSheetId(), dueBy);
+         person.refuseRetired(date);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/DueBy.java b/src/main/java/net/officefloor/hq/app/claim/DueBy.java
+index 2b55c6c6..49066f86 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/DueBy.java
++++ b/src/main/java/net/officefloor/hq/app/claim/DueBy.java
+@@ -11,17 +11,19 @@ public final class DueBy {
+     private DueBy() {
+     }
+ 
+-    /** The due-by of a claim of `person` dated `date`: the terms-th business day after its date,
+-     *  taking the person's own terms, else the terms of their grade then, else the sheet's terms then,
+-     *  and skipping every Saturday, Sunday and holiday on the sheet now. */
++    /** The due-by of a claim of `person` dated `date` created now: the terms-th business day after its
++     *  date, taking the terms in force on the sheet's today (see `terms`), and skipping every Saturday,
++     *  Sunday and holiday on the sheet now. */
+     public static LocalDate of(Person person, LocalDate date, Settings settings, Holidays holidays) {
+-        return holidays.businessDaysAfter(person.getSheetId(), date, terms(person, date, settings));
++        return holidays.businessDaysAfter(person.getSheetId(), date, terms(person, settings));
+     }
+ 
+-    /** The terms a claim of `person` dated `date` is fixed with: the person's own in force then, else
+-     *  those of their grade then, else the sheet's then. */
+-    public static int terms(Person person, LocalDate date, Settings settings) {
+-        Integer own = person.termsOn(date);
+-        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date);
++    /** The terms a claim of `person` created now is fixed with, each looked up on the day it is created
++     *  (the sheet's today), not on its date: the person's own in force then, else those of the grade
++     *  they had then, else the sheet's then. */
++    public static int terms(Person person, Settings settings) {
++        LocalDate created = settings.today(person.getSheetId());
++        Integer own = person.termsOn(created);
++        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(created), created);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index bad9bd81..d436d29b 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -337,6 +337,11 @@ public class Settings {
+                 sheetId, date != null ? Date.valueOf(date) : null);
+     }
+ 
++    /** The sheet's today: the day a claim added now is created on. */
++    public LocalDate today(String sheetId) {
++        return sheets.today(sheetId);
++    }
++
+     /** The default date of a new claim: the sheet's entry date while set, else its today. */
+     public LocalDate claimDate(String sheetId) {
+         LocalDate entry = entryDate(sheetId);
