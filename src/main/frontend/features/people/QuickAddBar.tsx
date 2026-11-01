@@ -7,8 +7,8 @@ import { peopleKey } from './usePeople';
 
 /** Adds a DRAFT claim by person name: dated the sheet's today, with an empty note, for the person
  *  of that name — created with the sheet's default grade when the name is not on the sheet. One change on the
- *  server: a refused claim leaves no new person behind. */
-export function QuickAddBar({ user, sheet }: { user: string; sheet: string }) {
+ *  server: a refused claim leaves no new person behind. `onAdded` is told the person the claim went to. */
+export function QuickAddBar({ user, sheet, onAdded }: { user: string; sheet: string; onAdded?: (personId: number) => void }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
@@ -16,7 +16,8 @@ export function QuickAddBar({ user, sheet }: { user: string; sheet: string }) {
   const add = useMutation({
     mutationFn: (q: { name: string; amount: string }) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/quick-add`, { ...q, user }),
-    onSuccess: async () => {
+    onSuccess: async (claim) => {
+      onAdded?.(claim.personId);
       setName('');
       setAmount('');
       await Promise.all([

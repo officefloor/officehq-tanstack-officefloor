@@ -43,7 +43,9 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
   const shown = showRetired ? everyone : everyone.filter((p) => !p.retired);
   // A restricted user's list holds only their own crews' people; every other figure is over everyone.
   const visible = useVisiblePeople(user, sheet);
-  const listed = shown.filter((p) => visible(p.id));
+  // The people this user quick-added on this screen stay listed until the sheet is loaded again.
+  const [addedHere, setAddedHere] = useState<number[]>([]);
+  const listed = shown.filter((p) => visible(p.id) || addedHere.includes(p.id));
   // This user's screen may sort the list; only what is shown changes, not the list order.
   const people = useSortedPeople(sheet, listed);
   const [editing, setEditing] = useState<number | null>(null);
@@ -267,7 +269,7 @@ function PeoplePanel({ user, sheet }: { user: string; sheet: string }) {
           </span>
         )}
       </form>
-      <QuickAddBar user={user} sheet={sheet} />
+      <QuickAddBar user={user} sheet={sheet} onAdded={(id) => setAddedHere((ids) => (ids.includes(id) ? ids : [...ids, id]))} />
       <ShowRetired />{' '}
       <SortBy />
       <table data-testid="people-list">

@@ -89,6 +89,17 @@ const ACTIONS = ['open', 'review', 'settle', 'approve', 'reject', 'void', 'delet
 type Action = (typeof ACTIONS)[number];
 const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', settle: 'Settle', approve: 'Approve', reject: 'Reject', void: 'Void', delete: 'Delete', restore: 'Restore' };
 
+/** A score from settled figures in cents and an overdue count: cents / 10000 - 5 per overdue claim,
+ *  rounded half to even to a whole number. */
+function scoreOf(settledCents: bigint, overdue: number): string {
+  const n = settledCents - 50000n * BigInt(overdue);
+  let q = n / 10000n;
+  const r = n - q * 10000n;
+  const twice = 2n * (r < 0n ? -r : r);
+  if (twice > 10000n || (twice === 10000n && q % 2n !== 0n)) q += r < 0n ? -1n : 1n;
+  return q.toString();
+}
+
 /**
  * A person's claims: what they have claimed in all and their due-total, the sum of their claims' rounded dues,
  * one form to add a claim or edit the one whose editor is open (only a DRAFT outside a closed period can be edited; an open
@@ -163,6 +174,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
   const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
   const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
+  // Their score: their settled figures over 100, less 5 for each overdue claim, rounded half to even.
+  const score = scoreOf(settledSum ?? 0n, late.count);
   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
   const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
   const editing = editingClaim?.id ?? null;
@@ -623,6 +636,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
       <td data-testid="person-open-total">{showDue(openSum ?? 0n)}</td>
       <Col user={user} id="overdue-count"><td data-testid="person-overdue-count">{late.count}</td></Col>
       <Col user={user} id="overdue-total"><td data-testid="person-overdue-total">{showDue(late.cents)}</td></Col>
+      <td data-testid="person-score">{score}</td>
       <td>
         <form
           data-testid="claim-form"
@@ -1173,6 +1187,7 @@ export const contributions = [
         <th>Open</th>
         <Col user={user} id="overdue-count"><th>Overdue</th></Col>
         <Col user={user} id="overdue-total"><th>Overdue due</th></Col>
+        <th>Score</th>
         <th>Claims</th>
       </>
     ),
