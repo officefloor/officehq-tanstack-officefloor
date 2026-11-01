@@ -1,0 +1,46 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 114a1887..2713fd5e 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -127,7 +127,8 @@ function scoreOf(settledCents: bigint, overdue: number): string {
+  * A steward can re-date an OPEN or PENDING claim (not one due by in a closed period, nor after its person's
+  * retirement): its due-by and any figure a statement bound stay, and so do its period and number.
+  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
+- * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
++ * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled —
++ * but while a statement binds it, the deferral waits until the binding ends.
+  * A steward can assign a REVIEW claim's review to a user: the claim shows that user from then on.
+  * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
+  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 21d86965..0eea69de 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -53,7 +53,8 @@ export type Claim = {
+    *  "<STATUS> by <user> on <date> due=<due>" (the sheet's today and the claim's due then). */
+   log: string[];
+   /** Whether the claim is deferred now: OPEN, and the sheet's today is before its deferred-until
+-   *  date. A deferred claim counts in no total, is not overdue and cannot be settled. */
++   *  date, and no statement binds it (a bound claim's deferral takes effect once the binding ends).
++   *  A deferred claim counts in no total, is not overdue and cannot be settled. */
+   deferred: boolean;
+   /** The date (yyyy-mm-dd) the claim was last deferred until (kept once that date is reached); null when it never was. */
+   deferredUntil: string | null;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index b4381b7b..eedb5448 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -103,9 +103,10 @@ public class Claim {
+     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+     /** Whether the claim is deferred now: the sheet's today (as it was when the claim was read) is
+      *  before its deferred-until date (only an OPEN claim is deferred, and a voided one keeps showing
+-     *  it). A deferred claim counts in no total, is not overdue, cannot be settled and is left
+-     *  unbound by a statement. */
+-    public boolean isDeferred() { return deferred; }
++     *  it), and no statement binds it: a deferral of a bound claim takes effect only once the binding
++     *  ends (the statement is cancelled, or the next statement leaves it unbound). A deferred claim
++     *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
++    public boolean isDeferred() { return deferred && !stated; }
+     public void setDeferred(boolean deferred) { this.deferred = deferred; }
+     /** How many proofs the claim has: a claim whose due is above the sheet's proof threshold on its
+      *  date cannot be settled or approved while it has none. */
