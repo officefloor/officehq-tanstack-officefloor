@@ -1,0 +1,164 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 76e31b5d..6a8423de 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -9,9 +9,19 @@ import type { Person } from '../people/people';
+ import { recentSettledCents, useClaims } from '../claims/claims';
+ import { twoDecimals } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+-import { patronsKey, usePatrons } from './patrons';
++import { patronsKey, shareCents, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
+ 
++/** A figure in ten-thousandths of a hundredth (hundredths times a share in hundredths of a percent) as hundredths,
++ *  rounded half to even. */
++function roundHundredths(product: bigint): bigint {
++  const abs = product < 0n ? -product : product;
++  let quotient = abs / 10000n;
++  const remainder = abs % 10000n;
++  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
++  return product < 0n ? -quotient : quotient;
++}
++
+ function PatronsHeader() {
+   return (
+     <>
+@@ -22,9 +32,11 @@ function PatronsHeader() {
+   );
+ }
+ 
+-// A person's patrons (names sorted, comma separated) and their backing: the patrons' settled figures added up
+-// over their SETTLED claims dated within the 90 days up to and including the sheet's today (0.00 with none). A patron is picked from the others on the sheet and named one at a time; the
+-// server refuses a patron already named.
++// A person's patrons, each with their share (see shareCents; shown "<name> <share>", sorted by name, comma separated),
++// and their backing: over the patrons, each patron's settled figures of their SETTLED claims dated within the 90 days up
++// to and including the sheet's today, times their share divided by 100, added up and rounded half to even (0.00 with
++// none). A patron is picked from the others on the sheet and named one at a time; the server refuses a patron already
++// named.
+ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const { data: everyone = [] } = usePeople(sheet);
+@@ -35,10 +47,17 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
+ 
+   const mine = patrons
+     .filter((p) => p.person === person.id)
++    .sort((a, b) => a.named - b.named)
+     .map((p) => everyone.find((e) => e.id === p.patron))
+     .filter((p): p is Person => p !== undefined);
+-  const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
+-  const backing = mine.reduce((sum, p) => sum + recentSettledCents(claims, p, today), 0n);
++  const shares = shareCents(mine.length);
++  const named = mine.map((p, i) => ({ patron: p, share: shares[i] }));
++  const names = [...named]
++    .sort((a, b) => a.patron.name.localeCompare(b.patron.name))
++    .map((n) => `${n.patron.name} ${twoDecimals(n.share)}`);
++  const backing = roundHundredths(
++    named.reduce((sum, n) => sum + recentSettledCents(claims, n.patron, today) * n.share, 0n),
++  );
+   const others = everyone.filter((p) => p.id !== person.id);
+ 
+   const add = useMutation({
+diff --git a/src/main/frontend/features/patrons/patrons.ts b/src/main/frontend/features/patrons/patrons.ts
+index 04bf6f1b..fc084585 100644
+--- a/src/main/frontend/features/patrons/patrons.ts
++++ b/src/main/frontend/features/patrons/patrons.ts
+@@ -1,8 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** That `patron` is one of `person`'s patrons: both are ids of people on the sheet. */
+-export type Patron = { person: number; patron: number };
++/** That `patron` is one of `person`'s patrons: both are ids of people on the sheet. `named` orders a person's patrons
++ *  as they were named (lower first). */
++export type Patron = { person: number; patron: number; named: number };
+ 
+ export const patronsKey = (sheet: string) => ['patrons', sheet] as const;
+ 
+@@ -15,3 +16,16 @@ export function usePatrons(sheet: string) {
+     queryFn: () => getJson<Patron[]>(patronsPath(sheet)),
+   });
+ }
++
++/** Shares (in hundredths of a percent) for `count` patrons in the order they were named: 100.00 split equally, each
++ *  rounded half to even to two decimals, with the remainder (100.00 minus the shares added up) on the first. */
++export function shareCents(count: number): bigint[] {
++  if (count === 0) return [];
++  const n = BigInt(count);
++  let each = 10000n / n;
++  const twice = (10000n % n) * 2n;
++  if (twice > n || (twice === n && each % 2n === 1n)) each += 1n;
++  const shares = Array.from({ length: count }, () => each);
++  shares[0] += 10000n - each * n;
++  return shares;
++}
+diff --git a/src/main/java/net/officefloor/hq/app/patron/Patron.java b/src/main/java/net/officefloor/hq/app/patron/Patron.java
+index c3573a50..1ea4cd8a 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/Patron.java
++++ b/src/main/java/net/officefloor/hq/app/patron/Patron.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.patron;
+ 
+-/** That {@code patron} is one of {@code person}'s patrons: both are ids of people on the same sheet. */
+-public record Patron(long person, long patron) {
++/** That {@code patron} is one of {@code person}'s patrons: both are ids of people on the same sheet. {@code named}
++ *  orders a person's patrons as they were named (lower first). */
++public record Patron(long person, long patron, long named) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/patron/Patrons.java b/src/main/java/net/officefloor/hq/app/patron/Patrons.java
+index cd6cf9f1..8fdf227e 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/Patrons.java
++++ b/src/main/java/net/officefloor/hq/app/patron/Patrons.java
+@@ -9,7 +9,8 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Patrons {
+ 
+-    private static final RowMapper<Patron> ROW = (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id"));
++    private static final RowMapper<Patron> ROW = (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id"),
++            rs.getLong("named"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -17,9 +18,9 @@ public class Patrons {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** Every patron named on the sheet. */
++    /** Every patron named on the sheet, each person's in the order they were named. */
+     public List<Patron> list(String sheet) {
+-        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet = ? ORDER BY person_id, patron_id", ROW,
++        return jdbc.query("SELECT person_id, patron_id, named FROM patron WHERE sheet = ? ORDER BY person_id, named", ROW,
+                 sheet);
+     }
+ 
+diff --git a/src/main/resources/db/migration/V55__patron_order.sql b/src/main/resources/db/migration/V55__patron_order.sql
+new file mode 100644
+index 00000000..446395e5
+--- /dev/null
++++ b/src/main/resources/db/migration/V55__patron_order.sql
+@@ -0,0 +1,2 @@
++-- The order a person named their patrons in: the first-named patron has the lowest. Shares follow this order.
++ALTER TABLE patron ADD COLUMN named BIGINT GENERATED BY DEFAULT AS IDENTITY;
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+index 0af55d95..88fa7b74 100644
+--- a/tmp_e2e/run.log
++++ b/tmp_e2e/run.log
+@@ -2,12 +2,11 @@ Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/20261027
+ 
+ Running 4 tests using 1 worker
+ 
+-  ✓  1 [chromium] › acceptance.spec.ts:6:7 › merge people › merge people (17.5s)
+-  ✓  2 [chromium] › acceptance.spec.ts:144:7 › merge people › merge people scenario 1 (24.3s)
+-  ✓  3 [chromium] › acceptance.spec.ts:753:7 › merge people › merge people scenario 2 (25.5s)
+-  ✓  4 [chromium] › acceptance.spec.ts:1316:7 › merge people › merge people scenario 3 (27.0s)
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › patron shares › patron shares (10.3s)
++  ✓  2 [chromium] › acceptance.spec.ts:90:7 › patron shares › patron shares scenario 1 (34.9s)
++  ✓  3 [chromium] › acceptance.spec.ts:488:7 › patron shares › patron shares scenario 2 (42.4s)
++  ✓  4 [chromium] › acceptance.spec.ts:889:7 › patron shares › patron shares scenario 3 (28.6s)
+ 
+-  Slow test file: [chromium] › acceptance.spec.ts (1.6m)
++  Slow test file: [chromium] › acceptance.spec.ts (1.9m)
+   Consider splitting slow test files to speed up parallel execution
+-  4 passed (1.6m)
+- 184466
+\ No newline at end of file
++  4 passed (2.0m)
