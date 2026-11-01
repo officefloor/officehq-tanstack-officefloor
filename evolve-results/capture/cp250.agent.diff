@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/export/exportPolicy.slot.tsx b/src/main/frontend/features/export/exportPolicy.slot.tsx
+new file mode 100644
+index 00000000..dd7f4d06
+--- /dev/null
++++ b/src/main/frontend/features/export/exportPolicy.slot.tsx
+@@ -0,0 +1,48 @@
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { claimDueCents, useClaims } from '../claims/useClaims';
++import { gradeOn, usePeople } from '../people/usePeople';
++import { claimRateOn, totalDue, useRates } from '../rates/useRates';
++import { useFloor, useLate, useSettings } from '../settings/useSettings';
++import { downloadCsv, useSheetRead } from './csv';
++
++/**
++ * Downloads the policy versions as a CSV file: a header line `version,from,key,value,claims,due-total`,
++ * then one line per version, oldest first, with its from-date (empty for none), the key and value it
++ * set, the count of claims whose policy version it is (the one in force on the claim's date; DELETED
++ * claims left out) and the due of those claims as their rows show it, added up (n/a skipped). Quoted
++ * and ended as the people export.
++ */
++function ExportPolicy({ sheet }: { user: string; sheet: string }) {
++  const versions = useSettings(sheet).data?.policyVersionList ?? [];
++  const { data: people = [] } = usePeople(sheet);
++  const { data: claims = [] } = useClaims(sheet);
++  const { data: rates = [] } = useRates(sheet);
++  const floor = useFloor(sheet);
++  const lateBy = useLate(sheet);
++
++  const read = useSheetRead(sheet);
++
++  const download = () => {
++    const versionOn = (date: string) => versions.filter((v) => v.from === null || v.from <= date).length;
++    const lines = [['version', 'from', 'key', 'value', 'claims', 'due-total']];
++    versions.forEach((v, i) => {
++      const counted = claims.filter((c) => c.status !== 'DELETED' && versionOn(c.date) === i + 1);
++      const dues = counted.map((c) => {
++        const person = people.find((p) => p.id === c.personId);
++        return person ? claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy) : null;
++      });
++      lines.push([String(v.version), v.from ?? '', v.key, v.value, String(counted.length), totalDue(dues)]);
++    });
++    downloadCsv(lines, `policy-${sheet}.csv`);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-policy" disabled={!read} onClick={download}>
++        Export policy versions (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 12.65, Component: ExportPolicy });
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index d6105da6..ada90153 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -21,7 +21,11 @@ export type RoleEntry = { name: string; role: string };
+  *  `from` to `to` (yyyy-mm-dd, inclusive), for the steward `by` who delegated. */
+ export type DelegationEntry = { name: string; from: string; to: string; by: string };
+ 
+-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; pendingSla: number | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null; policyVersions: (string | null)[] };
++/** A policy version in full: its number, its from-date (yyyy-mm-dd, null for none: in force on every
++ *  date), and the key and value it set as the screen shows it (empty for blank). */
++export type PolicyVersion = { version: number; from: string | null; key: string; value: string };
++
++export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, number>; cap: string | null; roles: RoleEntry[]; dated: Record<string, DatedValue[]>; proofThreshold: string | null; noteThreshold: string | null; perms: Record<string, string>; graceDays: number | null; delegations: DelegationEntry[]; entryDate: string | null; gradeGrace: Record<string, number>; gradeProof: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; pendingSla: number | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null; policyVersions: (string | null)[]; policyVersionList: PolicyVersion[] };
+ 
+ /** A dated setting's value from a from-date (yyyy-mm-dd); null for blank. */
+ export type DatedValue = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+index ffb919e5..59a1f06e 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsResponse.java
+@@ -9,11 +9,12 @@ import java.util.Map;
+  *  the clerk limit with two decimals (null for no limit), the floor with two decimals, the terms in days, the late percent with two decimals, the policy date as set (yyyy-mm-dd, null when blank), the period numbering from (yyyy-mm-dd, null when off), the terms set per grade, by grade (a grade not in it uses the sheet's terms), the cap with two decimals (null for no cap), and the roles given, by user name;
+  *  and every value recorded for the dated settings, by key, oldest from-date first; and the proof threshold
+  *  with two decimals (null for none); and the permissions set, by action (roles comma separated; an action not in it keeps the standing rule); and the grace days (null when off); and every delegation of the steward role, oldest first; and the note threshold with two decimals (null for none); and the entry date (yyyy-mm-dd, null when off); and the grace days set per grade, by grade (a grade not in it has none); and the proof threshold set per grade with two decimals, by grade (a grade not in it uses the sheet's); and the pot with two decimals (null for none); and the parent sheet id (null for none); and the fiscal year start month (1 to 12); and the alert threshold with two decimals (null for off); and the rounding mode, half-up or half-even (null for none); and the review threshold with two decimals (null for none); and the escalation gap in days (null when off); and the review SLA in days (null for none); and the proof kinds, comma separated (null for none); and the default grade as set (null when blank: A); and the clerk limit set per grade with two decimals, by grade, in force on the sheet's today (a grade not in it uses the sheet's); and the mid and high score thresholds (null when unset); and whether the score log is on; and the maximum of open claims per person (null for none); and the from-date of each policy version
+- *  (yyyy-mm-dd, null for none), in version order. */
++ *  (yyyy-mm-dd, null for none), in version order; and each policy version in full (number, from-date or
++ *  null, key, value as shown), in version order. */
+ public record SettingsResponse(String clerkLimit, String floor, int terms, String latePct, String policyDate, String periodNumberingFrom, Map<String, Integer> gradeTerms, String cap, List<RoleResponse> roles,
+         Map<String, List<Settings.DatedValue>> dated, String proofThreshold, Map<String, String> perms, Integer graceDays,
+         List<DelegationResponse> delegations, String noteThreshold, String entryDate, Map<String, Integer> gradeGrace, Map<String, String> gradeProof, String pot, String parent, int fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, Integer escalateAfter, Integer reviewSla, Integer pendingSla, String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit, Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen,
+-        List<String> policyVersions) {
++        List<String> policyVersions, List<Settings.PolicyVersion> policyVersionList) {
+     public static SettingsResponse of(String sheetId, LocalDate today, Settings settings) {
+         BigDecimal limit = settings.clerkLimit(sheetId);
+         LocalDate policyDate = settings.policyDate(sheetId);
+@@ -40,6 +41,6 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Strin
+                 settings.roundingName(sheetId, today),
+                 reviewThreshold != null ? reviewThreshold.toPlainString() : null, settings.escalateAfter(sheetId), settings.reviewSla(sheetId), settings.pendingSla(sheetId), settings.proofKindsValue(sheetId), settings.defaultGradeValue(sheetId), settings.gradeClerkLimit(sheetId),
+                 settings.scoreMid(sheetId), settings.scoreHigh(sheetId), settings.scoreLog(sheetId), settings.maxOpen(sheetId),
+-                settings.policyVersions(sheetId));
++                settings.policyVersions(sheetId), settings.policyVersionList(sheetId));
+     }
+ }
