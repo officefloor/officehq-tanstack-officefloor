@@ -116,6 +116,13 @@ public class Sheets {
         return jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, sheetId) > 0;
     }
 
+    /** The number of the sheet's last bulk settle batch, kept even once its claims have left the
+     *  sheet; null when it has had none. */
+    public Integer lastBatch(String sheetId) {
+        return jdbc.queryForObject("SELECT NULLIF(GREATEST(COALESCE((SELECT MAX(batch) FROM claim WHERE sheet_id = ?), 0), "
+                + "COALESCE((SELECT last_batch FROM sheet_batch WHERE sheet_id = ?), 0)), 0)", Integer.class, sheetId, sheetId);
+    }
+
     /** Whether a steward has archived the sheet: then every change to it is refused. */
     public boolean archived(String sheetId) {
         today(sheetId);

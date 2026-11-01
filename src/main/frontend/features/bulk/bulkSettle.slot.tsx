@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimsKey, lastBatch, useClaims } from '../claims/useClaims';
+import { sheetKey, useSheet } from '../sheet/useSheet';
 import { useSelectedClaims } from './useSelectedClaims';
 
 /**
@@ -15,11 +16,16 @@ function BulkSettle({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useSelectedClaims();
   const claims = useClaims(sheet);
+  const kept = useSheet(sheet).data?.lastBatch ?? null;
+  const shown = lastBatch(claims.data ?? []);
   const bulk = useMutation({
     mutationFn: (claimIds: number[]) =>
       postJson<{ settled: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheet)}/bulk-settle`, { claimIds, user }),
     onSuccess: () => setSelected([]),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
+    },
   });
   return (
     <section data-testid="bulk-settle-panel">
@@ -34,7 +40,7 @@ function BulkSettle({ user, sheet }: { user: string; sheet: string }) {
       >
         Settle selected ({selected.length})
       </button>{' '}
-      <span data-testid="bulk-settle-batch">{lastBatch(claims.data ?? []) ?? ''}</span>
+      <span data-testid="bulk-settle-batch">{(shown == null ? kept : kept == null ? shown : Math.max(shown, kept)) ?? ''}</span>
       {bulk.isSuccess && (
         <span>
           {' '}

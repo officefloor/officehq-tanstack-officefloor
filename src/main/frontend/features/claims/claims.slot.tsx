@@ -59,6 +59,7 @@ const LOCKED = 'Another user is editing this claim: it is locked until they save
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
 const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.';
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
+const CANNOT_ASSIGN_REVIEW = "Only a steward can assign a claim's review, only on a REVIEW claim, and only to a named user.";
 const CANNOT_HOLD = "Only an OPEN or PENDING claim can be held or released.";
 const CANNOT_WAIVE = "Only a steward can waive a claim's late charge, only on an OPEN or PENDING claim, and only once.";
 const EMPTY_COMMENT = 'A comment cannot be empty.';
@@ -125,6 +126,7 @@ function scoreOf(settledCents: bigint, overdue: number): string {
  * retirement): its due-by and any figure a statement bound stay, and so do its period and number.
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
+ * A steward can assign a REVIEW claim's review to a user: the claim shows that user from then on.
  * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
  * charge from then on, whatever its overdue state.
@@ -217,6 +219,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The new date typed for re-dating each claim, by claim id.
   const [redateTo, setRedateTo] = useState<Record<number, string>>({});
+  // The user typed for assigning each claim's review, by claim id.
+  const [reviewTo, setReviewTo] = useState<Record<number, string>>({});
   // The kind chosen for each claim's next proof ('' for none: a receipt).
   const [proofKind, setProofKind] = useState<Record<number, string>>({});
   // The person chosen to reassign each claim to, by claim id.
@@ -391,6 +395,24 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => setRedateTo((d) => ({ ...d, [c.id]: '' })),
     onError: (_, c) => setRefused({ id: c.id, message: CANNOT_REDATE }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A steward assigns a REVIEW claim's review to a user.
+  const assignReview = useMutation({
+    mutationFn: (c: { id: number; assignee: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/review-assign`, { assignee: c.assignee, user }),
+    onMutate: () => setRefused(null),
+    onSuccess: (_, c) => setReviewTo((d) => ({ ...d, [c.id]: '' })),
+    onError: (e, c) =>
+      setRefused({
+        id: c.id,
+        message: e instanceof HttpError && e.body.includes('viewer')
+          ? VIEWER
+          : e instanceof HttpError && e.body.includes('archived')
+            ? ARCHIVED
+            : CANNOT_ASSIGN_REVIEW,
+      }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -1100,6 +1122,25 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                 onClick={() => redate.mutate({ id: c.id, date: (redateTo[c.id] ?? '').trim() })}
               >
                 Re-date
+              </button>{' '}
+              Review: <span data-testid="claim-review-assigned">{c.reviewAssigned ?? ''}</span>{' '}
+              <input
+                data-testid="claim-review-user"
+                aria-label="Assign review to"
+                placeholder="user"
+                value={reviewTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setReviewTo({ ...reviewTo, [c.id]: e.target.value });
+                  if (refused?.id === c.id) setRefused(null);
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-review-assign"
+                disabled={assignReview.isPending}
+                onClick={() => assignReview.mutate({ id: c.id, assignee: (reviewTo[c.id] ?? '').trim() })}
+              >
+                Assign review
               </button>{' '}
               <input
                 data-testid="claim-split-amount"

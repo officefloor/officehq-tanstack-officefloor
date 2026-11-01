@@ -172,10 +172,10 @@ public class Transfers {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
-                    + "proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, held, ref, tags, tags_used, void_reason, "
+                    + "proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, held, ref, tags, tags_used, void_reason, review_assigned, "
                     + "edited_by, due_terms, batch) SELECT ?, ?, amount, claim_date, note, status, ?, due, opened_by, "
                     + "stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, NULL, late_entry, reminded_on, escalated, waived, held, "
-                    + "NULL, tags, tags_used, void_reason, edited_by, due_terms, NULL FROM claim WHERE id = ?",
+                    + "NULL, tags, tags_used, void_reason, review_assigned, edited_by, due_terms, NULL FROM claim WHERE id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
             ps.setLong(2, toId);

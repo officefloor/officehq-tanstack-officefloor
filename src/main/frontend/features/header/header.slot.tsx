@@ -12,7 +12,8 @@ import { usePeople } from '../people/usePeople';
  * the due-total and overdue-total of the person whose name or an alias is the user's name (as names
  * are compared: case and the spaces around it ignored); blank when there is no such person. And the
  * user's crew total: the due-totals of the crews led by a person with the user's name, added up
- * (n/a ones skipped); blank when no such person leads a crew.
+ * (n/a ones skipped); blank when no such person leads a crew. And how many REVIEW claims are
+ * assigned to the user for review.
  */
 function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
   const { data: all = [] } = useClaims(sheet);
@@ -54,6 +55,10 @@ function SheetHeader({ user, sheet }: { user: string; sheet: string }) {
       <span>
         {' '}
         My crew due: <strong data-testid="my-crew-due-total">{ledCrews.length > 0 ? totalDue(ledCrews.flatMap((c) => crewDues(c, perPerson))) : ''}</strong>
+      </span>
+      <span>
+        {' '}
+        My reviews: <strong data-testid="my-reviews-count">{all.filter((c) => c.status === 'REVIEW' && c.reviewAssigned === user).length}</strong>
       </span>
     </header>
   );

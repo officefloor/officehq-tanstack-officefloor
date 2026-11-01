@@ -32,6 +32,7 @@ public class Claim {
     private boolean escalatedNow;
     private boolean waived;
     private boolean held;
+    private String reviewAssigned;
     private String ref;
     private String tags;
     private String tagsUsed;
@@ -139,6 +140,9 @@ public class Claim {
     /** Whether the claim is held: shown only; it still counts in every total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
+    /** The user a steward assigned the claim's review to; null when none. */
+    public String getReviewAssigned() { return reviewAssigned; }
+    public void setReviewAssigned(String reviewAssigned) { this.reviewAssigned = reviewAssigned; }
     /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

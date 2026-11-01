@@ -11,6 +11,6 @@ public class RespondWithSheet {
             ObjectResponse<SheetResponse> response) throws InvalidSheetRequestException {
         sheets.today(sheetId);
         response.send(asOfSheet.view(sheetId, asOf,
-                () -> new SheetResponse(sheetId, sheets.today(sheetId).toString(), sheets.archived(sheetId))));
+                () -> new SheetResponse(sheetId, sheets.today(sheetId).toString(), sheets.archived(sheetId), sheets.lastBatch(sheetId))));
     }
 }

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, held, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, proof_photos, split_from, locked_by, late_entry, reminded_on, escalated, waived, held, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, review_assigned, "
             + "(SELECT LISTAGG(s.person_id || ':' || s.share, ',') WITHIN GROUP (ORDER BY s.id) FROM claim_share s WHERE s.claim_id = claim.id) AS shares, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
@@ -107,6 +107,11 @@ public class Claims {
         jdbc.update("UPDATE claim SET held = ? WHERE id = ?", claim.isHeld(), claim.getId());
     }
 
+    /** Record the user the claim's review is assigned to. */
+    public void assignReview(Claim claim) {
+        jdbc.update("UPDATE claim SET review_assigned = ? WHERE id = ?", claim.getReviewAssigned(), claim.getId());
+    }
+
     /** Record that the claim's late charge is waived. */
     public void waive(Claim claim) {
         jdbc.update("UPDATE claim SET waived = ? WHERE id = ?", claim.isWaived(), claim.getId());
@@ -118,10 +123,14 @@ public class Claims {
                 claim.isEscalated(), claim.getId());
     }
 
-    /** The number the sheet's next bulk settle batch takes: one past its last. */
+    /** The number the sheet's next bulk settle batch takes: one past its last (see {@link
+     *  net.officefloor.hq.app.sheet.Sheets#lastBatch}), which it then is. */
     public int nextBatch(String sheetId) {
-        Integer last = jdbc.queryForObject("SELECT MAX(batch) FROM claim WHERE sheet_id = ?", Integer.class, sheetId);
-        return last == null ? 1 : last + 1;
+        Integer last = jdbc.queryForObject("SELECT GREATEST(COALESCE((SELECT MAX(batch) FROM claim WHERE sheet_id = ?), 0), "
+                + "COALESCE((SELECT last_batch FROM sheet_batch WHERE sheet_id = ?), 0))", Integer.class, sheetId, sheetId);
+        int next = (last == null ? 0 : last) + 1;
+        jdbc.update("MERGE INTO sheet_batch (sheet_id, last_batch) KEY (sheet_id) VALUES (?, ?)", sheetId, next);
+        return next;
     }
 
     /** Keep the claim's newest share: the person holds it of the claim's due. */
@@ -195,6 +204,7 @@ public class Claims {
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setWaived(rs.getBoolean("waived"));
         claim.setHeld(rs.getBoolean("held"));
+        claim.setReviewAssigned(rs.getString("review_assigned"));
         claim.setShares(ClaimShare.parse(rs.getString("shares")));
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");

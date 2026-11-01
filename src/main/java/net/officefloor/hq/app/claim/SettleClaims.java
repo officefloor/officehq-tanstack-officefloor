@@ -45,10 +45,15 @@ public class SettleClaims {
             result.set(new BulkSettleResult(0, selected));
             return;
         }
-        // Check every claim first, on a copy that is never saved: one refusal refuses them all.
+        // Check every claim first, on a copy that is never saved: one refusal refuses them all. The
+        // check gives no number, so it uses up none of the sequence.
+        ClaimNumbers unnumbered = new ClaimNumbers(sheets, settings, null) {
+            @Override
+            public String next(Claim claim) { return null; }
+        };
         for (Long id : ordered) {
             try {
-                apply.apply(change, claims.find(sheetId, id), numbers, people, figures, closedPeriods, settings, log, sheets, voidReasons);
+                apply.apply(change, claims.find(sheetId, id), unnumbered, people, figures, closedPeriods, settings, log, sheets, voidReasons);
             } catch (ClaimStatusRefusedException | PeriodClosedException e) {
                 result.set(new BulkSettleResult(0, selected));
                 return;

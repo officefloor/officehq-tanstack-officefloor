@@ -95,6 +95,8 @@ export type Claim = {
   /** The people the claim is shared with, in the order shared, each holding `share` (a percent, two
    *  decimals) of its due: their part counts in their figures, and the claim's own person's in place. */
   shares: { personId: number; share: string }[];
+  /** The user a steward assigned the claim's review to; null when none. */
+  reviewAssigned: string | null;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
