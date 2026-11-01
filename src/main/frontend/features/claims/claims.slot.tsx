@@ -29,6 +29,7 @@ import {
 } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
+import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
 
 type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -74,10 +75,20 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   const floor = useFloorCents(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
+  // While the sheet has void reasons, a void needs one, chosen beside the Void button.
+  const { data: voidReasons = [] } = useVoidReasons(sheet);
+  const [voidReason, setVoidReason] = useState('');
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
-      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), change === 'reject' ? { reason } : {}),
-    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+      postJson<Claim[]>(
+        byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user),
+        change === 'reject' ? { reason } : change === 'void' ? { reason: voidReason } : {},
+      ),
+    onSuccess: (updated, change) => {
+      queryClient.setQueryData(claimsKey(sheet), updated);
+      // A void counts against the reason it was given, in the summary.
+      if (change === 'void') void queryClient.invalidateQueries({ queryKey: voidReasonsKey(sheet) });
+    },
   });
 
   const act = useSubmitOnce(status);
@@ -256,6 +267,21 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           {label}
         </button>
       ))}{' '}
+      <select
+        data-testid="claim-void-reason"
+        value={voidReason}
+        onChange={(e) => {
+          setVoidReason(e.target.value);
+          status.reset();
+        }}
+      >
+        <option value="">(void reason)</option>
+        {voidReasons.map((r) => (
+          <option key={r.reason} value={r.reason}>
+            {r.reason}
+          </option>
+        ))}
+      </select>{' '}
       <input
         data-testid="claim-reject-reason"
         placeholder="reject reason"
@@ -524,7 +550,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a claim whose due is above the proof threshold needs a proof, and one whose due is above the note threshold needs a note to be opened).
+          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, and one whose due is above the note threshold needs a note to be opened).
         </span>
       )}
       {resettleMutation.isError && (

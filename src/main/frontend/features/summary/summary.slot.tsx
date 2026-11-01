@@ -4,11 +4,13 @@ import { useSheetToday } from '../sheet/sheet';
 import { twoDecimals, useRates } from '../rates/rates';
 import { useCapCents, useFloorCents } from '../settings/settings';
 import { CLAIM_STATUSES, isActive, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 import { periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
 
 // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
 // excluded), their due-totals added up (an n/a due-total adds nothing) and how many of them are active. Per period: its due-total, as its row shows
-// it. Per status: how many of the sheet's claims have it (every claim, whoever's).
+// it. Per status: how many of the sheet's claims have it (every claim, whoever's). Per void reason on the list: how
+// many VOID claims were voided with it.
 function Summary({ sheet }: { sheet: string; user: string }) {
   const { data: claims = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
@@ -18,6 +20,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
   const floor = useFloorCents(sheet);
   const cap = useCapCents(sheet);
   const late = useLate(sheet);
+  const { data: voidReasons = [] } = useVoidReasons(sheet);
 
   const current = people.filter((p) => !isRetired(p));
   const periodTotals = periodDueCents(periods, claims, people, rates, floor, late);
@@ -77,6 +80,22 @@ function Summary({ sheet }: { sheet: string; user: string }) {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{statusCount(claims, s)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voidReasons.map((r) => (
+            <tr key={r.reason}>
+              <td>{r.reason}</td>
+              <td data-testid={`summary-void-${r.reason}-count`}>{r.voided}</td>
             </tr>
           ))}
         </tbody>

@@ -13,6 +13,7 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetArchive;
 import net.officefloor.hq.app.sheet.SheetClock;
+import net.officefloor.hq.app.voidreason.VoidReasons;
 import net.officefloor.hq.app.watch.Watches;
 import org.springframework.stereotype.Service;
 
@@ -36,9 +37,11 @@ public class ClaimStatusChanger {
     private final ClaimLog log;
     private final Watches watches;
     private final SheetArchive archive;
+    private final VoidReasons voidReasons;
 
     public ClaimStatusChanger(Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
-            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log, Watches watches, SheetArchive archive) {
+            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log, Watches watches, SheetArchive archive,
+            VoidReasons voidReasons) {
         this.claims = claims;
         this.people = people;
         this.rates = rates;
@@ -51,6 +54,7 @@ public class ClaimStatusChanger {
         this.log = log;
         this.watches = watches;
         this.archive = archive;
+        this.voidReasons = voidReasons;
     }
 
     /** Applies the change to the claim, writing nothing when it is refused. */
@@ -59,7 +63,8 @@ public class ClaimStatusChanger {
         change(sheet, user, claim, requested, null);
     }
 
-    /** Applies the change to the claim (a reject gives its reason), writing nothing when it is refused. */
+    /** Applies the change to the claim (a reject gives its reason, a void the one chosen from the sheet's void reasons),
+     *  writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
         // A viewer changes nothing.
@@ -104,6 +109,14 @@ public class ClaimStatusChanger {
         }
         if (requested == ClaimStatusChange.REJECT && (reason == null || reason.isBlank())) {
             throw new InvalidClaimStatusChangeException("A reject needs a reason");
+        }
+        // While the sheet has void reasons, a void needs one chosen from them (with none, a void takes no reason).
+        String voidReason = null;
+        if (requested == ClaimStatusChange.VOID && voidReasons.any(sheet)) {
+            voidReason = reason == null ? "" : reason.trim();
+            if (voidReason.isEmpty() || !voidReasons.has(sheet, voidReason)) {
+                throw new InvalidClaimStatusChangeException("A void needs a reason from the sheet's void reasons");
+            }
         }
         Person person = people.find(sheet, claim.person());
         // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has
@@ -172,6 +185,10 @@ public class ClaimStatusChanger {
         }
         if (requested == ClaimStatusChange.REJECT) {
             fields += " reason=" + reason.trim();
+        }
+        if (voidReason != null) {
+            voidReasons.voided(sheet, claim.id(), voidReason);
+            fields += " reason=" + voidReason;
         }
         log.record(sheet, user, claim.id());
         audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
