@@ -64,10 +64,10 @@ export function retiredOut(person: Person, today: string): boolean {
   return person.retiredFrom !== null && today !== '' && today >= person.retiredFrom;
 }
 
-/** Whether a claim of the person's dated `date` (yyyy-mm-dd) is held out of the live totals: the date
- *  falls within any of the person's holds, or the sheet's `today` has reached their retirement date. */
-export function heldOn(person: Person, date: string, today: string): boolean {
-  return retiredOut(person, today) || person.holds.some((h) => date >= h.from && (h.to === null || date <= h.to));
+/** Whether a claim of the person's dated `date` (yyyy-mm-dd) is held out of the live totals: the sheet's
+ *  `today` has reached their retirement date. A hold does not take a claim out (only a pool cut). */
+export function heldOn(person: Person, _date: string, today: string): boolean {
+  return retiredOut(person, today);
 }
 
 /** By person id, whether a claim dated then is held out (see `heldOn`) on the sheet's `today`. */

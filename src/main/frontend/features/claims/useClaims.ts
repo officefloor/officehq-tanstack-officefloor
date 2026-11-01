@@ -129,11 +129,11 @@ export function counted(claims: Claim[]): Claim[] {
 }
 
 /** The claims that count in the live totals: OPEN, PENDING and SETTLED ones, but not deferred ones,
- *  nor the OPEN or PENDING ones held, or dated within a hold of their person's (`heldOn` tells, by person id and date),
+ *  nor the OPEN or PENDING ones of a retired person (`heldOn` tells, by person id and date),
  *  unless a statement binds them. */
 export function live(claims: Claim[], heldOn: (personId: number, date: string) => boolean): Claim[] {
   return counted(claims).filter(
-    (c) => !c.deferred && (!isOpen(c) || c.stated || !(c.held || heldOn(c.personId, c.date))),
+    (c) => !c.deferred && (!isOpen(c) || c.stated || !heldOn(c.personId, c.date)),
   );
 }
 

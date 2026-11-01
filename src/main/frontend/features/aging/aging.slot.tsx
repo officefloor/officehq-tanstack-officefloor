@@ -12,7 +12,7 @@ function ageOn(claim: Claim, today: string): number {
 }
 
 /** A person's due on their OPEN and PENDING claims that count (as in their due-total: not deferred,
- *  not held unless a statement binds them), split by the claim's age on the sheet's today: 0 to 30
+ *  not retired out unless a statement binds them), split by the claim's age on the sheet's today: 0 to 30
  *  days (a claim dated after today too), 31 to 60, and 61 or more. Not capped. */
 function useAgedCents(sheet: string): (person: Person) => bigint[] {
   const { data: all = [] } = useClaims(sheet);

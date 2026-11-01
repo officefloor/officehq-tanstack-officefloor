@@ -203,8 +203,9 @@ public class Person {
     public void setClashing(boolean clashing) { this.clashing = clashing; }
 
     /** Whether a claim of the person's counts in the live totals: OPEN, PENDING and SETTLED ones do,
-     *  but not a deferred one, nor an OPEN or PENDING one that is held or dated within one of the person's holds, nor
-     *  one once the sheet's today has reached their retirement date, unless a statement binds it. */
+     *  but not a deferred one, nor an OPEN or PENDING one once the sheet's today has reached their
+     *  retirement date, unless a statement binds it. A hold (the claim's or the person's) does not
+     *  take a claim out: it only takes the person's cut out of the pools. */
     public boolean counts(Claim claim) {
         return counts(claim, claim.getStatus());
     }
@@ -214,12 +215,11 @@ public class Person {
     public boolean counts(Claim claim, ClaimStatus status) {
         if (status == null) return false;
         if (!status.counts() || claim.isDeferred()) return false;
-        if (!status.isOpen() || !(claim.isHeld() || heldOn(claim.getDate()) || retiredOut())) return true;
+        if (!status.isOpen() || !retiredOut()) return true;
         return claim.isStated();
     }
 
-    /** Whether a claim of the person's counts toward claimed: as `counts`, but a hold (the claim's
-     *  or the person's) does not take it out — only the due figures leave the totals while held. */
+    /** Whether a claim of the person's counts toward claimed: as `counts`. */
     public boolean countsClaimed(Claim claim) {
         ClaimStatus status = claim.getStatus();
         if (status == null || !status.counts() || claim.isDeferred()) return false;

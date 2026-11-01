@@ -98,7 +98,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
- * PENDING ones dated within one of the person's holds, unless a statement binds them (claimed still counts held ones); claimed leaves out
+ * PENDING ones of a retired person, unless a statement binds them (a hold takes nothing out of them); claimed leaves out
  * claims that correct another.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
@@ -115,7 +115,7 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
  * charge from then on, whatever its overdue state.
  * An OPEN or PENDING claim can be held, and released, with its hold toggle: it shows held yes or no, and while
- * held it counts in no live due figure, as a held person's claims do, unless a statement binds it; claimed still counts it.
+ * held it still counts in every total, as a held person's claims do; a hold only takes a person's cut out of the pools.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
  * cannot be settled or approved while it has none. A proof's kind, receipt or photo, is chosen when it is added
