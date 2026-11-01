@@ -6,7 +6,7 @@ import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from
 
 /**
  * The sheet's totals: its claimed-total, everyone's counted (OPEN or SETTLED) claims added up
- * (not OPEN ones dated within their person's hold, unless stated), and its due-total, everyone's due-total
+ * (not OPEN ones dated within their person's hold, unless stated, nor those that correct another), and its due-total, everyone's due-total
  * added up (a person whose due-total is n/a is skipped), and how many of the claims that count are
  * overdue, with their dues added up. Both due and overdue totals leave out the single highest and
  * lowest person's figure when three or more people have one. Its settled-total and open-total are

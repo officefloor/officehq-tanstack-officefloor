@@ -90,7 +90,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', settle: 'Settle', 
  * or approve it), and for a steward to re-settle a SETTLED one at today's figure. A clerk's settle over the clerk limit leaves the claim PENDING until a steward approves
  * or rejects it; while PENDING it shows its live figure, not the one a statement bound it to.
  * Only OPEN, PENDING and SETTLED claims count toward claimed and the due-total, and not the OPEN or
- * PENDING ones dated within one of the person's holds, unless a statement binds them.
+ * PENDING ones dated within one of the person's holds, unless a statement binds them; claimed leaves out
+ * claims that correct another.
  * A claim with a negative amount is a correction: it names, by number, a SETTLED claim of the person
  * that it corrects (refused otherwise), shows that number, and its due has no floor and no late charge.
  * Each claim shows its due-by (fixed when it was added: the terms-th business day after its date, from the terms of its person's grade) and whether it is overdue (OPEN and

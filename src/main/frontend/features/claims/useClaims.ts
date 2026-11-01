@@ -125,9 +125,10 @@ export function live(claims: Claim[], heldOn: (personId: number, date: string) =
   );
 }
 
-/** The sum of these claims' amounts, with two decimals. Added up in cents, so it is exact. */
+/** The sum of these claims' amounts, leaving out those that correct another, with two decimals.
+ *  Added up in cents, so it is exact. */
 export function claimed(claims: Claim[]): string {
-  const cents = claims.reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => c.corrects === null).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
 
