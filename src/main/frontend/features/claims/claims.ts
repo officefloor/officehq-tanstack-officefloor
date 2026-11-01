@@ -1,14 +1,22 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { gradeOn, heldOn } from '../people/people';
+import { gradeOn, heldOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { dueCents, hundredths, rateOf, twoDecimals, type Rate } from '../rates/rates';
+import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
-import { useLatePctCents, usePolicyDate } from '../settings/settings';
+import { useFloorCents, useLatePctCents, usePolicyDate } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+
+/** Every status, in the order the screen lists them. */
+export const CLAIM_STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+
+/** How many of the claims have the status (every claim, whoever's). */
+export function statusCount(claims: Claim[], status: ClaimStatus): number {
+  return claims.filter((c) => c.status === status).length;
+}
 
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
 export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject';
@@ -191,4 +199,21 @@ export function overdueCents(
     0n,
   );
   return { count: overdueClaims.length, cents };
+}
+
+/** The sheet's totals: its claimed-total (everyone's counted claims added up), its due-total (everyone's due-total
+ *  added up, skipping the people whose due-total is n/a), and how many of the counted claims are overdue, with their
+ *  dues (late charges included) added up. */
+export function useSheetTotals(sheet: string): { claimed: string; due: bigint; overdue: { count: number; cents: bigint } } {
+  const { data: all = [] } = useClaims(sheet);
+  const { data: people = [] } = usePeople(sheet);
+  const { data: rates = [] } = useRates(sheet);
+  const today = useSheetToday(sheet);
+  const floor = useFloorCents(sheet);
+  const late = useLate(sheet);
+  const due = people.reduce((sum, p) => {
+    const cents = personDueCents(all, rates, p, today, floor, late);
+    return cents === undefined ? sum : sum + cents;
+  }, 0n);
+  return { claimed: claimed(counted(all, people)), due, overdue: overdueCents(all, people, rates, late, floor) };
 }

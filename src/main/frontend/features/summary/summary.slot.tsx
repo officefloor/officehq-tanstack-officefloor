@@ -3,10 +3,8 @@ import { GRADES, isRetired, usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
-import { personDueCents, useClaims, useLate } from '../claims/claims';
+import { CLAIM_STATUSES, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
 import { periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
-
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
 // excluded) and their due-totals added up (an n/a due-total adds nothing). Per period: its due-total, as its row shows
@@ -72,10 +70,10 @@ function Summary({ sheet }: { sheet: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {STATUSES.map((s) => (
+          {CLAIM_STATUSES.map((s) => (
             <tr key={s}>
               <td>{s}</td>
-              <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => (c.status as string) === s).length}</td>
+              <td data-testid={`summary-status-${s}-count`}>{statusCount(claims, s)}</td>
             </tr>
           ))}
         </tbody>
