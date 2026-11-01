@@ -55,6 +55,7 @@ const LOCKED = 'Another user is editing this claim: it is locked until they save
 const CLOSED_EDIT = 'This claim is due by in a closed period: it cannot be edited.';
 const BAD_AMOUNT = 'The amount must have up to two decimals; a negative amount must name the number of the settled claim it corrects.';
 const CANNOT_REMIND = "Only an OPEN or PENDING claim can be reminded, and only once per sheet's today.";
+const CANNOT_WAIVE = "Only a steward can waive a claim's late charge, only on an OPEN or PENDING claim, and only once.";
 const EMPTY_COMMENT = 'A comment cannot be empty.';
 const BAD_LINE = "A line needs a label, a whole quantity of at least 1 and a unit amount with up to two decimals.";
 const LINED = 'This claim has lines: its amount is them added up, and cannot be typed.';
@@ -107,6 +108,8 @@ const ACTION_LABELS: Record<Action, string> = { open: 'Open', review: 'Review', 
  * An OPEN claim can be deferred until a date after the sheet's today: until today reaches it, it shows
  * deferred yes and its deferred-until date, counts in no total, is not overdue and cannot be settled.
  * An OPEN or PENDING claim can be reminded once per sheet's today: it shows that day as its reminded date.
+ * A steward can waive an OPEN or PENDING claim's late charge, once: it shows waived yes and bears no late
+ * charge from then on, whatever its overdue state.
  * Each claim shows its proofs count, raised by one with its proof button (not on a SETTLED or VOID claim,
  * nor one due by in a closed period); one whose due is above the proof threshold on its date (its person's grade's, else the sheet's)
  * cannot be settled or approved while it has none.
@@ -302,6 +305,14 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             ? ARCHIVED
             : CANNOT_REMIND,
       }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  // A steward waives an OPEN or PENDING claim's late charge, once.
+  const waive = useMutation({
+    mutationFn: (c: { id: number }) => postJson<Claim>(`${base}/claims/${c.id}/waive`, { user }),
+    onMutate: () => setRefused(null),
+    onError: (_, c) => setRefused({ id: c.id, message: CANNOT_WAIVE }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
 
@@ -709,6 +720,15 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+              <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
+              <button
+                type="button"
+                data-testid="claim-waive"
+                disabled={waive.isPending}
+                onClick={() => waive.mutate({ id: c.id })}
+              >
+                Waive late charge
+              </button>{' '}
               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
               <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
               <button

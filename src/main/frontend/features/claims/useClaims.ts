@@ -68,6 +68,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The last day (yyyy-mm-dd) a reminder was written for the claim; null when it never was. */
   remindedOn: string | null;
+  /** Whether a steward has waived the claim's late charge: it bears none from then on. */
+  waived: boolean;
   /** The claim's external reference, unique on the sheet without regard to case; null when it has none. */
   ref: string | null;
   /** The claim's tags, lower-cased and sorted; empty when it has none. */
@@ -180,9 +182,9 @@ export function overdueFrom(claim: Claim, late: Late): string {
  *  counted from its due-by plus its grace, the late percent in force on that boundary date (the due-by
  *  plus the grace plus 30, 60, 90 ... days) of it plus the charges of the boundaries before it (compounding), each
  *  rounded by the claim's rounding (`halfUp`), added up; a boundary at 0.00 adds nothing. Nothing
- *  while it is not overdue. Never bound by a statement: it follows the sheet's today. */
+ *  while it is not overdue, or its charge is waived. Never bound by a statement: it follows the sheet's today. */
 export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigint {
-  if (!overdue(claim, late) || isCorrection(claim)) return 0n;
+  if (!overdue(claim, late) || isCorrection(claim) || claim.waived) return 0n;
   const from = overdueFrom(claim, late);
   const periods = Math.floor(daysBetween(from, late.today) / 30);
   let total = 0n;

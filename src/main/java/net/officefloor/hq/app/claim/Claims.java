@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Claims {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, escalated, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
+    private static final String COLUMNS = "SELECT id, sheet_id, person_id, amount, claim_date, note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, edited_by, due_terms, batch, added_seq, "
             + "(SELECT today FROM sheet WHERE sheet.id = claim.sheet_id) AS sheet_today FROM claim";
 
     private final JdbcTemplate jdbc;
@@ -101,6 +101,11 @@ public class Claims {
         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(claim.getDueBy()), claim.getId());
     }
 
+    /** Record that the claim's late charge is waived. */
+    public void waive(Claim claim) {
+        jdbc.update("UPDATE claim SET waived = ? WHERE id = ?", claim.isWaived(), claim.getId());
+    }
+
     /** Record the day the claim was last reminded, and whether it has been escalated. */
     public void remind(Claim claim) {
         jdbc.update("UPDATE claim SET reminded_on = ?, escalated = ? WHERE id = ?", Date.valueOf(claim.getRemindedOn()),
@@ -175,6 +180,7 @@ public class Claims {
         Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded != null ? reminded.toLocalDate() : null);
         claim.setEscalated(rs.getBoolean("escalated"));
+        claim.setWaived(rs.getBoolean("waived"));
         Date until = rs.getDate("deferred_until");
         Date today = rs.getDate("sheet_today");
         claim.setDeferredUntil(until != null ? until.toLocalDate() : null);

@@ -28,6 +28,7 @@ public class Claim {
     private LocalDate remindedOn;
     private boolean escalated;
     private boolean escalatedNow;
+    private boolean waived;
     private String ref;
     private String tags;
     private String tagsUsed;
@@ -121,6 +122,9 @@ public class Claim {
     /** Whether the reminder being taken now escalates the claim (not stored). */
     public boolean isEscalatedNow() { return escalatedNow; }
     public void setEscalatedNow(boolean escalatedNow) { this.escalatedNow = escalatedNow; }
+    /** Whether a steward has waived the claim's late charge: it bears none from then on, whatever its overdue state. */
+    public boolean isWaived() { return waived; }
+    public void setWaived(boolean waived) { this.waived = waived; }
     /** The claim's external reference, unique on its sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

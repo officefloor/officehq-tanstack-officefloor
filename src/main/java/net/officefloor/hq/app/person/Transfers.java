@@ -157,9 +157,9 @@ public class Transfers {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
-                    + "proofs, split_from, locked_by, late_entry, reminded_on, escalated, ref, tags, tags_used, void_reason, "
+                    + "proofs, split_from, locked_by, late_entry, reminded_on, escalated, waived, ref, tags, tags_used, void_reason, "
                     + "edited_by, due_terms, batch) SELECT ?, ?, amount, claim_date, note, status, ?, due, opened_by, "
-                    + "stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, NULL, late_entry, reminded_on, escalated, "
+                    + "stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, NULL, late_entry, reminded_on, escalated, waived, "
                     + "NULL, tags, tags_used, void_reason, edited_by, due_terms, NULL FROM claim WHERE id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
