@@ -12,6 +12,7 @@ import { useSelectedClaims } from '../bulk/useSelectedClaims';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { useTemplates } from '../templates/useTemplates';
 import { Col } from '../columns/useColumns';
+import { ClaimTimeline } from './ClaimTimeline';
 import {
   AMOUNT,
   CLAIM_NUMBER,
@@ -979,6 +980,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                   {refused.message}
                 </span>
               )}
+              {' '}
+              <ClaimTimeline sheet={sheet} claimId={c.id} />
               <ol data-testid="claim-log">
                 {c.log.map((line, i) => (
                   <li key={i} data-testid="claim-log-line">

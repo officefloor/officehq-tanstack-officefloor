@@ -93,6 +93,27 @@ public class Audit {
         return lines;
     }
 
+    /**
+     * A claim's lines on the sheet exactly as the file holds them, newest first: with a number, the
+     * lines carrying number=<it>; without one, the lines carrying no number that name its person,
+     * amount and date together (person=, amount= and date= those values). Reads the file; records nothing.
+     */
+    public synchronized List<String> timelineFor(String sheet, String number, String person, String amount,
+            String date) {
+        List<String> lines = new ArrayList<>();
+        for (String line : linesFor(sheet, null)) {
+            String padded = " " + line + " ";
+            if (number != null) {
+                if (padded.contains(" number=" + number + " ")) lines.add(line);
+            } else if (person != null && !padded.contains(" number=")
+                    && padded.contains(" person=" + person + " ") && padded.contains(" amount=" + amount + " ")
+                    && padded.contains(" date=" + date + " ")) {
+                lines.add(line);
+            }
+        }
+        return lines;
+    }
+
     /** Whether the line's name= or person= field holds this (lower-cased, trimmed) name. */
     private static boolean about(String line, String key) {
         String[] tokens = line.split(" ");
