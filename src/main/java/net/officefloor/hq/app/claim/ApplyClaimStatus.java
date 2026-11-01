@@ -33,6 +33,7 @@ import net.officefloor.plugin.variable.Val;
  *  settlement (its status log's SETTLED date); its frozen due then leaves every total.
  *  A claim due by in a period with a cap cannot be opened while its person already has that many
  *  OPEN or PENDING claims due by in it.
+ *  While its person's flag is in force only a steward may open a claim.
  *  A claim due by in a closed period cannot change status at all. Opening, settling and voiding are
  *  only for the roles the sheet's permission matrix allows (see {@link Settings#allows}).
  *  While the sheet's list of void reasons is not empty, a void needs a reason from it, which the
@@ -55,6 +56,10 @@ public class ApplyClaimStatus {
                 : change.action() == ClaimAction.VOID ? "void" : null;
         if (perm != null && !settings.allows(claim.getSheetId(), perm, change.user())) {
             throw new ClaimStatusRefusedException("Your role may not " + perm + " a claim");
+        }
+        if (change.action() == ClaimAction.OPEN && settings.role(claim.getSheetId(), change.user()) != Role.STEWARD
+                && people.find(claim.getSheetId(), claim.getPersonId()).isFlagged()) {
+            throw new ClaimStatusRefusedException("Only a steward can open a claim of a flagged person");
         }
         if (change.action() == ClaimAction.OPEN && (claim.getNote() == null || claim.getNote().isBlank())) {
             BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());

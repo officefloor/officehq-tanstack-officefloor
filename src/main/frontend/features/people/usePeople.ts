@@ -52,6 +52,9 @@ export type Person = {
   snapshots: string[];
   /** Statements still standing, oldest first: `<statement date> <due-total>` (n/a when it was n/a). */
   statementLines: string[];
+  /** The reason of the person's flag while it is in force (the sheet's today on or before its
+   *  until-date), null when none is; only a steward may open their claims then. */
+  flag: string | null;
 };
 
 /** Whether the sheet's `today` (yyyy-mm-dd) has reached the person's retirement date. */

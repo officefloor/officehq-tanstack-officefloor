@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, dated_terms, origin_sheet, origin_name, "
+    private static final String COLUMNS = "SELECT id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, past_retirements, dated_terms, origin_sheet, origin_name, flag_reason, flag_until, "
             + "(SELECT today FROM sheet WHERE sheet.id = person.sheet_id) AS sheet_today FROM person";
 
     /** The position after the last of the sheet (bound to the sheet id): a new person goes to the end. */
@@ -334,6 +334,12 @@ public class People {
         return past;
     }
 
+    /** Record the person's flag. Not an edit: the person's version is untouched. */
+    public void saveFlag(Person person) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", person.getFlagReason(),
+                person.getFlagUntil() != null ? Date.valueOf(person.getFlagUntil()) : null, person.getId());
+    }
+
     /** Add a hold to the person. Not an edit: the person's version is untouched. */
     public void addHold(Person person, Hold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
@@ -533,6 +539,8 @@ public class People {
         person.setRetiredFrom(retired != null ? retired.toLocalDate() : null);
         person.setPastRetirements(pastRetirements(rs.getString("past_retirements")));
         person.setDatedTerms(datedTerms(rs.getString("dated_terms")));
+        Date flagUntil = rs.getDate("flag_until");
+        person.setFlag(rs.getString("flag_reason"), flagUntil != null ? flagUntil.toLocalDate() : null);
         Date today = rs.getDate("sheet_today");
         person.setToday(today != null ? today.toLocalDate() : LocalDate.now());
         return person;

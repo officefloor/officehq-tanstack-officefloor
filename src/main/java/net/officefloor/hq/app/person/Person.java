@@ -44,6 +44,9 @@ public class Person {
     /** The person's ended retirements, in the order they ended. */
     private List<PastRetirement> pastRetirements = new ArrayList<>();
     private List<Hold> holds = new ArrayList<>();
+    /** The person's flag: its reason and the date it is in force until, inclusive (null: never flagged). */
+    private String flagReason;
+    private LocalDate flagUntil;
     private List<String> snapshots = new ArrayList<>();
     private List<String> statementLines = new ArrayList<>();
     private List<Long> patronIds = new ArrayList<>();
@@ -105,9 +108,10 @@ public class Person {
     public Integer getTermsInForce() { return today == null ? terms : termsOn(today); }
     public boolean isTermsChanged() { return termsChanged; }
     /** Give the person these terms (null: none) from the beginning of time with the next save,
-     *  noting whether they change. */
+     *  noting whether they change: from their own terms, or from the terms in force they had. */
     public void changeTerms(Integer terms) {
-        this.termsChanged = !java.util.Objects.equals(this.terms, terms);
+        this.termsChanged = !java.util.Objects.equals(this.terms, terms)
+                || !java.util.Objects.equals(getTermsInForce(), terms);
         this.terms = terms;
     }
     /** Record these terms (null: none) from `from` with the next save, replacing any from that date. */
@@ -163,6 +167,13 @@ public class Person {
         return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
     }
     /** Whether the person has any hold, whatever its dates. */
+    public String getFlagReason() { return flagReason; }
+    public LocalDate getFlagUntil() { return flagUntil; }
+    public void setFlag(String reason, LocalDate until) { this.flagReason = reason; this.flagUntil = until; }
+    /** Whether the person's flag is in force: the sheet's today on or before its until-date. */
+    public boolean isFlagged() {
+        return flagUntil != null && (today == null || !today.isAfter(flagUntil));
+    }
     public boolean isHeld() { return !holds.isEmpty(); }
     /** The person's holds, in the order they were added. */
     public List<Hold> getHolds() { return holds; }
