@@ -156,6 +156,24 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     setEditRefused(false);
     lockMutation.reset();
   };
+  // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note and corrects kept),
+  // so the server refuses it by the same rules (the amount's form, a claim that is not a DRAFT, one due inside a
+  // closed period, one another user's editor holds, a viewer).
+  const [inlineAmount, setInlineAmount] = useState('');
+  const inlineMutation = useMutation({
+    mutationFn: (amount: string) =>
+      putJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}`, user), {
+        amount,
+        date: claim.date,
+        note: claim.note,
+        corrects: claim.corrects ?? '',
+      }),
+    onSuccess: (updated) => {
+      setInlineAmount('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const saveInline = useSubmitOnce(inlineMutation);
   // A steward rejects a PENDING claim with a reason, typed beside the Reject button.
   const [reason, setReason] = useState('');
 
@@ -203,6 +221,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           addProof(undefined);
         }}
       >
@@ -222,6 +241,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
             redateMutation.reset();
             splitMutation.reset();
+            inlineMutation.reset();
+          inlineMutation.reset();
             proofMutation.reset();
             act(change);
           }}
@@ -238,6 +259,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           status.reset();
           move.reset();
           splitMutation.reset();
+          inlineMutation.reset();
         }}
       />{' '}
       <button
@@ -252,11 +274,41 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           proofMutation.reset();
           act('reject');
         }}
       >
         Reject
+      </button>{' '}
+      <input
+        data-testid="claim-inline-amount"
+        placeholder="amount"
+        value={inlineAmount}
+        onChange={(e) => {
+          setInlineAmount(e.target.value);
+          inlineMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-inline-save"
+        disabled={inlineMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          splitMutation.reset();
+          proofMutation.reset();
+          inlineMutation.reset();
+          saveInline(inlineAmount);
+        }}
+      >
+        Save amount
       </button>{' '}
       <button
         type="button"
@@ -269,6 +321,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           proofMutation.reset();
           clearEditError();
           if (claim.status !== 'DRAFT' || periodOf(periods, claim.dueBy)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
@@ -287,6 +340,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           setMoveTo(e.target.value);
           move.reset();
           splitMutation.reset();
+          inlineMutation.reset();
         }}
       >
         <option value="">move to…</option>
@@ -310,6 +364,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           proofMutation.reset();
           reassign(Number(moveTo));
         }}
@@ -328,6 +383,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           proofMutation.reset();
           resettle(undefined);
         }}
@@ -344,6 +400,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
         }}
       />{' '}
       <button
@@ -357,6 +414,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           proofMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           redateMutation.reset();
           remindMutation.reset();
           defer(deferTo);
@@ -377,6 +435,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           proofMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           remindMutation.reset();
           remind(undefined);
         }}
@@ -405,6 +464,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           proofMutation.reset();
           splitMutation.reset();
+          inlineMutation.reset();
           redate(redateTo);
         }}
       >
@@ -417,6 +477,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         onChange={(e) => {
           setSplitAmount(e.target.value);
           splitMutation.reset();
+          inlineMutation.reset();
         }}
       />{' '}
       <button
@@ -488,6 +549,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       {splitMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor due inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
+        </span>
+      )}
+      {inlineMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}This amount cannot be saved: it needs up to two decimals (a negative one must be a correction), and only a DRAFT outside a closed period can be edited, not while another user has its editor open, nor by a viewer.
         </span>
       )}
       {move.isError && (
