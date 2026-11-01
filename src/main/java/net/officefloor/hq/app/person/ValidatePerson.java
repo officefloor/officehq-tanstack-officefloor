@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import java.util.Set;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,6 +34,7 @@ public class ValidatePerson {
             }
             terms = Integer.toString(Integer.parseInt(terms));
         }
-        body.set(new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms));
+        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(Locale.ROOT);
+        body.set(new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms, contact));
     }
 }

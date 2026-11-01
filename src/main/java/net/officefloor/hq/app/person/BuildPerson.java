@@ -10,12 +10,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class BuildPerson {
     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @Val PersonRequest request, People people, Audit audit, Rollup rollup, Out<Person> person)
-            throws DuplicatePersonNameException {
+            throws DuplicatePersonNameException, InvalidPersonException {
         Rollup.Snapshot before = rollup.take(sheet);
-        Person added = people.add(sheet, request.name(), request.grade(), request.termsDays());
+        String contact = request.contactOrNull();
+        if (contact != null && people.contactTaken(sheet, contact, null)) {
+            throw new InvalidPersonException("The contact is already in use: " + contact);
+        }
+        Person added = people.add(sheet, request.name(), request.grade(), request.termsDays(), contact);
         person.set(added);
         audit.record("PERSON_ADDED sheet=" + sheet + " by=" + user + " name=" + added.name() + " grade="
-                + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms()));
+                + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms())
+                + (added.contact() == null ? "" : " contact=" + added.contact()));
         rollup.record(sheet, user, before);
     }
 }

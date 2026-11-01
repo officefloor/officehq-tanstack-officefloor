@@ -16,10 +16,11 @@ import net.officefloor.hq.app.setting.Settings;
  * the date. Their holds are listed in the order they were added; their OPEN claims dated within a hold, unless bound
  * by a statement, count in no live total. Their own terms (days) are null when they have none. retiredNow is whether
  * the sheet's today is on or after their retired-from date: from then their OPEN and PENDING claims, unless bound by a
- * statement, count in no live total.
+ * statement, count in no live total. Their contact (trimmed, lower-cased, not another's on the sheet) is null when they
+ * have none.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
-        List<GradeFrom> grades, Integer terms, boolean retiredNow) {
+        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact) {
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
@@ -38,7 +39,7 @@ public record Person(long id, String name, String grade, long version, String re
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
     public Person on(LocalDate today) {
         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
-                retiredOn(retiredFrom, today));
+                retiredOn(retiredFrom, today), contact);
     }
 
     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */

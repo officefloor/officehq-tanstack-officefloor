@@ -28,6 +28,8 @@ export type Person = {
   /** Whether the sheet's today is on or after retiredFrom: from then their OPEN and PENDING claims, unless bound by a
    *  statement, count in no live total. */
   retiredNow: boolean;
+  /** The person's contact, trimmed and lower-cased; null when they have none. */
+  contact: string | null;
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */
