@@ -46,6 +46,11 @@ public record Claim(long id, long person, String amount, String date, String not
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);
     }
 
+    /** This claim as an OPEN claim bound by no statement and with no due fixed: the figure it would have live. */
+    public Claim asOpenUnbound() {
+        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log);
+    }
+
     /** This claim, with its status log (oldest first). */
     public Claim withLog(List<ClaimLogLine> log) {
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log);

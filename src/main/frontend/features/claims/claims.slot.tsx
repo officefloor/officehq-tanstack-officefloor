@@ -87,6 +87,12 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
     },
   });
   const reassign = useSubmitOnce(move);
+  // A steward re-settles a SETTLED claim: its due is fixed again at today's live figure.
+  const resettleMutation = useMutation({
+    mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/resettle`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
+  const resettle = useSubmitOnce(resettleMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
@@ -125,6 +131,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           onClick={() => {
             setEditRefused(false);
             move.reset();
+            resettleMutation.reset();
             act(change);
           }}
         >
@@ -148,6 +155,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onClick={() => {
           setEditRefused(false);
           move.reset();
+          resettleMutation.reset();
           act('reject');
         }}
       >
@@ -159,6 +167,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onClick={() => {
           status.reset();
           move.reset();
+          resettleMutation.reset();
           if (claim.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -193,10 +202,24 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onClick={() => {
           setEditRefused(false);
           status.reset();
+          resettleMutation.reset();
           reassign(Number(moveTo));
         }}
       >
         Reassign
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-resettle"
+        disabled={resettleMutation.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          move.reset();
+          resettle(undefined);
+        }}
+      >
+        Re-settle
       </button>{' '}
       {editing && (
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
@@ -218,6 +241,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, and a reject needs a reason).
+        </span>
+      )}
+      {resettleMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be re-settled (only a steward re-settles, and only a SETTLED claim outside a closed period).
         </span>
       )}
       {move.isError && (

@@ -130,6 +130,15 @@ public class Claims {
         jdbc.update("UPDATE claim SET settled_due = ? WHERE sheet = ? AND id = ?", due, sheet, id);
     }
 
+    /**
+     * Re-fixes a SETTLED claim's due (null for none), conditional on the due read, so a concurrent change by another
+     * user is refused, not overwritten; false when it was not.
+     */
+    public boolean resettle(String sheet, long id, BigDecimal was, BigDecimal due) {
+        return jdbc.update("UPDATE claim SET settled_due = ? WHERE sheet = ? AND id = ? AND status = ?"
+                + " AND settled_due IS NOT DISTINCT FROM ?", due, sheet, id, ClaimStatus.SETTLED.name(), was) == 1;
+    }
+
     /** Binds the claim to a statement's figure (null when its grade had no rate), or unbinds it when not stated. */
     public void setStated(String sheet, long id, boolean stated, BigDecimal due) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet = ? AND id = ?", stated, due, sheet, id);
