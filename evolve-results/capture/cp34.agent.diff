@@ -1,0 +1,397 @@
+diff --git a/src/main/frontend/features/claims/bulk.slot.tsx b/src/main/frontend/features/claims/bulk.slot.tsx
+new file mode 100644
+index 00000000..60f0a6f5
+--- /dev/null
++++ b/src/main/frontend/features/claims/bulk.slot.tsx
+@@ -0,0 +1,47 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { byUser } from '../session/session';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { claimsKey, claimsPath } from './claims';
++import type { Claim } from './claims';
++import { clearSelectedClaims, useSelectedClaims } from './selection';
++
++type BulkOpened = { opened: number; refused: number; claims: Claim[] };
++
++// Opens the selected claims together: the server opens each that can be, numbering them in list order (people in
++// the order they were added, newest claim first), and leaves the rest as they are. Shows how many of each.
++function BulkOpen({ sheet, user }: { sheet: string; user: string }) {
++  const queryClient = useQueryClient();
++  const selected = useSelectedClaims(sheet);
++  const open = useMutation({
++    mutationFn: (ids: number[]) => postJson<BulkOpened>(byUser(`${claimsPath(sheet)}/bulk-open`, user), { claims: ids }),
++    onSuccess: (result) => {
++      queryClient.setQueryData(claimsKey(sheet), result.claims);
++      clearSelectedClaims(sheet);
++    },
++  });
++  const act = useSubmitOnce(open);
++
++  return (
++    <p>
++      Selected claims: {selected.size}{' '}
++      <button type="button" data-testid="bulk-open" disabled={open.isPending} onClick={() => act([...selected])}>
++        Open selected
++      </button>
++      {open.isSuccess && (
++        <>
++          {' '}Opened <strong data-testid="bulk-opened">{open.data.opened}</strong>, refused{' '}
++          <strong data-testid="bulk-refused">{open.data.refused}</strong>
++        </>
++      )}
++      {open.isError && (
++        <span data-testid="bulk-open-error" role="alert">
++          {' '}The bulk open failed.
++        </span>
++      )}
++    </p>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 21, Component: BulkOpen });
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 22e7ae6b..22c815d3 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -26,6 +26,7 @@ import {
+   useLate,
+ } from './claims';
+ import type { Claim, ClaimStatusChange } from './claims';
++import { selectClaim, useSelectedClaims } from './selection';
+ 
+ type Draft = { amount: string; date: string; note: string; corrects: string };
+ const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '' };
+@@ -73,11 +74,18 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel
+   });
+ 
+   const act = useSubmitOnce(status);
++  const selected = useSelectedClaims(sheet).has(claim.id);
+   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
+   const [editRefused, setEditRefused] = useState(false);
+ 
+   return (
+     <li data-testid={`claim-row-${claim.id}`}>
++      <input
++        type="checkbox"
++        data-testid="claim-select"
++        checked={selected}
++        onChange={(e) => selectClaim(sheet, claim.id, e.target.checked)}
++      />{' '}
+       <span data-testid="claim-amount">{claim.amount}</span>{' '}
+       <span data-testid="claim-date">{claim.date}</span>{' '}
+       <span data-testid="claim-note">{claim.note}</span>{' '}
+diff --git a/src/main/frontend/features/claims/selection.ts b/src/main/frontend/features/claims/selection.ts
+new file mode 100644
+index 00000000..4e07a988
+--- /dev/null
++++ b/src/main/frontend/features/claims/selection.ts
+@@ -0,0 +1,35 @@
++import { useSyncExternalStore } from 'react';
++
++// The claims ticked for a bulk action, kept per sheet outside React so each claim's row and the bulk
++// panel share it.
++const selected = new Map<string, ReadonlySet<number>>();
++const listeners = new Set<() => void>();
++const NONE: ReadonlySet<number> = new Set();
++
++function subscribe(listener: () => void) {
++  listeners.add(listener);
++  return () => listeners.delete(listener);
++}
++
++function set(sheet: string, next: ReadonlySet<number>) {
++  selected.set(sheet, next);
++  listeners.forEach((l) => l());
++}
++
++/** The ids of the sheet's selected claims. */
++export function useSelectedClaims(sheet: string): ReadonlySet<number> {
++  return useSyncExternalStore(subscribe, () => selected.get(sheet) ?? NONE);
++}
++
++/** Ticks or unticks a claim. */
++export function selectClaim(sheet: string, id: number, on: boolean) {
++  const next = new Set(selected.get(sheet) ?? NONE);
++  if (on) next.add(id);
++  else next.delete(id);
++  set(sheet, next);
++}
++
++/** Unticks every claim on the sheet. */
++export function clearSelectedClaims(sheet: string) {
++  set(sheet, NONE);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index ff042cfa..d18a03b9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -1,17 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import java.math.BigDecimal;
+-import net.officefloor.hq.app.Audit;
+-import java.time.LocalDate;
+-import net.officefloor.hq.app.period.Periods;
+-import net.officefloor.hq.app.person.People;
+-import net.officefloor.hq.app.person.Person;
+-import net.officefloor.hq.app.rate.Rates;
+-import net.officefloor.hq.app.role.Role;
+-import net.officefloor.hq.app.role.Roles;
+-import net.officefloor.hq.app.rollup.Rollup;
+-import net.officefloor.hq.app.setting.Settings;
+-import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -19,55 +7,12 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** Moves the claim to the status the change takes it to, refusing a change its status does not allow. */
+ public class ApplyClaimStatus {
+     public void apply(@PathVariable("sheet") String sheet, @PathVariable("change") String change,
+-            @RequestParam("user") String user, @Val Claim claim, Claims claims, People people, Rates rates, Periods periods,
+-            Roles roles, Settings settings, SheetClock clock, Audit audit, Rollup rollup)
++            @RequestParam("user") String user, @Val Claim claim, ClaimStatusChanger changer)
+             throws InvalidClaimStatusChangeException {
+         ClaimStatusChange requested = ClaimStatusChange.of(change);
+         if (requested == null) {
+             throw new InvalidClaimStatusChangeException("No such status change: " + change);
+         }
+-        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
+-            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
+-        }
+-        // Four eyes: the user who opened a claim may not settle it.
+-        if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
+-            throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
+-        }
+-        Person person = people.find(sheet, claim.person());
+-        // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit);
+-        // a steward settles anything.
+-        if (requested == ClaimStatusChange.SETTLE && Role.CLERK.equals(roles.of(sheet, user))) {
+-            BigDecimal limit = settings.clerkLimit(sheet);
+-            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+-                    settings.late(sheet, clock.today(sheet)));
+-            if (limit != null && due != null && due.compareTo(limit) > 0) {
+-                throw new InvalidClaimStatusChangeException("A clerk cannot settle a due above the clerk limit");
+-            }
+-        }
+-        Rollup.Snapshot before = rollup.take(sheet);
+-        ClaimStatus next = claim.status().after(requested);
+-        // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
+-        if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
+-            throw new InvalidClaimStatusChangeException(
+-                    "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+-        }
+-        // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
+-        Claim changed = claim;
+-        if (requested == ClaimStatusChange.OPEN) {
+-            changed = claim.withNumber(claims.nextNumber(sheet));
+-            claims.setNumber(sheet, claim.id(), changed.number());
+-            claims.setOpenedBy(sheet, claim.id(), user);
+-        }
+-        String fields = changed.statusAuditFields(person.name());
+-        // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
+-        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
+-        if (requested == ClaimStatusChange.SETTLE) {
+-            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+-                    settings.late(sheet, clock.today(sheet)));
+-            claims.setSettledDue(sheet, claim.id(), due);
+-            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+-        }
+-        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+-        rollup.record(sheet, user, before);
++        changer.change(sheet, user, claim, requested);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+new file mode 100644
+index 00000000..fd6d5720
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -0,0 +1,52 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.LinkedHashSet;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Opens each selected claim in list order (people in the order they were added, newest claim first within a
++ * person), so they are numbered in that order; one that cannot be opened is left as it is and counted refused.
++ */
++public class BulkOpenClaims {
++    public void open(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @RequestBody BulkOpenRequest request, Claims claims, People people, ClaimStatusChanger changer,
++            ObjectResponse<BulkOpenResponse> response) {
++        Map<Long, Integer> personOrder = new HashMap<>();
++        for (Person person : people.list(sheet)) {
++            personOrder.put(person.id(), personOrder.size());
++        }
++        List<Claim> selected = new ArrayList<>();
++        int refused = 0;
++        for (Long id : new LinkedHashSet<>(request == null || request.claims() == null ? List.of() : request.claims())) {
++            Claim claim = id == null ? null : claims.find(sheet, id);
++            if (claim == null) {
++                refused++;
++            } else {
++                selected.add(claim);
++            }
++        }
++        selected.sort(Comparator.comparing((Claim c) -> personOrder.getOrDefault(c.person(), Integer.MAX_VALUE))
++                .thenComparing(Claim::id, Comparator.reverseOrder()));
++        int opened = 0;
++        for (Claim claim : selected) {
++            try {
++                // Re-read so each claim is opened as the store holds it after the ones before it.
++                changer.change(sheet, user, claims.find(sheet, claim.id()), ClaimStatusChange.OPEN);
++                opened++;
++            } catch (InvalidClaimStatusChangeException refusal) {
++                refused++;
++            }
++        }
++        response.send(new BulkOpenResponse(opened, refused, claims.list(sheet)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenRequest.java
+new file mode 100644
+index 00000000..a0b6377f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of POST /api/sheets/{sheet}/claims/bulk-open: the ids of the selected claims. */
++public record BulkOpenRequest(List<Long> claims) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenResponse.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenResponse.java
+new file mode 100644
+index 00000000..12a46caf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** How many of the selected claims were opened and how many refused, with the sheet's claims after. */
++public record BulkOpenResponse(int opened, int refused, List<Claim> claims) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+new file mode 100644
+index 00000000..cb23e472
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -0,0 +1,92 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import java.time.LocalDate;
++import net.officefloor.hq.app.period.Periods;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.Roles;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
++import org.springframework.stereotype.Service;
++
++/** Moves a claim to the status a change takes it to, refusing a change its status does not allow; shared by a
++ *  claim's own status buttons and the bulk actions. */
++@Service
++public class ClaimStatusChanger {
++
++    private final Claims claims;
++    private final People people;
++    private final Rates rates;
++    private final Periods periods;
++    private final Roles roles;
++    private final Settings settings;
++    private final SheetClock clock;
++    private final Audit audit;
++    private final Rollup rollup;
++
++    public ClaimStatusChanger(Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
++            SheetClock clock, Audit audit, Rollup rollup) {
++        this.claims = claims;
++        this.people = people;
++        this.rates = rates;
++        this.periods = periods;
++        this.roles = roles;
++        this.settings = settings;
++        this.clock = clock;
++        this.audit = audit;
++        this.rollup = rollup;
++    }
++
++    /** Applies the change to the claim, writing nothing when it is refused. */
++    public void change(String sheet, String user, Claim claim, ClaimStatusChange requested)
++            throws InvalidClaimStatusChangeException {
++        if (periods.closedOn(sheet, LocalDate.parse(claim.date()))) {
++            throw new InvalidClaimStatusChangeException("A claim dated inside a closed period cannot change status");
++        }
++        // Four eyes: the user who opened a claim may not settle it.
++        if (requested == ClaimStatusChange.SETTLE && user.equals(claim.openedBy())) {
++            throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle it");
++        }
++        Person person = people.find(sheet, claim.person());
++        // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit);
++        // a steward settles anything.
++        if (requested == ClaimStatusChange.SETTLE && Role.CLERK.equals(roles.of(sheet, user))) {
++            BigDecimal limit = settings.clerkLimit(sheet);
++            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
++                    settings.late(sheet, clock.today(sheet)));
++            if (limit != null && due != null && due.compareTo(limit) > 0) {
++                throw new InvalidClaimStatusChangeException("A clerk cannot settle a due above the clerk limit");
++            }
++        }
++        Rollup.Snapshot before = rollup.take(sheet);
++        ClaimStatus next = claim.status().after(requested);
++        // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
++        if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
++            throw new InvalidClaimStatusChangeException(
++                    "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
++        }
++        // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
++        Claim changed = claim;
++        if (requested == ClaimStatusChange.OPEN) {
++            changed = claim.withNumber(claims.nextNumber(sheet));
++            claims.setNumber(sheet, claim.id(), changed.number());
++            claims.setOpenedBy(sheet, claim.id(), user);
++        }
++        String fields = changed.statusAuditFields(person.name());
++        // Settling fixes the due at the person's grade rate in force on the claim's date (or the figure its
++        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
++        if (requested == ClaimStatusChange.SETTLE) {
++            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
++                    settings.late(sheet, clock.today(sheet)));
++            claims.setSettledDue(sheet, claim.id(), due);
++            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
++        }
++        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
++        rollup.record(sheet, user, before);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/bulk-open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/bulk-open.POST.yml
+new file mode 100644
+index 00000000..db2bbb2e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/bulk-open.POST.yml
+@@ -0,0 +1,4 @@
++# Open the selected claims together, in list order; responds with how many opened and refused, and the claims.
++open:
++  class: net.officefloor.hq.app.claim.BulkOpenClaims
++  govern: [ transaction ]
