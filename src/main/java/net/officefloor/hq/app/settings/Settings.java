@@ -407,6 +407,18 @@ public class Settings {
         jdbc.update("MERGE INTO sheet_setting (sheet_id, review_sla) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
     }
 
+    /** The sheet's pending SLA: a PENDING claim whose pending day (the sheet's today when it went to PENDING)
+     *  plus this many days is before the sheet's today is pending-late. Null when unset (none). Not dated. */
+    public Integer pendingSla(String sheetId) {
+        List<Integer> values = jdbc.query("SELECT pending_sla FROM sheet_setting WHERE sheet_id = ?",
+                (rs, i) -> (Integer) rs.getObject("pending_sla", Integer.class), sheetId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
+    public void setPendingSla(String sheetId, Integer days) {
+        jdbc.update("MERGE INTO sheet_setting (sheet_id, pending_sla) KEY (sheet_id) VALUES (?, ?)", sheetId, days);
+    }
+
     /** The sheet's mid score threshold: while both thresholds are set, a person whose score is at or above it
      *  (and below the high one) is in the MID band. Null when unset. Not dated. */
     public Integer scoreMid(String sheetId) {

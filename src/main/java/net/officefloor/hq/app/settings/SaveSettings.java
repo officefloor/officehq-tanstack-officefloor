@@ -33,6 +33,7 @@ public class SaveSettings {
         if (change.setsGraceDays()) settings.setGraceDays(sheetId, change.graceDays());
         if (change.setsEscalateAfter()) settings.setEscalateAfter(sheetId, change.escalateAfter());
         if (change.setsReviewSla()) settings.setReviewSla(sheetId, change.reviewSla());
+        if (change.setsPendingSla()) settings.setPendingSla(sheetId, change.pendingSla());
         if (change.setsScoreMid()) settings.setScoreMid(sheetId, change.scoreMid());
         if (change.setsScoreHigh()) settings.setScoreHigh(sheetId, change.scoreHigh());
         if (change.setsScoreLog()) settings.setScoreLog(sheetId, change.scoreLog());

@@ -182,6 +182,10 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && !DAYS.matcher(sla).matches()) {
             throw new InvalidSheetRequestException("The review SLA must be a whole number of days, or blank");
         }
+        String pendingSla = request == null || request.pendingSla() == null ? null : request.pendingSla().trim();
+        if (pendingSla != null && !pendingSla.isEmpty() && !DAYS.matcher(pendingSla).matches()) {
+            throw new InvalidSheetRequestException("The pending SLA must be a whole number of days, or blank");
+        }
         String scoreMid = request == null || request.scoreMid() == null ? null : request.scoreMid().trim();
         if (scoreMid != null && !scoreMid.isEmpty() && !SCORE.matcher(scoreMid).matches()) {
             throw new InvalidSheetRequestException("The mid score threshold must be a whole number, or blank");
@@ -289,6 +293,7 @@ public class ValidateSettings {
                 reviewThreshold != null, reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
                 sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
+                pendingSla != null, pendingSla == null || pendingSla.isEmpty() ? null : Integer.parseInt(pendingSla),
                 proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade, gradeClerkLimit,
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),

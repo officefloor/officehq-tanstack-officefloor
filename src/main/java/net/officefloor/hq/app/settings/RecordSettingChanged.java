@@ -94,6 +94,9 @@ public class RecordSettingChanged {
         if (change.setsReviewSla()) {
             audit.record(prefix + " key=review-sla value=" + (change.reviewSla() != null ? change.reviewSla() : ""));
         }
+        if (change.setsPendingSla()) {
+            audit.record(prefix + " key=pending-sla value=" + (change.pendingSla() != null ? change.pendingSla() : ""));
+        }
         if (change.setsScoreMid()) {
             audit.record(prefix + " key=score-mid value=" + (change.scoreMid() != null ? change.scoreMid() : ""));
         }

@@ -5,7 +5,7 @@ import { useGradeCodes } from '../grades/useGrades';
 import { usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
 import { hundredths, totalDue, useRates } from '../rates/useRates';
-import { useFloor, useLate, useReviewLate } from '../settings/useSettings';
+import { useFloor, useLate, usePendingLate, useReviewLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
 import { useGradeDues } from './useGradeDues';
@@ -15,7 +15,7 @@ import { useGradeDues } from './useGradeDues';
  * retired are on it on the sheet's today, their due-totals added up (n/a ones skipped), and how many
  * of them are active. Per
  * period: its due-total, and its change from the period before it by from-date (none for the
- * earliest). Per status: how many of the sheet's claims have it, and how many REVIEW claims are review-late. Per void reason on
+ * earliest). Per status: how many of the sheet's claims have it, and how many REVIEW claims are review-late, and how many PENDING claims are pending-late. Per void reason on
  * the sheet's list: how many VOID claims were voided with it.
  */
 function SummaryPanel({ sheet }: { user: string; sheet: string }) {
@@ -28,6 +28,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const reviewLate = useReviewLate(sheet);
+  const pendingLate = usePendingLate(sheet);
   const byGrade = useGradeDues(sheet);
   const grades = useGradeCodes(sheet);
 
@@ -100,6 +101,10 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
           <tr>
             <td>REVIEW, late</td>
             <td data-testid="summary-review-late-count">{all.filter(reviewLate).length}</td>
+          </tr>
+          <tr>
+            <td>PENDING, late</td>
+            <td data-testid="summary-pending-late-count">{all.filter(pendingLate).length}</td>
           </tr>
         </tbody>
       </table>

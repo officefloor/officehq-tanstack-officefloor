@@ -9,7 +9,7 @@ import { ratesKey } from '../rates/useRates';
 import { DAYS, SCORE, FROM_DATE, MONTH, TERM_GRADES, LIMIT, PERCENT, PERM_ACTIONS, PERM_ROLES, POLICY_DATE, PROOF_KINDS, DEFAULT_GRADE, ROLES, ROUNDING, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The settings the form sets: each null while its field is untouched, so a save leaves it as it is. */
-type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; scoreMid: string | null; scoreHigh: string | null; scoreLog: string | null; maxOpen: string | null; proofKinds: string | null; defaultGrade: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; gradeClerkLimit: Record<string, string>; perms: Record<string, string> };
+type SettingsEdit = { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; cap: string | null; proofThreshold: string | null; noteThreshold: string | null; graceDays: string | null; entryDate: string | null; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; pendingSla: string | null; scoreMid: string | null; scoreHigh: string | null; scoreLog: string | null; maxOpen: string | null; proofKinds: string | null; defaultGrade: string | null; gradeTerms: Record<string, string>; gradeGrace: Record<string, string>; gradeProof: Record<string, string>; gradeClerkLimit: Record<string, string>; perms: Record<string, string> };
 
 /** The from-date typed for each dated setting, by key (blank: from the sheet's today). */
 type Froms = Record<string, string>;
@@ -66,7 +66,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, scoreMid: null, scoreHigh: null, scoreLog: null, maxOpen: null, proofKinds: null, defaultGrade: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, gradeClerkLimit: {}, perms: {} });
+  const [edit, setEdit] = useState<SettingsEdit>({ clerkLimit: null, floor: null, terms: null, latePct: null, policyDate: null, periodNumberingFrom: null, cap: null, proofThreshold: null, noteThreshold: null, graceDays: null, entryDate: null, pot: null, parent: null, fiscalStartMonth: null, alertThreshold: null, rounding: null, reviewThreshold: null, escalateAfter: null, reviewSla: null, pendingSla: null, scoreMid: null, scoreHigh: null, scoreLog: null, maxOpen: null, proofKinds: null, defaultGrade: null, gradeTerms: {}, gradeGrace: {}, gradeProof: {}, gradeClerkLimit: {}, perms: {} });
   const [froms, setFroms] = useState<Froms>({});
   const [limitInvalid, setLimitInvalid] = useState(false);
   const [name, setName] = useState('');
@@ -184,6 +184,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
           const reviewThreshold = edit.reviewThreshold?.trim() ?? null;
           const escalateAfter = edit.escalateAfter?.trim() ?? null;
           const reviewSla = edit.reviewSla?.trim() ?? null;
+          const pendingSla = edit.pendingSla?.trim() ?? null;
           const scoreMid = edit.scoreMid?.trim() ?? null;
           const scoreHigh = edit.scoreHigh?.trim() ?? null;
           const scoreLog = edit.scoreLog?.trim() ?? null;
@@ -214,6 +215,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             (graceDays !== null && !DAYS.test(graceDays)) ||
             (escalateAfter !== null && !DAYS.test(escalateAfter)) ||
             (reviewSla !== null && !DAYS.test(reviewSla)) ||
+            (pendingSla !== null && !DAYS.test(pendingSla)) ||
             (scoreMid !== null && !SCORE.test(scoreMid)) ||
             (scoreHigh !== null && !SCORE.test(scoreHigh)) ||
             (scoreLog !== null && scoreLog !== '' && scoreLog !== 'on') ||
@@ -234,7 +236,7 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setLimitInvalid(false);
-          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, scoreMid, scoreHigh, scoreLog, maxOpen, proofKinds, defaultGrade, gradeTerms, gradeGrace, gradeProof, gradeClerkLimit, perms }, from }));
+          submitOnce(() => saveSettings.mutateAsync({ e: { clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom, cap, proofThreshold, noteThreshold, graceDays, entryDate, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, pendingSla, scoreMid, scoreHigh, scoreLog, maxOpen, proofKinds, defaultGrade, gradeTerms, gradeGrace, gradeProof, gradeClerkLimit, perms }, from }));
         }}
       >
         {/* While a save is in flight the limit in force is not yet known: saving the same value again
@@ -645,6 +647,23 @@ function SettingsPanel({ user, sheet }: { user: string; sheet: string }) {
             onFocus={() => touch('reviewSla', String(data?.reviewSla ?? ''))}
             onChange={(e) => {
               setEdit((was) => ({ ...was, reviewSla: e.target.value }));
+              clearSettingsError();
+            }}
+          />
+        </label>{' '}
+        Pending SLA (days):{' '}
+        <strong data-testid="setting-pending-sla-current">
+          {saveSettings.isPending ? '' : String(data?.pendingSla ?? '')}
+        </strong>{' '}
+        <label>
+          Set to{' '}
+          <input
+            data-testid="setting-pending-sla"
+            placeholder="blank: none"
+            value={edit.pendingSla ?? String(data?.pendingSla ?? '')}
+            onFocus={() => touch('pendingSla', String(data?.pendingSla ?? ''))}
+            onChange={(e) => {
+              setEdit((was) => ({ ...was, pendingSla: e.target.value }));
               clearSettingsError();
             }}
           />
