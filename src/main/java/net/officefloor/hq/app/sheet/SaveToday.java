@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.sheet;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.asof.SheetSnapshots;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.period.PeriodCloser;
@@ -11,11 +12,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 public class SaveToday {
     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val LocalDate today,
-            SheetClock clock, PeriodCloser closer, Rollup rollup, Claims claims, SheetStates states, SheetSnapshots snapshots) {
+            SheetClock clock, PeriodCloser closer, Rollup rollup, Claims claims, SheetStates states, SheetSnapshots snapshots,
+            Audit audit) {
         Rollup.Snapshot before = rollup.take(sheet);
         // A change of today releases every claim editor's lock on the sheet.
         LocalDate was = clock.today(sheet);
         if (!today.equals(was)) {
+            // Each person's due-total as it stood on the day being left, in list order.
+            for (Rollup.Figures figures : before.people().values()) {
+                audit.record("SNAPSHOT sheet=" + sheet + " by=" + user + " name=" + figures.name() + " due-total="
+                        + figures.dueTotal());
+            }
             claims.unlockAll(sheet);
             // What the sheet holds at the end of its old today is kept, for a statement taken as of that date.
             states.keep(sheet, was, today);
