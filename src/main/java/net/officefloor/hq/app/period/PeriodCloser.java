@@ -1,0 +1,98 @@
+package net.officefloor.hq.app.period;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.claim.Late;
+import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Dated;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetClock;
+import org.springframework.stereotype.Service;
+
+/**
+ * Closes a period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims dated in it
+ * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
+ * within its person's hold) (a claim with no rate adds nothing). Shared by a close by hand and the auto close of a today change.
+ */
+@Service
+public class PeriodCloser {
+
+    private final Periods periods;
+    private final Claims claims;
+    private final People people;
+    private final Rates rates;
+    private final Settings settings;
+    private final SheetClock clock;
+    private final Audit audit;
+
+    public PeriodCloser(Periods periods, Claims claims, People people, Rates rates, Settings settings, SheetClock clock,
+            Audit audit) {
+        this.periods = periods;
+        this.claims = claims;
+        this.people = people;
+        this.rates = rates;
+        this.settings = settings;
+        this.clock = clock;
+        this.audit = audit;
+    }
+
+    /** Closes the period found open on the sheet; false when it was already closed. An auto close is audited auto=yes. */
+    public boolean close(String sheet, String user, Period found, boolean auto) {
+        LocalDate from = LocalDate.parse(found.from());
+        LocalDate to = LocalDate.parse(found.to());
+        Map<Long, Person> byId = people.list(sheet).stream().collect(Collectors.toMap(Person::id, (p) -> p));
+        List<Rate> sheetRates = rates.list(sheet);
+        Dated floor = settings.floor(sheet);
+        Late late = settings.late(sheet, clock.today(sheet));
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+        byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
+        for (Claim claim : claims.list(sheet)) {
+            LocalDate date = LocalDate.parse(claim.date());
+            Person person = byId.get(claim.person());
+            if (person == null || !person.countsOn(claim, to) || date.isBefore(from) || date.isAfter(to)) {
+                continue;
+            }
+            BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
+            if (due != null) {
+                total = total.add(due);
+                perPerson.merge(person.id(), due, BigDecimal::add);
+            }
+        }
+        if (!periods.close(sheet, found.name(), total, perPerson)) {
+            return false;
+        }
+        audit.record("PERIOD_CLOSED sheet=" + sheet + " by=" + user + " period=" + found.name() + " total="
+                + total.toPlainString() + (auto ? " auto=yes" : ""));
+        return true;
+    }
+
+    /**
+     * Closes, in order of their to-dates, every open period of the sheet whose to-date plus the grace days is before
+     * the sheet's today; none when the sheet has no grace days.
+     */
+    public void autoClose(String sheet, String user) {
+        Integer grace = settings.graceDays(sheet);
+        if (grace == null) {
+            return;
+        }
+        LocalDate today = clock.today(sheet);
+        List<Period> due = periods.list(sheet).stream()
+                .filter((p) -> !p.closed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
+                .sorted(Comparator.comparing(Period::to)).toList();
+        for (Period period : due) {
+            close(sheet, user, period, true);
+        }
+    }
+}

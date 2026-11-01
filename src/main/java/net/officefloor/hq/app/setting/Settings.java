@@ -52,6 +52,10 @@ public class Settings {
     /** The date from which (on the sheet's today) a claim opened is numbered within its period (yyyy-MM-dd); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The days after its to-date a period stays open; once its to-date plus them is before the sheet's today, a
+     *  today change closes it (a whole number); blank: off. */
+    public static final String GRACE_DAYS = "grace-days";
+
     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
     public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
@@ -74,9 +78,9 @@ public class Settings {
     /** The floor a sheet starts with. */
     public static final String DEFAULT_FLOOR = "1.00";
 
-    /** Whether the key is dated: every setting that carries a figure is; the policy and period numbering dates are not. */
+    /** Whether the key is dated: every setting that carries a figure is; the policy and period numbering dates and the grace days are not. */
     public static boolean dated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !key.startsWith("perm-");
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !key.startsWith("perm-");
     }
 
     /** The from-date an undated setting's one value is kept under. */
@@ -195,6 +199,12 @@ public class Settings {
         return from.isEmpty() ? null : LocalDate.parse(from);
     }
 
+    /** The sheet's grace days, or null when they are off. */
+    public Integer graceDays(String sheet) {
+        String days = get(sheet, GRACE_DAYS);
+        return days.isEmpty() ? null : Integer.valueOf(days);
+    }
+
     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
     public boolean permits(String sheet, String action, String role) {
         String roles = get(sheet, perm(action));
@@ -215,6 +225,7 @@ public class Settings {
         return new SettingsResponse(on(sheet, CLERK_LIMIT, today), floor(sheet).on(today).toPlainString(),
                 Integer.toString(terms(sheet, today)), latePct(sheet).on(today).toPlainString(), get(sheet, POLICY_DATE),
                 get(sheet, PERIOD_NUMBERING_FROM), on(sheet, gradeTerms("A"), today), on(sheet, gradeTerms("B"), today),
-                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), perms, dated);
+                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), perms, dated,
+                get(sheet, GRACE_DAYS));
     }
 }

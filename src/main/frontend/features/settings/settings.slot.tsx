@@ -22,7 +22,8 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
 // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
 // for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
-// its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward).
+// its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward). The grace days (whole days,
+// not dated; blank turns it off): a today change closes each open period whose to-date plus them is before the new today.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -34,6 +35,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
+  const [graceDays, setGraceDays] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
@@ -57,6 +59,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
+      setGraceDays('');
       setGradeTerms({});
       setPerms({});
       setFroms({});
@@ -95,7 +98,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     const values: Record<SettingKey, string> = {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
-      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold };
+      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold,
+      'grace-days': graceDays };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => (isDated(key) ? { key, value: values[key], from: froms[key] ?? '' } : { key, value: values[key] })));
   };
@@ -244,6 +248,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-period-numbering-from-current">{data?.periodNumberingFrom ?? ''}</span>{' '}
+        <label>
+          Grace days{' '}
+          <input
+            data-testid="setting-grace-days"
+            placeholder="whole days (blank: off)"
+            value={graceDays}
+            onChange={(e) => {
+              setGraceDays(e.target.value);
+              touch('grace-days');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('grace-days')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-grace-days-current">{data?.graceDays ?? ''}</span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>

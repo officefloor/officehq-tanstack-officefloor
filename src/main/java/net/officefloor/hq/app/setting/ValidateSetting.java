@@ -34,7 +34,7 @@ public class ValidateSetting {
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
-                && !Settings.PERIOD_NUMBERING_FROM.equals(key)
+                && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.PERMISSIONS.stream().noneMatch((a) -> Settings.perm(a).equals(key))) {
             throw new InvalidSettingException("No such setting: " + key);
@@ -74,6 +74,13 @@ public class ValidateSetting {
                 }
             }
             return new SettingInput(key, value);
+        }
+        // The grace days are a whole number of days; blank turns the auto close off.
+        if (Settings.GRACE_DAYS.equals(key)) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank");
+            }
+            return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
         }
         // The terms are a whole number of days; blank takes the default.
         if (Settings.TERMS.equals(key)) {
