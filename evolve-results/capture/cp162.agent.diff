@@ -1,0 +1,143 @@
+diff --git a/src/main/frontend/features/claims/ClaimTimeline.tsx b/src/main/frontend/features/claims/ClaimTimeline.tsx
+new file mode 100644
+index 00000000..2547b0b0
+--- /dev/null
++++ b/src/main/frontend/features/claims/ClaimTimeline.tsx
+@@ -0,0 +1,44 @@
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/**
++ * A claim's timeline: the audit lines about it, newest first, as the audit file holds them — the
++ * lines carrying its number, or, for a claim with no number, those naming its person, amount and
++ * date together. Each press re-reads the file; it is not a second record.
++ */
++export function ClaimTimeline({ sheet, claimId }: { sheet: string; claimId: number }) {
++  const show = useMutation({
++    mutationFn: () =>
++      getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claimId}/timeline`),
++  });
++
++  return (
++    <>
++      <button
++        type="button"
++        data-testid="claim-timeline"
++        disabled={show.isPending}
++        onClick={() => {
++          // The old lines go while the new ones are read, so two presses are told apart.
++          show.reset();
++          show.mutate();
++        }}
++      >
++        Timeline
++      </button>
++      {show.isError && (
++        <span data-testid="claim-timeline-error" role="alert">
++          {' '}
++          Could not read the timeline.
++        </span>
++      )}
++      <ol data-testid="claim-timeline-list">
++        {(show.data ?? []).map((line, i) => (
++          <li key={i} data-testid="claim-timeline-line">
++            <code>{line}</code>
++          </li>
++        ))}
++      </ol>
++    </>
++  );
++}
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 38043ed8..348eb916 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -12,6 +12,7 @@ import { useSelectedClaims } from '../bulk/useSelectedClaims';
+ import { useVoidReasons } from '../voidreasons/useVoidReasons';
+ import { useTemplates } from '../templates/useTemplates';
+ import { Col } from '../columns/useColumns';
++import { ClaimTimeline } from './ClaimTimeline';
+ import {
+   AMOUNT,
+   CLAIM_NUMBER,
+@@ -979,6 +980,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
+                   {refused.message}
+                 </span>
+               )}
++              {' '}
++              <ClaimTimeline sheet={sheet} claimId={c.id} />
+               <ol data-testid="claim-log">
+                 {c.log.map((line, i) => (
+                   <li key={i} data-testid="claim-log-line">
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 7feae507..394dac7b 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -93,6 +93,27 @@ public class Audit {
+         return lines;
+     }
+ 
++    /**
++     * A claim's lines on the sheet exactly as the file holds them, newest first: with a number, the
++     * lines carrying number=<it>; without one, the lines carrying no number that name its person,
++     * amount and date together (person=, amount= and date= those values). Reads the file; records nothing.
++     */
++    public synchronized List<String> timelineFor(String sheet, String number, String person, String amount,
++            String date) {
++        List<String> lines = new ArrayList<>();
++        for (String line : linesFor(sheet, null)) {
++            String padded = " " + line + " ";
++            if (number != null) {
++                if (padded.contains(" number=" + number + " ")) lines.add(line);
++            } else if (person != null && !padded.contains(" number=")
++                    && padded.contains(" person=" + person + " ") && padded.contains(" amount=" + amount + " ")
++                    && padded.contains(" date=" + date + " ")) {
++                lines.add(line);
++            }
++        }
++        return lines;
++    }
++
+     /** Whether the line's name= or person= field holds this (lower-cased, trimmed) name. */
+     private static boolean about(String line, String key) {
+         String[] tokens = line.split(" ");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+new file mode 100644
+index 00000000..b8b735fc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The claim's timeline (see {@link Audit#timelineFor}): its audit lines, newest first. */
++public class RespondWithClaimTimeline {
++    public void respond(@Val Claim claim, People people, Audit audit, ObjectResponse<List<String>> response) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        response.send(audit.timelineFor(claim.getSheetId(), claim.getNumber(),
++                person == null ? null : person.getName(), claim.getAmount().toPlainString(),
++                String.valueOf(claim.getDate())));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 00000000..7ff97d05
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,10 @@
++# The claim's timeline: the sheet's audit lines about it, newest first, as the audit file holds
++# them — the lines carrying its number, or, for a claim with no number, the unnumbered lines naming
++# its person, amount and date together. Reads the file; records nothing.
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimTimeline
++  govern: [ readonly-transaction ]
