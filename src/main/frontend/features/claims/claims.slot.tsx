@@ -27,8 +27,8 @@ import {
 } from './claims';
 import type { Claim, ClaimStatusChange } from './claims';
 
-type Draft = { amount: string; date: string; note: string };
-const EMPTY: Draft = { amount: '', date: '', note: '' };
+type Draft = { amount: string; date: string; note: string; corrects: string };
+const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimedHeader() {
   return (
@@ -91,6 +91,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       {claim.openedBy !== null && 'opened by '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
+      {claim.corrects !== null && 'corrects #'}
+      <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
       {CHANGES.map(({ change, label }) => (
         <button
           key={change}
@@ -173,7 +175,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   const open = (c: Claim) => {
     setEditing(c.id);
-    setDraft({ amount: c.amount, date: c.date, note: c.note });
+    setDraft({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
     save.reset();
   };
 
@@ -185,7 +187,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    // The server refuses an amount that is not 0.00 or more with up to two decimals, or a bad date.
+    // The server refuses an amount that is not a number with up to two decimals, a bad date, or a negative amount
+    // (a correction) that does not name a SETTLED claim of this person by number.
     send({ id: editing, body: draft });
   };
 
@@ -215,12 +218,18 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
             value={draft.note}
             onChange={(e) => change({ note: e.target.value })}
           />{' '}
+          <input
+            data-testid="claim-form-corrects"
+            placeholder="corrects #"
+            value={draft.corrects}
+            onChange={(e) => change({ corrects: e.target.value })}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
           {save.isError && (
             <span data-testid="claim-form-error" role="alert">
-              {' '}A claim needs an amount of 0.00 or more with up to two decimals, and a valid date not after the person's retirement date; only a DRAFT claim can be edited.
+              {' '}A claim needs an amount with up to two decimals, and a valid date not after the person's retirement date; a negative amount is a correction and must name, by number, a SETTLED claim of this person; only a DRAFT claim can be edited.
             </span>
           )}
         </form>

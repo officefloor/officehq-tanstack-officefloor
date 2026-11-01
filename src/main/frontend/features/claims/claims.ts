@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
-import { dueCents, hundredths, rateOf, type Rate } from '../rates/rates';
+import { dueCents, hundredths, rateOf, twoDecimals, type Rate } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useLatePctCents, useTerms } from '../settings/settings';
 
@@ -16,7 +16,8 @@ export type ClaimStatusChange = 'open' | 'settle' | 'void';
  * the sheet (given when it is opened; null while a draft; kept once voided), and its due fixed when it was
  * settled (two decimals; null while live: until settled, and when its grade had no rate then), and the
  * user who opened it (null until opened; that user may not settle it), and whether its person's last statement
- * bound it, with the figure it bound (null when its grade had no rate then). */
+ * bound it, with the figure it bound (null when its grade had no rate then), and the number of the claim it
+ * corrects (null unless it is a correction: a negative amount). */
 export type Claim = {
   id: number;
   person: number;
@@ -29,6 +30,7 @@ export type Claim = {
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
+  corrects: number | null;
 };
 
 export const claimsKey = (sheet: string) => ['claims', sheet] as const;
@@ -52,11 +54,12 @@ export function counted(claims: Claim[], people: Person[]): Claim[] {
 
 /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
 export function claimed(claims: Claim[]): string {
-  const cents = claims.reduce((sum, c) => {
-    const [whole, frac = ''] = c.amount.split('.');
-    return sum + Number(whole) * 100 + Number(frac.padEnd(2, '0'));
-  }, 0);
-  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+  return twoDecimals(claims.reduce((sum, c) => sum + hundredths(c.amount), 0n));
+}
+
+/** Whether a claim is a correction: a negative amount, correcting the settled claim it names by number. */
+export function correction(claim: Claim): boolean {
+  return claim.amount.startsWith('-');
 }
 
 /** Whether a claim keeps its figure whatever the rates: fixed when settled, or bound by a statement (a claim
@@ -75,12 +78,12 @@ export function useLate(sheet: string): Late {
 }
 
 /** A claim's figure: the one fixed when it was settled, else the one its statement bound, else its amount at the
- *  grade's rate in force on its date, raised to at least the sheet's floor (in hundredths). */
+ *  grade's rate in force on its date, raised to at least the sheet's floor (in hundredths; a correction has no floor). */
 export function claimFigureCents(claim: Claim, pct: string | undefined, floor: bigint): bigint | undefined {
   if (claim.settledDue !== null) return hundredths(claim.settledDue);
   if (claim.stated) return claim.statedDue === null ? undefined : hundredths(claim.statedDue);
   const live = dueCents(claim.amount, pct);
-  return live === undefined || live >= floor ? live : floor;
+  return live === undefined || correction(claim) || live >= floor ? live : floor;
 }
 
 /** The whole days a claim is overdue: from its due-by to the sheet's today (0 when it is not overdue). */
@@ -90,8 +93,9 @@ function daysOverdue(claim: Claim, late: Late): number {
 }
 
 /** A claim's late charge on its figure (in hundredths): the late percent of the figure for every full 30 days it is
- *  overdue, rounded half to even. */
+ *  overdue, rounded half to even; a correction has none. */
 export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
+  if (correction(claim)) return 0n;
   const periods = BigInt(Math.floor(daysOverdue(claim, late) / 30));
   const product = figure * late.pct * periods;
   const quotient = product / 10000n;

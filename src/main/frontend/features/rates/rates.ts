@@ -32,13 +32,16 @@ export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | u
 
 /** A two-decimal string as a whole number of hundredths. */
 export function hundredths(value: string): bigint {
-  const [whole, frac = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt(frac.padEnd(2, '0').slice(0, 2));
+  const negative = value.startsWith('-');
+  const [whole, frac = ''] = value.replace(/^-/, '').split('.');
+  const cents = BigInt(whole) * 100n + BigInt(frac.padEnd(2, '0').slice(0, 2));
+  return negative ? -cents : cents;
 }
 
 /** A whole number of hundredths as a two-decimal string. */
 export function twoDecimals(cents: bigint): string {
-  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+  const abs = cents < 0n ? -cents : cents;
+  return `${cents < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
 }
 
 /** An amount times a percent, divided by 100, in hundredths rounded half to even (1.025 -> 1.02,
@@ -46,10 +49,12 @@ export function twoDecimals(cents: bigint): string {
 export function dueCents(amount: string, pct: string | undefined): bigint | undefined {
   if (pct === undefined) return undefined;
   const product = hundredths(amount) * hundredths(pct);
-  const quotient = product / 10000n;
-  const remainder = product % 10000n;
-  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) return quotient + 1n;
-  return quotient;
+  // Rounded on the magnitude, so a negative amount (a correction) rounds as its positive would.
+  const abs = product < 0n ? -product : product;
+  let quotient = abs / 10000n;
+  const remainder = abs % 10000n;
+  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
+  return product < 0n ? -quotient : quotient;
 }
 
 /** A due as the screen shows it: two decimals, or n/a when there is no rate. */

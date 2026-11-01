@@ -9,10 +9,16 @@ import net.officefloor.hq.app.rate.Rate;
  * A claim as the screen shows it: amount with two decimals, date (ISO yyyy-MM-dd), note, status and its number on
  * the sheet (given when opened and kept once voided; null while a draft), and its due fixed when settled (two decimals;
  * null until settled, and when the grade had no rate then), and the user who opened it (null until opened), and
- * whether its person's last statement bound it, with the figure it bound (null when the grade had no rate then).
+ * whether its person's last statement bound it, with the figure it bound (null when the grade had no rate then), and
+ * the number of the claim it corrects (null unless it is a correction).
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
-        Integer number, String settledDue, String openedBy, boolean stated, String statedDue) {
+        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, Integer corrects) {
+
+    /** Whether this claim is a correction: a negative amount, naming the number of the settled claim it corrects. */
+    public boolean correction() {
+        return amount.startsWith("-");
+    }
 
     /** The audit fields of this claim for the named person, as {@link ClaimInput#auditFields}. */
     public String auditFields(String person) {
@@ -21,12 +27,12 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
     public Claim withNumber(Integer number) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
     }
 
     /** This claim, settled with its due fixed (null when its grade had no rate). */
     public Claim withSettledDue(String settledDue) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
     }
 
     /** The audit fields of a status change: {@link #auditFields} then number=<number> when it has one. */
@@ -63,7 +69,8 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /**
      * This claim's figure: the due fixed when settled, else the one its statement bound, else its amount at the
-     * grade's rate in force on its date, raised to at least the sheet's floor; null when there is none.
+     * grade's rate in force on its date, raised to at least the sheet's floor (a correction has no floor); null when
+     * there is none.
      */
     public BigDecimal figure(List<Rate> rates, String grade, BigDecimal floor) {
         if (settledDue != null) {
@@ -73,6 +80,6 @@ public record Claim(long id, long person, String amount, String date, String not
             return statedDue == null ? null : new BigDecimal(statedDue);
         }
         BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)));
-        return live == null ? null : live.max(floor);
+        return live == null || correction() ? live : live.max(floor);
     }
 }

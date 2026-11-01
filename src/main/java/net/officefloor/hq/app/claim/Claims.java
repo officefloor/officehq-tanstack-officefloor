@@ -21,9 +21,10 @@ public class Claims {
                     : rs.getBigDecimal("settled_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
-                    : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString());
+                    : rs.getBigDecimal("stated_due").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
+            rs.getObject("corrects", Integer.class));
 
-    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by, stated, stated_due FROM claim";
+    private static final String COLUMNS = "SELECT id, person, amount, claimed_on, note, status, number_on_sheet, settled_due, opened_by, stated, stated_due, corrects FROM claim";
 
     private final JdbcTemplate jdbc;
 
@@ -41,16 +42,22 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The claim with this number on the sheet, or null when no claim has it. */
+    public Claim findByNumber(String sheet, int number) {
+        List<Claim> found = jdbc.query(COLUMNS + " WHERE sheet = ? AND number_on_sheet = ?", ROW, sheet, number);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     public void add(String sheet, long person, ClaimInput input) {
-        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note) VALUES (?, ?, ?, ?, ?)", sheet, person,
-                input.amount(), Date.valueOf(input.date()), input.note());
+        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                sheet, person, input.amount(), Date.valueOf(input.date()), input.note(), input.corrects());
     }
 
     /** Edits a draft claim: false when it is no longer a draft. */
     public boolean update(String sheet, long id, ClaimInput input) {
         return jdbc.update(
-                "UPDATE claim SET amount = ?, claimed_on = ?, note = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'",
-                input.amount(), Date.valueOf(input.date()), input.note(), sheet, id) == 1;
+                "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'",
+                input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), sheet, id) == 1;
     }
 
     /** Moves the claim from one status to another: false when it no longer has the status it was read with. */

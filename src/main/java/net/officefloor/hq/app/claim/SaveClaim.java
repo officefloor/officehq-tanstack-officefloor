@@ -26,6 +26,7 @@ public class SaveClaim {
         if (owner.retiredBefore(input.date())) {
             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
         }
+        input.checkCorrects(sheet, owner.id(), claims);
         Rollup.Snapshot before = rollup.take(sheet);
         // Conditional on the claim still being a draft, so one another user opened meanwhile is refused.
         if (!claims.update(sheet, claim.id(), input)) {

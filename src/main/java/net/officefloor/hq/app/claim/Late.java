@@ -18,10 +18,10 @@ public record Late(BigDecimal pct, int terms, LocalDate today) {
 
     /**
      * The claim's late charge on its figure: the late percent of the figure for every full 30 days it is overdue,
-     * rounded half to even in hundredths; 0.00 when it is not overdue.
+     * rounded half to even in hundredths; 0.00 when it is not overdue, and always for a correction.
      */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
-        if (figure == null || !overdue(claim)) {
+        if (figure == null || claim.correction() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
         long days = ChronoUnit.DAYS.between(LocalDate.parse(claim.date()).plusDays(terms), today);
