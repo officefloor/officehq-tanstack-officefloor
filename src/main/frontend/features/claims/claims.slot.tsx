@@ -45,6 +45,7 @@ const CANNOT_RESETTLE = 'Only a steward can re-settle a claim, and only a SETTLE
 const NO_TARGET = 'Choose another person to reassign this claim to.';
 const CANNOT_DEFER = "Only an OPEN claim dated outside a closed period can be deferred, and only to a date after the sheet's today.";
 const CANNOT_REDATE = "Only a steward can re-date a claim, only an OPEN or PENDING one, never one due by in a closed period, nor to a date after its person's retirement.";
+const SETTLE_ASOF = "A claim can be settled as of a date only on or before the sheet's today, and only one that existed then.";
 const DEFERRED = 'A deferred claim cannot be settled until the sheet\'s today reaches its deferred-until date.';
 const NEEDS_PROOF = "A claim whose due is above the proof threshold cannot be settled or approved until it has a proof (one of each of the sheet's proof kinds, when set).";
 const NEEDS_NOTE = "A claim whose due is above the sheet's note threshold cannot be opened while its note is empty.";
@@ -184,6 +185,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   // The void reason chosen for each claim, by claim id: one is needed while the sheet has any.
   const { data: voidReasons = [] } = useVoidReasons(sheet);
   const [voidWith, setVoidWith] = useState<Record<number, string>>({});
+  // The date typed to settle each claim as of, by claim id ('' for the sheet's today).
+  const [settleOn, setSettleOn] = useState<Record<number, string>>({});
   // The date typed for deferring each claim, by claim id.
   const [deferTo, setDeferTo] = useState<Record<number, string>>({});
   // The new date typed for re-dating each claim, by claim id.
@@ -250,10 +253,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   });
 
   const changeStatus = useMutation({
-    mutationFn: (c: { id: number; action: Action; reason?: string }) =>
-      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user, reason: c.reason }),
+    mutationFn: (c: { id: number; action: Action; reason?: string; on?: string }) =>
+      postJson<Claim>(`${base}/claims/${c.id}/status`, { action: c.action, user, reason: c.reason, on: c.on }),
     onMutate: () => setRefused(null),
     onSuccess: (_, c) => {
+      if (c.action === 'settle') setSettleOn((r) => ({ ...r, [c.id]: '' }));
       if (c.action === 'reject') setReasons((r) => ({ ...r, [c.id]: '' }));
       if (c.action === 'void') setVoidWith((r) => ({ ...r, [c.id]: '' }));
     },
@@ -266,6 +270,8 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
             ? CANNOT_RESTORE
           : !(e instanceof HttpError)
           ? STATUS_REFUSED
+          : e.body.includes('as of')
+            ? SETTLE_ASOF
           : e.body.includes('void reason')
             ? NO_VOID_REASON
           : e.body.includes('void a settled')
@@ -885,6 +891,20 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                       />{' '}
                     </>
                   )}
+                  {action === 'settle' && (
+                    <>
+                      <input
+                        data-testid="claim-settle-date"
+                        aria-label="Settle as of"
+                        placeholder="yyyy-mm-dd"
+                        value={settleOn[c.id] ?? ''}
+                        onChange={(e) => {
+                          setSettleOn({ ...settleOn, [c.id]: e.target.value });
+                          if (refused?.id === c.id) setRefused(null);
+                        }}
+                      />{' '}
+                    </>
+                  )}
                   {action === 'void' && voidReasons.length > 0 && (
                     <>
                       <select
@@ -930,6 +950,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
                             : action === 'void' && voidReason !== ''
                               ? voidReason
                               : undefined,
+                        on: action === 'settle' && (settleOn[c.id] ?? '').trim() !== '' ? (settleOn[c.id] ?? '').trim() : undefined,
                       });
                     }}
                   >

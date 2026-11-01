@@ -34,7 +34,7 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final String PREFIX = "/api/sheets/";
 
     /** The bulk actions, by the path after the sheet id: they answer counts instead of refusing. */
-    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle", "bulk-grade", "bulk-retire");
+    private static final Set<String> BULK = Set.of("bulk-open", "bulk-settle", "bulk-grade", "bulk-retire", "bulk-void");
 
     /** Generating the plans' claims answers a count too: a viewer's generate goes through and makes none. */
     private static final Set<String> COUNTED = Set.of("generate-plans");
