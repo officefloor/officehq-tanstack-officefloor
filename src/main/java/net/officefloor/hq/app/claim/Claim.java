@@ -21,7 +21,7 @@ import net.officefloor.hq.app.setting.Dated;
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
-        String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log, String deferredUntil, boolean deferred) {
+        String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log, String deferredUntil, boolean deferred, int proofs) {
 
     /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
     public boolean correction() {
@@ -35,27 +35,27 @@ public record Claim(long id, long person, String amount, String date, String not
 
     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
     public Claim withNumber(Integer number) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
     }
 
     /** This claim, numbered within its period: its audit fields end with number=<period number>. */
     public Claim withPeriodNumber(String periodNumber) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
     }
 
     /** This claim, settled with its due fixed (null when its grade had no rate). */
     public Claim withSettledDue(String settledDue) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
     }
 
     /** This claim as an OPEN claim bound by no statement and with no due fixed: the figure it would have live. */
     public Claim asOpenUnbound() {
-        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred);
+        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
     }
 
     /** This claim, with its status log (oldest first). */
     public Claim withLog(List<ClaimLogLine> log) {
-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred);
+        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs);
     }
 
     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */

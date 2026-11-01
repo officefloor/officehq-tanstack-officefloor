@@ -73,6 +73,19 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException("A reject needs a reason");
         }
         Person person = people.find(sheet, claim.person());
+        // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has
+        // a proof (a due of n/a is above no threshold); checked before the clerk limit, so it never goes to PENDING.
+        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+            BigDecimal threshold = settings.proofThreshold(sheet, LocalDate.parse(claim.date()));
+            if (threshold != null && claim.proofs() == 0) {
+                BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+                        settings.late(sheet, clock.today(sheet)));
+                if (due != null && due.compareTo(threshold) > 0) {
+                    throw new InvalidClaimStatusChangeException(
+                            "A claim whose due is above the proof threshold needs a proof before it is settled or approved");
+                }
+            }
+        }
         // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit); above
         // it the claim goes to PENDING for a steward to approve. A steward settles anything.
         if (requested == ClaimStatusChange.SETTLE && claim.status() == ClaimStatus.OPEN

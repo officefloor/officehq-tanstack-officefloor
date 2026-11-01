@@ -29,7 +29,7 @@ public class ValidateSetting {
     private SettingInput input(SettingRequest request) throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
-        if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+        if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))) {

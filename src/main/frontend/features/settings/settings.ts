@@ -12,7 +12,8 @@ import { hundredths } from '../rates/rates';
  *  cap with two decimals, the most a person's due-total is ('' for no cap). Each is the value in force on the sheet's
  *  today. And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
-  termsA: string; termsB: string; termsC: string; cap: string; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  termsA: string; termsB: string; termsC: string; cap: string;
+  proofThreshold: string; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -41,7 +42,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'cap';
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'cap' | 'proof-threshold';
 
 /** The grades that may have terms of their own, with the setting key and field of {@link Settings} of each. */
 export const GRADE_TERMS = [

@@ -26,6 +26,9 @@ public class Settings {
     /** The most a person's due-total is (two decimals); blank: no cap. */
     public static final String CAP = "cap";
 
+    /** The due above which a claim needs a proof before it is settled or approved (two decimals); blank: none. */
+    public static final String PROOF_THRESHOLD = "proof-threshold";
+
     /** The least a claim's live due is (two decimals); blank: its default. */
     public static final String FLOOR = "floor";
 
@@ -133,6 +136,12 @@ public class Settings {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
     }
 
+    /** The sheet's proof threshold in force on the date, or null when there is none. */
+    public BigDecimal proofThreshold(String sheet, LocalDate date) {
+        String threshold = on(sheet, PROOF_THRESHOLD, date);
+        return threshold.isEmpty() ? null : new BigDecimal(threshold);
+    }
+
     /** The sheet's floor by date: the least a claim's live due is, the one in force on the claim's date. */
     public Dated floor(String sheet) {
         return figure(sheet, FLOOR, new BigDecimal(DEFAULT_FLOOR));
@@ -177,12 +186,12 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
-        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), LATE_PCT)) {
+        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), LATE_PCT, PROOF_THRESHOLD)) {
             dated.put(key, history(sheet, key));
         }
         return new SettingsResponse(on(sheet, CLERK_LIMIT, today), floor(sheet).on(today).toPlainString(),
                 Integer.toString(terms(sheet, today)), latePct(sheet).on(today).toPlainString(), get(sheet, POLICY_DATE),
                 get(sheet, PERIOD_NUMBERING_FROM), on(sheet, gradeTerms("A"), today), on(sheet, gradeTerms("B"), today),
-                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), dated);
+                on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), dated);
     }
 }

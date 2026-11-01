@@ -103,6 +103,12 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
     },
   });
   const defer = useSubmitOnce(deferMutation);
+  // A proof raises the claim's proofs count by one (not on a SETTLED or VOID claim, nor one in a closed period).
+  const proofMutation = useMutation({
+    mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/proof`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
+  const addProof = useSubmitOnce(proofMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
@@ -133,8 +139,24 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {claim.corrects !== null && 'corrects #'}
       <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
       deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
-      {claim.deferred && 'until '}
-      <span data-testid="claim-deferred-until">{claim.deferred ? claim.deferredUntil : ''}</span>{' '}
+      {claim.deferredUntil !== null && (claim.deferred ? 'until ' : 'last until ')}
+      <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
+      proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-proof"
+        disabled={proofMutation.isPending}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          addProof(undefined);
+        }}
+      >
+        Add proof
+      </button>{' '}
       {CHANGES.map(({ change, label }) => (
         <button
           key={change}
@@ -146,6 +168,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
             move.reset();
             resettleMutation.reset();
             deferMutation.reset();
+            proofMutation.reset();
             act(change);
           }}
         >
@@ -171,6 +194,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          proofMutation.reset();
           act('reject');
         }}
       >
@@ -184,6 +208,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           move.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          proofMutation.reset();
           if (claim.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -220,6 +245,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           resettleMutation.reset();
           deferMutation.reset();
+          proofMutation.reset();
           reassign(Number(moveTo));
         }}
       >
@@ -234,6 +260,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           move.reset();
           deferMutation.reset();
+          proofMutation.reset();
           resettle(undefined);
         }}
       >
@@ -257,6 +284,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           status.reset();
           move.reset();
           resettleMutation.reset();
+          proofMutation.reset();
           defer(deferTo);
         }}
       >
@@ -281,7 +309,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, and a reject needs a reason).
+          {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, and a claim whose due is above the proof threshold needs a proof).
         </span>
       )}
       {resettleMutation.isError && (
@@ -292,6 +320,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {deferMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be deferred (only an OPEN claim outside a closed period, and only to a date after the sheet's today).
+        </span>
+      )}
+      {proofMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one dated inside a closed period).
         </span>
       )}
       {move.isError && (

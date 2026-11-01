@@ -62,6 +62,8 @@ export type Claim = {
   log: ClaimLogLine[];
   deferredUntil: string | null;
   deferred: boolean;
+  /** How many proofs the claim has: one above the sheet's proof threshold needs one to be settled or approved. */
+  proofs: number;
 };
 
 /** One line of a claim's status log: the status it took, by whom, on the sheet's today then (yyyy-MM-dd), and the
