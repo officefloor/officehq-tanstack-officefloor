@@ -4,7 +4,7 @@ import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
-import { useCapCents, useFloorCents, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
+import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
@@ -142,14 +142,23 @@ export function fixed(claim: Claim): boolean {
 /** What makes an overdue claim's late charge: the sheet's late percent (in hundredths) by date, the one in force on
  *  each 30-day boundary after the claim's due-by, and its today.
  *  The charge is never bound by a statement: it follows the sheet's today. It also carries the sheet's policy date
- *  (yyyy-MM-dd; undefined: its today), which decides how a claim's live figures round. */
-export type Late = { pct: DatedCents; today: string | undefined; policy: string | undefined };
+ *  (yyyy-MM-dd; undefined: its today), which decides how a claim's live figures round. And the date a claim's
+ *  overdue days are counted from (yyyy-MM-dd): its due-by plus the grace of its person's grade in force on its date,
+ *  where that grade has one in force on that date. */
+export type Late = { pct: DatedCents; today: string | undefined; policy: string | undefined; graceBy: (claim: Claim) => string };
 
-/** The sheet's late percent, today and policy date. */
+/** The sheet's late percent, today, policy date and graces. */
 export function useLate(sheet: string): Late {
   const today = useSheetToday(sheet);
   const policy = usePolicyDate(sheet);
-  return { pct: useLatePctCents(sheet), today, policy: policy === '' ? today : policy };
+  const grace = useGraceDays(sheet);
+  const { data: people } = usePeople(sheet);
+  const graceBy = (claim: Claim) => {
+    const person = people?.find((p) => p.id === claim.person);
+    const days = person === undefined ? 0 : grace(gradeOn(person, claim.date), claim.date);
+    return days === 0 ? claim.dueBy : plusDays(claim.dueBy, days);
+  };
+  return { pct: useLatePctCents(sheet), today, policy: policy === '' ? today : policy, graceBy };
 }
 
 /** Whether a claim's live figures round half up: it rounds on a date (its own, or for a correction the date of the
@@ -166,10 +175,10 @@ export function claimFigureCents(claim: Claim, pct: string | undefined, floor: D
   return dueCents(claim.amount, pct, halfUp);
 }
 
-/** The whole days a claim is overdue: from its due-by to the sheet's today (0 when it is not overdue). */
+/** The whole days a claim is overdue: from its due-by plus its grace to the sheet's today (0 when it is not overdue). */
 function daysOverdue(claim: Claim, late: Late): number {
-  if (!overdue(claim, late.today)) return 0;
-  return Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${claim.dueBy}T00:00:00Z`)) / 86_400_000);
+  if (!overdue(claim, late)) return 0;
+  return Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${late.graceBy(claim)}T00:00:00Z`)) / 86_400_000);
 }
 
 /** The day (yyyy-MM-dd) the given number of days after a day. */
@@ -178,14 +187,14 @@ function plusDays(day: string, days: number): string {
 }
 
 /** A claim's late charge on its figure (in hundredths): for each full 30 days it is overdue, the late percent in
- *  force on that boundary (its due-by plus 30, 60, 90 ... days) of the figure, rounded as the claim's live figures
+ *  force on that boundary (its due-by plus its grace plus 30, 60, 90 ... days) of the figure, rounded as the claim's live figures
  *  are (see {@link roundsHalfUp}), the charges added up; a correction has none. */
 export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
   if (correction(claim)) return 0n;
   const periods = Math.floor(daysOverdue(claim, late) / 30);
   let total = 0n;
   for (let k = 1; k <= periods; k++) {
-    const pct = late.pct(plusDays(claim.dueBy, 30 * k));
+    const pct = late.pct(plusDays(late.graceBy(claim), 30 * k));
     if (pct === 0n) continue;
     const product = figure * pct;
     const quotient = product / 10000n;
@@ -283,9 +292,9 @@ export function isActive(claims: Claim[], person: Person, today: string | undefi
   );
 }
 
-/** Whether a claim is overdue: OPEN or PENDING, not deferred, with its due-by before the sheet's today. */
-export function overdue(claim: Claim, today: string | undefined): boolean {
-  return isOpen(claim) && !claim.deferred && today !== undefined && claim.dueBy < today;
+/** Whether a claim is overdue: OPEN or PENDING, not deferred, with its due-by plus its grace before the sheet's today. */
+export function overdue(claim: Claim, late: Late): boolean {
+  return isOpen(claim) && !claim.deferred && late.today !== undefined && late.graceBy(claim) < late.today;
 }
 
 /** The overdue claims that count (see {@link counted}) among a person's or the sheet's claims, and the sum of
@@ -298,7 +307,7 @@ export function overdueCents(
   floor: DatedCents,
 ): { count: number; cents: bigint } {
   const byId = new Map(people.map((p) => [p.id, p]));
-  const overdueClaims = counted(claims, people).filter((c) => byId.has(c.person) && overdue(c, late.today));
+  const overdueClaims = counted(claims, people).filter((c) => byId.has(c.person) && overdue(c, late));
   const cents = overdueClaims.reduce(
     (sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(byId.get(c.person)!, c.date), c.date), floor, late) ?? 0n),
     0n,

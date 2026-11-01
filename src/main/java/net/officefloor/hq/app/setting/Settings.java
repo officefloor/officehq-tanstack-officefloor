@@ -46,6 +46,11 @@ public class Settings {
         return TERMS + "-" + grade;
     }
 
+    /** The key of a grade's grace (a whole number of days added to a claim's due-by before it is overdue); blank: none. */
+    public static String gradeGrace(String grade) {
+        return "grace-" + grade;
+    }
+
     /** The percent of an overdue claim's figure charged for every full 30 days it is overdue (two decimals). */
     public static final String LATE_PCT = "late-pct";
 
@@ -216,10 +221,19 @@ public class Settings {
         return figure(sheet, LATE_PCT, new BigDecimal(DEFAULT_LATE_PCT));
     }
 
+    /** Each grade's grace as recorded, by from-date. */
+    public Map<String, List<DatedValue>> graces(String sheet) {
+        Map<String, List<DatedValue>> graces = new LinkedHashMap<>();
+        for (String grade : GRADES) {
+            graces.put(grade, history(sheet, gradeGrace(grade)));
+        }
+        return graces;
+    }
+
     /** What makes the sheet's late charges on its today. */
     public Late late(String sheet, LocalDate today) {
         String policy = get(sheet, POLICY_DATE);
-        return new Late(latePct(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy));
+        return new Late(latePct(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy), graces(sheet));
     }
 
     /** The date from which claims opened are numbered within their period, or null when they are not. */
@@ -250,7 +264,7 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
-        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), LATE_PCT, PROOF_THRESHOLD, NOTE_THRESHOLD)) {
+        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, NOTE_THRESHOLD)) {
             dated.put(key, history(sheet, key));
         }
         Map<String, String> perms = new LinkedHashMap<>();
@@ -261,6 +275,7 @@ public class Settings {
                 Integer.toString(terms(sheet, today)), latePct(sheet).on(today).toPlainString(), get(sheet, POLICY_DATE),
                 get(sheet, PERIOD_NUMBERING_FROM), on(sheet, gradeTerms("A"), today), on(sheet, gradeTerms("B"), today),
                 on(sheet, gradeTerms("C"), today), on(sheet, CAP, today), on(sheet, PROOF_THRESHOLD, today), perms, dated,
-                get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE));
+                get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE),
+                on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today));
     }
 }

@@ -172,7 +172,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       <span data-testid="claim-note">{claim.note}</span>{' '}
       due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor, late))}</span>{' '}
       due by <span data-testid="claim-due-by">{claim.dueBy}</span>{' '}
-      overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
+      overdue <span data-testid="claim-overdue">{overdue(claim, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       period <span data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</span>{' '}

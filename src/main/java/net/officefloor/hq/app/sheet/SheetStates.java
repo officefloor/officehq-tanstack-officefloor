@@ -39,7 +39,8 @@ public class SheetStates {
     public SheetState now(String sheet) {
         return new SheetState(people.list(sheet), claims.list(sheet), rates.list(sheet),
                 settings.history(sheet, Settings.FLOOR), settings.history(sheet, Settings.LATE_PCT),
-                settings.history(sheet, Settings.CAP), settings.get(sheet, Settings.POLICY_DATE));
+                settings.history(sheet, Settings.CAP), settings.get(sheet, Settings.POLICY_DATE),
+                settings.graces(sheet));
     }
 
     /** Keeps what the sheet holds now, as its today moves from one date to another. */

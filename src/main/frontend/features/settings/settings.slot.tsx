@@ -5,7 +5,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
+import { GRADE_GRACE, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
 import type { PermAction, SettingKey, Settings as SheetSettings } from './settings';
 
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
@@ -26,6 +26,8 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward). The grace days (whole days,
 // not dated; blank turns it off): a today change closes each open period whose to-date plus them is before the new today.
 // The entry date (not dated; blank turns it off): while set, a new claim with a blank date takes it in place of the sheet's today.
+// A grade's grace (whole days, dated; blank means none): a claim whose person's grade in force on its date has a grace
+// in force on that date is overdue only once its due-by plus the grace is before the sheet's today.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -41,6 +43,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [graceDays, setGraceDays] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
+  const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
   const [froms, setFroms] = useState<Partial<Record<SettingKey, string>>>({});
@@ -67,6 +70,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setGraceDays('');
       setEntryDate('');
       setGradeTerms({});
+      setGradeGrace({});
       setPerms({});
       setFroms({});
       setChanged([]);
@@ -105,7 +109,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
-      'grace-days': graceDays, 'entry-date': entryDate };
+      'grace-days': graceDays, 'entry-date': entryDate, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-C': gradeGrace.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => (isDated(key) ? { key, value: values[key], from: froms[key] ?? '' } : { key, value: values[key] })));
   };
@@ -225,6 +230,27 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
           </span>
         ))}
+        {GRADE_GRACE.map(({ grade, key, field }) => (
+          <span key={key}>
+            <label>
+              Grace for grade {grade}{' '}
+              <input
+                data-testid={`setting-${key}`}
+                placeholder="days (blank: none)"
+                value={gradeGrace[grade] ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setGradeGrace((grace) => ({ ...grace, [grade]: value }));
+                  touch(key);
+                }}
+                // As the policy date: clearing an already blank field must still send the blank.
+                onFocus={() => touch(key)}
+              />
+            </label>{' '}
+            {from(key)}
+            now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input
@@ -325,7 +351,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold, the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
+            {' '}The clerk limit, the cap, the proof threshold, the note threshold, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank.
           </span>
         )}
       </form>

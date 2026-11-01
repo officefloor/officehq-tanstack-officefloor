@@ -145,7 +145,7 @@ public record Claim(long id, long person, String amount, String date, String not
         if (figure == null || settledDue != null || correction()) {
             return figure;
         }
-        return figure.add(late.charge(this, figure)).max(floor.on(date));
+        return figure.add(late.charge(this, grade, figure)).max(floor.on(date));
     }
 
     /**

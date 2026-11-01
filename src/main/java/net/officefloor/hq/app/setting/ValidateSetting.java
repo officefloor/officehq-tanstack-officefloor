@@ -36,6 +36,7 @@ public class ValidateSetting {
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
+                && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
                 && Settings.PERMISSIONS.stream().noneMatch((a) -> Settings.perm(a).equals(key))) {
             throw new InvalidSettingException("No such setting: " + key);
         }
@@ -90,6 +91,13 @@ public class ValidateSetting {
         if (Settings.GRACE_DAYS.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank");
+            }
+            return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
+        }
+        // A grade's grace is a whole number of days; blank means none.
+        if (Settings.GRADES.stream().anyMatch((g) -> Settings.gradeGrace(g).equals(key))) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The grace of a grade must be a whole number of days, 0 or more, or blank");
             }
             return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
         }
