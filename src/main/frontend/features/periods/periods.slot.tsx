@@ -5,11 +5,11 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { gradeOn, usePeople } from '../people/people';
-import { rateOf, twoDecimals, useRates } from '../rates/rates';
+import { usePeople } from '../people/people';
+import { twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
-import { claimDueCents, counted, useClaims, useLate } from '../claims/claims';
-import { closePeriodPath, periodOf, reopenPeriodPath, periodsKey, periodsPath, usePeriods } from './periods';
+import { useClaims, useLate } from '../claims/claims';
+import { closePeriodPath, periodDueCents, shownDueTotal, reopenPeriodPath, periodsKey, periodsPath, usePeriods } from './periods';
 import type { Period } from './periods';
 
 // One period with its due-total (fixed once closed) and closed flag, and the buttons that close and reopen it. The
@@ -33,7 +33,7 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
       <td data-testid="period-name">{period.name}</td>
       <td data-testid="period-from">{period.from}</td>
       <td data-testid="period-to">{period.to}</td>
-      <td data-testid="period-due-total">{period.closed && period.closedTotal !== null ? period.closedTotal : twoDecimals(dueCents)}</td>
+      <td data-testid="period-due-total">{shownDueTotal(period, dueCents)}</td>
       <td data-testid="period-closed">{period.closed ? 'yes' : 'no'}</td>
       <td>
         <button
@@ -108,16 +108,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
     send(draft);
   };
 
-  const byId = new Map(people.map((p) => [p.id, p]));
-  const totals = new Map<string, bigint>();
-  for (const c of counted(all, people)) {
-    const period = periodOf(periods, c.date);
-    const person = byId.get(c.person);
-    if (period === undefined || person === undefined) continue;
-    const grade = gradeOn(person, c.date);
-    const due = claimDueCents(c, rateOf(rates, grade, c.date), floor, late) ?? 0n;
-    totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
-  }
+  const totals = periodDueCents(periods, all, people, rates, floor, late);
 
   return (
     <section>
