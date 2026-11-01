@@ -4,7 +4,8 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class RespondWithSheet {
-    public void respond(@PathVariable("sheet") String sheet, SheetClock clock, ObjectResponse<SheetResponse> response) {
-        response.send(new SheetResponse(sheet, clock.today(sheet).toString()));
+    public void respond(@PathVariable("sheet") String sheet, SheetClock clock, SheetArchive archive,
+            ObjectResponse<SheetResponse> response) {
+        response.send(new SheetResponse(sheet, clock.today(sheet).toString(), archive.archived(sheet)));
     }
 }

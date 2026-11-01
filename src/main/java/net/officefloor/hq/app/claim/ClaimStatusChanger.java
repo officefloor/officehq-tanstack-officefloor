@@ -11,6 +11,7 @@ import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetArchive;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.hq.app.watch.Watches;
 import org.springframework.stereotype.Service;
@@ -31,9 +32,10 @@ public class ClaimStatusChanger {
     private final Rollup rollup;
     private final ClaimLog log;
     private final Watches watches;
+    private final SheetArchive archive;
 
     public ClaimStatusChanger(Claims claims, People people, Rates rates, Periods periods, Roles roles, Settings settings,
-            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log, Watches watches) {
+            SheetClock clock, Audit audit, Rollup rollup, ClaimLog log, Watches watches, SheetArchive archive) {
         this.claims = claims;
         this.people = people;
         this.rates = rates;
@@ -45,6 +47,7 @@ public class ClaimStatusChanger {
         this.rollup = rollup;
         this.log = log;
         this.watches = watches;
+        this.archive = archive;
     }
 
     /** Applies the change to the claim, writing nothing when it is refused. */
@@ -59,6 +62,9 @@ public class ClaimStatusChanger {
         // A viewer changes nothing.
         if (Role.VIEWER.equals(roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("A viewer cannot change a claim");
+        }
+        if (archive.archived(sheet)) {
+            throw new InvalidClaimStatusChangeException("An archived sheet cannot change");
         }
         // The permission matrix says which roles open, settle and void a claim.
         if ((requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.VOID)

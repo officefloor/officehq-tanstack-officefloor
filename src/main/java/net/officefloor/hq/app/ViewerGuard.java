@@ -12,6 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
+import net.officefloor.hq.app.sheet.SheetArchive;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
  * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
  * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done.
+ * An archived sheet refuses every write the same way, whoever makes it.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -32,9 +34,11 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle");
 
     private final Roles roles;
+    private final SheetArchive archive;
 
-    public ViewerGuard(Roles roles) {
+    public ViewerGuard(Roles roles, SheetArchive archive) {
         this.roles = roles;
+        this.archive = archive;
     }
 
     @Override
@@ -48,6 +52,10 @@ public class ViewerGuard extends OncePerRequestFilter {
                 String sheet = URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
                 if (Role.VIEWER.equals(roles.of(sheet, user))) {
                     response.sendError(HttpServletResponse.SC_BAD_REQUEST, "A viewer cannot change the sheet");
+                    return;
+                }
+                if (archive.archived(sheet)) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "An archived sheet cannot change");
                     return;
                 }
             }

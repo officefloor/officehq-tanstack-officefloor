@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type Sheet = { id: string; today: string };
+export type Sheet = { id: string; today: string; archived: boolean };
 
 export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
 

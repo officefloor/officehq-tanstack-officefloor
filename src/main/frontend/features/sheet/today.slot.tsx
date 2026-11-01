@@ -8,7 +8,8 @@ import { byUser } from '../session/session';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
-// The sheet's today: shown, and changeable. It starts as the real date.
+// The sheet's today: shown, and changeable. It starts as the real date. A steward archives the sheet here too;
+// both share the sheet's error, and each action clears the other's.
 function SheetToday({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSheet(sheet);
@@ -25,9 +26,14 @@ function SheetToday({ sheet, user }: { sheet: string; user: string }) {
     },
   });
   const send = useSubmitOnce(save);
+  const archive = useMutation({
+    mutationFn: () => postJson<Sheet>(byUser(`/api/sheets/${encodeURIComponent(sheet)}/archive`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(sheetKey(sheet), updated),
+  });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    archive.reset();
     send(draft.trim());
   };
 
@@ -42,14 +48,28 @@ function SheetToday({ sheet, user }: { sheet: string; user: string }) {
         onChange={(e) => {
           setDraft(e.target.value);
           save.reset();
+          archive.reset();
         }}
       />
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
       </button>
-      {save.isError && (
+      {' '}Archived: <strong data-testid="sheet-archived">{data ? (data.archived ? 'yes' : 'no') : ''}</strong>{' '}
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        disabled={archive.isPending}
+        onClick={() => {
+          save.reset();
+          archive.reset();
+          archive.mutate();
+        }}
+      >
+        Archive sheet
+      </button>
+      {(save.isError || archive.isError) && (
         <span data-testid="sheet-error" role="alert">
-          {' '}That date was refused.
+          {' '}{archive.isError ? 'The sheet could not be archived.' : 'That date was refused.'}
         </span>
       )}
     </form>
