@@ -6,8 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 import net.officefloor.hq.app.delegation.Delegations;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,6 +67,22 @@ public class Audit {
         }
         String sheet = parts[1].substring("sheet=".length());
         return delegations.delegatorOn(sheet, parts[2].substring("by=".length()), clock.today(sheet));
+    }
+
+    /** The sheet's records exactly as the file holds them, in the order they were written (empty if none). */
+    public synchronized List<String> lines(String sheet) {
+        if (!Files.exists(file)) {
+            return List.of();
+        }
+        String tag = "sheet=" + sheet;
+        try (Stream<String> all = Files.lines(file, StandardCharsets.UTF_8)) {
+            return all.filter(line -> {
+                String[] parts = line.split(" ", 3);
+                return parts.length >= 2 && parts[1].equals(tag);
+            }).toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** Remove the audit file. */
