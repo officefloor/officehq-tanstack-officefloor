@@ -2,7 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES, isRetired, usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { twoDecimals, useRates } from '../rates/rates';
-import { useFloorCents } from '../settings/settings';
+import { useCapCents, useFloorCents } from '../settings/settings';
 import { CLAIM_STATUSES, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
 import { periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
 
@@ -16,6 +16,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
+  const cap = useCapCents(sheet);
   const late = useLate(sheet);
 
   const current = people.filter((p) => !isRetired(p));
@@ -35,7 +36,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
         <tbody>
           {GRADES.map((g) => {
             const onGrade = current.filter((p) => p.grade === g);
-            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late) ?? 0n), 0n);
+            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
             return (
               <tr key={g}>
                 <td>{g}</td>

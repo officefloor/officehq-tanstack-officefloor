@@ -16,11 +16,13 @@ import type { SettingKey, Settings as SheetSettings } from './settings';
 // or after it half to even; blank makes it the sheet's today. While the sheet's today is on or after the period
 // numbering from-date, a claim opened is numbered within its period; blank turns that off. A grade's own terms (whole
 // days) fix the due-by of a claim added for a person of that grade; blank makes the grade take the sheet's terms. Saving sends each setting whose field was changed; with none changed it
-// sends the clerk limit, so saving a blank form clears the limit.
+// sends the clerk limit, so saving a blank form clears the limit. The cap is the most a person's due-total is (two
+// decimals); blank means no cap.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
   const [clerkLimit, setClerkLimit] = useState('');
+  const [cap, setCap] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
@@ -40,6 +42,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     },
     onSuccess: () => {
       setClerkLimit('');
+      setCap('');
       setFloor('');
       setTerms('');
       setLatePct('');
@@ -61,7 +64,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     // The server refuses a value that is not 0.00 or more with up to two decimals.
     const values: Record<SettingKey, string> = { 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
-      'terms-C': gradeTerms.C ?? '' };
+      'terms-C': gradeTerms.C ?? '', cap };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => ({ key, value: values[key] })));
   };
@@ -83,6 +86,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-clerk-limit-current">{data?.clerkLimit ?? ''}</span>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="setting-cap"
+            placeholder="0.00 (blank: no cap)"
+            value={cap}
+            onChange={(e) => {
+              setCap(e.target.value);
+              touch('cap');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('cap')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-cap-current">{data?.cap ?? ''}</span>{' '}
         <label>
           Floor{' '}
           <input
@@ -178,7 +196,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date and the period numbering from-date dates, or blank.
+            {' '}The clerk limit, the cap, the floor and the late percent must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) a whole number of days, the policy date and the period numbering from-date dates, or blank.
           </span>
         )}
       </form>

@@ -4,7 +4,7 @@ import { gradeOn, heldOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloorCents, useLatePctCents, usePolicyDate } from '../settings/settings';
+import { useCapCents, useFloorCents, useLatePctCents, usePolicyDate } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
@@ -159,8 +159,23 @@ export function claimDueCents(claim: Claim, pct: string | undefined, floor: bigi
 
 /** A person's due-total: the sum of their counted claims' rounded figures (the claims of others are skipped). n/a (undefined) when their grade
  *  has no rate on the sheet's today, unless a claim has a figure apart from it (settled, stated, at another grade
- *  in force on its date, or from a rate that ended by today on a claim not dated after it): then the figures there are. */
+ *  in force on its date, or from a rate that ended by today on a claim not dated after it): then the figures there are.
+ *  With a cap, a due-total above it is the cap (an n/a one is not capped). */
 export function personDueCents(
+  claims: Claim[],
+  rates: Rate[],
+  person: Person,
+  today: string | undefined,
+  floor: bigint,
+  late: Late,
+  cap?: bigint,
+): bigint | undefined {
+  const sum = uncappedPersonDueCents(claims, rates, person, today, floor, late);
+  return sum !== undefined && cap !== undefined && sum > cap ? cap : sum;
+}
+
+/** A person's due-total before the cap: the sum of their figures (see {@link personDueCents}). */
+export function uncappedPersonDueCents(
   claims: Claim[],
   rates: Rate[],
   person: Person,
@@ -212,8 +227,9 @@ export function useSheetTotals(sheet: string): { claimed: string; due: bigint; o
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
+  const cap = useCapCents(sheet);
   const due = people.reduce((sum, p) => {
-    const cents = personDueCents(all, rates, p, today, floor, late);
+    const cents = personDueCents(all, rates, p, today, floor, late, cap);
     return cents === undefined ? sum : sum + cents;
   }, 0n);
   return { claimed: claimed(counted(all, people)), due, overdue: overdueCents(all, people, rates, late, floor) };

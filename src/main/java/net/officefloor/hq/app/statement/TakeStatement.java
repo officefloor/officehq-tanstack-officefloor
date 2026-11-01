@@ -48,7 +48,7 @@ public class TakeStatement {
                 claims.setStated(sheet, claim.id(), false, null);
             }
         }
-        BigDecimal dueTotal = na ? null : total;
+        BigDecimal dueTotal = na ? null : Settings.capped(total, settings.cap(sheet));
         statements.add(sheet, person.id(), dueTotal, today);
         audit.record("STATEMENT sheet=" + sheet + " by=" + user + " name=" + person.name() + " due-total="
                 + (dueTotal == null ? "n/a" : dueTotal.toPlainString()) + " claims=" + count);

@@ -8,7 +8,7 @@ import { peoplePath, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { personDueCents, useClaims, useLate } from '../claims/claims';
 import { twoDecimals, useRates } from '../rates/rates';
-import { useFloorCents } from '../settings/settings';
+import { useCapCents, useFloorCents } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, usePatrons } from './patrons';
 import type { Patron } from './patrons';
@@ -34,6 +34,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
+  const cap = useCapCents(sheet);
   const late = useLate(sheet);
   const [picked, setPicked] = useState('');
 
@@ -42,7 +43,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
     .map((p) => everyone.find((e) => e.id === p.patron))
     .filter((p): p is Person => p !== undefined);
   const names = mine.map((p) => p.name).sort((a, b) => a.localeCompare(b));
-  const backing = mine.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late) ?? 0n), 0n);
+  const backing = mine.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
   const others = everyone.filter((p) => p.id !== person.id);
 
   const add = useMutation({

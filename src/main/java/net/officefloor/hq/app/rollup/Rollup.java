@@ -56,6 +56,7 @@ public class Rollup {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
         BigDecimal floor = settings.floor(sheet);
+        BigDecimal cap = settings.cap(sheet);
         Late late = settings.late(sheet, today);
         List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -73,6 +74,7 @@ public class Rollup {
             // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it.
             boolean na = Rate.on(sheetRates, person.grade(), today) == null
                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
+            due = Settings.capped(due, cap);
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dueTotal = dueTotal.add(due);

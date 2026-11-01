@@ -14,6 +14,9 @@ public class Settings {
     /** The due a clerk may settle at most (two decimals); blank: no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The most a person's due-total is (two decimals); blank: no cap. */
+    public static final String CAP = "cap";
+
     /** The least a claim's live due is (two decimals); blank: its default. */
     public static final String FLOOR = "floor";
 
@@ -70,6 +73,17 @@ public class Settings {
         return limit.isEmpty() ? null : new BigDecimal(limit);
     }
 
+    /** The sheet's cap: the most a person's due-total is, or null when there is none. */
+    public BigDecimal cap(String sheet) {
+        String cap = get(sheet, CAP);
+        return cap.isEmpty() ? null : new BigDecimal(cap);
+    }
+
+    /** The due-total capped at the cap (none: as it is); a null (n/a) due-total is not capped. */
+    public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
+        return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+    }
+
     /** The sheet's floor: the least a claim's live due is. */
     public BigDecimal floor(String sheet) {
         String floor = get(sheet, FLOOR);
@@ -110,6 +124,6 @@ public class Settings {
         return new SettingsResponse(get(sheet, CLERK_LIMIT), floor(sheet).toPlainString(),
                 Integer.toString(terms(sheet)), latePct(sheet).toPlainString(), get(sheet, POLICY_DATE),
                 get(sheet, PERIOD_NUMBERING_FROM), get(sheet, gradeTerms("A")), get(sheet, gradeTerms("B")),
-                get(sheet, gradeTerms("C")));
+                get(sheet, gradeTerms("C")), get(sheet, CAP));
     }
 }

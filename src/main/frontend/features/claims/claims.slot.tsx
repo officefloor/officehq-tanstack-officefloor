@@ -11,7 +11,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { rateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloorCents } from '../settings/settings';
+import { useCapCents, useFloorCents } from '../settings/settings';
 import {
   claimDueCents,
   claimed,
@@ -21,6 +21,7 @@ import {
   overdue,
   overdueCents,
   personDueCents,
+  uncappedPersonDueCents,
   useClaims,
   useLate,
 } from './claims';
@@ -35,6 +36,7 @@ function ClaimedHeader() {
     <>
       <th>Claimed</th>
       <th>Due total</th>
+      <th>Excess</th>
       <th>Overdue</th>
       <th>Overdue total</th>
       <th>Claims</th>
@@ -235,8 +237,12 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const claims = all.filter((c) => c.person === person.id);
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
+  const cap = useCapCents(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
+  // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
+  const uncapped = uncappedPersonDueCents(claims, rates, person, today, floor, late);
+  const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
@@ -281,7 +287,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       <td data-testid="person-claimed">{claimed(counted(claims, [person]))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor, late))}</td>
+      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</td>
+      <td data-testid="person-excess">{twoDecimals(excess)}</td>
       <td data-testid="person-overdue-count">{lateClaims.count}</td>
       <td data-testid="person-overdue-total">{twoDecimals(lateClaims.cents)}</td>
       <td>

@@ -2,7 +2,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from './people';
 import { useSheetToday } from '../sheet/sheet';
 import { showDue, useRates } from '../rates/rates';
-import { useFloorCents } from '../settings/settings';
+import { useCapCents, useFloorCents } from '../settings/settings';
 import { personDueCents, useClaims, useLate } from '../claims/claims';
 
 // A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote or a line break.
@@ -16,13 +16,14 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
+  const cap = useCapCents(sheet);
   const late = useLate(sheet);
 
   const download = () => {
     const lines = [
       'name,grade,retired-from,due-total',
       ...people.map((p) =>
-        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late))]
+        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, cap))]
           .map(csvValue)
           .join(','),
       ),
