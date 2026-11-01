@@ -112,17 +112,21 @@ public record Claim(long id, long person, String amount, String date, String not
     }
 
     /**
-     * This claim's due: its {@link #figure} plus, while it is overdue, its late charge (settling fixes the charge
-     * in); null when there is no figure.
+     * This claim's due: the due fixed when settled; else the greater of the sheet's floor in force on its date and its
+     * {@link #figure} plus, while it is overdue, its late charge on that figure (a correction has no floor and no
+     * charge); null when there is no figure.
      */
     public BigDecimal due(List<Rate> rates, String grade, Dated floor, Late late) {
         BigDecimal figure = figure(rates, grade, floor, late.rounding(this));
-        return figure == null || settledDue != null ? figure : figure.add(late.charge(this, figure));
+        if (figure == null || settledDue != null || correction()) {
+            return figure;
+        }
+        return figure.add(late.charge(this, figure)).max(floor.on(date));
     }
 
     /**
-     * This claim's figure: the due fixed when settled, else the one its statement bound (unless PENDING), else its amount at the
-     * grade's rate in force on its date, raised to at least the sheet's floor in force on its date (a correction has no floor); null when
+     * This claim's figure: the due fixed when settled, else the rate figure its statement bound (unless PENDING), else
+     * its amount at the grade's rate in force on its date (the floor is applied last, in {@link #due}); null when
      * there is none.
      */
     public BigDecimal figure(List<Rate> rates, String grade, Dated floor) {
@@ -137,7 +141,6 @@ public record Claim(long id, long person, String amount, String date, String not
         if (bound()) {
             return statedDue == null ? null : new BigDecimal(statedDue);
         }
-        BigDecimal live = Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)), rounding);
-        return live == null || correction() ? live : live.max(floor.on(date));
+        return Rate.due(amount, Rate.on(rates, grade, LocalDate.parse(date)), rounding);
     }
 }
