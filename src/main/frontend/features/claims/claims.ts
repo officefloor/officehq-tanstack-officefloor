@@ -7,10 +7,11 @@ import { useSheetToday } from '../sheet/sheet';
 import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
- *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
+ *  A DRAFT may be DELETED: it counts nowhere, and is restored to a DRAFT only on the sheet's today it was deleted. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
-/** Every status, in the order the screen lists them. */
+/** Every status the screen counts, in the order it lists them (a DELETED claim counts nowhere). */
 export const CLAIM_STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
 
 /** How many of the claims have the status (every claim, whoever's). */
@@ -19,7 +20,7 @@ export function statusCount(claims: Claim[], status: ClaimStatus): number {
 }
 
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
-export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore';
 
 /** Whether a claim is still open: OPEN, or PENDING (handled like OPEN, but not bound by a statement). */
 export function isOpen(claim: Claim): boolean {

@@ -97,6 +97,17 @@ public record Claim(long id, long person, String amount, String date, String not
         return on;
     }
 
+    /** The date it was last deleted: its status log's last DELETED line (null when the log has none). */
+    public LocalDate deletedOn() {
+        LocalDate on = null;
+        for (ClaimLogLine line : log == null ? List.<ClaimLogLine>of() : log) {
+            if (line.status() == ClaimStatus.DELETED) {
+                on = LocalDate.parse(line.on());
+            }
+        }
+        return on;
+    }
+
     /** The number the claim shows: its number within its period, else its number on the sheet; null for none. */
     public String shownNumber() {
         return periodNumber != null ? periodNumber : number == null ? null : number.toString();

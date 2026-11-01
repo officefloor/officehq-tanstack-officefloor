@@ -144,6 +144,11 @@ public class ClaimStatusChanger {
                         "A settled claim may be voided only within " + VOID_SETTLED_DAYS + " days of its settlement");
             }
         }
+        // A DELETED claim is restored only on the sheet's today it was deleted (its status log's last DELETED date).
+        if (requested == ClaimStatusChange.RESTORE && claim.status() == ClaimStatus.DELETED
+                && !clock.today(sheet).equals(claim.deletedOn())) {
+            throw new InvalidClaimStatusChangeException("A deleted claim may be restored only on the day it was deleted");
+        }
         if (requested == ClaimStatusChange.SETTLE && claim.deferred()) {
             throw new InvalidClaimStatusChangeException("A deferred claim cannot be settled until its date");
         }
