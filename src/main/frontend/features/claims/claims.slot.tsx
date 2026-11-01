@@ -7,8 +7,8 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { peoplePath } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, rateOf, showDue, useRates } from '../rates/rates';
-import { claimed, claimsKey, claimsPath, useClaims } from './claims';
-import type { Claim } from './claims';
+import { claimed, claimsKey, claimsPath, counted, useClaims } from './claims';
+import type { Claim, ClaimStatusChange } from './claims';
 
 type Draft = { amount: string; date: string; note: string };
 const EMPTY: Draft = { amount: '', date: '', note: '' };
@@ -20,6 +20,77 @@ function ClaimedHeader() {
       <th>Due total</th>
       <th>Claims</th>
     </>
+  );
+}
+
+const CHANGES: { change: ClaimStatusChange; label: string }[] = [
+  { change: 'open', label: 'Open' },
+  { change: 'settle', label: 'Settle' },
+  { change: 'void', label: 'Void' },
+];
+
+// One claim with its status and the buttons that change it. Every button is offered; the server
+// refuses a change the claim's status does not allow, and the row shows that error until its next action.
+function ClaimRow({ sheet, user, claim, rate, editing, onEdit, onCancel }: {
+  sheet: string;
+  user: string;
+  claim: Claim;
+  rate: string | undefined;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const status = useMutation({
+    mutationFn: (change: ClaimStatusChange) =>
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
+
+  const act = (change: ClaimStatusChange) => {
+    status.reset();
+    status.mutate(change);
+  };
+
+  return (
+    <li data-testid={`claim-row-${claim.id}`}>
+      <span data-testid="claim-amount">{claim.amount}</span>{' '}
+      <span data-testid="claim-date">{claim.date}</span>{' '}
+      <span data-testid="claim-note">{claim.note}</span>{' '}
+      due <span data-testid="claim-due">{showDue(dueCents(claim.amount, rate))}</span>{' '}
+      <span data-testid="claim-status">{claim.status}</span>{' '}
+      {CHANGES.map(({ change, label }) => (
+        <button
+          key={change}
+          type="button"
+          data-testid={`claim-${change}`}
+          disabled={status.isPending}
+          onClick={() => act(change)}
+        >
+          {label}
+        </button>
+      ))}{' '}
+      <button
+        type="button"
+        data-testid="claim-edit"
+        onClick={() => {
+          status.reset();
+          onEdit();
+        }}
+      >
+        Edit
+      </button>
+      {editing && (
+        <button type="button" data-testid="claim-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+      )}
+      {status.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be changed that way.
+        </span>
+      )}
+    </li>
   );
 }
 
@@ -72,8 +143,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(claims)}</td>
-      <td data-testid="person-due-total">{showDue(dueCents(claimed(claims), rate))}</td>
+      <td data-testid="person-claimed">{claimed(counted(claims))}</td>
+      <td data-testid="person-due-total">{showDue(dueCents(claimed(counted(claims)), rate))}</td>
       <td>
         <form onSubmit={submit}>
           <input
@@ -105,20 +176,16 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
         </form>
         <ul>
           {claims.map((c) => (
-            <li key={c.id} data-testid={`claim-row-${c.id}`}>
-              <span data-testid="claim-amount">{c.amount}</span>{' '}
-              <span data-testid="claim-date">{c.date}</span>{' '}
-              <span data-testid="claim-note">{c.note}</span>{' '}
-              due <span data-testid="claim-due">{showDue(dueCents(c.amount, rate))}</span>{' '}
-              <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
-                Edit
-              </button>
-              {editing === c.id && (
-                <button type="button" data-testid="claim-cancel" onClick={cancel}>
-                  Cancel
-                </button>
-              )}
-            </li>
+            <ClaimRow
+              key={c.id}
+              sheet={sheet}
+              user={user}
+              claim={c}
+              rate={rate}
+              editing={editing === c.id}
+              onEdit={() => open(c)}
+              onCancel={cancel}
+            />
           ))}
         </ul>
       </td>
