@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Periods {
 
-    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft FROM period";
+    private static final String COLUMNS = "SELECT sheet_id, name, from_date, to_date, closed, closed_total, soft, cap FROM period";
 
     private final JdbcTemplate jdbc;
 
@@ -47,9 +47,23 @@ public class Periods {
                 Periods::period, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
     }
 
+    /** The capped period of the sheet whose dates contain the date, or null when there is none. */
+    public Period cappedOn(String sheetId, LocalDate date) {
+        return jdbc.query(COLUMNS + " WHERE sheet_id = ? AND cap IS NOT NULL AND from_date <= ? AND to_date >= ?",
+                Periods::period, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
+    }
+
+    /** How many of the person's claims due by in the period are OPEN or PENDING. */
+    public int openIn(Period period, long personId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND status IN ('OPEN', 'PENDING') AND due_by >= ? AND due_by <= ?", Integer.class,
+                period.sheetId(), personId, Date.valueOf(period.from()), Date.valueOf(period.to()));
+        return n == null ? 0 : n;
+    }
+
     public void add(Period period) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
-                period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()));
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, cap) VALUES (?, ?, ?, ?, ?)",
+                period.sheetId(), period.name(), Date.valueOf(period.from()), Date.valueOf(period.to()), period.cap());
     }
 
     /** Close (or, when `soft`, soft-close) the period, fixing its due-total and each person's (by
@@ -85,6 +99,6 @@ public class Periods {
     private static Period period(ResultSet rs, int i) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getDate("from_date").toLocalDate(),
                 rs.getDate("to_date").toLocalDate(), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
-                rs.getBoolean("soft"));
+                rs.getBoolean("soft"), rs.getObject("cap", Integer.class));
     }
 }

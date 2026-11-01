@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
 public class RecordPeriodAdded {
     public void record(@Val PeriodRequest request, @Val Period period, Audit audit) {
         audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + request.user()
-                + " period=" + period.name() + " from=" + period.from() + " to=" + period.to());
+                + " period=" + period.name() + " from=" + period.from() + " to=" + period.to() + (period.cap() == null ? "" : " cap=" + period.cap()));
     }
 }

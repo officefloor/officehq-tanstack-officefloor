@@ -71,8 +71,8 @@ public class Clones {
                 + "SELECT ?, reason, position FROM sheet_void_reason WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) "
                 + "SELECT ?, name, amount, note FROM claim_template WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, closed, closed_total, soft) "
-                + "SELECT ?, name, from_date, to_date, FALSE, NULL, FALSE FROM period WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, closed, closed_total, soft, cap) "
+                + "SELECT ?, name, from_date, to_date, FALSE, NULL, FALSE, cap FROM period WHERE sheet_id = ?", to, from);
 
         // People, in list order.
         List<Person> all = people.onSheet(from);

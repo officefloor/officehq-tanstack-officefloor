@@ -9,7 +9,8 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 /** A period as the server sends it: its name, its from and to dates (yyyy-mm-dd), inclusive, whether
  *  it is closed and, when it is, the due-total fixed when it was closed and each person's (by person
  *  id; a person not in it, added since, has 0.00), and whether it is only soft-closed: its figures
- *  are fixed as by a close, but claims dated in it can still be changed. */
+ *  are fixed as by a close, but claims dated in it can still be changed; and its cap on each person's
+ *  OPEN or PENDING claims due by in it (null for none). */
 export type Period = {
   name: string;
   from: string;
@@ -18,6 +19,7 @@ export type Period = {
   closedTotal: string | null;
   closedPersonTotals: Record<string, string>;
   soft: boolean;
+  cap: number | null;
 };
 
 export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'] as const;
@@ -43,6 +45,9 @@ export function fiscalYear(date: string, startMonth: number): string {
 
 /** A fiscal year the server accepts: yyyy. */
 export const YEAR = /^\d{4}$/;
+
+/** A period cap the server accepts: a whole number of at least 1. */
+export const CAP = /^[1-9]\d{0,8}$/;
 
 /** A date the server accepts: yyyy-mm-dd. */
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;

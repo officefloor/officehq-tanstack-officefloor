@@ -14,6 +14,6 @@ public class ReopenPeriod {
         }
         if (!period.closed()) throw new PeriodClosedException("Period " + period.name() + " is not closed");
         periods.reopen(period);
-        reopened.set(new ReopenedPeriod(new Period(period.sheetId(), period.name(), period.from(), period.to())));
+        reopened.set(new ReopenedPeriod(new Period(period.sheetId(), period.name(), period.from(), period.to(), period.cap())));
     }
 }

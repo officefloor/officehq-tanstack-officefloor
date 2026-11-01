@@ -58,6 +58,6 @@ public class PeriodCloser {
         }
         BigDecimal total = personTotals.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         periods.close(period, total, personTotals, soft);
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft);
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft, period.cap());
     }
 }

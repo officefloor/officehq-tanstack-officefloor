@@ -8,7 +8,7 @@ import { usePeople } from '../people/usePeople';
 import { useRates } from '../rates/useRates';
 import { DEFAULT_FISCAL_START_MONTH, useFloor, useLate, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
-import { DATE, fiscalYear, periodDue, periodsKey, usePeriods, YEAR, type Period } from './usePeriods';
+import { CAP, DATE, fiscalYear, periodDue, periodsKey, usePeriods, YEAR, type Period } from './usePeriods';
 
 /**
  * The sheet's periods, each with its due-total — the figures, as shown now, of everyone's claims
@@ -35,6 +35,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
   const [genFrom, setGenFrom] = useState('');
   const [genTo, setGenTo] = useState('');
@@ -45,12 +46,13 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
 
   const submitOnce = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (p: { name: string; from: string; to: string }) =>
+    mutationFn: (p: { name: string; from: string; to: string; cap: string }) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods`, { ...p, user }),
     onSuccess: async () => {
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
     },
   });
@@ -109,6 +111,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
     if (n === '') return 'A period needs a name.';
     if (!DATE.test(from.trim()) || !DATE.test(to.trim())) return 'The dates must be yyyy-mm-dd.';
     if (from.trim() > to.trim()) return 'The from-date must be on or before the to-date.';
+    if (cap.trim() !== '' && !CAP.test(cap.trim())) return 'The cap must be a whole number of at least 1, or blank.';
     if (periods.some((p) => p.name === n)) return 'There is already a period of that name.';
     const clash = periods.find((p) => p.from <= to.trim() && from.trim() <= p.to);
     if (clash) return `The period overlaps ${clash.name}.`;
@@ -131,7 +134,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             return;
           }
           setInvalid(null);
-          submitOnce(() => save.mutateAsync({ name: name.trim(), from: from.trim(), to: to.trim() }));
+          submitOnce(() => save.mutateAsync({ name: name.trim(), from: from.trim(), to: to.trim(), cap: cap.trim() }));
         }}
       >
         <label>
@@ -165,6 +168,19 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             value={to}
             onChange={(e) => {
               setTo(e.target.value);
+              clearError();
+            }}
+          />
+        </label>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="period-form-cap"
+            placeholder="none"
+            inputMode="numeric"
+            value={cap}
+            onChange={(e) => {
+              setCap(e.target.value);
               clearError();
             }}
           />
@@ -276,6 +292,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
             <th>Due</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th></th>
           </tr>
         </thead>
@@ -288,6 +305,7 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
               <td data-testid="period-due-total">{dueIn(p)}</td>
               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
               <td data-testid="period-fy">{fiscalYear(p.from, fiscalStart)}</td>
+              <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td>
                 <button
                   type="button"
