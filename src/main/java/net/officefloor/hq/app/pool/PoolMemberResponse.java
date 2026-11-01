@@ -6,8 +6,9 @@ import java.util.Map;
  *  pool's name in `pool`), their share (two decimals), whether retired, and their cut of the pool's pot
  *  (two decimals; null when the pool is unbalanced or has no pot, or the member is out of their dates),
  *  their from- and to-dates (null when none) and whether those include the sheet's today, and their
- *  cut at the end of each period whose to-date is on or before the sheet's today, by period name in
- *  the periods' order (null when they had none then). */
+ *  cut at the end of each period whose to-date is on or before the sheet's today, or the cut fixed
+ *  when a closed period was closed (whatever its to-date), by period name in the periods' order (null
+ *  when they had none then). */
 public record PoolMemberResponse(Long personId, String name, String share, boolean retired, String cut, String pool,
         String from, String to, boolean current, Map<String, String> cuts) {
 

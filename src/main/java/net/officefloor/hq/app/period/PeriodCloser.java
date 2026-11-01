@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Figures;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.pool.Pools;
 import org.springframework.stereotype.Service;
 
 /** Closes a period, fixing its due-total as the screen shows it now: the figures (as shown now) of
@@ -21,7 +22,8 @@ import org.springframework.stereotype.Service;
  *  person's due-total for it is fixed too, and the period's is their sum; and so is each person's
  *  carried figure for it: the figures of their counted claims belonging, by due-by, to a period ending
  *  before this one starts that were still OPEN or PENDING at the end of its last day, and their opening
- *  balance for it. Used by a close by hand
+ *  balance for it. Every pool member's cut for it is fixed as it stands now (see {@link Pools#fixCuts}).
+ *  Used by a close by hand
  *  and by the auto close of a today change. */
 @Service
 public class PeriodCloser {
@@ -31,8 +33,10 @@ public class PeriodCloser {
     private final People people;
     private final Figures figures;
     private final ClaimLog log;
+    private final Pools pools;
 
-    public PeriodCloser(Periods periods, Claims claims, People people, Figures figures, ClaimLog log) {
+    public PeriodCloser(Periods periods, Claims claims, People people, Figures figures, ClaimLog log, Pools pools) {
+        this.pools = pools;
         this.periods = periods;
         this.claims = claims;
         this.people = people;
@@ -63,6 +67,7 @@ public class PeriodCloser {
         Map<Long, BigDecimal> personCarried = carried(period, personOf, atEnd);
         BigDecimal total = personTotals.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         periods.close(period, total, personTotals, personCarried, soft);
+        pools.fixCuts(period.sheetId(), period.name());
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total, soft, period.cap(), period.locked());
     }
 

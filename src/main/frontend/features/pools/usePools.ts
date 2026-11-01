@@ -10,7 +10,8 @@ import { hundredths } from '../rates/useRates';
  *  to-dates (null when none) and whether those include the sheet's today (a member out of them is
  *  left out of the pool). A pool that is a member of none has the sheet's pot; one that is a member
  *  of another has its cut there. `cuts` is their cut at the end of each period whose to-date is on or
- *  before the sheet's today, by period name in the periods' order (null when they had none then). */
+ *  before the sheet's today, or the cut fixed when a closed period was closed (whatever its to-date),
+ *  by period name in the periods' order (null when they had none then). */
 export type PoolMember = {
   personId: number | null;
   name: string;

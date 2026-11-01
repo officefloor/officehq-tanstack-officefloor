@@ -7,6 +7,7 @@ import { useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/usePeople';
 import { useRates } from '../rates/useRates';
 import { DEFAULT_FISCAL_START_MONTH, useFloor, useLate, useSettings } from '../settings/useSettings';
+import { poolsKey } from '../pools/usePools';
 import { useSheetToday } from '../sheet/useSheet';
 import { CAP, DATE, fiscalYear, periodDue, periodsKey, usePeriods, YEAR, type Period } from './usePeriods';
 
@@ -80,7 +81,12 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
     onMutate: () => setRefused(null),
     onError: (_e, name) => setRefused(name),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+    // A close fixes the pool members' cuts for the period; a reopen makes them live again.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]),
   });
 
   const softClose = useMutation({
@@ -88,7 +94,12 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/soft-close`, { user }),
     onMutate: () => setRefused(null),
     onError: (_e, name) => setRefused(name),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+    // A close fixes the pool members' cuts for the period; a reopen makes them live again.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]),
   });
 
   const reopen = useMutation({
@@ -96,7 +107,12 @@ function PeriodsPanel({ user, sheet }: { user: string; sheet: string }) {
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/reopen`, { user }),
     onMutate: () => setRefused(null),
     onError: (_e, name) => setRefused(name),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+    // A close fixes the pool members' cuts for the period; a reopen makes them live again.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]),
   });
 
   const lock = useMutation({

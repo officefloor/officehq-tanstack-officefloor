@@ -19,7 +19,9 @@ import { poolsKey, usePools, SHARE, type Pool } from './usePools';
  * A membership may carry a from-date and a to-date (both optional; a to-date before the from-date is
  * refused); a member whose dates do not include the sheet's today is left out: no share in the total,
  * no cut. Each member also shows their cut at the end of each period whose to-date is on or before
- * the sheet's today (the sheet as it stood then, that day as its today), empty when there was none.
+ * the sheet's today (the sheet as it stood then, that day as its today), empty when there was none;
+ * a closed or soft-closed period shows instead the cut fixed when it was closed (whatever its to-date),
+ * live again once it is reopened.
  */
 function PoolsPanel({ user, sheet }: { user: string; sheet: string }) {
   const queryClient = useQueryClient();

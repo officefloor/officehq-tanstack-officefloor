@@ -118,8 +118,11 @@ public class Periods {
                 period.sheetId(), period.name(), personId, amount);
     }
 
-    /** Reopen the period: its due-total, and each person's due-total and carried figure, is live again. */
+    /** Reopen the period: its due-total, each person's due-total and carried figure, and each pool
+     *  member's cut for it, is live again. */
     public void reopen(Period period) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?",
+                period.sheetId(), period.name());
         jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ?",
                 period.sheetId(), period.name());
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?",

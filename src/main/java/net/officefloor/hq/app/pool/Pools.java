@@ -199,16 +199,49 @@ public class Pools {
         return withCuts;
     }
 
-    /** The to-date of each period of the sheet whose to-date is on or before the sheet's today, by
+    /** The to-date of each period of the sheet whose cuts are shown: one whose to-date is on or before
+     *  the sheet's today, or one closed (or soft-closed) with its cuts fixed, whatever its to-date; by
      *  name, by from-date. */
-    public Map<String, LocalDate> periodsEnded(String sheetId) {
-        Map<String, LocalDate> ended = new LinkedHashMap<>();
+    public Map<String, LocalDate> periodsShown(String sheetId) {
+        Map<String, LocalDate> shown = new LinkedHashMap<>();
         jdbc.query("SELECT p.name, p.to_date FROM period p JOIN sheet s ON s.id = p.sheet_id "
-                + "WHERE p.sheet_id = ? AND p.to_date <= s.today ORDER BY p.from_date, p.to_date, p.name",
+                + "WHERE p.sheet_id = ? AND (p.to_date <= s.today OR (p.closed AND EXISTS (SELECT 1 FROM period_pool_cut c "
+                + "WHERE c.sheet_id = p.sheet_id AND c.period_name = p.name))) ORDER BY p.from_date, p.to_date, p.name",
                 rs -> {
-                    ended.put(rs.getString(1), rs.getDate(2).toLocalDate());
+                    shown.put(rs.getString(1), rs.getDate(2).toLocalDate());
                 }, sheetId);
-        return ended;
+        return shown;
+    }
+
+    /** Each closed period's cuts fixed when it was closed: by period, then pool, then member key (the
+     *  cut null when the member had none). A period still open has none. */
+    public Map<String, Map<String, Map<String, String>>> fixedCuts(String sheetId) {
+        Map<String, Map<String, Map<String, String>>> fixed = new HashMap<>();
+        jdbc.query("SELECT c.period_name, c.pool, c.member_key, c.cut FROM period_pool_cut c "
+                + "JOIN period p ON p.sheet_id = c.sheet_id AND p.name = c.period_name "
+                + "WHERE c.sheet_id = ? AND p.closed", rs -> {
+                    BigDecimal cut = rs.getBigDecimal(4);
+                    fixed.computeIfAbsent(rs.getString(1), k -> new HashMap<>())
+                            .computeIfAbsent(rs.getString(2), k -> new HashMap<>())
+                            .put(rs.getString(3), cut == null ? null : cut.setScale(2).toPlainString());
+                }, sheetId);
+        return fixed;
+    }
+
+    /** Fix every pool member's cut for the period as the sheet stands now, afresh. */
+    public void fixCuts(String sheetId, String period) {
+        clearCuts(sheetId, period);
+        for (PoolResponse p : onSheet(sheetId)) {
+            for (PoolMemberResponse m : p.members()) {
+                jdbc.update("INSERT INTO period_pool_cut (sheet_id, period_name, pool, member_key, cut) VALUES (?, ?, ?, ?, ?)",
+                        sheetId, period, p.name(), m.key(), m.cut() == null ? null : new BigDecimal(m.cut()));
+            }
+        }
+    }
+
+    /** The period's cuts are live again. */
+    public void clearCuts(String sheetId, String period) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, period);
     }
 
     /** Whether the sheet has a pool of that name. */
