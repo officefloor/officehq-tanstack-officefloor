@@ -1,0 +1,234 @@
+diff --git a/src/main/frontend/features/claims/bulk-settle.slot.tsx b/src/main/frontend/features/claims/bulk-settle.slot.tsx
+index ca541691..e4a2bdac 100644
+--- a/src/main/frontend/features/claims/bulk-settle.slot.tsx
++++ b/src/main/frontend/features/claims/bulk-settle.slot.tsx
+@@ -13,7 +13,7 @@ type BulkSettled = { settled: number; refused: number; claims: Claim[]; lastBatc
+ 
+ // Settles the selected claims together as the signed-in user: the server settles each in list order (people in the
+ // order they were added, newest claim first) by the rules of settling one, counting one sent to PENDING as settled,
+-// and leaves the rest as they are. Shows how many of each, and the number of the sheet's last batch (a bulk settle
++// all or nothing: when any one cannot be settled none is and all count refused. Shows how many of each, and the number of the sheet's last batch (a bulk settle
+ // that settled at least one claim).
+ function BulkSettle({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index 11afdc71..4e470bad 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -1,11 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.util.ArrayList;
+ import java.util.Comparator;
+ import java.util.HashMap;
+ import java.util.LinkedHashSet;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.web.ObjectResponse;
+@@ -16,13 +19,15 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /**
+  * Settles each selected claim in list order (people in the order they were added, newest claim first within a
+  * person) by the rules of settling one claim, as the signed-in user; one a clerk's settle sends to PENDING counts as
+- * settled, one that cannot be settled is left as it is and counted refused. When at least one is settled the bulk
+- * settle is the sheet's next batch, and each claim it settled carries the batch's number.
++ * settled. It is all or nothing: when any selected claim cannot be settled none is, every one counts refused and
++ * nothing is written. Otherwise the bulk settle is the sheet's next batch, each claim it settled carries the batch's
++ * number, and after the claims' own lines a BATCH_SETTLED line gives its count and the frozen figures of those
++ * SETTLED added up.
+  */
+ public class BulkSettleClaims {
+     public void settle(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+             @RequestBody BulkSettleRequest request, Claims claims, People people, ClaimStatusChanger changer,
+-            SettleBatches batches,
++            SettleBatches batches, Audit audit,
+             ObjectResponse<BulkSettleResponse> response) {
+         Map<Long, Integer> personOrder = new HashMap<>();
+         for (Person person : people.list(sheet)) {
+@@ -45,8 +50,22 @@ public class BulkSettleClaims {
+         }
+         selected.sort(Comparator.comparing((Claim c) -> personOrder.getOrDefault(c.person(), Integer.MAX_VALUE))
+                 .thenComparing((Claim c) -> listOrder.getOrDefault(c.id(), Integer.MAX_VALUE)));
++        // All or nothing: when any selected claim cannot be settled by the user, none is and every one counts refused.
++        boolean refusal = refused > 0;
++        for (Claim claim : selected) {
++            try {
++                changer.vet(sheet, user, claim, ClaimStatusChange.SETTLE, null);
++            } catch (InvalidClaimStatusChangeException e) {
++                refusal = true;
++            }
++        }
++        if (refusal) {
++            response.send(new BulkSettleResponse(0, refused + selected.size(), claims.list(sheet), batches.last(sheet)));
++            return;
++        }
+         int settled = 0;
+         Integer batch = null;
++        BigDecimal total = BigDecimal.ZERO.setScale(2);
+         for (Claim claim : selected) {
+             try {
+                 // Re-read so each claim is settled as the store holds it after the ones before it.
+@@ -56,10 +75,18 @@ public class BulkSettleClaims {
+                 }
+                 claims.setBatch(sheet, claim.id(), batch);
+                 settled++;
+-            } catch (InvalidClaimStatusChangeException refusal) {
++                Claim after = claims.find(sheet, claim.id());
++                if (after.status() == ClaimStatus.SETTLED && after.settledDue() != null) {
++                    total = total.add(new BigDecimal(after.settledDue()));
++                }
++            } catch (InvalidClaimStatusChangeException lost) {
+                 refused++;
+             }
+         }
++        if (batch != null) {
++            audit.record("BATCH_SETTLED sheet=" + sheet + " by=" + user + " batch=" + batch + " count=" + settled
++                    + " total=" + total.setScale(2, RoundingMode.HALF_UP).toPlainString());
++        }
+         response.send(new BulkSettleResponse(settled, refused, claims.list(sheet), batches.last(sheet)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index c6a56a9b..e289a9b5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -67,6 +67,56 @@ public class ClaimStatusChanger {
+      *  writing nothing when it is refused. */
+     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
+             throws InvalidClaimStatusChangeException {
++        requested = vet(sheet, user, claim, requested, reason);
++        String voidReason = requested == ClaimStatusChange.VOID && voidReasons.any(sheet) ? reason.trim() : null;
++        Person person = people.find(sheet, claim.person());
++        Rollup.Snapshot before = rollup.take(sheet);
++        ClaimStatus next = claim.status().after(requested);
++        // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
++        if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
++            throw new InvalidClaimStatusChangeException(
++                    "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
++        }
++        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
++        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
++        Claim changed = claim;
++        if (requested == ClaimStatusChange.OPEN) {
++            changed = number(sheet, claim);
++            claims.setOpenedBy(sheet, claim.id(), user);
++        }
++        String fields = changed.statusAuditFields(person.name());
++        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
++        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
++        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
++            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
++                    settings.late(sheet, clock.today(sheet)));
++            claims.setSettledDue(sheet, claim.id(), due);
++            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
++        }
++        // Voiding a SETTLED claim reverses its frozen figure out of every total.
++        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
++            fields += " reversed=" + (claim.settledDue() == null ? "n/a" : claim.settledDue());
++        }
++        if (requested == ClaimStatusChange.REJECT) {
++            fields += " reason=" + reason.trim();
++        }
++        if (voidReason != null) {
++            voidReasons.voided(sheet, claim.id(), voidReason);
++            fields += " reason=" + voidReason;
++        }
++        log.record(sheet, user, claim.id());
++        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
++        // Settling or approving tells each user watching the person, before the rollup lines.
++        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
++            watches.notify(sheet, user, person.id(), person.name(), changed.shownNumber());
++        }
++        rollup.record(sheet, user, before);
++    }
++
++    /** Refuses the change the user may not make to the claim as it is now, writing nothing; otherwise gives the change
++     *  it makes (a clerk's settle above the clerk limit is a move to PENDING). */
++    public ClaimStatusChange vet(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
++            throws InvalidClaimStatusChangeException {
+         // A viewer changes nothing.
+         if (Role.VIEWER.equals(roles.of(sheet, user))) {
+             throw new InvalidClaimStatusChangeException("A viewer cannot change a claim");
+@@ -116,9 +166,8 @@ public class ClaimStatusChanger {
+             throw new InvalidClaimStatusChangeException("A reject needs a reason");
+         }
+         // While the sheet has void reasons, a void needs one chosen from them (with none, a void takes no reason).
+-        String voidReason = null;
+         if (requested == ClaimStatusChange.VOID && voidReasons.any(sheet)) {
+-            voidReason = reason == null ? "" : reason.trim();
++            String voidReason = reason == null ? "" : reason.trim();
+             if (voidReason.isEmpty() || !voidReasons.has(sheet, voidReason)) {
+                 throw new InvalidClaimStatusChangeException("A void needs a reason from the sheet's void reasons");
+             }
+@@ -163,47 +212,11 @@ public class ClaimStatusChanger {
+                 requested = ClaimStatusChange.PEND;
+             }
+         }
+-        Rollup.Snapshot before = rollup.take(sheet);
+-        ClaimStatus next = claim.status().after(requested);
+-        // Conditional on the status read, so a concurrent change by another user is refused, not overwritten.
+-        if (next == null || !claims.changeStatus(sheet, claim.id(), claim.status(), next)) {
++        if (claim.status().after(requested) == null) {
+             throw new InvalidClaimStatusChangeException(
+                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+         }
+-        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
+-        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
+-        Claim changed = claim;
+-        if (requested == ClaimStatusChange.OPEN) {
+-            changed = number(sheet, claim);
+-            claims.setOpenedBy(sheet, claim.id(), user);
+-        }
+-        String fields = changed.statusAuditFields(person.name());
+-        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
+-        // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
+-        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+-            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+-                    settings.late(sheet, clock.today(sheet)));
+-            claims.setSettledDue(sheet, claim.id(), due);
+-            fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+-        }
+-        // Voiding a SETTLED claim reverses its frozen figure out of every total.
+-        if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
+-            fields += " reversed=" + (claim.settledDue() == null ? "n/a" : claim.settledDue());
+-        }
+-        if (requested == ClaimStatusChange.REJECT) {
+-            fields += " reason=" + reason.trim();
+-        }
+-        if (voidReason != null) {
+-            voidReasons.voided(sheet, claim.id(), voidReason);
+-            fields += " reason=" + voidReason;
+-        }
+-        log.record(sheet, user, claim.id());
+-        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+-        // Settling or approving tells each user watching the person, before the rollup lines.
+-        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+-            watches.notify(sheet, user, person.id(), person.name(), changed.shownNumber());
+-        }
+-        rollup.record(sheet, user, before);
++        return requested;
+     }
+ 
+     /**
+diff --git a/tmp_e2e/e2e7.log b/tmp_e2e/e2e7.log
+new file mode 100644
+index 00000000..29a3fefe
+--- /dev/null
++++ b/tmp_e2e/e2e7.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › batch all or nothing › batch all or nothing (9.0s)
++  ✓  2 [chromium] › acceptance.spec.ts:133:7 › batch all or nothing › batch all or nothing scenario 1 (12.8s)
++  ✓  3 [chromium] › acceptance.spec.ts:427:7 › batch all or nothing › batch all or nothing scenario 2 (27.0s)
++  ✓  4 [chromium] › acceptance.spec.ts:773:7 › batch all or nothing › batch all or nothing scenario 3 (23.0s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.2m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (1.2m)
