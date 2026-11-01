@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { gradeOn, heldOn, usePeople, type Person } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { rateOn, showDue, useRates } from '../rates/useRates';
+import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useSelectedClaims } from '../bulk/useSelectedClaims';
@@ -138,11 +138,11 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
   const lateBy = useLate(sheet);
   const cap = useCap(sheet);
   // The sum of their figures; their due-total is at most the cap, the rest their excess.
-  const dueSum = personDueCents(liveClaims, floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
+  const dueSum = personDueCents(liveClaims, floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
   // The due-total before the cap, split (an n/a part shows 0.00): their SETTLED claims' figures, and their OPEN and PENDING ones'.
-  const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
-  const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (d) => rateOn(rates, gradeOn(person, d), d), lateBy);
-  const late = overdueFigures(liveClaims, lateBy, floor, (d) => rateOn(rates, gradeOn(person, d), d));
+  const settledSum = personDueCents(liveClaims.filter((c) => c.status === 'SETTLED'), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+  const openSum = personDueCents(liveClaims.filter(isOpen), floor, pct, (c) => claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
+  const late = overdueFigures(liveClaims, lateBy, floor, (c) => claimRateOn(rates, gradeOn(person, c.date), c));
   // The claim whose editor this user has open: the one their lock holds, so it stays open across a re-load.
   const editingClaim = claims.find((c) => c.lockedBy === user) ?? null;
   const editing = editingClaim?.id ?? null;
@@ -690,7 +690,7 @@ function PersonClaims({ user, sheet, person }: { user: string; sheet: string; pe
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{showDue(claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy))}</span>{' '}
+              <span data-testid="claim-due">{showDue(claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy))}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}

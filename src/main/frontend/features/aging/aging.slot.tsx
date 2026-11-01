@@ -1,7 +1,7 @@
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { claimDueCents, isOpen, live, useClaims, type Claim } from '../claims/useClaims';
 import { gradeOn, heldOn, type Person } from '../people/usePeople';
-import { rateOn, showDue, useRates } from '../rates/useRates';
+import { claimRateOn, showDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
@@ -25,7 +25,7 @@ function PersonAged({ sheet, person }: { user: string; sheet: string; person: Pe
   ).filter(isOpen);
   const buckets = [0n, 0n, 0n];
   for (const c of claims) {
-    const due = claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), lateBy);
+    const due = claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), lateBy);
     if (due === null) continue;
     const age = ageOn(c, today);
     buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2] += due;

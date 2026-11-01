@@ -1,7 +1,7 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { claimDueCents, live, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
-import { rateOn, totalDue, useRates } from '../rates/useRates';
+import { claimRateOn, totalDue, useRates } from '../rates/useRates';
 import { useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 
@@ -22,7 +22,7 @@ function MonthsPanel({ sheet }: { user: string; sheet: string }) {
   const months = [...new Set(all.map((c) => c.date.slice(0, 7)))].sort();
   const dueOf = (c: (typeof claims)[number]) => {
     const p = byId.get(c.personId);
-    return claimDueCents(c, floor, p ? rateOn(rates, gradeOn(p, c.date), c.date) : undefined, late);
+    return claimDueCents(c, floor, p ? claimRateOn(rates, gradeOn(p, c.date), c) : undefined, late);
   };
 
   return (

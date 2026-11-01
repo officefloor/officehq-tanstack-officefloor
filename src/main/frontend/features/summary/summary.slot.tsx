@@ -3,7 +3,7 @@ import { isActive } from '../active/active';
 import { STATUSES, live, personDueCents, useClaims } from '../claims/useClaims';
 import { GRADES, gradeOn, heldOn, usePeople } from '../people/usePeople';
 import { periodDue, usePeriods } from '../periods/usePeriods';
-import { hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
+import { claimRateOn, hundredths, rateOn, totalDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { useVoidReasons } from '../voidreasons/useVoidReasons';
@@ -32,7 +32,7 @@ function SummaryPanel({ sheet }: { user: string; sheet: string }) {
       live(all.filter((c) => c.personId === p.id), (_, date) => heldOn(p, date, today)),
       floor,
       rateOn(rates, gradeOn(p, today), today),
-      (d) => rateOn(rates, gradeOn(p, d), d),
+      (c) => claimRateOn(rates, gradeOn(p, c.date), c),
       late,
       cap,
     );

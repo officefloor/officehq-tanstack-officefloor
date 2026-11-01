@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { claimDueCents, type Claim, type ClaimStatus, type Late } from '../claims/useClaims';
 import { gradeOn, heldOn, type Person } from '../people/usePeople';
-import { hundredths, rateOn, totalDue, type Rate } from '../rates/useRates';
+import { hundredths, claimRateOn, totalDue, type Rate } from '../rates/useRates';
 import type { FloorOn } from '../settings/useSettings';
 import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
 
@@ -94,7 +94,7 @@ export function personPeriodDueCents(period: Period, person: Person, claims: Cla
   }
   return claims
     .filter((c) => countsIn(period, person, c, today, now))
-    .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, rateOn(rates, gradeOn(person, c.date), c.date), late) ?? 0n), 0n);
+    .reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, claimRateOn(rates, gradeOn(person, c.date), c), late) ?? 0n), 0n);
 }
 
 /** A period's due-total: everyone's due-total for it added up (with `now`, each claim counted by its

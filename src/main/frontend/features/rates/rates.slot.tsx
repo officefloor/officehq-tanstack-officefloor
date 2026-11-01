@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../sheet/useSheet';
-import { PCT, rateOn, ratesKey, totalDue, useRates, type Rate } from './useRates';
+import { claimRateOn, PCT, rateOn, ratesKey, totalDue, useRates, type Rate } from './useRates';
 import { claimDueCents, isOpen, useClaims } from '../claims/useClaims';
 import { gradeOn, usePeople } from '../people/usePeople';
 import { useFloor, useLate } from '../settings/useSettings';
@@ -172,7 +172,8 @@ function RatesPanel({ user, sheet }: { user: string; sheet: string }) {
 /**
  * A preview of a candidate rate for a grade, saving nothing: how many OPEN and PENDING claims of
  * people on that grade (the grade in force on the claim's date) would show a different due if the
- * rate applied to the grade on every date, and the differences (new due minus current) added up.
+ * rate applied to the grade on every date and to every claim, and the differences (new due minus current,
+ * each claim's current at the rate that applies to it, see `claimRateOn`) added up.
  * A claim bound by a statement keeps its figure, so it does not change; a settled claim is not counted.
  */
 function RatePreview({ sheet }: { sheet: string }) {
@@ -205,7 +206,7 @@ function RatePreview({ sheet }: { sheet: string }) {
       for (const c of claims.data ?? []) {
         const person = byId.get(c.personId);
         if (!isOpen(c) || person === undefined || gradeOn(person, c.date) !== grade) continue;
-        const current = claimDueCents(c, floor, rateOn(rates.data ?? [], grade, c.date), late);
+        const current = claimDueCents(c, floor, claimRateOn(rates.data ?? [], grade, c), late);
         const next = claimDueCents(c, floor, candidate, late);
         if (current === next) continue;
         count++;

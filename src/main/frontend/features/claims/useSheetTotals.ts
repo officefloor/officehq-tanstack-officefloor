@@ -1,5 +1,5 @@
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
-import { rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
+import { claimRateOn, rateOn, totalDue, trimmedTotal, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { claimed, isOpen, live, overdueFigures, personDueCents, useClaims } from './useClaims';
@@ -22,15 +22,15 @@ export function useSheetTotals(sheet: string) {
   const late = useLate(sheet);
   const cap = useCap(sheet);
   const dues = people.map((p) =>
-    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late, cap),
+    personDueCents(claims.filter((c) => c.personId === p.id), floor, rateOn(rates, gradeOn(p, today), today), (c) => claimRateOn(rates, gradeOn(p, c.date), c), late, cap),
   );
   // Everyone's due-total before the cap, split into its SETTLED and its OPEN-and-PENDING part.
   const part = (keep: (c: (typeof claims)[number]) => boolean) =>
     people.map((p) =>
-      personDueCents(claims.filter((c) => c.personId === p.id && keep(c)), floor, rateOn(rates, gradeOn(p, today), today), (d) => rateOn(rates, gradeOn(p, d), d), late),
+      personDueCents(claims.filter((c) => c.personId === p.id && keep(c)), floor, rateOn(rates, gradeOn(p, today), today), (c) => claimRateOn(rates, gradeOn(p, c.date), c), late),
     );
   const over = people.map((p) =>
-    overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (d) => rateOn(rates, gradeOn(p, d), d)),
+    overdueFigures(claims.filter((c) => c.personId === p.id), late, floor, (c) => claimRateOn(rates, gradeOn(p, c.date), c)),
   );
   return {
     /** Each person's own due-total (capped) and overdue-total, in cents, in the people's order. */

@@ -1,7 +1,7 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { live, personDueCents, useClaims } from '../claims/useClaims';
 import { gradeOn, heldOnBy, usePeople } from '../people/usePeople';
-import { rateOn, showDue, useRates } from '../rates/useRates';
+import { claimRateOn, rateOn, showDue, useRates } from '../rates/useRates';
 import { useCap, useFloor, useLate } from '../settings/useSettings';
 import { useSheetToday } from '../sheet/useSheet';
 import { downloadCsv } from './csv';
@@ -28,7 +28,7 @@ function ExportPeople({ sheet }: { user: string; sheet: string }) {
         claims.filter((c) => c.personId === p.id),
         floor,
         rateOn(rates, gradeOn(p, today), today),
-        (d) => rateOn(rates, gradeOn(p, d), d),
+        (c) => claimRateOn(rates, gradeOn(p, c.date), c),
         late,
         cap,
       );

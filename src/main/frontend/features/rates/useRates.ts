@@ -6,7 +6,23 @@ import { asOfKey, asOfPath, useAsOf } from '../asof/useAsOf';
  *  is in force from (yyyy-mm-dd), or null when it applies from the beginning of time; `to` the
  *  date it applies through, or null when it has no end; `version` how many values have been set for
  *  its grade and from-date, this newest one (the one in force) included. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; version: number; level?: number };
+export type Rate = {
+  grade: string;
+  pct: string;
+  from: string | null;
+  to: string | null;
+  version: number;
+  /** Set for a forward-only rate (saved with a from-date on or after the sheet's today): it applies only to
+   *  claims whose `seq` is higher. Null when it applies to every claim. */
+  forwardAfter: number | null;
+  /** Its grade and from-date's older versions, newest first: a claim a forward-only version does not apply
+   *  to takes the newest of them that does. */
+  earlier: RateVersion[];
+  level?: number;
+};
+
+/** An older version of a rate, as it was set. */
+type RateVersion = { pct: string; to: string | null; forwardAfter: number | null };
 
 /** The rates of one of the sheet's parent sheets, `level` levels up (1 for the parent). */
 type InheritedRates = { level: number; sheet: string; rates: Rate[] };
@@ -63,6 +79,21 @@ function levelRateOn(rates: Rate[], grade: string, date: string): string | undef
     if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
   }
   return found !== undefined && (found.to === null || found.to >= date) ? found.pct : undefined;
+}
+
+/**
+ * The grade's rate that applies to a claim on its date: as `rateOn`, but passing over each forward-only
+ * rate saved after the claim was added — for the newest older version of its from-date that applies to
+ * the claim, else for the from-date before. The rates panel and the preview's candidate go by `rateOn`.
+ */
+export function claimRateOn(rates: Rate[], grade: string, claim: { date: string; seq: number }): string | undefined {
+  const applies = (v: { forwardAfter: number | null }) => v.forwardAfter === null || claim.seq > v.forwardAfter;
+  const applying: Rate[] = [];
+  for (const r of rates) {
+    const v = applies(r) ? r : r.earlier.find(applies);
+    if (v !== undefined) applying.push({ ...r, pct: v.pct, to: v.to, forwardAfter: v.forwardAfter });
+  }
+  return rateOn(applying, grade, claim.date);
 }
 
 /** "12.34" as a whole number of hundredths (1234n), exactly. */

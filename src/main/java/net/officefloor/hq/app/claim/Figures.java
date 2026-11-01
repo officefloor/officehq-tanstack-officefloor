@@ -102,11 +102,12 @@ public class Figures {
         return total;
     }
 
-    /** The claim's due at its person's grade's rate in force on the claim's date: amount times the
+    /** The claim's due at its person's grade's rate in force on the claim's date (passing over a
+     *  forward-only rate saved after the claim was added, see {@link Rates#ownPct}): amount times the
      *  rate divided by 100, rounded by the claim's rounding to two decimals, before any late charge or
      *  floor (see {@link #due}); null when there is no rate. */
     public BigDecimal live(Claim claim, String grade) {
-        BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate());
+        BigDecimal pct = rates.pct(claim.getSheetId(), grade, claim.getDate(), claim.seq());
         if (pct == null) return null;
         return claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100)).setScale(2, rounding(claim));
     }

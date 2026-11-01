@@ -33,6 +33,7 @@ public class Claim {
     private String editedBy;
     private Integer dueTerms;
     private Integer batch;
+    private Long addedSeq;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal due, String openedBy) {
@@ -134,6 +135,12 @@ public class Claim {
     /** The number of the bulk settle that settled the claim; null when none did. */
     public Integer getBatch() { return batch; }
     public void setBatch(Integer batch) { this.batch = batch; }
+    /** The sequence the claim was added in, across every sheet (a clone keeps the claim's own); null for its id. */
+    public Long getAddedSeq() { return addedSeq; }
+    public void setAddedSeq(Long addedSeq) { this.addedSeq = addedSeq; }
+    /** The order the claim was added in, for which rates apply to it (see {@link net.officefloor.hq.app.rate.Rates#pct}):
+     *  its added sequence, else its id; null for a claim not yet added. */
+    public Long seq() { return addedSeq != null ? addedSeq : id; }
     /** Whether the claim is a correction: its amount is negative. Its due has no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
 }

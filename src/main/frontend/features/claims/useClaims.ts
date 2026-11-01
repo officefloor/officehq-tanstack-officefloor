@@ -82,6 +82,8 @@ export type Claim = {
   lines: string[];
   /** The number of the bulk settle batch (1, 2, ... on the sheet) that settled the claim (or sent it PENDING); null when none did. */
   batch: number | null;
+  /** The order the claim was added in: a forward-only rate applies only to claims added after it was saved (see `claimRateOn`). */
+  seq: number;
 };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -195,16 +197,16 @@ export function lateChargeCents(claim: Claim, figure: bigint, late: Late): bigin
 
 
 /** A person's due-total, in cents: the sum of their counted claims' figures, each already rounded —
- *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim's date)`, plus any late charge and at least `floor`, the rate in force on the claim's
+ *  a settled claim's fixed due, else the figure a statement bound it to, else live at `pctOn(claim)` (the rate that applies to it on its date), plus any late charge and at least `floor`, the rate in force on the claim's
  *  date (at `pct`, the rate in force on the sheet's today, when no `pctOn` is given). 0 with
  *  nothing that counts. With `late`, an overdue claim's late charge is added on top. Null (n/a) when there is no rate today, unless some settled claim keeps a
  *  figure: then it is the sum of the figures there are. With `cap`, it is at most the cap (an n/a one
  *  is not capped). */
-export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (date: string) => string | undefined, late?: Late, cap?: string | null): bigint | null {
+export function personDueCents(claims: Claim[], floor: FloorOn, pct: string | undefined, pctOn?: (claim: Claim) => string | undefined, late?: Late, cap?: string | null): bigint | null {
   let sum = 0n;
   let any = false;
   for (const c of counted(claims)) {
-    const due = claimDueCents(c, floor, pctOn ? pctOn(c.date) : pct, late);
+    const due = claimDueCents(c, floor, pctOn ? pctOn(c) : pct, late);
     if (due === null) continue;
     sum += due;
     any = true;
@@ -233,9 +235,9 @@ export function overdue(claim: Claim, late: Late): boolean {
 }
 
 /** These claims' overdue ones: their count, and their dues with late charges added up in cents (n/a ones skipped).
- *  `pctOn` is the rate in force on a claim's date. */
-export function overdueFigures(claims: Claim[], late: Late, floor: FloorOn, pctOn: (date: string) => string | undefined): { count: number; cents: bigint } {
+ *  `pctOn` is the rate that applies to a claim on its date. */
+export function overdueFigures(claims: Claim[], late: Late, floor: FloorOn, pctOn: (claim: Claim) => string | undefined): { count: number; cents: bigint } {
   const over = claims.filter((c) => overdue(c, late));
-  const cents = over.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c.date), late) ?? 0n), 0n);
+  const cents = over.reduce<bigint>((sum, c) => sum + (claimDueCents(c, floor, pctOn(c), late) ?? 0n), 0n);
   return { count: over.length, cents };
 }

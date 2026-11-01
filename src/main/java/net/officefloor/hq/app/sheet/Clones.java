@@ -63,10 +63,10 @@ public class Clones {
                 + "SELECT ?, action_key, roles FROM sheet_permission WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) "
                 + "SELECT ?, user_name, role FROM sheet_role WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) "
-                + "SELECT ?, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) "
-                + "SELECT ?, grade, from_date, version, pct, to_date FROM rate_version WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, forward_after) "
+                + "SELECT ?, grade, pct, from_date, to_date, version, forward_after FROM rate WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, forward_after) "
+                + "SELECT ?, grade, from_date, version, pct, to_date, forward_after FROM rate_version WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_holiday (sheet_id, holiday_date) "
                 + "SELECT ?, holiday_date FROM sheet_holiday WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_void_reason (sheet_id, reason, position) "
@@ -165,9 +165,9 @@ public class Clones {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, "
                     + "note, status, number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, "
                     + "proofs, split_from, locked_by, late_entry, reminded_on, ref, tags, tags_used, void_reason, "
-                    + "edited_by, due_terms, batch) SELECT ?, ?, amount, claim_date, note, status, NULL, due, opened_by, "
+                    + "edited_by, due_terms, batch, added_seq) SELECT ?, ?, amount, claim_date, note, status, NULL, due, opened_by, "
                     + "FALSE, NULL, NULL, due_by, deferred_until, proofs, NULL, NULL, late_entry, reminded_on, "
-                    + "ref, tags, tags_used, void_reason, edited_by, due_terms, batch FROM claim WHERE id = ?",
+                    + "ref, tags, tags_used, void_reason, edited_by, due_terms, batch, COALESCE(added_seq, id) FROM claim WHERE id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
             ps.setLong(2, personId);
