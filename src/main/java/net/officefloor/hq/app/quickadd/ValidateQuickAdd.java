@@ -38,7 +38,7 @@ public class ValidateQuickAdd {
         // The due-by it would be fixed with: from the person of the name, else from a new person of grade A.
         Person person = people.findByName(sheet, name);
         LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings, holidays)
-                : holidays.past(sheet, input.date().plusDays(settings.terms(sheet, "A", input.date())));
+                : holidays.businessDaysAfter(sheet, input.date(), settings.terms(sheet, "A", input.date()));
         if (periods.closedOn(sheet, dueBy)) {
             throw new InvalidClaimException("A claim may not be due inside a closed period");
         }

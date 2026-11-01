@@ -91,12 +91,12 @@ public record Person(long id, String name, String grade, long version, String re
     }
 
     /**
-     * The due-by of a claim of theirs dated {@code date}, fixed when it is made: the date plus the first of their own
-     * terms, the terms of their grade then, and the sheet's terms then; moved past the sheet's holidays (as they stand
-     * now) to the next day that is not one.
+     * The due-by of a claim of theirs dated {@code date}, fixed when it is made: the terms-th business day after the
+     * date (skipping weekends and the sheet's holidays as they stand now), the terms being the first of their own
+     * terms, the terms of their grade then, and the sheet's terms then.
      */
     public LocalDate dueBy(String sheet, LocalDate date, Settings settings, Holidays holidays) {
-        return holidays.past(sheet, date.plusDays(terms != null ? terms : settings.terms(sheet, gradeOn(date), date)));
+        return holidays.businessDaysAfter(sheet, date, terms != null ? terms : settings.terms(sheet, gradeOn(date), date));
     }
 
     /** The grade in force on the claim's date (yyyy-mm-dd). */
