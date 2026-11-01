@@ -5,7 +5,7 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { gradeOn, peoplePath } from '../people/people';
+import { gradeOn, peoplePath, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { rateOf, showDue, twoDecimals, useRates } from '../rates/rates';
@@ -75,6 +75,18 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
   });
 
   const act = useSubmitOnce(status);
+  // A steward moves a DRAFT, OPEN or PENDING claim to another person on the sheet, picked beside the Reassign button.
+  const { data: people = [] } = usePeople(sheet);
+  const [moveTo, setMoveTo] = useState('');
+  const move = useMutation({
+    mutationFn: (to: number) =>
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/reassign`, user), { to }),
+    onSuccess: (updated) => {
+      setMoveTo('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const reassign = useSubmitOnce(move);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Only a draft can be edited: Edit on any other claim shows the row's error instead of the editor.
   const [editRefused, setEditRefused] = useState(false);
@@ -112,6 +124,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
           disabled={status.isPending}
           onClick={() => {
             setEditRefused(false);
+            move.reset();
             act(change);
           }}
         >
@@ -125,6 +138,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         onChange={(e) => {
           setReason(e.target.value);
           status.reset();
+          move.reset();
         }}
       />{' '}
       <button
@@ -133,6 +147,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         disabled={status.isPending}
         onClick={() => {
           setEditRefused(false);
+          move.reset();
           act('reject');
         }}
       >
@@ -143,6 +158,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
         data-testid="claim-edit"
         onClick={() => {
           status.reset();
+          move.reset();
           if (claim.status !== 'DRAFT') {
             setEditRefused(true);
             return;
@@ -153,6 +169,35 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       >
         Edit
       </button>
+      <select
+        data-testid="claim-reassign-to"
+        value={moveTo}
+        onChange={(e) => {
+          setMoveTo(e.target.value);
+          move.reset();
+        }}
+      >
+        <option value="">move to…</option>
+        {people
+          .filter((p) => p.id !== claim.person)
+          .map((p) => (
+            <option key={p.id} value={String(p.id)}>
+              {p.name}
+            </option>
+          ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="claim-reassign"
+        disabled={move.isPending || moveTo === ''}
+        onClick={() => {
+          setEditRefused(false);
+          status.reset();
+          reassign(Number(moveTo));
+        }}
+      >
+        Reassign
+      </button>{' '}
       {editing && (
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
           Cancel
@@ -166,6 +211,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onEdit, onCancel 
       {status.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be changed that way (the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, and a reject needs a reason).
+        </span>
+      )}
+      {move.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be reassigned (only a steward moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
         </span>
       )}
     </li>

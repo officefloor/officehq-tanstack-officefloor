@@ -32,6 +32,9 @@ public class Claims {
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
 
+    // The place after every claim listed on the sheet (bound to the sheet), so the claim lists newest.
+    private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(l.listed), 0) + 1 FROM claim l WHERE l.sheet = ?)";
+
     private final JdbcTemplate jdbc;
 
     public Claims(JdbcTemplate jdbc) {
@@ -40,7 +43,7 @@ public class Claims {
 
     /** Every claim on the sheet, newest first. */
     public List<Claim> list(String sheet) {
-        return jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.id DESC", ROW, sheet);
+        return jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet);
     }
 
     public Claim find(String sheet, long id) {
@@ -56,8 +59,9 @@ public class Claims {
     }
 
     public void add(String sheet, long person, ClaimInput input) {
-        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
-                sheet, person, input.amount(), Date.valueOf(input.date()), input.note(), input.corrects());
+        jdbc.update("INSERT INTO claim (sheet, person, amount, claimed_on, note, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, "
+                + NEXT_LISTED + ")", sheet, person, input.amount(), Date.valueOf(input.date()), input.note(),
+                input.corrects(), sheet);
     }
 
     /** Edits a draft claim: false when it is no longer a draft. */
@@ -65,6 +69,16 @@ public class Claims {
         return jdbc.update(
                 "UPDATE claim SET amount = ?, claimed_on = ?, note = ?, corrects = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'",
                 input.amount(), Date.valueOf(input.date()), input.note(), input.corrects(), sheet, id) == 1;
+    }
+
+    /**
+     * Moves the claim of the person and status it was read with to another person, unbound from any statement and
+     * listed as the sheet's newest: false when it no longer has that person or status.
+     */
+    public boolean reassign(String sheet, long id, long from, ClaimStatus status, long to) {
+        return jdbc.update("UPDATE claim SET person = ?, stated = FALSE, stated_due = NULL, listed = " + NEXT_LISTED
+                + " WHERE sheet = ? AND id = ? AND person = ? AND status = ?", to, sheet, sheet, id, from,
+                status.name()) == 1;
     }
 
     /** Moves the claim from one status to another: false when it no longer has the status it was read with. */
