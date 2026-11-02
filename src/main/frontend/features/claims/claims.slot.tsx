@@ -5,6 +5,7 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { useShown } from '../columns/columns';
 import { gradeOn, peoplePath, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
@@ -36,14 +37,15 @@ import { Fig } from '../locale/Fig';
 type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
-function ClaimedHeader() {
+function ClaimedHeader({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   return (
     <>
-      <th>Claimed</th>
-      <th>Due total</th>
-      <th>Excess</th>
-      <th>Overdue</th>
-      <th>Overdue total</th>
+      {shown('claimed') && <th>Claimed</th>}
+      {shown('due-total') && <th>Due total</th>}
+      {shown('excess') && <th>Excess</th>}
+      {shown('overdue-count') && <th>Overdue</th>}
+      {shown('overdue-total') && <th>Overdue total</th>}
       <th>Due 0-30 days</th>
       <th>Due 31-60 days</th>
       <th>Due 61+ days</th>
@@ -761,6 +763,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
 // A person's claimed total, then their claims (newest first) under one form that adds a claim or,
 // once a claim's editor is opened, edits it. A blank date takes the sheet's today on the server.
 function PersonClaims({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const { data: all = [] } = useClaims(sheet);
   const claims = all.filter((c) => c.person === person.id);
@@ -848,11 +851,11 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>
-      <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>
-      <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>
-      <td data-testid="person-overdue-count">{lateClaims.count}</td>
-      <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>
+      {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>}
+      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>}
+      {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
+      {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
+      {shown('overdue-total') && <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>}
       <td data-testid="person-aged-0-30"><Fig>{twoDecimals(aged.upTo30)}</Fig></td>
       <td data-testid="person-aged-31-60"><Fig>{twoDecimals(aged.upTo60)}</Fig></td>
       <td data-testid="person-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></td>

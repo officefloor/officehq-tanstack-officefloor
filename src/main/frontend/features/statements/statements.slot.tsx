@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { useShown } from '../columns/columns';
 import { peoplePath, personActionKey } from '../people/people';
 import type { Person } from '../people/people';
 import { claimsKey } from '../claims/claims';
@@ -12,12 +13,13 @@ import { statementsKey, useStatements } from './statements';
 import type { StatementSummary } from './statements';
 import { Fig } from '../locale/Fig';
 
-function StatementHeader() {
+function StatementHeader({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   return (
     <>
-      <th>Statements</th>
-      <th>Stated total</th>
-      <th>Stated on</th>
+      {shown('statement-count') && <th>Statements</th>}
+      {shown('stated-total') && <th>Stated total</th>}
+      {shown('statement-date') && <th>Stated on</th>}
       <th />
     </>
   );
@@ -29,6 +31,7 @@ function StatementHeader() {
 // the statement as of that date (blank: now); it is cleared once the statement is taken or refused, so a refused date
 // never carries into the next press, and changing it clears the statement's error.
 function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const { data: all = [] } = useStatements(sheet);
   const mine = all.find((s) => s.person === person.id);
@@ -59,9 +62,9 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
 
   return (
     <>
-      <td data-testid="person-statement-count">{mine?.count ?? 0}</td>
-      <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>
-      <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>
+      {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
+      {shown('stated-total') && <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>}
+      {shown('statement-date') && <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>}
       <td>
         <input
           type="date"

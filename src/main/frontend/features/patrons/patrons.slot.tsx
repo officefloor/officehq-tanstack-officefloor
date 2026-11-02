@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { useShown } from '../columns/columns';
 import { peoplePath, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { recentSettledCents, useClaims } from '../claims/claims';
@@ -23,11 +24,12 @@ function roundHundredths(product: bigint): bigint {
   return product < 0n ? -quotient : quotient;
 }
 
-function PatronsHeader() {
+function PatronsHeader({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   return (
     <>
-      <th>Patrons</th>
-      <th>Backing</th>
+      {shown('patrons') && <th>Patrons</th>}
+      {shown('backing') && <th>Backing</th>}
       <th />
     </>
   );
@@ -39,6 +41,7 @@ function PatronsHeader() {
 // none). A patron is picked from the others on the sheet and named one at a time; the server refuses a patron already
 // named.
 function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const { data: everyone = [] } = usePeople(sheet);
   const { data: patrons = [] } = usePatrons(sheet);
@@ -73,8 +76,8 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
 
   return (
     <>
-      <td data-testid="person-patrons">{names.join(', ')}</td>
-      <td data-testid="person-backing"><Fig>{twoDecimals(backing)}</Fig></td>
+      {shown('patrons') && <td data-testid="person-patrons">{names.join(', ')}</td>}
+      {shown('backing') && <td data-testid="person-backing"><Fig>{twoDecimals(backing)}</Fig></td>}
       <td>
         <select
           data-testid="person-patron-select"

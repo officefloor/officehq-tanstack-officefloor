@@ -26,7 +26,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * a viewer's bulk grade and bulk retire, which change no one, and a viewer's generate of planned claims, which makes none.
  * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
  * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
- * A user's own locale is not a change to the sheet: anyone may choose theirs, whatever the sheet.
+ * A user's own locale and people-list columns are not a change to the sheet: anyone may choose theirs, whatever the sheet.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -44,6 +44,9 @@ public class ViewerGuard extends OncePerRequestFilter {
     /** The user's own locale: how the screen shows the sheet to them, never a change to it. */
     private static final String LOCALE = "/locale";
 
+    /** The user's own people-list columns: which cells their screen shows, never a change to the sheet. */
+    private static final String COLUMNS = "/columns";
+
     private final Roles roles;
     private final SheetArchive archive;
 
@@ -58,7 +61,7 @@ public class ViewerGuard extends OncePerRequestFilter {
         String method = request.getMethod();
         String user = request.getParameter("user");
         Matcher own = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
-        if (own.matches() && LOCALE.equals(own.group(2))) {
+        if (own.matches() && (LOCALE.equals(own.group(2)) || COLUMNS.equals(own.group(2)))) {
             chain.doFilter(request, response);
             return;
         }

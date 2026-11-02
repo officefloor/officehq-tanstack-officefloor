@@ -5,13 +5,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { useShown } from '../columns/columns';
 import { isHeld, peopleKey, peoplePath, personActionKey } from './people';
 import type { Person } from './people';
 
-function HoldHeader() {
+function HoldHeader({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   return (
     <>
-      <th>Hold</th>
+      {shown('hold') && <th>Hold</th>}
       <th>Holds</th>
       <th />
     </>
@@ -22,6 +24,7 @@ function HoldHeader() {
 // is the sheet's today; a blank to-date never ends). Their OPEN claims dated within a hold count in no live total,
 // unless bound by a statement; their other claims still do. A hold ends on its to-date.
 function PersonHold({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -40,7 +43,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
 
   return (
     <>
-      <td data-testid="person-hold">{isHeld(person) ? 'yes' : 'no'}</td>
+      {shown('hold') && <td data-testid="person-hold">{isHeld(person) ? 'yes' : 'no'}</td>}
       <td>
         {person.holds.map((h, i) => (
           <div key={i} data-testid="person-hold-line">

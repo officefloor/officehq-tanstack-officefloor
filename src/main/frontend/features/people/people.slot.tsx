@@ -11,6 +11,7 @@ import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
 import { claimsKey } from '../claims/claims';
+import { useShown } from '../columns/columns';
 import type { Claim } from '../claims/claims';
 
 // gradeFrom is the date an edit records the grade from (yyyy-mm-dd; blank for the sheet's today); a person's
@@ -83,6 +84,7 @@ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
 // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
 // when someone else has saved them since, the save is refused and the form shows their current values.
 function People({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const { data: everyone = [] } = usePeople(sheet);
   const [showRetired, setShowRetired] = useShowRetired();
@@ -250,8 +252,8 @@ function People({ sheet, user }: { sheet: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            {shown('terms') && <th>Terms</th>}
+            {shown('contact') && <th>Contact</th>}
             <th>Tags</th>
             <th>Clashing</th>
             <th>From sheet</th>
@@ -264,8 +266,8 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-terms">{termsText(p)}</td>
-              <td data-testid="person-contact">{p.contact ?? ''}</td>
+              {shown('terms') && <td data-testid="person-terms">{termsText(p)}</td>}
+              {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
               <td data-testid="person-origin">{p.origin ?? ''}</td>

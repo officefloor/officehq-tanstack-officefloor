@@ -5,15 +5,17 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { useShown } from '../columns/columns';
 import { peoplePath, personActionKey } from '../people/people';
 import type { Person } from '../people/people';
 import { aliasesKey, byNameKey, useAliases } from './aliases';
 import type { Alias } from './aliases';
 
-function AliasesHeader() {
+function AliasesHeader({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   return (
     <>
-      <th>Aliases</th>
+      {shown('aliases') && <th>Aliases</th>}
       <th />
     </>
   );
@@ -22,6 +24,7 @@ function AliasesHeader() {
 // A person's aliases (sorted as names are compared, comma separated) and the entry that adds one. An alias shares
 // the names' uniqueness: the server refuses a blank one, or one equal to any name or alias on the sheet.
 function PersonAliases({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const { data: aliases = [] } = useAliases(sheet);
   const [typed, setTyped] = useState('');
@@ -45,7 +48,7 @@ function PersonAliases({ sheet, user, person }: { sheet: string; user: string; p
 
   return (
     <>
-      <td data-testid="person-aliases">{mine.join(', ')}</td>
+      {shown('aliases') && <td data-testid="person-aliases">{mine.join(', ')}</td>}
       <td>
         <input
           data-testid="person-alias-input"

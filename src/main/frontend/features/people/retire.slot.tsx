@@ -5,13 +5,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+import { useShown } from '../columns/columns';
 import { isRetired, peopleKey, peoplePath, personActionKey } from './people';
 import type { Person } from './people';
 
-function RetireHeader() {
+function RetireHeader({ sheet, user }: { sheet: string; user: string }) {
+  const shown = useShown(sheet, user);
   return (
     <>
-      <th>Retired</th>
+      {shown('retired') && <th>Retired</th>}
       <th>Retired from</th>
       <th />
       <th>Past retirements</th>
@@ -24,6 +26,7 @@ function RetireHeader() {
 // retired, a claim dated after that date is refused; each past retirement is kept, one line each, and a claim dated
 // after its from and before its to is refused too.
 function PersonRetire({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const retire = useMutation({
@@ -47,7 +50,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
 
   return (
     <>
-      <td data-testid="person-retired">{isRetired(person) ? 'yes' : 'no'}</td>
+      {shown('retired') && <td data-testid="person-retired">{isRetired(person) ? 'yes' : 'no'}</td>}
       <td data-testid="person-retired-from">{person.retiredFrom ?? ''}</td>
       <td>
         <input
