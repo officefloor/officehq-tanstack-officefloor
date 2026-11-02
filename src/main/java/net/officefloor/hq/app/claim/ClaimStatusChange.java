@@ -52,10 +52,12 @@ final class ClaimStatusChange {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
         // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
-        Long number = found.number();
+        String number = found.number();
         String openedBy = found.openedBy();
         if (to.equals("OPEN")) {
-            number = repository.number(id, cid);
+            number = repository.numbersPerPeriod(id)
+                    ? repository.numberInPeriod(id, cid, LocalDate.parse(found.date()))
+                    : repository.number(id, cid);
             repository.openedBy(id, cid, by);
             openedBy = by;
         }

@@ -21,9 +21,9 @@ public class ClaimRepository {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
-            rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")),
+            rs.getString("claim_no"), dueOf(rs.getBigDecimal("settled_due")),
             rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")),
-            rs.getObject("corrects", Long.class));
+            rs.getString("corrects"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -65,11 +65,42 @@ public class ClaimRepository {
 
     /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
      *  transaction commits, so two claims opened at once get consecutive numbers. */
-    public long number(String sheetId, long claimId) {
+    public String number(String sheetId, long claimId) {
         jdbc.update("UPDATE sheet SET claim_number = claim_number + 1 WHERE id = ?", sheetId);
         Long next = jdbc.queryForObject("SELECT claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
-        jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", next, claimId, sheetId);
-        return next;
+        String number = String.valueOf(next);
+        jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
+        return number;
+    }
+
+    /** Whether claims opened now are numbered per period: the sheet's period numbering from-date is set
+     *  and its today is on or after it. */
+    public boolean numbersPerPeriod(String sheetId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ? AND period_numbering_from IS NOT NULL"
+                + " AND today >= period_numbering_from", Integer.class, sheetId);
+        return n != null && n > 0;
+    }
+
+    /** Give an opened claim the next number in the sequence of the period its date falls in,
+     *  <period name>-<n>, or X-<n> when it is in no period. The sheet's row is locked first, so two
+     *  claims opened at once get consecutive numbers. */
+    public String numberInPeriod(String sheetId, long claimId, LocalDate date) {
+        jdbc.update("UPDATE sheet SET claim_number = claim_number WHERE id = ?", sheetId);
+        List<Object[]> period = jdbc.query("SELECT id, name FROM period WHERE sheet_id = ? AND from_date <= ?"
+                + " AND to_date >= ? ORDER BY from_date LIMIT 1",
+                (rs, i) -> new Object[] { rs.getLong("id"), rs.getString("name") }, sheetId, Date.valueOf(date),
+                Date.valueOf(date));
+        String key = period.isEmpty() ? "X" : "P" + period.get(0)[0];
+        String prefix = period.isEmpty() ? "X" : (String) period.get(0)[1];
+        if (jdbc.update("UPDATE claim_sequence SET last_no = last_no + 1 WHERE sheet_id = ? AND seq_key = ?",
+                sheetId, key) == 0) {
+            jdbc.update("INSERT INTO claim_sequence (sheet_id, seq_key, last_no) VALUES (?, ?, 1)", sheetId, key);
+        }
+        Long next = jdbc.queryForObject("SELECT last_no FROM claim_sequence WHERE sheet_id = ? AND seq_key = ?",
+                Long.class, sheetId, key);
+        String number = prefix + "-" + next;
+        jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
+        return number;
     }
 
     /** Record who opened a claim. */
@@ -180,13 +211,13 @@ public class ClaimRepository {
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet. */
-    public boolean settledOf(String sheetId, long personId, long number) {
+    public boolean settledOf(String sheetId, long personId, String number) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
                 + " AND claim_no = ? AND status = 'SETTLED'", Integer.class, sheetId, personId, number);
         return n != null && n > 0;
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
@@ -197,7 +228,7 @@ public class ClaimRepository {
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
-            ps.setObject(6, corrects);
+            ps.setString(6, corrects);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects);
@@ -205,7 +236,7 @@ public class ClaimRepository {
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
      *  such draft claim. */
-    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects) {
         return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
                 + " AND sheet_id = ? AND status = 'DRAFT'",
                 amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0;

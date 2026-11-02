@@ -29,8 +29,10 @@ public class SettingsRepository {
                 (rs, i) -> new Role(rs.getString("user_name"), rs.getString("role")), sheetId);
         BigDecimal limit = clerkLimit(sheetId);
         LocalDate policy = policyDate(sheetId);
+        LocalDate numbering = periodNumberingFrom(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId),
-                money(latePct(sheetId)), roles, policy == null ? null : policy.toString());
+                money(latePct(sheetId)), roles, policy == null ? null : policy.toString(),
+                numbering == null ? null : numbering.toString());
     }
 
     /** The sheet's clerk limit; null when it has none. */
@@ -87,6 +89,18 @@ public class SettingsRepository {
 
     public void setPolicyDate(String sheetId, LocalDate policyDate) {
         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", policyDate == null ? null : Date.valueOf(policyDate),
+                sheetId);
+    }
+
+    /** The sheet's period numbering from-date; null when blank (period numbering is off). */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        List<Date> found = jdbc.query("SELECT period_numbering_from FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getDate("period_numbering_from"), sheetId);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate();
+    }
+
+    public void setPeriodNumberingFrom(String sheetId, LocalDate from) {
+        jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from),
                 sheetId);
     }
 

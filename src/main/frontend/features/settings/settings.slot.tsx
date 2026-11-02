@@ -9,7 +9,9 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
  *  it; blank is no limit), its floor (the least a live due can be), its terms (the days after
  *  a claim's date that it is due by), its late percent (what an overdue claim's due gains, of its
  *  figure, for every full 30 days it is overdue), its policy date (a claim dated before it rounds half
- *  up, one on or after it half to even; blank is the sheet's today), and the role (clerk or steward)
+ *  up, one on or after it half to even; blank is the sheet's today), its period numbering from-date
+ *  (while set and the sheet's today is on or after it, a claim opened is numbered within its period,
+ *  <period>-<n>, or X-<n> in no period; blank is off), and the role (clerk or steward)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. */
 function SettingsPanel({ sheetId }: { sheetId: string }) {
@@ -20,12 +22,13 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [terms, setTerms] = useState<string | null>(null);
   const [latePct, setLatePct] = useState<string | null>(null);
   const [policyDate, setPolicyDate] = useState<string | null>(null);
+  const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -33,6 +36,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setTerms(null);
       setLatePct(null);
       setPolicyDate(null);
+      setNumberingFrom(null);
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -56,7 +60,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom });
           });
         }}
       >
@@ -125,6 +129,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Period numbering from{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="yyyy-mm-dd"
+            value={numberingFrom ?? ''}
+            onFocus={() => setNumberingFrom((v) => v ?? '')}
+            onChange={(e) => {
+              setNumberingFrom(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
@@ -132,7 +149,9 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         floor <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>,
         terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>,
         late % <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>,
-        policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>
+        policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>,
+        period numbering from{' '}
+        <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

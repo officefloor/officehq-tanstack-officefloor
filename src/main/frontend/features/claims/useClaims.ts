@@ -5,7 +5,7 @@ import { getJson } from '../../api/http';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status, its number on
- *  the sheet (given when it is opened; null while a draft and once void) and the due fixed when it was
+ *  the sheet (given when it is opened: 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft and once void) and the due fixed when it was
  *  settled (null unless settled while its grade had a rate: its due is then live, from the rates), and
  *  who opened it (null until it is opened), whether its person's last statement bound it, and the figure
  *  it was bound to (null when not bound, or bound with no figure: its due then stays live), and, for a
@@ -17,12 +17,12 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  number: number | null;
+  number: string | null;
   due: string | null;
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
-  corrects: number | null;
+  corrects: string | null;
 };
 
 /** A claim's fixed figure: the due frozen when it was settled, else the one its last statement bound

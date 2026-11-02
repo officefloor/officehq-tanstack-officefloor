@@ -15,14 +15,7 @@ public class ValidateClaim {
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
         String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
-        Long number = null;
-        if (!corrects.isEmpty()) {
-            try {
-                number = Long.parseLong(corrects);
-            } catch (NumberFormatException e) {
-                throw new BadRequestException("corrects must be a claim number");
-            }
-        }
+        String number = corrects.isEmpty() ? null : corrects;
         LocalDate on = null;
         if (!date.isEmpty()) {
             try {

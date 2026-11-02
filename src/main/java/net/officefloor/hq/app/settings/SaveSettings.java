@@ -43,6 +43,11 @@ public class SaveSettings {
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=policy-date value="
                     + (input.policyDate() == null ? "" : input.policyDate().toString()));
         }
+        if (input.setsPeriodNumberingFrom()) {
+            repository.setPeriodNumberingFrom(id, input.periodNumberingFrom());
+            audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=period-numbering-from value="
+                    + (input.periodNumberingFrom() == null ? "" : input.periodNumberingFrom().toString()));
+        }
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }
