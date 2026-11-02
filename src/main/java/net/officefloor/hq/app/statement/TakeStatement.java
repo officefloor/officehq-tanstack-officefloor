@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class TakeStatement {
     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
-            SheetRepository sheets, Audit audit, Out<Person> person) throws BadRequestException {
+            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long pid;
@@ -36,6 +37,7 @@ public class TakeStatement {
             throw new BadRequestException("no such person");
         }
         LocalDate today = sheets.today(id);
+        Rollup.Snapshot before = rollup.take(id);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int count = 0;
@@ -56,6 +58,7 @@ public class TakeStatement {
         people.stated(id, pid, dueTotal, today);
         audit.record("STATEMENT sheet=" + id + " by=" + by + " name=" + found.name() + " due-total=" + dueTotal
                 + " claims=" + count);
+        rollup.record(id, by, before);
         person.set(people.find(id, pid));
     }
 }

@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.ConflictException;
 import net.officefloor.hq.app.CurrentUser;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SavePerson {
     public void save(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @Val PersonRequest request, ServerHttpConnection connection, PersonRepository repository,
-            Audit audit, Out<Person> person) throws BadRequestException, ConflictException {
+            Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException, ConflictException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long pid;
@@ -33,6 +34,7 @@ public class SavePerson {
             throw new BadRequestException("name is already in use");
         }
         long version = request.version();
+        Rollup.Snapshot before = rollup.take(id);
         boolean updated;
         try {
             updated = repository.update(id, pid, version, request.name(), request.grade());
@@ -45,6 +47,7 @@ public class SavePerson {
         Person saved = repository.find(id, pid);
         audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
                 + " grade=" + saved.grade());
+        rollup.record(id, by, before);
         person.set(saved);
     }
 }
