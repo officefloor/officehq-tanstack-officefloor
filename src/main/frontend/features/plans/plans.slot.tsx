@@ -86,7 +86,7 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
 
 // One plan, with its Pause and Resume buttons: a pause skips (never postpones) every plan date from the sheet's
 // today until the day it is resumed. Pausing a paused plan, or resuming a running one, is refused. Its amount can be
-// changed (0.00 or more, up to two decimals) for the claims generated from then on; it lists its changes, oldest first.
+// changed (0.00 or more, up to two decimals) for the claims generated from then on and its still-DRAFT ones; it lists its changes, oldest first.
 function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: string; plan: Plan; submits: number }) {
   const queryClient = useQueryClient();
   const toggle = useMutation({
@@ -101,6 +101,8 @@ function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: strin
       postJson<Plan[]>(byUser(`${plansPath(sheet)}/${p.id}/amount`, user), { amount: value }),
     onSuccess: (updated) => {
       queryClient.setQueryData(plansKey(sheet), updated);
+      // Its generated drafts took the new amount too.
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       setAmount('');
     },
   });

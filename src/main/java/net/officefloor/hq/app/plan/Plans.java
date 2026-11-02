@@ -108,4 +108,9 @@ public class Plans {
     public void recordMade(long plan, LocalDate day, long claim) {
         jdbc.update("INSERT INTO plan_claim (plan_id, plan_day, claim_id) VALUES (?, ?, ?)", plan, Date.valueOf(day), claim);
     }
+
+    /** The claims the plan generated, by plan date. */
+    public List<Long> claimsMade(long plan) {
+        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? ORDER BY plan_day", Long.class, plan);
+    }
 }
