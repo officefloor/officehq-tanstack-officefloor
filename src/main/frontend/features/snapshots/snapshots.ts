@@ -16,3 +16,11 @@ export function useSnapshotLines(sheet: string) {
     queryFn: () => getJson<SnapshotLine[]>(snapshotLinesPath(sheet)),
   });
 }
+
+export const snapshotComparePath = (sheet: string, from: string, to: string) =>
+  `/api/sheets/${encodeURIComponent(sheet)}/snapshot-compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+
+/** Compares two snapshot dates: per person in list order, `<name> <then> <now>`, trimmed. */
+export function fetchSnapshotCompare(sheet: string, from: string, to: string) {
+  return getJson<string[]>(snapshotComparePath(sheet, from, to));
+}
