@@ -17,6 +17,10 @@ public class BuildPerson {
             throw new InvalidPersonException("The contact is already in use: " + contact);
         }
         Person added = people.add(sheet, request.name(), request.grade(), request.termsDays(), contact);
+        if (request.tagList() != null && !request.tagList().isEmpty()) {
+            people.setTags(added.id(), request.tagList());
+            added = people.find(sheet, added.id());
+        }
         person.set(added);
         audit.record("PERSON_ADDED sheet=" + sheet + " by=" + user + " name=" + added.name() + " grade="
                 + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms())

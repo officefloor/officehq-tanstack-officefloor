@@ -40,6 +40,8 @@ export type Person = {
   origin: string | null;
   /** Their past retirements, each ended by unretiring them, in the order they were unretired. */
   retirements: Retirement[];
+  /** Their tags: each trimmed and lower-cased, repeats dropped, sorted; a claim of theirs counts in each tag's due-total. */
+  tags: string[];
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */

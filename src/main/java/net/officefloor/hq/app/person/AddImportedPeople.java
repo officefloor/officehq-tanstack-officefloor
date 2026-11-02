@@ -30,7 +30,7 @@ public class AddImportedPeople {
                                 request.termsDays() != null ? request.terms()
                                         : current.terms() == null ? "" : current.terms().toString(),
                                 request.contactOrNull() != null ? request.contact()
-                                        : current.contact() == null ? "" : current.contact()),
+                                        : current.contact() == null ? "" : current.contact(), null),
                         people, clock, audit, rollup);
                 updated++;
                 continue;

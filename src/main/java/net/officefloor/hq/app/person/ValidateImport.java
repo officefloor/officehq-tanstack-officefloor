@@ -39,7 +39,7 @@ public class ValidateImport {
             PersonRequest checked;
             try {
                 checked = ValidatePerson.check(new PersonRequest(fields[0], fields[1], null, null,
-                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : ""));
+                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + at + ": " + e.getMessage());
             }

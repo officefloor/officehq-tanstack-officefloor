@@ -20,11 +20,12 @@ import net.officefloor.hq.app.setting.Settings;
  * have none. clashing is whether their name or one of their aliases is already a name or alias on another sheet of
  * the sheet's tree (its ancestors and descendants): every edit of them is refused until it renames them out of it.
  * Their origin is the sheet they were transferred from, null for anyone not transferred. Their retirements are the
- * past ones (each ended by unretiring them), in the order they were unretired.
+ * past ones (each ended by unretiring them), in the order they were unretired. Their tags are lower-cased, repeats
+ * dropped, sorted: a claim of theirs counts in the due-total of each.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
         List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing, String origin,
-        List<Retirement> retirements) {
+        List<Retirement> retirements, List<String> tags) {
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
@@ -43,7 +44,7 @@ public record Person(long id, String name, String grade, long version, String re
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
     public Person on(LocalDate today) {
         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
-                retiredOn(retiredFrom, today), contact, clashing, origin, retirements);
+                retiredOn(retiredFrom, today), contact, clashing, origin, retirements, tags);
     }
 
     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */

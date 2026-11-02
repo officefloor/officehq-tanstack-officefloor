@@ -400,13 +400,14 @@ export function useSheetTotals(sheet: string): {
   };
 }
 
-/** Every tag ever carried by a claim on the sheet, sorted. */
-export function sheetTags(claims: Claim[]): string[] {
-  return [...new Set(claims.flatMap((c) => [...c.tagsEver, ...c.tags]))].sort();
+/** Every tag ever carried by a claim on the sheet, or carried by a person on it, sorted. */
+export function sheetTags(claims: Claim[], people: Person[] = []): string[] {
+  return [...new Set([...claims.flatMap((c) => [...c.tagsEver, ...c.tags]), ...people.flatMap((p) => p.tags)])].sort();
 }
 
 /** The due-total of each tag ever used on the sheet (in hundredths): the dues of the claims that count (see
- *  {@link counted}) which carry it, a claim with two tags counting in both; a claim with no due adds nothing. */
+ *  {@link counted}) which carry it or whose person carries it, once each; a claim with two tags counting in both;
+ *  a claim with no due adds nothing. */
 export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[] {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
@@ -414,12 +415,14 @@ export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[]
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
   const byId = new Map(people.map((p) => [p.id, p]));
-  const totals = new Map(sheetTags(all).map((t) => [t, 0n]));
+  const totals = new Map(sheetTags(all, people).map((t) => [t, 0n]));
   for (const c of counted(all, people)) {
     const person = byId.get(c.person);
-    if (person === undefined || c.tags.length === 0) continue;
+    if (person === undefined) continue;
+    const tags = new Set([...c.tags, ...person.tags]);
+    if (tags.size === 0) continue;
     const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
-    for (const t of c.tags) totals.set(t, (totals.get(t) ?? 0n) + due);
+    for (const t of tags) totals.set(t, (totals.get(t) ?? 0n) + due);
   }
   return [...totals].map(([tag, cents]) => ({ tag, cents }));
 }

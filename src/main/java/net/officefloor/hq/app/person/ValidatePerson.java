@@ -40,6 +40,7 @@ public class ValidatePerson {
             terms = Integer.toString(Integer.parseInt(terms));
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(Locale.ROOT);
-        return new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms, contact);
+        return new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms, contact,
+                request.tags());
     }
 }

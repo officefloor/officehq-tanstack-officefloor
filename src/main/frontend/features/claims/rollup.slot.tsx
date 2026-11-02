@@ -3,7 +3,7 @@ import { twoDecimals } from '../rates/rates';
 import { useMonthDueTotals, useSheetTotals, useTagDueTotals } from './claims';
 
 // The sheet's claimed-total, due-total, overdue count and total, and settled-total and open-total (see useSheetTotals),
-// the due-total of each tag ever used on the sheet (see useTagDueTotals), and the due-total of each month any claim
+// the due-total of each tag ever used on the sheet or carried by a person on it (see useTagDueTotals), and the due-total of each month any claim
 // is dated in (see useMonthDueTotals).
 function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
   const { claimed, due, overdue, settled, open } = useSheetTotals(sheet);

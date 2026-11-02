@@ -188,12 +188,12 @@ public class PersonTransferrer {
         rollup.record(to, user, beforeThere);
     }
 
-    /** Adds the person to the other sheet as its newest, with their grades, terms, contact and aliases; returns their id. */
+    /** Adds the person to the other sheet as its newest, with their grades, terms, contact, tags and aliases; returns their id. */
     private long arrive(String sheet, long f, String to, List<String> theirAliases) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position, origin) SELECT ?,"
-                    + " name, terms, contact, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
+            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, tags, list_position, origin) SELECT ?,"
+                    + " name, terms, contact, tags, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, to);

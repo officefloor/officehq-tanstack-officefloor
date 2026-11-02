@@ -56,7 +56,7 @@ public class BulkGradePeople {
             SavePerson.apply(sheet, user, current,
                     new PersonRequest(current.name(), grade, null, from.isEmpty() ? null : from,
                             current.terms() == null ? "" : current.terms().toString(),
-                            current.contact() == null ? "" : current.contact()),
+                            current.contact() == null ? "" : current.contact(), null),
                     people, clock, audit, rollup);
         }
         response.send(new BulkGradeResponse(chosen.size(), people.list(sheet)));
