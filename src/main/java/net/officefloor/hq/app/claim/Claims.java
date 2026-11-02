@@ -52,11 +52,12 @@ public class Claims {
     }
 
     // A claim rounds on its own date; a correction on the date of the claim it corrects (its own when none has it).
-    // It is deferred while OPEN (or VOID, voided while deferred) with its deferred-until after the sheet's today (the real date until one is set).
+    // It is deferred while OPEN (or VOID, voided while deferred; or SETTLED, settled while a statement bound it deferred) with its
+    // deferred-until after the sheet's today (the real date until one is set), unless a statement binds it: the deferral waits for the binding to end.
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, claim.added, claim.waived, claim.proof_photos, claim.held, claim.review_assigned, (claim.status IN ('OPEN', 'VOID') AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, claim.added, claim.waived, claim.proof_photos, claim.held, claim.review_assigned, (claim.status IN ('OPEN', 'VOID', 'SETTLED') AND NOT claim.stated AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -300,11 +301,11 @@ public class Claims {
 
     /**
      * Leaves an OPEN claim the rest of its amount once split, unbound from any statement; conditional on the
-     * amount read and on it still being OPEN and not deferred: false when it no longer is.
+     * amount read and on it still being OPEN and not deferred (a bound one is not): false when it no longer is.
      */
     public boolean split(String sheet, long id, BigDecimal was, BigDecimal rest) {
         return jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE sheet = ? AND id = ?"
-                + " AND status = 'OPEN' AND amount = ? AND (deferred_until IS NULL OR deferred_until <="
+                + " AND status = 'OPEN' AND amount = ? AND (stated OR deferred_until IS NULL OR deferred_until <="
                 + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE))",
                 rest, sheet, id, was) == 1;
     }

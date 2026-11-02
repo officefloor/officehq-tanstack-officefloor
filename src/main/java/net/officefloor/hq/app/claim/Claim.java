@@ -17,7 +17,8 @@ import net.officefloor.hq.app.setting.Dated;
  * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise),
  * and its due-by (yyyy-MM-dd), fixed when it was added from the terms in force on the sheet's today then (its person's own, their grade's, the sheet's),
  * and its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
- * deferred now: OPEN (or VOID, voided while deferred) with that date after the sheet's today, and its proofs count, and the number (as it shows) of
+ * deferred now: OPEN (or VOID, voided while deferred; or SETTLED, settled while bound) with that date after the sheet's today and
+ * not bound by a statement (the deferral takes effect once the binding ends), and its proofs count, and the number (as it shows) of
  * the claim it was split off (null unless it was), and the user whose open editor locks it (null when none does),
  * and whether it was added while its period was soft-closed (a late entry), and the sheet's today it was last
  * reminded on (null when never), and its external reference (null for none), and its tags (lower-cased, sorted),
@@ -82,9 +83,9 @@ public record Claim(long id, long person, String amount, String date, String not
         return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares, reviewAssigned);
     }
 
-    /** This claim as it stands with the date for the sheet's today: deferred while OPEN (or VOID) with its deferred-until after it. */
+    /** This claim as it stands with the date for the sheet's today: deferred while OPEN (or VOID, or SETTLED) and unbound with its deferred-until after it. */
     public Claim on(LocalDate today) {
-        boolean deferredThen = (status == ClaimStatus.OPEN || status == ClaimStatus.VOID) && deferredUntil != null && LocalDate.parse(deferredUntil).isAfter(today);
+        boolean deferredThen = (status == ClaimStatus.OPEN || status == ClaimStatus.VOID || status == ClaimStatus.SETTLED) && !stated && deferredUntil != null && LocalDate.parse(deferredUntil).isAfter(today);
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferredThen, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares, reviewAssigned);
     }
 

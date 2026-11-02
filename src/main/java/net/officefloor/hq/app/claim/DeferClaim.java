@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Defers an OPEN claim dated outside a closed period until a date after the sheet's today: until the sheet's today
- * reaches it the claim counts in no total, is not overdue, cannot be settled and is left unbound by a statement.
+ * reaches it the claim counts in no total, is not overdue, cannot be settled and is left unbound by a statement. A claim a
+ * statement binds stays in the totals and counts, and can be settled, while bound: the deferral takes effect only once
+ * the binding ends (the statement is cancelled, or the next one leaves it unbound).
  */
 public class DeferClaim {
     public void defer(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val LocalDate until,
