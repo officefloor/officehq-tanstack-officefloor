@@ -1,0 +1,412 @@
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 948d480cd..ae73d9424 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -52,8 +52,8 @@ export function peopleKey(sheetId: string) {
+   return ['sheet', sheetId, 'people'];
+ }
+ 
+-/** The sheet's people and the patrons they have named, as the store holds them. */
+-type PeopleBody = { people: Person[]; patrons: Patron[] };
++/** The sheet's people, the patrons they have named and the people the signed-in user watches, as the store holds them. */
++type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[] };
+ 
+ function peopleBody(sheetId: string): Promise<PeopleBody> {
+   return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
+@@ -76,6 +76,18 @@ export function usePatrons(sheetId: string) {
+   });
+ }
+ 
++export function watchedKey(sheetId: string) {
++  return [...peopleKey(sheetId), 'watched'];
++}
++
++/** The ids of the people the signed-in user watches, re-read from the store. */
++export function useWatched(sheetId: string) {
++  return useQuery({
++    queryKey: watchedKey(sheetId),
++    queryFn: async () => (await peopleBody(sheetId)).watched ?? [],
++  });
++}
++
+ /** These people's holds, by person id. */
+ export function holdsById(people: Person[] | undefined): Map<number, Hold[]> {
+   return new Map((people ?? []).map((p) => [p.id, p.holds ?? []]));
+diff --git a/src/main/frontend/features/watch/watch.slot.tsx b/src/main/frontend/features/watch/watch.slot.tsx
+new file mode 100644
+index 000000000..376aba1aa
+--- /dev/null
++++ b/src/main/frontend/features/watch/watch.slot.tsx
+@@ -0,0 +1,46 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
++import { peopleKey, useWatched, type Person } from '../people/usePeople';
++import { usePersonRowAction } from '../people/usePersonRowAction';
++
++/** Whether the signed-in user watches the person (yes/no), and a button that toggles it. A watcher is told
++ *  (server side) when one of the person's claims is settled, approved or re-settled. */
++function PersonWatch({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const watchedIds = useWatched(sheetId);
++  const queryClient = useQueryClient();
++  const watched = (watchedIds.data ?? []).includes(personId);
++
++  const watch = useMutation({
++    mutationFn: (body: { watch: boolean }) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/watch`, body),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++    },
++  });
++  const announce = usePersonRowAction(sheetId, personId, watch.reset);
++
++  return (
++    <td>
++      <span data-testid="person-watched">{watched ? 'yes' : 'no'}</span>{' '}
++      <button
++        type="button"
++        data-testid="person-watch"
++        disabled={watch.isPending || !watchedIds.isSuccess}
++        onClick={() => {
++          announce();
++          watch.reset();
++          watch.mutate({ watch: !watched });
++        }}
++      >
++        {watched ? 'Unwatch' : 'Watch'}
++      </button>
++      {watch.isError && <span data-testid="person-error">{watch.error.message}</span>}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHead.fill({ order: 55, Component: () => <th>Watched</th> }),
++  PersonCells.fill({ order: 55, Component: PersonWatch }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index 388002d54..4032303c2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -9,6 +9,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.WatchRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ import net.officefloor.plugin.variable.Out;
+@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class BulkOpenClaims {
+     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
+             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
+-            SettingsRepository settings, Audit audit, Rollup rollup, Out<BulkOpenResult> result) throws BadRequestException {
++            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches, Out<BulkOpenResult> result) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         Set<Long> selected = new LinkedHashSet<>();
+@@ -45,7 +46,7 @@ public class BulkOpenClaims {
+         int opened = 0;
+         for (Claim c : found) {
+             try {
+-                ClaimStatusChange.apply(id, c.id(), "open", by, repository, periods, settings, audit, rollup);
++                ClaimStatusChange.apply(id, c.id(), "open", by, repository, periods, settings, audit, rollup, watches);
+                 opened++;
+             } catch (BadRequestException e) {
+                 refused++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index f576a43d1..0a7d43d83 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -9,6 +9,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.WatchRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ import net.officefloor.plugin.variable.Out;
+@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class BulkSettleClaims {
+     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
+             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
+-            SettingsRepository settings, Audit audit, Rollup rollup, Out<BulkSettleResult> result) throws BadRequestException {
++            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches, Out<BulkSettleResult> result) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         Set<Long> selected = new LinkedHashSet<>();
+@@ -45,7 +46,7 @@ public class BulkSettleClaims {
+         int settled = 0;
+         for (Claim c : found) {
+             try {
+-                ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup);
++                ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
+                 settled++;
+             } catch (BadRequestException e) {
+                 refused++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+index b23949e27..e61be0306 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.WatchRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ChangeClaimStatus {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
+-            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
++            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, WatchRepository watches, Out<Claim> claim) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long cid;
+@@ -41,6 +42,6 @@ public class ChangeClaimStatus {
+             return;
+         }
+         claim.set(ClaimStatusChange.apply(id, cid, action,
+-                request == null ? null : request.reason(), by, repository, periods, settings, audit, rollup));
++                request == null ? null : request.reason(), by, repository, periods, settings, audit, rollup, watches));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 44a7713ed..ca89765d0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -6,6 +6,7 @@ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.period.PeriodGuard;
++import net.officefloor.hq.app.person.WatchRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+@@ -17,14 +18,14 @@ final class ClaimStatusChange {
+     }
+ 
+     static Claim apply(String id, long cid, String action, String by, ClaimRepository repository,
+-            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+-        return apply(id, cid, action, null, by, repository, periods, settings, audit, rollup);
++            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
++        return apply(id, cid, action, null, by, repository, periods, settings, audit, rollup, watches);
+     }
+ 
+     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
+-            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
++            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+         if ("resettle".equals(action == null ? "" : action.trim())) {
+-            return resettle(id, cid, by, repository, periods, settings, audit, rollup);
++            return resettle(id, cid, by, repository, periods, settings, audit, rollup, watches);
+         }
+         String to;
+         List<String> from;
+@@ -121,6 +122,10 @@ final class ClaimStatusChange {
+                 found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom());
+         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
++        // A settled (or approved) claim's watchers are told, after the claim's own line and before the rollup.
++        if (event.equals("CLAIM_SETTLED") || event.equals("CLAIM_APPROVED")) {
++            watches.notify(id, found.personId(), repository.personName(id, found.personId()), number, by, audit);
++        }
+         rollup.record(id, by, before);
+         return changed;
+     }
+@@ -128,7 +133,7 @@ final class ClaimStatusChange {
+     /** A steward re-settles a SETTLED claim (not in a closed period): its due is frozen again at the figure it would
+      *  have today as an open claim bound by no statement (today's rates, grades, floor and late charge). */
+     private static Claim resettle(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
+-            SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
++            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+         Claim found = repository.find(id, cid);
+         if (found == null) {
+             throw new BadRequestException("no such claim");
+@@ -154,6 +159,7 @@ final class ClaimStatusChange {
+         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
+                 + " old=" + old + " new=" + (due == null ? "n/a" : due));
++        watches.notify(id, found.personId(), repository.personName(id, found.personId()), found.number(), by, audit);
+         rollup.record(id, by, before);
+         return changed;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+index 3e584d5b6..8313bcfb1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+@@ -8,9 +8,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadPeople {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            PersonRepository repository, PatronRepository patrons, Out<People> people) throws BadRequestException {
+-        CurrentUser.require(connection);
++            PersonRepository repository, PatronRepository patrons, WatchRepository watches, Out<People> people) throws BadRequestException {
++        String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        people.set(new People(repository.list(id), patrons.list(id)));
++        people.set(new People(repository.list(id), patrons.list(id), watches.watched(id, by)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 0a1c32a2e..c562d9e47 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
+ 
+-/** A sheet's people, in the order they were added, and every patron any of them has named. */
+-public record People(List<Person> people, List<Patron> patrons) {
++/** A sheet's people, in the order they were added, and every patron any of them has named, and the ids of
++ *  the people the signed-in user watches. */
++public record People(List<Person> people, List<Patron> patrons, List<Long> watched) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchPerson.java b/src/main/java/net/officefloor/hq/app/person/WatchPerson.java
+new file mode 100644
+index 000000000..a7dd9b528
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchPerson.java
+@@ -0,0 +1,43 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Start or stop watching a person as the signed-in user (per user; it changes nothing on the sheet itself).
++ *  Asking for the state already held writes nothing. */
++public class WatchPerson {
++    public void watch(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
++            @RequestBody WatchRequest request, ServerHttpConnection connection, PersonRepository repository,
++            WatchRepository watches, Audit audit, Out<Person> person) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        long pid;
++        try {
++            pid = Long.parseLong(personId == null ? "" : personId.trim());
++        } catch (NumberFormatException e) {
++            throw new BadRequestException("no such person");
++        }
++        Person found = repository.find(id, pid);
++        if (found == null) {
++            throw new BadRequestException("no such person");
++        }
++        if (request == null || request.watch() == null) {
++            throw new BadRequestException("say whether to watch the person");
++        }
++        boolean on = request.watch();
++        if (on != watches.watches(id, pid, by)) {
++            if (on) {
++                watches.watch(id, pid, by);
++            } else {
++                watches.unwatch(id, pid, by);
++            }
++            audit.record((on ? "PERSON_WATCHED" : "PERSON_UNWATCHED") + " sheet=" + id + " by=" + by + " name=" + found.name());
++        }
++        person.set(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchRepository.java b/src/main/java/net/officefloor/hq/app/person/WatchRepository.java
+new file mode 100644
+index 000000000..aca6f963a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchRepository.java
+@@ -0,0 +1,52 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Who watches which person, per sheet; a user who stops and starts again goes to the back of the order. */
++@Repository
++public class WatchRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public WatchRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The ids of the people the user watches on the sheet. */
++    public List<Long> watched(String sheetId, String user) {
++        return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ? ORDER BY person_id",
++                Long.class, sheetId, user);
++    }
++
++    public boolean watches(String sheetId, long personId, String user) {
++        Integer known = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?",
++                Integer.class, sheetId, personId, user);
++        return known != null && known > 0;
++    }
++
++    public void watch(String sheetId, long personId, String user) {
++        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, personId, user);
++    }
++
++    public void unwatch(String sheetId, long personId, String user) {
++        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?", sheetId, personId, user);
++    }
++
++    /** The users watching the person, in the order they started watching. */
++    public List<String> watchers(String sheetId, long personId) {
++        return jdbc.queryForList("SELECT user_name FROM person_watch WHERE sheet_id = ? AND person_id = ? ORDER BY id",
++                String.class, sheetId, personId);
++    }
++
++    /** Tell each of the person's watchers that their claim numbered so was settled, approved or re-settled. */
++    public void notify(String sheetId, long personId, String personName, String number, String by, Audit audit) {
++        for (String user : watchers(sheetId, personId)) {
++            audit.record("NOTIFY sheet=" + sheetId + " by=" + by + " user=" + user + " person=" + personName
++                    + " number=" + (number == null ? "n/a" : number));
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/WatchRequest.java b/src/main/java/net/officefloor/hq/app/person/WatchRequest.java
+new file mode 100644
+index 000000000..75e7df783
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/WatchRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The watch toggle: whether the signed-in user is to watch the person (true) or stop watching (false). */
++public record WatchRequest(Boolean watch) {
++}
+diff --git a/src/main/resources/db/migration/V41__person_watch.sql b/src/main/resources/db/migration/V41__person_watch.sql
+new file mode 100644
+index 000000000..a19113e02
+--- /dev/null
++++ b/src/main/resources/db/migration/V41__person_watch.sql
+@@ -0,0 +1,10 @@
++-- The people a user watches, per sheet. A watcher is told (a NOTIFY audit line) when one of the person's
++-- claims is settled, approved or re-settled; watchers are told in the order they started watching (by id).
++CREATE TABLE person_watch (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    user_name VARCHAR(200) NOT NULL,
++    UNIQUE (person_id, user_name)
++);
++CREATE INDEX person_watch_sheet ON person_watch (sheet_id, user_name);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+new file mode 100644
+index 000000000..3deed15ff
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+@@ -0,0 +1,7 @@
++# Start or stop watching a person as the signed-in user.
++watch:
++  class: net.officefloor.hq.app.person.WatchPerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
