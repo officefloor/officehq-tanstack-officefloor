@@ -16,7 +16,8 @@ import java.util.Map;
  * days), or "" for none. And the proof kinds (comma separated), or "" for none. And the default grade, or "" for A. And each grade's own clerk
  * limit with two decimals, or "" for none (the grade takes the sheet's). And the score thresholds of the MID and HIGH
  * bands (whole numbers), each "" for none. And the score log switch, "on" or "" for off. And the
- * maximum of open claims per person (a whole number), or "" for none.
+ * maximum of open claims per person (a whole number), or "" for none. And the pending SLA (a whole number of days), or
+ * "" for none.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
@@ -24,5 +25,5 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog, String maxOpen) {
+        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla) {
 }

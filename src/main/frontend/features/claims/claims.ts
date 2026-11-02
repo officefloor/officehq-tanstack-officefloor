@@ -38,6 +38,22 @@ export function reviewLate(claim: Claim, sla: number | null, today: string | und
   return day !== undefined && plusDays(day, sla) < today;
 }
 
+/** A PENDING claim's pending day: the sheet's today when it last went to PENDING, as its status log records it
+ *  (undefined when the log has none). */
+export function pendingDay(claim: Claim): string | undefined {
+  let on: string | undefined;
+  for (const line of claim.log) if (line.status === 'PENDING') on = line.on;
+  return on;
+}
+
+/** Whether a claim is pending late: PENDING, with its pending day plus the pending SLA (null: none) before the
+ *  sheet's today (not yet known: no). */
+export function pendingLate(claim: Claim, sla: number | null, today: string | undefined): boolean {
+  if (claim.status !== 'PENDING' || sla === null || today === undefined) return false;
+  const day = pendingDay(claim);
+  return day !== undefined && plusDays(day, sla) < today;
+}
+
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
 export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review';
 

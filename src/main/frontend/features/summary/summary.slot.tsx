@@ -3,8 +3,8 @@ import { isRetired, usePeople } from '../people/people';
 import { useGradeCodes } from '../grades/grades';
 import { useSheetToday } from '../sheet/sheet';
 import { hundredths, twoDecimals, useRates } from '../rates/rates';
-import { useFloorCents, useReviewSla } from '../settings/settings';
-import { CLAIM_STATUSES, isActive, personDueCents, reviewLate, statusCount, useClaims, useLate } from '../claims/claims';
+import { useFloorCents, usePendingSla, useReviewSla } from '../settings/settings';
+import { CLAIM_STATUSES, isActive, pendingLate, personDueCents, reviewLate, statusCount, useClaims, useLate } from '../claims/claims';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { classicPeriodDueCents, periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
 import { Fig } from '../locale/Fig';
@@ -27,6 +27,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
   const capOf = useCapCentsOf(sheet);
   const late = useLate(sheet);
   const reviewSla = useReviewSla(sheet);
+  const pendingSla = usePendingSla(sheet);
   const { data: voidReasons = [] } = useVoidReasons(sheet);
 
   const current = people.filter((p) => !isRetired(p));
@@ -106,6 +107,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
       </table>
       <p>
         Late for review: <strong data-testid="summary-review-late-count">{claims.filter((c) => reviewLate(c, reviewSla, today)).length}</strong>
+        {' '}Pending late: <strong data-testid="summary-pending-late-count">{claims.filter((c) => pendingLate(c, pendingSla, today)).length}</strong>
       </p>
       <h3>Classic summary</h3>
       <table>

@@ -12,7 +12,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { claimRateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
+import { useFloorCents, usePendingSla, useReviewSla, useScoreBand } from '../settings/settings';
 import {
   claimDueCents,
   claimed,
@@ -21,6 +21,7 @@ import {
   claimedCounted,
   counted,
   overdue,
+  pendingLate,
   reviewLate,
   overdueCents,
   agedCents,
@@ -91,6 +92,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
   const reviewSla = useReviewSla(sheet);
+  const pendingSla = usePendingSla(sheet);
   // While the sheet has void reasons, a void needs one, chosen beside the Void button.
   const { data: voidReasons = [] } = useVoidReasons(sheet);
   const [voidReason, setVoidReason] = useState('');
@@ -323,6 +325,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       overdue <span data-testid="claim-overdue">{overdue(claim, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       review late <span data-testid="claim-review-late">{reviewLate(claim, reviewSla, today) ? 'yes' : 'no'}</span>{' '}
+      pending late <span data-testid="claim-pending-late">{pendingLate(claim, pendingSla, today) ? 'yes' : 'no'}</span>{' '}
       stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       period <span data-testid="claim-period">{periodOf(periods, claim.dueBy)?.name ?? ''}</span>{' '}
       {(claim.periodNumber ?? claim.number) !== null && '#'}
