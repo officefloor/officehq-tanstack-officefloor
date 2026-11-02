@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 public class Audit {
 
     /** The lines that only report figures (or tell of a change already recorded): never marked for a delegator. */
-    private static final Set<String> REPORTS = Set.of("ROLLUP", "TOTALS", "ALERT", "NOTIFY");
+    private static final Set<String> REPORTS = Set.of("ROLLUP", "TOTALS", "SNAPSHOT", "ALERT", "NOTIFY");
 
     private final Path file;
 

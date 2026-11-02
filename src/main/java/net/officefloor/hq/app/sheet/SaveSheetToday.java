@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Set the sheet's today (a new date releases every claim's editor lock), then close each open period lapsed past the sheet's grace days. */
+/** Set the sheet's today (a new date first records each person's due-total as it stood on the day left, and releases every claim's editor lock), then close each open period lapsed past the sheet's grace days. */
 public class SaveSheetToday {
     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today,
             ServerHttpConnection connection, SheetRepository repository, Rollup rollup, PeriodCloser closer, ClaimRepository claims,
@@ -25,6 +25,7 @@ public class SaveSheetToday {
             throw new BadRequestException("no such sheet");
         }
         if (!today.equals(was)) {
+            rollup.snapshot(id, by, before);
             claims.unlockAll(id);
         }
         closer.closeLapsed(id, by, today);

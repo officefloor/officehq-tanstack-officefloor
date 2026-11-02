@@ -85,10 +85,9 @@ public class TakeStatement {
                 total = total.add(now);
                 fixed = true;
             }
-            // With no figure because the rate that would apply has ended (or it is bound to n/a already),
-            // it is bound to n/a: it stays n/a even once a later rate is in force on its date.
-            boolean na = figure == null && ((c.bound() && c.statedNa())
-                    || (then == null ? claims.rateEnded(id, c) : then.rateEnded(c)));
+            // With no figure (no rate applies, or it is bound to n/a already) it is bound to n/a: it stays
+            // n/a even once a rate is in force on its date (a later rate, or a new grade for its person then).
+            boolean na = figure == null;
             claims.bind(id, c.id(), true, figure, na);
         }
         boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);

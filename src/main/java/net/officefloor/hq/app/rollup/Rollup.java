@@ -103,6 +103,13 @@ public class Rollup {
         return total;
     }
 
+    /** Record one SNAPSHOT line per person (in the order they were added) with their due-total as {@code before} had it. */
+    public void snapshot(String sheetId, String by, Snapshot before) {
+        for (Figures f : before.people().values()) {
+            audit.record("SNAPSHOT sheet=" + sheetId + " by=" + by + " name=" + f.name() + " due-total=" + f.dueTotal());
+        }
+    }
+
     /** Record the lines for whatever figures moved since {@code before}. */
     public void record(String sheetId, String by, Snapshot before) {
         Snapshot after = take(sheetId);
