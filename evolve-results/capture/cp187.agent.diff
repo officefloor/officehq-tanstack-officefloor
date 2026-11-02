@@ -1,0 +1,293 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index efa1e589..bb77c219 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -63,6 +63,12 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
+             {m.from || m.to ? ` (${m.from || '…'} to ${m.to || '…'})` : ''}
+             {m.current ? '' : ' (not current)'}, cut{' '}
+             <span data-testid="pool-cut"><Fig>{m.cut}</Fig></span>
++            {Object.entries(m.cuts).map(([period, cut]) => (
++              <span key={period}>
++                , {period}{' '}
++                <span data-testid={`pool-cut-${period}`}><Fig>{cut}</Fig></span>
++              </span>
++            ))}
+           </li>
+         ))}
+       </ul>
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index dada0e5b..1111cf2b 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -5,7 +5,9 @@ import { getJson } from '../../api/http';
+  *  a retirement date set, or another pool (memberPool its name, person 0); the membership's from-date and to-date (''
+  *  when none) and whether they include the sheet's today (a member outside them is left out entirely); and their cut
+  *  of the pool's pot (two decimals), '' when the pool is not balanced, has no pot or has only retired members, or the member is
+- *  outside their dates. A pool in none has the sheet's pot; a pool in another has its cut there. */
++ *  outside their dates. A pool in none has the sheet's pot; a pool in another has its cut there. And, by the name of
++ *  every period whose to-date is on or before the sheet's today, their cut as it stood at the end of that period (the
++ *  pool, its members, the pot and the holds as they were then, with that day as the sheet's today), '' when none. */
+ export type PoolMember = {
+   person: number;
+   memberPool: string | null;
+@@ -16,6 +18,7 @@ export type PoolMember = {
+   to: string;
+   current: boolean;
+   cut: string;
++  cuts: Record<string, string>;
+ };
+ 
+ /** A pool: its members, the total of their shares (a retired member's counting as given, one outside their dates left out), and whether that is 100.00. */
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+index 1cc98686..907834db 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+@@ -1,12 +1,26 @@
+ package net.officefloor.hq.app.pool;
+ 
++import java.util.Map;
++
+ /**
+  * A member of a pool with their share percent (two decimals): a person (memberPool null), retired when the person has
+  * a retirement date set, or another pool (memberPool its name, person 0, never retired); the membership's from-date and
+  * to-date ("" when none) and whether they include the sheet's today (a member outside them is left out entirely); and
+  * their cut of the pool's pot (two decimals), or "" when the pool is not balanced or has no pot, or the member is
+- * outside their dates.
++ * outside their dates; and, by the name of every period whose to-date is on or before the sheet's today, their cut as
++ * it stood at the end of that period (the pool, its members, the pot and the holds as they were then, with that day as
++ * the sheet's today), "" when there was none.
+  */
+ public record PoolMember(long person, String memberPool, String name, String share, boolean retired, String from,
+-        String to, boolean current, String cut) {
++        String to, boolean current, String cut, Map<String, String> cuts) {
++
++    public PoolMember(long person, String memberPool, String name, String share, boolean retired, String from,
++            String to, boolean current, String cut) {
++        this(person, memberPool, name, share, retired, from, to, current, cut, Map.of());
++    }
++
++    /** Who the member is within its pool: the person's id, or pool:<name>. */
++    public String key() {
++        return memberPool != null ? "pool:" + memberPool : String.valueOf(person);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 7d46558f..034ce52b 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -14,6 +14,8 @@ import java.sql.Date;
+ import java.sql.ResultSet;
+ import java.sql.SQLException;
+ import java.time.LocalDate;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.SheetClock;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -31,10 +33,13 @@ public class Pools {
+ 
+     private final SheetClock clock;
+ 
+-    public Pools(JdbcTemplate jdbc, Settings settings, SheetClock clock) {
++    private final Periods periods;
++
++    public Pools(JdbcTemplate jdbc, Settings settings, SheetClock clock, Periods periods) {
+         this.jdbc = jdbc;
+         this.settings = settings;
+         this.clock = clock;
++        this.periods = periods;
+     }
+ 
+     /**
+@@ -44,30 +49,68 @@ public class Pools {
+      * the sheet's today gets no cut, their share spread over the other members with a cut, and so does a retired
+      * person, whose share still counts in the total share. A member whose membership dates do not include the sheet's
+      * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
+-     * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}).
++     * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}). Each member
++     * also has, for every period whose to-date is on or before the sheet's today, their cut as it stood at the end of
++     * that period (see {@link #asAt}).
+      */
+     public List<Pool> list(String sheet) {
+         LocalDate now = clock.today(sheet);
++        List<Pool> pools = list(sheet, now, settings.pot(sheet), null);
++        Map<String, Map<String, String>> cuts = new HashMap<>();
++        for (Period period : periods.list(sheet)) {
++            LocalDate end = LocalDate.parse(period.to());
++            if (end.isAfter(now)) {
++                continue;
++            }
++            for (Pool pool : asAt(sheet, end)) {
++                for (PoolMember m : pool.members()) {
++                    cuts.computeIfAbsent(pool.name() + "\n" + m.key(), (k) -> new LinkedHashMap<>())
++                            .put(period.name(), m.cut());
++                }
++            }
++        }
++        return pools.stream().map((pool) -> new Pool(pool.name(), pool.members().stream()
++                .map((m) -> new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), m.from(),
++                        m.to(), m.current(), m.cut(), cuts.getOrDefault(pool.name() + "\n" + m.key(), Map.of())))
++                .toList(), pool.totalShare(), pool.balanced())).toList();
++    }
++
++    /**
++     * The pools as they stood at the end of the day, with it as the sheet's today: only the pools and members added
++     * (on a sheet's today) on or before it, a person retired when their retirement date is on or before it, the holds
++     * in force on it and the pot as it stood then.
++     */
++    private List<Pool> asAt(String sheet, LocalDate day) {
++        return list(sheet, day, settings.potOn(sheet, day), day);
++    }
++
++    /** The pools as of the day with the pot; when asAt is given, only what was added by then (see {@link #asAt}). */
++    private List<Pool> list(String sheet, LocalDate now, BigDecimal pot, LocalDate asAt) {
++        Date at = asAt == null ? null : Date.valueOf(asAt);
++        String added = asAt == null ? "" : " AND (added_on IS NULL OR added_on <= ?)";
++        Object[] args = asAt == null ? new Object[] { sheet } : new Object[] { sheet, at };
+         Map<String, List<Ordered>> members = new LinkedHashMap<>();
+-        jdbc.query("SELECT name FROM pool WHERE sheet = ? ORDER BY position",
++        jdbc.query("SELECT name FROM pool WHERE sheet = ?" + added + " ORDER BY position",
+                 (rs) -> {
+                     members.put(rs.getString("name"), new ArrayList<>());
+-                }, sheet);
++                }, args);
+         jdbc.query("SELECT m.pool, m.person_id, p.name, m.share, p.retired_from, m.position, m.from_date, m.to_date"
+                 + " FROM pool_member m"
+-                + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ?",
++                + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ?"
++                + added.replace("added_on", "m.added_on"),
+                 (rs) -> {
+                     List<Ordered> list = members.get(rs.getString("pool"));
+                     if (list != null) {
++                        Date retired = rs.getDate("retired_from");
+                         list.add(new Ordered(rs.getInt("position"), new PoolMember(rs.getLong("person_id"), null,
+                                 rs.getString("name"), rs.getBigDecimal("share").setScale(2).toPlainString(),
+-                                rs.getDate("retired_from") != null, dateOf(rs, "from_date"), dateOf(rs, "to_date"),
+-                                current(rs, now), "")));
++                                retired != null && (at == null || !retired.after(at)), dateOf(rs, "from_date"),
++                                dateOf(rs, "to_date"), current(rs, now), "")));
+                     }
+-                }, sheet);
++                }, args);
+         crewPools(sheet, members);
+         Map<String, String> parents = new HashMap<>();
+-        jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?",
++        jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?" + added,
+                 (rs) -> {
+                     List<Ordered> list = members.get(rs.getString("pool"));
+                     if (list != null) {
+@@ -76,7 +119,7 @@ public class Pools {
+                                 dateOf(rs, "from_date"), dateOf(rs, "to_date"), current(rs, now), "")));
+                         parents.put(rs.getString("member"), rs.getString("pool"));
+                     }
+-                }, sheet);
++                }, args);
+         Map<String, Pool> pools = new LinkedHashMap<>();
+         members.forEach((name, ordered) -> {
+             ordered.sort(Comparator.comparingInt(Ordered::position));
+@@ -95,7 +138,6 @@ public class Pools {
+                 + " JOIN person p ON p.id = h.person_id WHERE p.sheet = ? AND h.from_date <= ?"
+                 + " AND (h.to_date IS NULL OR h.to_date >= ?)", Long.class, sheet, today, today));
+         // Top down: a pool's pot is the sheet's when it is a member of none, else its cut in the pool above.
+-        BigDecimal pot = settings.pot(sheet);
+         Map<String, Pool> cut = new HashMap<>();
+         for (String name : pools.keySet()) {
+             cutDown(name, pools, parents, pot, held, cut);
+@@ -250,7 +292,7 @@ public class Pools {
+         for (int i = 0; i < members.size(); i++) {
+             PoolMember m = members.get(i);
+             out.add(new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), m.from(), m.to(),
+-                    m.current(), m.current() ? cuts.get(i).toPlainString() : ""));
++                    m.current(), m.current() ? cuts.get(i).toPlainString() : "", m.cuts()));
+         }
+         return out;
+     }
+@@ -301,20 +343,21 @@ public class Pools {
+     }
+ 
+     public void add(String sheet, String name) {
+-        jdbc.update("INSERT INTO pool (sheet, name, position) VALUES (?, ?,"
+-                + " (SELECT COALESCE(MAX(p.position), 0) + 1 FROM pool p WHERE p.sheet = ?))", sheet, name, sheet);
++        jdbc.update("INSERT INTO pool (sheet, name, position, added_on) VALUES (?, ?,"
++                + " (SELECT COALESCE(MAX(p.position), 0) + 1 FROM pool p WHERE p.sheet = ?), ?)", sheet, name, sheet,
++                Date.valueOf(clock.today(sheet)));
+     }
+ 
+     public void addMember(String sheet, String pool, long person, BigDecimal share, LocalDate from, LocalDate to) {
+-        jdbc.update("INSERT INTO pool_member (sheet, pool, person_id, share, from_date, to_date, position)"
+-                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ")", sheet, pool, person, share, sqlDate(from),
+-                sqlDate(to), sheet, sheet);
++        jdbc.update("INSERT INTO pool_member (sheet, pool, person_id, share, from_date, to_date, position, added_on)"
++                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ", ?)", sheet, pool, person, share, sqlDate(from),
++                sqlDate(to), sheet, sheet, Date.valueOf(clock.today(sheet)));
+     }
+ 
+     public void addSubPool(String sheet, String pool, String member, BigDecimal share, LocalDate from, LocalDate to) {
+-        jdbc.update("INSERT INTO pool_sub (sheet, pool, member, share, from_date, to_date, position)"
+-                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ")", sheet, pool, member, share, sqlDate(from),
+-                sqlDate(to), sheet, sheet);
++        jdbc.update("INSERT INTO pool_sub (sheet, pool, member, share, from_date, to_date, position, added_on)"
++                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ", ?)", sheet, pool, member, share, sqlDate(from),
++                sqlDate(to), sheet, sheet, Date.valueOf(clock.today(sheet)));
+     }
+ 
+     private static Date sqlDate(LocalDate date) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index f450e2d8..bf958841 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -186,6 +186,10 @@ public class Settings {
+             }
+             return;
+         }
++        if (POT.equals(key)) {
++            jdbc.update("INSERT INTO pot_change (sheet, set_on, pot_value) VALUES (?, ?, ?)", sheet,
++                    Date.valueOf(clock.today(sheet)), value);
++        }
+         Date date = dated(key) && from != null ? Date.valueOf(from) : UNDATED;
+         jdbc.update("MERGE INTO setting (sheet, setting_key, from_date, setting_value) KEY (sheet, setting_key, from_date)"
+                 + " VALUES (?, ?, ?, ?)", sheet, key, date, value);
+@@ -346,6 +350,20 @@ public class Settings {
+         return pot.isEmpty() ? null : new BigDecimal(pot);
+     }
+ 
++    /**
++     * The sheet's pot as it stood at the end of the date: the last value set on a sheet's today on or before it, or
++     * null when there was none (none set yet, or a blank). A sheet with no pot changes kept has its pot now.
++     */
++    public BigDecimal potOn(String sheet, LocalDate date) {
++        Integer kept = jdbc.queryForObject("SELECT COUNT(*) FROM pot_change WHERE sheet = ?", Integer.class, sheet);
++        if (kept == null || kept == 0) {
++            return pot(sheet);
++        }
++        List<String> found = jdbc.queryForList("SELECT pot_value FROM pot_change WHERE sheet = ? AND set_on <= ?"
++                + " ORDER BY set_on DESC, id DESC LIMIT 1", String.class, sheet, Date.valueOf(date));
++        return found.isEmpty() || found.get(0).isEmpty() ? null : new BigDecimal(found.get(0));
++    }
++
+     /** The sheet's alert threshold, or null when it is off. */
+     public BigDecimal alertThreshold(String sheet) {
+         String threshold = get(sheet, ALERT_THRESHOLD);
+diff --git a/src/main/resources/db/migration/V90__pool_history.sql b/src/main/resources/db/migration/V90__pool_history.sql
+new file mode 100644
+index 00000000..fd47ec5d
+--- /dev/null
++++ b/src/main/resources/db/migration/V90__pool_history.sql
+@@ -0,0 +1,17 @@
++-- So a pool member's cut can be shown as it stood at the end of a past period: the day (the sheet's today) each pool,
++-- person member and pool member was added (null for one added before this was kept, there from the beginning of
++-- time), and every value the pot has been set to, in order, with the sheet's today it was set on. The pot in force on
++-- a date is the last one set on or before it; a sheet whose pot was set before this was kept has it from the
++-- beginning of time.
++ALTER TABLE pool ADD COLUMN added_on DATE;
++ALTER TABLE pool_member ADD COLUMN added_on DATE;
++ALTER TABLE pool_sub ADD COLUMN added_on DATE;
++CREATE TABLE pot_change (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet     VARCHAR(200) NOT NULL,
++    set_on    DATE         NOT NULL,
++    pot_value VARCHAR(200) NOT NULL
++);
++CREATE INDEX pot_change_sheet ON pot_change (sheet, set_on, id);
++INSERT INTO pot_change (sheet, set_on, pot_value)
++    SELECT sheet, DATE '0001-01-01', setting_value FROM setting WHERE setting_key = 'pot';
