@@ -10,7 +10,8 @@ import { usePersonRowAction } from '../people/usePersonRowAction';
  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
  *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
- *  statement as of that date (on or before the sheet's today; blank: now). */
+ *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
+ *  taken or refused. */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
@@ -20,8 +21,10 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
   const take = useMutation({
     mutationFn: (date: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statement`, { asof: date }),
+    // The date is for the one statement it was typed for: taken or refused, the next one is now unless a
+    // date is typed again.
+    onSettled: () => setAsof(''),
     onSuccess: async () => {
-      setAsof('');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
