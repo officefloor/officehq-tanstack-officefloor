@@ -1,0 +1,110 @@
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 2f5826f9..4a469456 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { claimDueCents, counted, countedOn } from '../claims/claims';
++import { claimDueCents, counted, countedOn, statusOn } from '../claims/claims';
+ import type { Claim, Late } from '../claims/claims';
+ import { gradeOn } from '../people/people';
+ import type { Person } from '../people/people';
+@@ -112,6 +112,37 @@ export function personPeriodDueCents(
+   return totals;
+ }
+ 
++/** Each period's carried figure per person (in hundredths, by period name then person id): the due now of the person's
++ *  claims that count at the end of the period (see {@link countedOn}) whose due-by falls in an earlier period (one
++ *  ending before it starts) and that were still OPEN or PENDING at its end by their status log; a claim with no rate
++ *  adds nothing. */
++export function personPeriodCarriedCents(
++  periods: Period[],
++  claims: Claim[],
++  people: Person[],
++  rates: Rate[],
++  floor: DatedCents,
++  late: Late,
++): Map<string, Map<number, bigint>> {
++  const byId = new Map(people.map((p) => [p.id, p]));
++  const totals = new Map<string, Map<number, bigint>>();
++  for (const c of claims) {
++    const home = periodOf(periods, c.dueBy);
++    const person = byId.get(c.person);
++    if (home === undefined || person === undefined) continue;
++    for (const period of periods) {
++      if (home.to >= period.from) continue;
++      const then = statusOn(c, period.to);
++      if ((then !== 'OPEN' && then !== 'PENDING') || !countedOn(c, person, period.to)) continue;
++      const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
++      const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
++      byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
++      totals.set(period.name, byPerson);
++    }
++  }
++  return totals;
++}
++
+ /** Each period's classic due-total (in hundredths, by name): the due now of the claims whose due-by falls in it that
+  *  count by their status now (see {@link counted}: OPEN, PENDING or SETTLED), not by their status log; a claim with no
+  *  rate adds nothing. */
+diff --git a/src/main/frontend/features/periods/person-periods.slot.tsx b/src/main/frontend/features/periods/person-periods.slot.tsx
+index 34a96a3d..5148065f 100644
+--- a/src/main/frontend/features/periods/person-periods.slot.tsx
++++ b/src/main/frontend/features/periods/person-periods.slot.tsx
+@@ -1,10 +1,12 @@
++import { Fragment } from 'react';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useRates } from '../rates/rates';
+ import { useFloorCents } from '../settings/settings';
+ import { useClaims, useLate } from '../claims/claims';
+-import { personPeriodDueCents, shownPersonDueTotal, usePeriods } from './periods';
++import { personPeriodCarriedCents, personPeriodDueCents, shownPersonDueTotal, usePeriods } from './periods';
++import { twoDecimals } from '../rates/rates';
+ import { Fig } from '../locale/Fig';
+ 
+ function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
+@@ -12,13 +14,16 @@ function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
+   return (
+     <>
+       {periods.map((p) => (
+-        <th key={p.name}>{p.name} due</th>
++        <Fragment key={p.name}>
++          <th>{p.name} due</th>
++          <th>{p.name} carried</th>
++        </Fragment>
+       ))}
+     </>
+   );
+ }
+ 
+-// Per period on the sheet, the person's due-total for it: the due now of their claims whose due-by falls in it that counted at its end,
++// Per period on the sheet, the person's due-total for it and their carried figure (see personPeriodCarriedCents): the due now of their claims whose due-by falls in it that counted at its end,
+ // fixed for everyone on the sheet when the period is closed (0.00 for a person added since). The period's own
+ // due-total is the sum of these.
+ function PersonPeriods({ sheet, person }: { sheet: string; user: string; person: Person }) {
+@@ -30,13 +35,19 @@ function PersonPeriods({ sheet, person }: { sheet: string; user: string; person:
+   const late = useLate(sheet);
+ 
+   const totals = personPeriodDueCents(periods, claims, people, rates, floor, late);
++  const carried = personPeriodCarriedCents(periods, claims, people, rates, floor, late);
+ 
+   return (
+     <>
+       {periods.map((p) => (
+-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
+-          <Fig>{shownPersonDueTotal(p, person.id, totals.get(p.name)?.get(person.id) ?? 0n)}</Fig>
+-        </td>
++        <Fragment key={p.name}>
++          <td data-testid={`person-period-${p.name}-due-total`}>
++            <Fig>{shownPersonDueTotal(p, person.id, totals.get(p.name)?.get(person.id) ?? 0n)}</Fig>
++          </td>
++          <td data-testid={`person-period-${p.name}-carried`}>
++            <Fig>{twoDecimals(carried.get(p.name)?.get(person.id) ?? 0n)}</Fig>
++          </td>
++        </Fragment>
+       ))}
+     </>
+   );
