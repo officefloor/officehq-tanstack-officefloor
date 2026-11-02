@@ -4,12 +4,10 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { counts, fixedDue, useClaims } from '../claims/useClaims';
-import { GRADES, heldIds, usePeople } from '../people/usePeople';
-import { dueNow } from '../overdue/useOverdue';
-import { useSettings } from '../settings/useSettings';
+import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
-import { due, rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
+import { useDueTotals } from './useDueTotals';
+import { rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
  *  grade's rate from that date; blank is from the beginning of time), the rates set, and the rate in
@@ -121,31 +119,6 @@ function Rates({ sheetId }: { sheetId: string }) {
       {rates.isError && <p data-testid="rates-error">{rates.error.message}</p>}
     </section>
   );
-}
-
-/** Each person's due-total, by person id: the sum of the figures of their claims that count (a held
- *  person's OPEN claims left out; a settled claim's frozen due, else the figure their last statement
- *  bound it to, else its live due, with its late charge while overdue),
- *  skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's today and
- *  no counting claim of theirs keeps a fixed figure. */
-function useDueTotals(sheetId: string): Map<number, string> {
-  const people = usePeople(sheetId);
-  const claims = useClaims(sheetId);
-  const rates = useRates(sheetId);
-  const today = useSheetToday(sheetId);
-  const settings = useSettings(sheetId).data;
-  const floor = settings?.floor;
-  const held = heldIds(people.data);
-  const totals = new Map<number, string>();
-  for (const p of people.data ?? []) {
-    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
-    const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
-    totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null)
-      ? sumDues(counting.map((c) =>
-          dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, p.grade, c.date), floor), settings, today.data?.today)))
-      : 'n/a');
-  }
-  return totals;
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
