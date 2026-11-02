@@ -46,6 +46,12 @@ export type Person = {
   retirements: Retirement[];
   /** Their tags: each trimmed and lower-cased, repeats dropped, sorted; a claim of theirs counts in each tag's due-total. */
   tags: string[];
+  /** The reason of their flag, set by a steward; null when never flagged. */
+  flagReason: string | null;
+  /** The until-date of their flag (yyyy-MM-dd); null when never flagged. */
+  flagUntil: string | null;
+  /** Whether the sheet's today is on or before flagUntil: then only a steward may open a claim of theirs. */
+  flagged: boolean;
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */

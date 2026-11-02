@@ -141,6 +141,14 @@ public class ClaimStatusChanger {
                 && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("Your role may not " + requested.name().toLowerCase() + " a claim");
         }
+        // While its person's flag is in force (the sheet's today on or before its until-date) only a steward opens a claim.
+        if (requested == ClaimStatusChange.OPEN && !Role.STEWARD.equals(roles.of(sheet, user))) {
+            Person flagged = people.find(sheet, claim.person());
+            if (flagged != null && flagged.flagged()) {
+                throw new InvalidClaimStatusChangeException(
+                        "Only a steward may open a claim of " + flagged.name() + " while flagged: " + flagged.flagReason());
+            }
+        }
         // Only a steward reviews a REVIEW claim, opening it.
         if (requested == ClaimStatusChange.REVIEW && !Role.STEWARD.equals(roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("Only a steward reviews a claim");

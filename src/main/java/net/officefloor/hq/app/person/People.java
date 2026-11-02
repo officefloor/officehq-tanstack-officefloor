@@ -21,9 +21,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms, contact, origin, tags FROM person";
+    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms, contact, origin, tags, flag_reason, flag_until FROM person";
 
-    private record Row(long id, String name, long version, String retiredFrom, Integer terms, String contact, String origin, String tags) {
+    private record Row(long id, String name, long version, String retiredFrom, Integer terms, String contact, String origin, String tags,
+            String flagReason, String flagUntil) {
     }
 
     private final JdbcTemplate jdbc;
@@ -64,7 +65,9 @@ public class People {
         List<Row> rows = jdbc.query(COLUMNS + " " + where, (rs, i) -> new Row(rs.getLong("id"), rs.getString("name"),
                 rs.getLong("version"),
                 rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
-                rs.getObject("terms", Integer.class), rs.getString("contact"), rs.getString("origin"), rs.getString("tags")), args);
+                rs.getObject("terms", Integer.class), rs.getString("contact"), rs.getString("origin"), rs.getString("tags"),
+                rs.getString("flag_reason"),
+                rs.getDate("flag_until") == null ? null : rs.getDate("flag_until").toLocalDate().toString()), args);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -114,7 +117,8 @@ public class People {
                     tree.contains(r.name().toLowerCase(Locale.ROOT))
                             || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains), r.origin(),
                     List.copyOf(retirements.getOrDefault(r.id(), List.of())),
-                    r.tags().isEmpty() ? List.of() : List.of(r.tags().split(",")), List.copyOf(terms)));
+                    r.tags().isEmpty() ? List.of() : List.of(r.tags().split(",")), List.copyOf(terms),
+                    r.flagReason(), r.flagUntil(), Person.flaggedOn(r.flagUntil(), today)));
         }
         return people;
     }
@@ -250,6 +254,11 @@ public class People {
     public void hold(long id, Hold hold) {
         jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
                 Date.valueOf(hold.from()), hold.to() == null ? null : Date.valueOf(hold.to()));
+    }
+
+    /** Flags the person with the reason until the date, replacing any flag they had. */
+    public void flag(long id, String reason, LocalDate until) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", reason, Date.valueOf(until), id);
     }
 
     /** Save the person's name over the version it carries, raising the version; refused when it has moved on. */
