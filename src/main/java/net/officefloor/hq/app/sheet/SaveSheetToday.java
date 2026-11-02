@@ -24,6 +24,6 @@ public class SaveSheetToday {
         }
         closer.closeLapsed(id, by, today);
         rollup.record(id, by, before);
-        sheet.set(new Sheet(id, today.toString()));
+        sheet.set(new Sheet(id, today.toString(), repository.archived(id)));
     }
 }

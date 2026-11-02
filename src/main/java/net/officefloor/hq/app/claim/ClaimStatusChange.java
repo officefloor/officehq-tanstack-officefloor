@@ -24,6 +24,9 @@ final class ClaimStatusChange {
 
     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+        if (settings.archived(id)) {
+            throw new BadRequestException("the sheet is archived");
+        }
         if ("resettle".equals(action == null ? "" : action.trim())) {
             return resettle(id, cid, by, repository, periods, settings, audit, rollup, watches);
         }

@@ -13,7 +13,7 @@ public class LoadSheetToday {
         CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         try {
-            sheet.set(new Sheet(id, repository.today(id).toString()));
+            sheet.set(new Sheet(id, repository.today(id).toString(), repository.archived(id)));
         } catch (EmptyResultDataAccessException e) {
             throw new BadRequestException("no such sheet");
         }

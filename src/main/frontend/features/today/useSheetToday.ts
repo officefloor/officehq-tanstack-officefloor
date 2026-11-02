@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type SheetToday = { id: string; today: string };
+export type SheetToday = { id: string; today: string; archived: boolean };
 
-/** The sheet's today (yyyy-mm-dd). Every date decision and default date in a sheet uses this,
+/** The sheet's today (yyyy-mm-dd), and whether it is archived. Every date decision and default date in a sheet uses this,
  *  never the browser's clock. */
 export function useSheetToday(sheetId: string) {
   return useQuery({

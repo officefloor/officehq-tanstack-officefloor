@@ -5,8 +5,9 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSheetToday, type SheetToday } from './useSheetToday';
 
-/** The sheet's today, shown and changeable. Changing it re-reads the whole sheet, since every
- *  date decision in it depends on today. */
+/** The sheet's today, shown and changeable, and whether it is archived, with the steward's archive
+ *  button. Changing today re-reads the whole sheet, since every date decision in it depends on today.
+ *  Both share the one sheet error: the last of them refused. */
 function TodayControl({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const [date, setDate] = useState('');
@@ -23,6 +24,11 @@ function TodayControl({ sheetId }: { sheetId: string }) {
       });
     },
   });
+  const archive = useMutation({
+    mutationFn: () => postJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, {}),
+    onSuccess: (sheet) => queryClient.setQueryData(['sheet', sheetId, 'today'], sheet),
+  });
+  const error = save.error ?? archive.error;
 
   return (
     <form
@@ -31,6 +37,7 @@ function TodayControl({ sheetId }: { sheetId: string }) {
         e.preventDefault();
         submitOnce(() => {
           save.reset();
+          archive.reset();
           return save.mutateAsync(date);
         });
       }}
@@ -46,13 +53,29 @@ function TodayControl({ sheetId }: { sheetId: string }) {
           onChange={(e) => {
             setDate(e.target.value);
             save.reset();
+            archive.reset();
           }}
         />
       </label>{' '}
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set
       </button>
-      {save.isError && <p data-testid="sheet-error">{save.error.message}</p>}
+      Archived: <strong data-testid="sheet-archived">{today.data ? (today.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        disabled={archive.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            save.reset();
+            archive.reset();
+            return archive.mutateAsync();
+          })
+        }
+      >
+        Archive sheet
+      </button>
+      {error && <p data-testid="sheet-error">{error.message}</p>}
     </form>
   );
 }

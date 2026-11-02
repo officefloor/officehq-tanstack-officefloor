@@ -29,6 +29,12 @@ public class SettingsRepository {
         return known != null && known > 0;
     }
 
+    /** Whether a steward has archived the sheet: every change to it is then refused. */
+    public boolean archived(String sheetId) {
+        List<Boolean> found = jdbc.query("SELECT archived FROM sheet WHERE id = ?", (rs, i) -> rs.getBoolean("archived"), sheetId);
+        return !found.isEmpty() && found.get(0);
+    }
+
     /** The sheet's settings and roles, roles by user name: each dated setting as in force on the sheet's
      *  today, and every value recorded for each, by key. */
     public Settings load(String sheetId) {

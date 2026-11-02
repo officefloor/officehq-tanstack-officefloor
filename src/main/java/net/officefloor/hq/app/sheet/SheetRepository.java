@@ -26,13 +26,24 @@ public class SheetRepository {
                 // another user loaded the same new id at the same moment: it is made either way
             }
         }
-        return new Sheet(id, today(id).toString());
+        return new Sheet(id, today(id).toString(), archived(id));
     }
 
     /** The sheet's today: the date every date decision and default in the sheet uses. */
     public LocalDate today(String id) {
         Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", Date.class, id);
         return today.toLocalDate();
+    }
+
+    /** Whether a steward has archived the sheet. */
+    public boolean archived(String id) {
+        Boolean archived = jdbc.queryForObject("SELECT archived FROM sheet WHERE id = ?", Boolean.class, id);
+        return Boolean.TRUE.equals(archived);
+    }
+
+    /** Archive the sheet; false when there is no such sheet. */
+    public boolean archive(String id) {
+        return jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", id) > 0;
     }
 
     /** Set the sheet's today; false when there is no such sheet. */
