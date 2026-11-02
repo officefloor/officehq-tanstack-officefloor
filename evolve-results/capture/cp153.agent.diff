@@ -1,0 +1,169 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index b264600c..f19fca7c 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -16,7 +16,7 @@ const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
+ 
+ // The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), every rate with its
+ // from-date (a blank from-date applies from the start) and to-date (a blank one has no end), and a form that sets one, replacing the rate already
+-// there for that grade and from-date.
++// there for that grade and from-date as a new version (each row shows its version count; the newest is in force).
+ function Rates({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+   const { data: rates = [] } = useRates(sheet);
+@@ -171,6 +171,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
+             <th>From</th>
+             <th>To</th>
+             <th>Rate %</th>
++            <th>Versions</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -182,6 +183,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
+               <td>
+                 <span data-testid="rate-pct">{r.pct}</span>
+               </td>
++              <td data-testid="rate-version">{r.version ?? 1}</td>
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 6c0d9bb9..2fe10e32 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -4,8 +4,9 @@ import type { Grade } from '../people/people';
+ 
+ /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
+  *  applies from the beginning of time) through its to-date (null when it has no end). Its level is the sheet it is
+- *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. */
+-export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null; level: number };
++ *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. Its version counts
++ *  the values set for its grade and from-date, this one (the newest, the one in force) included. */
++export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null; level: number; version: number };
+ 
+ /** The most levels up a sheet's parents give it rates. */
+ export const RATE_LEVELS = 3;
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index 2da89318..fd4e35db 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -10,20 +10,26 @@ import java.util.List;
+  * A grade's rate on a sheet: a percent with two decimals, as the screen shows it, in force from its from-date
+  * (yyyy-MM-dd; null when it applies from the beginning of time) through its to-date (null when it has no end). Its
+  * level is the sheet it is kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link #LEVELS}.
++ * Its version counts the values set for its grade and from-date, this one (the newest, the one in force) included.
+  */
+-public record Rate(String grade, String pct, String from, String to, int level) {
++public record Rate(String grade, String pct, String from, String to, int level, int version) {
+ 
+     /** The most levels up a sheet's parents give it rates. */
+     public static final int LEVELS = 3;
+ 
+     /** A sheet's own rate. */
+     public Rate(String grade, String pct, String from, String to) {
+-        this(grade, pct, from, to, 0);
++        this(grade, pct, from, to, 1);
++    }
++
++    /** A sheet's own rate at its version. */
++    public Rate(String grade, String pct, String from, String to, int version) {
++        this(grade, pct, from, to, 0, version);
+     }
+ 
+     /** This rate as one inherited from the levels up. */
+     public Rate up(int levels) {
+-        return new Rate(grade, pct, from, to, level + levels);
++        return new Rate(grade, pct, from, to, level + levels, version);
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index a524158e..8f09e1bc 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -10,7 +10,8 @@ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+ 
+ /**
+- * The rates kept per sheet: per grade, one for each from-date (and at most one with none). A sheet is given its
++ * The rates kept per sheet: per grade, one for each from-date (and at most one with none), the newest of its versions;
++ * the older versions it replaced are kept in rate_version. A sheet is given its
+  * parents' rates too, up to {@link Rate#LEVELS} up, each at its level.
+  */
+ @Repository
+@@ -19,7 +20,7 @@ public class Rates {
+     private static final RowMapper<Rate> ROW = (rs, i) -> new Rate(rs.getString("grade"),
+             rs.getBigDecimal("pct").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
+             rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(),
+-            rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString());
++            rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString(), rs.getInt("version"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -45,16 +46,23 @@ public class Rates {
+ 
+     /** The rates kept on the sheet itself, by grade then from-date (the one with none first). */
+     public List<Rate> own(String sheet) {
+-        return jdbc.query("SELECT grade, pct, from_date, to_date FROM rate WHERE sheet = ? ORDER BY grade, from_key", ROW,
++        return jdbc.query("SELECT grade, pct, from_date, to_date, version FROM rate WHERE sheet = ? ORDER BY grade, from_key", ROW,
+                 sheet);
+     }
+ 
+-    /** Sets the grade's rate from the from-date (through its to-date), replacing the one already there for that grade and from-date. */
++    /**
++     * Sets the grade's rate from the from-date (through its to-date) as a new version: the one already there for that
++     * grade and from-date is kept as an older version.
++     */
+     public void set(String sheet, RateInput input) {
+         Date from = input.from() == null ? null : Date.valueOf(input.from());
+         Date to = input.to() == null ? null : Date.valueOf(input.to());
++        jdbc.update("INSERT INTO rate_version (sheet, grade, from_date, version, pct, to_date) SELECT sheet, grade,"
++                + " from_date, version, pct, to_date FROM rate WHERE sheet = ? AND grade = ? AND from_date IS NOT"
++                + " DISTINCT FROM ?", sheet, input.grade(), from);
+         if (jdbc.update(
+-                "UPDATE rate SET pct = ?, to_date = ? WHERE sheet = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
++                "UPDATE rate SET pct = ?, to_date = ?, version = version + 1 WHERE sheet = ? AND grade = ?"
++                        + " AND from_date IS NOT DISTINCT FROM ?",
+                 input.pct(), to, sheet, input.grade(), from) == 0) {
+             jdbc.update("INSERT INTO rate (sheet, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)", sheet,
+                     input.grade(), input.pct(), from, to);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 664ac653..254098cf 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
+ 
+ /**
+  * Clones the sheet to another id; only a steward may, and only to a sheet never used. The clone gets this sheet's
+- * today, settings (its parent among them), roles, rates, holidays, void reasons, templates, people (with their grades,
++ * today, settings (its parent among them), roles, rates (with their older versions), holidays, void reasons, templates, people (with their grades,
+  * terms, contacts, aliases, holds, retirements and patrons, listed as they are), pools, periods (all open) and claims
+  * (status, frozen figures, dates, notes, logs, comments and lines, listed as they are). Each claim that had a number takes the
+  * clone's next one by the clone's own numbering, in the order the claims were opened (by the sheet's today when each
+@@ -79,6 +79,7 @@ public class SheetCloner {
+                 sheet);
+         copy("USER_ROLE", Map.of("SHEET", to), "sheet = ?", sheet);
+         copy("RATE", Map.of("SHEET", to), "sheet = ?", sheet);
++        copy("RATE_VERSION", Map.of("SHEET", to), "sheet = ?", sheet);
+         copy("HOLIDAY", Map.of("SHEET", to), "sheet = ?", sheet);
+         copy("VOID_REASON", Map.of("SHEET", to), "sheet = ?", sheet);
+         copy("CLAIM_TEMPLATE", Map.of("SHEET", to), "sheet = ?", sheet);
+diff --git a/src/main/resources/db/migration/V72__rate_version.sql b/src/main/resources/db/migration/V72__rate_version.sql
+new file mode 100644
+index 00000000..9acc5ff8
+--- /dev/null
++++ b/src/main/resources/db/migration/V72__rate_version.sql
+@@ -0,0 +1,13 @@
++-- A rate is kept as versions: setting a rate for a grade and from-date already there keeps the value it replaces
++-- as an older version (rate_version) and makes the new one the rate in force, its version one more. The rate row
++-- is always the newest version; version counts them all (the newest included).
++ALTER TABLE rate ADD COLUMN version INT DEFAULT 1 NOT NULL;
++CREATE TABLE rate_version (
++    sheet     VARCHAR(200)  NOT NULL,
++    grade     VARCHAR(1)    NOT NULL,
++    from_date DATE,
++    version   INT           NOT NULL,
++    pct       DECIMAL(9, 2) NOT NULL,
++    to_date   DATE
++);
++CREATE INDEX rate_version_sheet ON rate_version (sheet, grade, from_date);
