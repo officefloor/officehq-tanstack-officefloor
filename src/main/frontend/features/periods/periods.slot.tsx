@@ -16,6 +16,7 @@ import {
   fiscalYearOf,
   generateFiscalYearPath,
   generatePeriodsPath,
+  generateQuartersPath,
   periodDueCents,
   shownDueTotal,
   reopenPeriodPath,
@@ -170,22 +171,27 @@ const NO_RANGE: Range = { from: '', to: '' };
 // Generates one period per calendar month from the from-date's month to the to-date's, named yyyy-mm; the server leaves
 // out a month whose name is already a period or that overlaps one, and refuses a to-date before the from-date. The
 // fiscal year entry generates that fiscal year's twelve months (from the sheet's fiscal start month in that year) the
-// same way, and the server refuses a year that is not yyyy. Both share the one count of how many were made, and error.
-type GenerateBody = { path: 'range'; range: Range } | { path: 'fy'; year: string };
+// same way, and the server refuses a year that is not yyyy. The quarters entry generates that calendar year's four
+// quarters, named yyyy-Q1 to yyyy-Q4, the same way. All share the one count of how many were made, and error.
+type GenerateBody = { path: 'range'; range: Range } | { path: 'fy'; year: string } | { path: 'quarters'; year: string };
 
 function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<Range>(NO_RANGE);
   const [year, setYear] = useState('');
+  const [quartersYear, setQuartersYear] = useState('');
   const generate = useMutation({
     mutationFn: (body: GenerateBody) =>
       body.path === 'range'
         ? postJson<Generated>(byUser(generatePeriodsPath(sheet), user), body.range)
-        : postJson<Generated>(byUser(generateFiscalYearPath(sheet), user), { year: body.year }),
+        : body.path === 'fy'
+          ? postJson<Generated>(byUser(generateFiscalYearPath(sheet), user), { year: body.year })
+          : postJson<Generated>(byUser(generateQuartersPath(sheet), user), { year: body.year }),
     onSuccess: (result) => {
       queryClient.setQueryData(periodsKey(sheet), result.periods);
       setRange(NO_RANGE);
       setYear('');
+      setQuartersYear('');
     },
   });
   const send = useSubmitOnce(generate);
@@ -203,6 +209,11 @@ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
   const submitYear = (e: FormEvent) => {
     e.preventDefault();
     send({ path: 'fy', year });
+  };
+
+  const submitQuarters = (e: FormEvent) => {
+    e.preventDefault();
+    send({ path: 'quarters', year: quartersYear });
   };
 
   return (
@@ -236,7 +247,7 @@ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
         )}
         {generate.isError && (
           <span data-testid="period-generate-error" role="alert">
-            {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from, or a fiscal year (yyyy).
+            {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from, or a fiscal year or year of quarters (yyyy).
           </span>
         )}
       </form>
@@ -255,6 +266,23 @@ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
         </label>{' '}
         <button type="submit" data-testid="period-generate-fy" disabled={generate.isPending}>
           Generate fiscal year
+        </button>
+      </form>
+      <form onSubmit={submitQuarters}>
+        <label>
+          Generate quarters of year{' '}
+          <input
+            data-testid="period-generate-quarters-year"
+            placeholder="yyyy"
+            value={quartersYear}
+            onChange={(e) => {
+              setQuartersYear(e.target.value);
+              generate.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-quarters" disabled={generate.isPending}>
+          Generate quarters
         </button>
       </form>
     </>

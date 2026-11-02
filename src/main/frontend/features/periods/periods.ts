@@ -40,6 +40,9 @@ export const generatePeriodsPath = (sheet: string) => `${periodsPath(sheet)}/gen
 /** Where a fiscal year's twelve monthly periods are generated. */
 export const generateFiscalYearPath = (sheet: string) => `${periodsPath(sheet)}/generate-fy`;
 
+/** Where a calendar year's four quarterly periods are generated. */
+export const generateQuartersPath = (sheet: string) => `${periodsPath(sheet)}/generate-quarters`;
+
 /** The fiscal year a date (yyyy-MM-dd) falls in, named FY<yyyy> by the calendar year its first day falls in, for a
  *  fiscal year starting in the month (1 to 12). */
 export function fiscalYearOf(date: string, startMonth: number): string {
