@@ -143,9 +143,10 @@ export function countedOn(claim: Claim, person: Person | undefined, end: string)
   return !isOpen(claim) || bound(claim) || person === undefined || !setAsideOn(person, claim.date);
 }
 
-/** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows. */
+/** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows, leaving out the
+ *  corrections (claims that correct another). */
 export function claimed(claims: Claim[]): string {
-  return twoDecimals(claims.reduce((sum, c) => sum + hundredths(c.amount), 0n));
+  return twoDecimals(claims.reduce((sum, c) => (correction(c) ? sum : sum + hundredths(c.amount)), 0n));
 }
 
 /** Whether a claim is a correction: a negative amount, correcting the settled claim it names by number. */
@@ -370,7 +371,8 @@ export function trimmedSum(figures: bigint[]): bigint {
   return sum - max - min;
 }
 
-/** The sheet's totals: its claimed-total (everyone's counted claims added up), its due-total (everyone's due-total
+/** The sheet's totals: its claimed-total (everyone's counted claims added up,
+ *  corrections left out), its due-total (everyone's due-total
  *  added up, skipping the people whose due-total is n/a, trimmed — see trimmedSum), and how many of the counted claims
  *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total and open-total. */
 export function useSheetTotals(sheet: string): {

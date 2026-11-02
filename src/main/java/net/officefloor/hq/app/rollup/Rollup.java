@@ -77,7 +77,9 @@ public class Rollup {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             for (Claim claim : mine) {
-                claimed = claimed.add(new BigDecimal(claim.amount()));
+                if (!claim.correction()) {
+                    claimed = claimed.add(new BigDecimal(claim.amount()));
+                }
                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 due = d == null ? due : due.add(d);
                 if (d != null && late.overdue(claim, person.gradeOn(claim.date()))) {
