@@ -24,17 +24,18 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
- *  user who opened the claim). A reject takes the reason typed on the claim's row. */
+ *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row. */
 const ACTIONS: [ClaimAction, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
   ['reject', 'Reject'],
   ['void', 'Void'],
+  ['resettle', 'Re-settle'],
 ];
 
 /** A person's claims, newest first, under their row, with a form that adds a claim, or edits one

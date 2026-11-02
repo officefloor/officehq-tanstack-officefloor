@@ -23,6 +23,9 @@ final class ClaimStatusChange {
 
     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+        if ("resettle".equals(action == null ? "" : action.trim())) {
+            return resettle(id, cid, by, repository, periods, settings, audit, rollup);
+        }
         String to;
         List<String> from;
         String event;
@@ -100,6 +103,39 @@ final class ClaimStatusChange {
                 found.statedNa());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
+        rollup.record(id, by, before);
+        return changed;
+    }
+
+    /** A steward re-settles a SETTLED claim (not in a closed period): its due is frozen again at the figure it would
+     *  have today as an open claim bound by no statement (today's rates, grades, floor and late charge). */
+    private static Claim resettle(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
+            SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+        Claim found = repository.find(id, cid);
+        if (found == null) {
+            throw new BadRequestException("no such claim");
+        }
+        if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
+            throw new BadRequestException("only a steward can re-settle a claim");
+        }
+        if (!found.status().equals("SETTLED")) {
+            throw new BadRequestException("only a SETTLED claim can be re-settled");
+        }
+        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
+                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false);
+        BigDecimal now = repository.dueNow(id, live);
+        Rollup.Snapshot before = rollup.take(id);
+        repository.settleDue(id, cid, now);
+        repository.log(id, cid, by);
+        String old = found.due() == null ? "n/a" : found.due();
+        String due = ClaimRepository.dueOf(now);
+        Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
+                found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
+                found.corrects(), found.dueBy(), found.statedNa());
+        audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
+                + " old=" + old + " new=" + (due == null ? "n/a" : due));
         rollup.record(id, by, before);
         return changed;
     }
