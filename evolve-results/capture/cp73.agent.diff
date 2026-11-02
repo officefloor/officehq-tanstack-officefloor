@@ -1,0 +1,955 @@
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 2b44be668..6bab290bf 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -1,4 +1,4 @@
+-import { useCallback } from 'react';
++import { useCallback, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+@@ -9,16 +9,19 @@ import { usePersonRowAction } from '../people/usePersonRowAction';
+ /** A person's statements: how many have been taken, the last one's due-total and date (blank before
+  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
+  *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
+- *  steward can cancel the last one, its claims going live again. */
++ *  steward can cancel the last one, its claims going live again. A date beside the button takes the
++ *  statement as of that date (on or before the sheet's today; blank: now). */
+ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const people = usePeople(sheetId);
+   const queryClient = useQueryClient();
+   const p = people.data?.find((x) => x.id === personId);
++  const [asof, setAsof] = useState('');
+ 
+   const take = useMutation({
+-    mutationFn: () =>
+-      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statement`, {}),
++    mutationFn: (date: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statement`, { asof: date }),
+     onSuccess: async () => {
++      setAsof('');
+       await Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+@@ -50,6 +53,17 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+       <td data-testid="person-stated-total">{p?.statedTotal ?? ''}</td>
+       <td data-testid="person-statement-date">{p?.statementDate ?? ''}</td>
+       <td>
++        <input
++          type="text"
++          placeholder="yyyy-mm-dd"
++          data-testid="person-statement-asof"
++          aria-label="Statement as of"
++          value={asof}
++          onChange={(e) => {
++            setAsof(e.target.value);
++            reset();
++          }}
++        />
+         <button
+           type="button"
+           data-testid="person-statement"
+@@ -57,7 +71,7 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+           onClick={() => {
+             announce();
+             reset();
+-            take.mutate();
++            take.mutate(asof);
+           }}
+         >
+           Statement
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index f3bcf512e..ead21d5bd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -10,6 +10,7 @@ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.HistoryRepository;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -47,10 +48,18 @@ public class ClaimRepository {
+ 
+     private final JdbcTemplate jdbc;
+     private final SettingsRepository settings;
++    private final HistoryRepository history;
+ 
+-    public ClaimRepository(JdbcTemplate jdbc, SettingsRepository settings) {
++    public ClaimRepository(JdbcTemplate jdbc, SettingsRepository settings, HistoryRepository history) {
+         this.jdbc = jdbc;
+         this.settings = settings;
++        this.history = history;
++    }
++
++    /** Keep a claim's values in the sheet's history after a change to it; whether it changed. */
++    private boolean kept(String sheetId, long claimId, boolean changed) {
++        if (changed) history.claim(sheetId, claimId);
++        return changed;
+     }
+ 
+     public boolean personExists(String sheetId, long personId) {
+@@ -76,8 +85,8 @@ public class ClaimRepository {
+         String in = String.join(", ", from.stream().map(s -> "?").toList());
+         List<Object> args = new ArrayList<>(List.of(to, claimId, sheetId));
+         args.addAll(from);
+-        return jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
+-                args.toArray()) > 0;
++        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
++                args.toArray()) > 0);
+     }
+ 
+     /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
+@@ -87,6 +96,7 @@ public class ClaimRepository {
+         Long next = jdbc.queryForObject("SELECT claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
+         String number = String.valueOf(next);
+         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
++        kept(sheetId, claimId, true);
+         return number;
+     }
+ 
+@@ -114,6 +124,7 @@ public class ClaimRepository {
+                 Long.class, sheetId, key);
+         String number = prefix + "-" + next;
+         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
++        kept(sheetId, claimId, true);
+         return number;
+     }
+ 
+@@ -134,8 +145,8 @@ public class ClaimRepository {
+     /** Re-date an OPEN or PENDING claim (its due-by and statement binding stay as they are); false when the
+      *  sheet has no such claim in those statuses. */
+     public boolean redate(String sheetId, long claimId, LocalDate date) {
+-        return jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND sheet_id = ? AND status IN ('OPEN', 'PENDING')",
+-                Date.valueOf(date), claimId, sheetId) > 0;
++        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND sheet_id = ? AND status IN ('OPEN', 'PENDING')",
++                Date.valueOf(date), claimId, sheetId) > 0);
+     }
+ 
+     /** Record who opened a claim. */
+@@ -240,9 +251,9 @@ public class ClaimRepository {
+ 
+     /** Bind a claim to a figure (stated; to n/a when {@code na}), or unbind it (not stated, live again). */
+     public void bind(String sheetId, long claimId, boolean stated, BigDecimal figure, boolean na) {
+-        jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE id = ? AND sheet_id = ?",
++        kept(sheetId, claimId, jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE id = ? AND sheet_id = ?",
+                 stated, figure, na,
+-                claimId, sheetId);
++                claimId, sheetId) > 0);
+     }
+ 
+     /** A person's claims on the sheet. */
+@@ -254,15 +265,15 @@ public class ClaimRepository {
+     /** Move a DRAFT, OPEN or PENDING claim to another person: it is unbound from its last statement (live
+      *  again) and listed as its new person's newest claim; false when the sheet has no such claim in those statuses. */
+     public boolean reassign(String sheetId, long claimId, long personId) {
+-        return jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE,"
++        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE,"
+                 + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?"
+-                + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0;
++                + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0);
+     }
+ 
+     /** Defer an OPEN claim until a date; false when the sheet has no such OPEN claim. */
+     public boolean defer(String sheetId, long claimId, LocalDate until) {
+-        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
+-                Date.valueOf(until), claimId, sheetId) > 0;
++        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
++                Date.valueOf(until), claimId, sheetId) > 0);
+     }
+ 
+     /** Raise a claim's proofs count by one, only when it is not SETTLED or VOID; the count now, or null when the
+@@ -277,7 +288,7 @@ public class ClaimRepository {
+ 
+     /** Fix a settled claim's due. */
+     public void settleDue(String sheetId, long claimId, BigDecimal due) {
+-        jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId);
++        kept(sheetId, claimId, jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId) > 0);
+     }
+ 
+     /** The name of a person on the sheet. */
+@@ -325,6 +336,7 @@ public class ClaimRepository {
+             ps.setBoolean(8, late);
+             return ps;
+         }, keys);
++        kept(sheetId, keys.getKey().longValue(), true);
+         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
+                 dueBy.toString(), false, null, false, 0, null, late);
+     }
+@@ -346,6 +358,7 @@ public class ClaimRepository {
+                 + " WHERE id = ? AND sheet_id = ? AND status = 'OPEN'", rest, claim.id(), sheetId) == 0) {
+             return null;
+         }
++        kept(sheetId, claim.id(), true);
+         LocalDate date = LocalDate.parse(claim.date());
+         LocalDate dueBy = dueBy(sheetId, claim.personId(), date);
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+@@ -364,15 +377,16 @@ public class ClaimRepository {
+             ps.setString(8, claim.number());
+             return ps;
+         }, keys);
++        kept(sheetId, keys.getKey().longValue(), true);
+         return keys.getKey().longValue();
+     }
+ 
+     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
+      *  such draft claim. */
+     public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects) {
+-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
++        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
+                 + " AND sheet_id = ? AND status = 'DRAFT'",
+-                amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0;
++                amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0);
+     }
+ 
+     /** Lock a claim for {@code by}'s editor, releasing any other claim of the same person {@code by} held;
+diff --git a/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java b/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java
+new file mode 100644
+index 000000000..665dd4139
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java
+@@ -0,0 +1,145 @@
++package net.officefloor.hq.app.history;
++
++import java.math.BigDecimal;
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.person.Hold;
++import org.springframework.jdbc.core.RowCallbackHandler;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The sheet's history (see V48__history.sql): each change that a statement taken as of a past date
++ *  depends on, kept with the sheet's today when it was made. The repositories that make these changes
++ *  record them here, in the same transaction. */
++@Repository
++public class HistoryRepository {
++
++    /** The sheet's today, for the on_date of a change. */
++    private static final String TODAY = "(SELECT s.today FROM sheet s WHERE s.id = ?)";
++
++    private final JdbcTemplate jdbc;
++
++    public HistoryRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Keep a claim's values as they are now, after a change to it. */
++    public void claim(String sheetId, long claimId) {
++        jdbc.update("INSERT INTO claim_history (sheet_id, on_date, claim_id, person_id, amount, claim_date, status,"
++                + " settled_due, stated, stated_due, stated_na, corrects, due_by, deferred_until)"
++                + " SELECT c.sheet_id, s.today, c.id, c.person_id, c.amount, c.claim_date, c.status, c.settled_due,"
++                + " c.stated, c.stated_due, c.stated_na, c.corrects, c.due_by, c.deferred_until"
++                + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.id = ? AND c.sheet_id = ?", claimId, sheetId);
++    }
++
++    /** Keep a rate set for a grade from a from-date (null: from the beginning of time). */
++    public void rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
++        jdbc.update("INSERT INTO rate_history (sheet_id, on_date, grade, pct, from_date, to_date) VALUES (?, " + TODAY
++                + ", ?, ?, ?, ?)", sheetId, sheetId, grade, pct, date(from), date(to));
++    }
++
++    /** Keep a grade given to a person from a from-date (null: from the beginning of time). */
++    public void grade(String sheetId, long personId, String grade, LocalDate from) {
++        jdbc.update("INSERT INTO grade_history (sheet_id, on_date, person_id, grade, from_date) VALUES (?, " + TODAY
++                + ", ?, ?, ?)", sheetId, sheetId, personId, grade, date(from));
++    }
++
++    /** Keep a dated setting's value recorded from a from-date (null: blank). */
++    public void setting(String sheetId, String key, LocalDate from, String value) {
++        jdbc.update("INSERT INTO setting_history (sheet_id, on_date, setting_key, from_date, setting) VALUES (?, " + TODAY
++                + ", ?, ?, ?)", sheetId, sheetId, key, date(from), value);
++    }
++
++    /** Keep the sheet's policy date set (null: blank). */
++    public void policy(String sheetId, LocalDate policyDate) {
++        jdbc.update("INSERT INTO policy_history (sheet_id, on_date, policy_date) VALUES (?, " + TODAY + ", ?)",
++                sheetId, sheetId, date(policyDate));
++    }
++
++    /** Keep a person's retirement from a date. */
++    public void retire(String sheetId, long personId, LocalDate from) {
++        jdbc.update("INSERT INTO retire_history (sheet_id, on_date, person_id, retired_from) VALUES (?, " + TODAY
++                + ", ?, ?)", sheetId, sheetId, personId, date(from));
++    }
++
++    private static Date date(LocalDate d) {
++        return d == null ? null : Date.valueOf(d);
++    }
++
++    /** Whether the person was on the sheet at the end of a day: added while the sheet's today was on or before it. */
++    public boolean existed(String sheetId, long personId, LocalDate day) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND id = ? AND added_on <= ?",
++                Integer.class, sheetId, personId, Date.valueOf(day));
++        return n != null && n > 0;
++    }
++
++    /** The sheet as it stood at the end of a day: the changes made while its today was on or before that day,
++     *  each kept value the last of them (in the order made). */
++    public SheetAsOf asOf(String sheetId, LocalDate day) {
++        Date on = Date.valueOf(day);
++        Map<Long, Claim> claims = new LinkedHashMap<>();
++        jdbc.query("SELECT h.* FROM claim_history h WHERE h.sheet_id = ? AND h.id = (SELECT MAX(l.id) FROM claim_history l"
++                + " WHERE l.sheet_id = h.sheet_id AND l.claim_id = h.claim_id AND l.on_date <= ?) ORDER BY h.claim_id",
++                (RowCallbackHandler) rs -> {
++                    String status = rs.getString("status");
++                    LocalDate deferredUntil = local(rs.getDate("deferred_until"));
++                    BigDecimal settled = rs.getBigDecimal("settled_due");
++                    BigDecimal stated = rs.getBigDecimal("stated_due");
++                    claims.put(rs.getLong("claim_id"), new Claim(rs.getLong("claim_id"), rs.getLong("person_id"),
++                            rs.getBigDecimal("amount").setScale(2).toPlainString(), local(rs.getDate("claim_date")).toString(),
++                            "", status, null, settled == null ? null : settled.setScale(2).toPlainString(), null,
++                            rs.getBoolean("stated"), stated == null ? null : stated.setScale(2).toPlainString(),
++                            rs.getString("corrects"), local(rs.getDate("due_by")).toString(), rs.getBoolean("stated_na"),
++                            deferredUntil == null ? null : deferredUntil.toString(),
++                            status.equals("OPEN") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false));
++                }, sheetId, on);
++        Map<Long, TreeMap<LocalDate, String>> grades = new HashMap<>();
++        jdbc.query("SELECT person_id, grade, from_date FROM grade_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
++                (RowCallbackHandler) rs -> grades.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
++                        .put(from(rs.getDate("from_date")), rs.getString("grade")), sheetId, on);
++        Map<String, TreeMap<LocalDate, SheetAsOf.Rate>> rates = new HashMap<>();
++        jdbc.query("SELECT grade, pct, from_date, to_date FROM rate_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
++                (RowCallbackHandler) rs -> rates.computeIfAbsent(rs.getString("grade"), k -> new TreeMap<>())
++                        .put(from(rs.getDate("from_date")), new SheetAsOf.Rate(rs.getBigDecimal("pct"), local(rs.getDate("to_date")))),
++                sheetId, on);
++        Map<String, TreeMap<LocalDate, String>> settings = new HashMap<>();
++        jdbc.query("SELECT setting_key, from_date, setting FROM setting_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
++                (RowCallbackHandler) rs -> settings.computeIfAbsent(rs.getString("setting_key"), k -> new TreeMap<>())
++                        .put(from(rs.getDate("from_date")), rs.getString("setting")), sheetId, on);
++        List<Date> policy = jdbc.query("SELECT policy_date FROM policy_history WHERE sheet_id = ? AND on_date <= ?"
++                + " ORDER BY id DESC LIMIT 1", (rs, i) -> rs.getDate("policy_date"), sheetId, on);
++        Map<Long, List<Hold>> holds = new HashMap<>();
++        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? AND held_on <= ? ORDER BY id",
++                (RowCallbackHandler) rs -> holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>())
++                        .add(new Hold(text(rs.getDate("from_date")), text(rs.getDate("to_date")))), sheetId, on);
++        Map<Long, String> retired = new HashMap<>();
++        jdbc.query("SELECT person_id, retired_from FROM retire_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
++                (RowCallbackHandler) rs -> retired.put(rs.getLong("person_id"), text(rs.getDate("retired_from"))), sheetId, on);
++        return new SheetAsOf(day, claims, grades, rates, settings, policy.isEmpty() ? null : local(policy.get(0)), holds,
++                retired, c -> {
++                    List<Date> found = jdbc.queryForList("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ?"
++                            + " AND claim_no = ? ORDER BY id LIMIT 1", Date.class, sheetId, c.personId(), c.corrects());
++                    return found.isEmpty() ? null : found.get(0).toLocalDate().toString();
++                });
++    }
++
++    private static LocalDate local(Date d) {
++        return d == null ? null : d.toLocalDate();
++    }
++
++    private static String text(Date d) {
++        return d == null ? null : d.toLocalDate().toString();
++    }
++
++    /** A from-date as a key: a null one is the beginning of time. */
++    private static LocalDate from(Date d) {
++        return d == null ? SheetAsOf.BEGINNING : d.toLocalDate();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java b/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java
+new file mode 100644
+index 000000000..74a4b37a6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java
+@@ -0,0 +1,171 @@
++package net.officefloor.hq.app.history;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.time.LocalDate;
++import java.time.temporal.ChronoUnit;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import java.util.function.Function;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.person.Hold;
++
++/** A sheet as it stood at the end of a day: what the changes made while the sheet's today was on or
++ *  before that day left (see {@link HistoryRepository#asOf}). The day stands in for the sheet's today in
++ *  every figure, worked out by the same rules as the live ones in ClaimRepository: the grade and rate in
++ *  force, the rounding, the floor, late charges, holds and retirements.
++ *
++ *  @param claims        each claim's values then, by claim id (a claim added later is absent)
++ *  @param grades        each person's grades then, by person id, each by from-date (null: from the beginning of time)
++ *  @param rates         each grade's rates then, by grade, each by from-date
++ *  @param settings      each dated setting's values then, by key, each by from-date
++ *  @param policyDate    the policy date then (null: blank, the day itself)
++ *  @param holds         each person's holds then, by person id
++ *  @param retiredFrom   the date each person was retired from then, by person id (absent: not retired)
++ *  @param correctedDate the date of a person's claim with a number (person id, number), for a correction's rounding
++ */
++public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMap<LocalDate, String>> grades,
++        Map<String, TreeMap<LocalDate, Rate>> rates, Map<String, TreeMap<LocalDate, String>> settings,
++        LocalDate policyDate, Map<Long, List<Hold>> holds, Map<Long, String> retiredFrom,
++        Function<Claim, String> correctedDate) {
++
++    /** A rate then: its percent and to-date (null: with no end). */
++    public record Rate(BigDecimal pct, LocalDate to) {
++    }
++
++    /** The minimum date, standing for "from the beginning of time" (a null from-date). */
++    public static final LocalDate BEGINNING = LocalDate.of(1, 1, 1);
++
++    /** A person's claims then, newest first. */
++    public List<Claim> claimsOf(long personId) {
++        List<Claim> mine = new ArrayList<>();
++        for (Claim c : claims.values()) {
++            if (c.personId() == personId) mine.add(c);
++        }
++        mine.sort((a, b) -> Long.compare(b.id(), a.id()));
++        return mine;
++    }
++
++    /** A person's holds as they acted on live totals then: once their retirement date was reached they are
++     *  held over every date as well. */
++    public List<Hold> liveHolds(long personId) {
++        List<Hold> all = new ArrayList<>(holds.getOrDefault(personId, List.of()));
++        String retired = retiredFrom.get(personId);
++        if (retired != null && retired.compareTo(day.toString()) <= 0) all.add(new Hold(null, null));
++        return all;
++    }
++
++    private static <V> V latest(TreeMap<LocalDate, V> dated, LocalDate on) {
++        if (dated == null) return null;
++        Map.Entry<LocalDate, V> e = dated.floorEntry(on);
++        return e == null ? null : e.getValue();
++    }
++
++    /** The grade a person had then on a date. */
++    public String gradeOn(long personId, LocalDate on) {
++        return latest(grades.get(personId), on);
++    }
++
++    /** The rate that would apply then to a person on a date; null when there is none. */
++    private Rate rateOn(long personId, LocalDate on) {
++        String grade = gradeOn(personId, on);
++        return grade == null ? null : latest(rates.get(grade), on);
++    }
++
++    /** A dated setting's value then on a date: a list holding the value (null when blank), empty when none was recorded. */
++    private List<String> setting(String key, LocalDate on) {
++        TreeMap<LocalDate, String> dated = settings.get(key);
++        if (dated == null) return List.of();
++        Map.Entry<LocalDate, String> e = dated.floorEntry(on);
++        if (e == null) return List.of();
++        List<String> found = new ArrayList<>();
++        found.add(e.getValue());
++        return found;
++    }
++
++    /** The floor then on a date; 1.00 before any was recorded. */
++    public BigDecimal floor(LocalDate on) {
++        List<String> found = setting("floor", on);
++        return found.isEmpty() || found.get(0) == null ? BigDecimal.ONE.setScale(2) : new BigDecimal(found.get(0)).setScale(2);
++    }
++
++    /** The late percent then on a date; 0.00 before any was recorded. */
++    public BigDecimal latePct(LocalDate on) {
++        List<String> found = setting("late-pct", on);
++        return found.isEmpty() || found.get(0) == null ? BigDecimal.ZERO.setScale(2) : new BigDecimal(found.get(0)).setScale(2);
++    }
++
++    /** The cap in force on the day; null when there was none. */
++    public BigDecimal cap() {
++        List<String> found = setting("cap", day);
++        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
++    }
++
++    /** A claim's rate figure then, not floored; null when no rate applied. */
++    public BigDecimal due(Claim claim) {
++        LocalDate date = LocalDate.parse(claim.date());
++        Rate rate = rateOn(claim.personId(), date);
++        if (rate == null || (rate.to() != null && rate.to().isBefore(date))) return null;
++        return new BigDecimal(claim.amount()).multiply(rate.pct()).movePointLeft(2).setScale(2, rounding(claim));
++    }
++
++    /** How a claim's figures rounded then: half up when dated before the policy date (blank: the day), else
++     *  half to even; a correction by the date of the claim it corrects. */
++    private RoundingMode rounding(Claim claim) {
++        String date = claim.date();
++        if (claim.corrects() != null) {
++            String corrected = correctedDate.apply(claim);
++            if (corrected != null) date = corrected;
++        }
++        LocalDate policy = policyDate != null ? policyDate : day;
++        return LocalDate.parse(date).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
++    }
++
++    /** A claim's figure then: its settled due, else the one a statement bound it to (none when bound to
++     *  n/a), else its rate figure; null when it had none. */
++    public BigDecimal figure(Claim claim) {
++        if (claim.due() != null) return new BigDecimal(claim.due());
++        if (claim.bound() && claim.statedNa()) return null;
++        if (claim.bound() && claim.statedDue() != null) return new BigDecimal(claim.statedDue());
++        return due(claim);
++    }
++
++    /** A claim's due then: its settled due, else its figure plus its late charges on the day, at least the
++     *  floor (a correction has neither); null when it had no figure. */
++    public BigDecimal dueNow(Claim claim) {
++        if (claim.due() != null) return new BigDecimal(claim.due());
++        BigDecimal figure = figure(claim);
++        if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
++        BigDecimal due = figure.add(lateCharge(claim, figure));
++        return due.max(floor(LocalDate.parse(claim.date())));
++    }
++
++    private BigDecimal lateCharge(Claim claim, BigDecimal figure) {
++        BigDecimal charge = BigDecimal.ZERO.setScale(2);
++        if (!claim.open() || claim.deferred()) return charge;
++        LocalDate dueBy = LocalDate.parse(claim.dueBy());
++        long periods = dueBy.isBefore(day) ? ChronoUnit.DAYS.between(dueBy, day) / 30 : 0;
++        RoundingMode rounding = rounding(claim);
++        for (long n = 1; n <= periods; n++) {
++            BigDecimal pct = latePct(dueBy.plusDays(30 * n));
++            if (pct.signum() == 0) continue;
++            charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
++        }
++        return charge;
++    }
++
++    /** Whether the rate that would apply to a claim then had ended before its date. */
++    public boolean rateEnded(Claim claim) {
++        LocalDate date = LocalDate.parse(claim.date());
++        Rate rate = rateOn(claim.personId(), date);
++        return rate != null && rate.to() != null && rate.to().isBefore(date);
++    }
++
++    /** Whether a rate for the grade a person had on the day was in force on it. */
++    public boolean rated(long personId) {
++        Rate rate = rateOn(personId, day);
++        return rate != null && (rate.to() == null || !rate.to().isBefore(day));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 30186cd82..143198337 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -8,6 +8,7 @@ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.history.HistoryRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+@@ -30,9 +31,11 @@ public class PersonRepository {
+             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class));
+ 
+     private final JdbcTemplate jdbc;
++    private final HistoryRepository history;
+ 
+-    public PersonRepository(JdbcTemplate jdbc) {
++    public PersonRepository(JdbcTemplate jdbc, HistoryRepository history) {
+         this.jdbc = jdbc;
++        this.history = history;
+     }
+ 
+     public boolean sheetExists(String sheetId) {
+@@ -93,6 +96,7 @@ public class PersonRepository {
+                 sheetId, id, on);
+         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)",
+                 sheetId, id, grade, on);
++        history.grade(sheetId, id, grade, from);
+     }
+ 
+     /** A person on the sheet; null when the sheet has no such person. */
+@@ -127,12 +131,14 @@ public class PersonRepository {
+     /** Retire a person from a date. */
+     public void retire(String sheetId, long id, LocalDate from) {
+         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), id, sheetId);
++        history.retire(sheetId, id, from);
+     }
+ 
+     /** Put a person on hold from a from-date to a to-date (null: open-ended). */
+     public void hold(String sheetId, long id, LocalDate from, LocalDate to) {
+-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+-                sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to));
++        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on)"
++                + " SELECT ?, ?, ?, ?, today FROM sheet WHERE id = ?",
++                sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to), sheetId);
+     }
+ 
+     /** Refuse a claim of the person dated after the date they are retired from. */
+@@ -162,11 +168,13 @@ public class PersonRepository {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(c -> {
+             PreparedStatement ps = c.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", new String[] { "id" });
++                    "INSERT INTO person (sheet_id, name, grade, terms, added_on)"
++                            + " SELECT ?, ?, ?, ?, today FROM sheet WHERE id = ?", new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+             ps.setString(3, grade);
+             ps.setObject(4, terms, java.sql.Types.INTEGER);
++            ps.setString(5, sheetId);
+             return ps;
+         }, keys);
+         long id = keys.getKey().longValue();
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 3ff98f97f..fc94bb432 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.HistoryRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -11,9 +12,11 @@ import org.springframework.stereotype.Repository;
+ public class RateRepository {
+ 
+     private final JdbcTemplate jdbc;
++    private final HistoryRepository history;
+ 
+-    public RateRepository(JdbcTemplate jdbc) {
++    public RateRepository(JdbcTemplate jdbc, HistoryRepository history) {
+         this.jdbc = jdbc;
++        this.history = history;
+     }
+ 
+     public boolean sheetExists(String sheetId) {
+@@ -38,6 +41,7 @@ public class RateRepository {
+                 sheetId, grade, on);
+         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                 sheetId, grade, pct, on, to == null ? null : Date.valueOf(to));
++        history.rate(sheetId, grade, pct, from, to);
+         return new Rate(grade, pct(pct), from(from), from(to));
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 5d22cd243..72e0e96b1 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -6,6 +6,7 @@ import java.time.LocalDate;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.HistoryRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -19,9 +20,11 @@ public class SettingsRepository {
+     public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+ 
+     private final JdbcTemplate jdbc;
++    private final HistoryRepository history;
+ 
+-    public SettingsRepository(JdbcTemplate jdbc) {
++    public SettingsRepository(JdbcTemplate jdbc, HistoryRepository history) {
+         this.jdbc = jdbc;
++        this.history = history;
+     }
+ 
+     public boolean sheetExists(String sheetId) {
+@@ -73,6 +76,7 @@ public class SettingsRepository {
+     public void record(String sheetId, String key, LocalDate from, String value) {
+         jdbc.update("MERGE INTO setting_value (sheet_id, setting_key, from_date, setting) KEY (sheet_id, setting_key, from_date)"
+                 + " VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
++        history.setting(sheetId, key, from, value);
+     }
+ 
+     /** Every value recorded for each dated setting, by key, each oldest from-date first. */
+@@ -185,6 +189,7 @@ public class SettingsRepository {
+     public void setPolicyDate(String sheetId, LocalDate policyDate) {
+         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", policyDate == null ? null : Date.valueOf(policyDate),
+                 sheetId);
++        history.policy(sheetId, policyDate);
+     }
+ 
+     /** The sheet's period numbering from-date; null when blank (period numbering is off). */
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementInput.java b/src/main/java/net/officefloor/hq/app/statement/StatementInput.java
+new file mode 100644
+index 000000000..f9898d8eb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.statement;
++
++import java.time.LocalDate;
++
++/** A validated statement form; {@code asof} is null when left blank (the statement is taken now). */
++public record StatementInput(LocalDate asof) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+new file mode 100644
+index 000000000..81e651659
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.statement;
++
++/** The statement form: the date the statement is taken as of (blank: now). */
++public record StatementRequest(String asof) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 409462e4a..89e03c5cf 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -2,17 +2,22 @@ package net.officefloor.hq.app.statement;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.HistoryRepository;
++import net.officefloor.hq.app.history.SheetAsOf;
++import net.officefloor.hq.app.person.Hold;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+@@ -23,11 +28,19 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
+  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
+  *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at
+- *  most the sheet's cap. */
++ *  most the sheet's cap.
++ *
++ *  <p>Taken as of a date (on or before the sheet's today; a later one is refused, as is one before the person
++ *  was added), it binds the claims of theirs that counted at the end of that date to their figures as they
++ *  stood then: every change made while the sheet's today was on or before that date counts, every later one
++ *  does not, and that date stands in for the sheet's today in every figure (see {@link SheetAsOf}). Every
++ *  other claim of theirs is unbound. The statement's date is that date, its due-total that day's, and its
++ *  record ends with asof=<date>. */
+ public class TakeStatement {
+     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+-            ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
+-            SheetRepository sheets, SettingsRepository settings, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
++            @Val StatementInput input, ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
++            SheetRepository sheets, SettingsRepository settings, HistoryRepository history, Audit audit, Rollup rollup,
++            Out<Person> person) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long pid;
+@@ -41,33 +54,49 @@ public class TakeStatement {
+             throw new BadRequestException("no such person");
+         }
+         LocalDate today = sheets.today(id);
++        LocalDate asof = input.asof();
++        if (asof != null) {
++            if (today != null && asof.isAfter(today)) {
++                throw new BadRequestException("a statement cannot be taken as of a date after the sheet's today (" + today + ")");
++            }
++            if (!history.existed(id, pid, asof)) {
++                throw new BadRequestException(found.name() + " was not on the sheet on " + asof);
++            }
++        }
++        SheetAsOf then = asof == null ? null : history.asOf(id, asof);
++        List<Hold> holds = then == null ? found.liveHolds(today == null ? null : today.toString()) : then.liveHolds(pid);
+         Rollup.Snapshot before = rollup.take(id);
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean fixed = false;
+         int count = 0;
+-        for (Claim c : claims.ofPerson(id, pid)) {
+-            if (!c.counts(found.liveHolds(today == null ? null : today.toString()))) {
+-                claims.bind(id, c.id(), false, null, false);
++        for (Claim live : claims.ofPerson(id, pid)) {
++            // As of a date, the claim as it stood then: absent when it was added later, or was another's then.
++            Claim c = then == null ? live : then.claims().get(live.id());
++            if (c == null || c.personId() != pid || !c.counts(holds)) {
++                claims.bind(id, live.id(), false, null, false);
+                 continue;
+             }
+             count++;
+             fixed |= c.fixed();
+             // The claim is bound to its figure; its late charge is not bound, but counts in the due-total.
+-            BigDecimal figure = claims.figure(id, c);
+-            BigDecimal now = claims.dueNow(id, c);
++            BigDecimal figure = then == null ? claims.figure(id, c) : then.figure(c);
++            BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
+             if (now != null) {
+                 total = total.add(now);
+                 fixed = true;
+             }
+             // With no figure because the rate that would apply has ended (or it is bound to n/a already),
+             // it is bound to n/a: it stays n/a even once a later rate is in force on its date.
+-            boolean na = figure == null && ((c.bound() && c.statedNa()) || claims.rateEnded(id, c));
++            boolean na = figure == null && ((c.bound() && c.statedNa())
++                    || (then == null ? claims.rateEnded(id, c) : then.rateEnded(c)));
+             claims.bind(id, c.id(), true, figure, na);
+         }
+-        String dueTotal = fixed || claims.rated(id, pid, today) ? SettingsRepository.capped(total, settings.cap(id)).setScale(2).toPlainString() : "n/a";
+-        people.stated(id, pid, dueTotal, today);
++        boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
++        BigDecimal cap = then == null ? settings.cap(id) : then.cap();
++        String dueTotal = fixed || rated ? SettingsRepository.capped(total, cap).setScale(2).toPlainString() : "n/a";
++        people.stated(id, pid, dueTotal, asof == null ? today : asof);
+         audit.record("STATEMENT sheet=" + id + " by=" + by + " name=" + found.name() + " due-total=" + dueTotal
+-                + " claims=" + count);
++                + " claims=" + count + (asof == null ? "" : " asof=" + asof));
+         rollup.record(id, by, before);
+         person.set(people.find(id, pid));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+new file mode 100644
+index 000000000..18e0e9309
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.statement;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the statement form: a blank as-of date takes the statement now. */
++public class ValidateStatement {
++    public void validate(@RequestBody StatementRequest request, Out<StatementInput> statement)
++            throws BadRequestException {
++        String raw = request == null || request.asof() == null ? "" : request.asof().trim();
++        LocalDate asof = null;
++        if (!raw.isEmpty()) {
++            try {
++                asof = LocalDate.parse(raw);
++            } catch (DateTimeParseException e) {
++                throw new BadRequestException("the statement date must be yyyy-mm-dd");
++            }
++        }
++        statement.set(new StatementInput(asof));
++    }
++}
+diff --git a/src/main/resources/db/migration/V48__history.sql b/src/main/resources/db/migration/V48__history.sql
+new file mode 100644
+index 000000000..ca17f3bba
+--- /dev/null
++++ b/src/main/resources/db/migration/V48__history.sql
+@@ -0,0 +1,95 @@
++-- The sheet's history, for a statement taken as of a past date: each change is kept with the sheet's
++-- today when it was made (on_date), in the order made (id). The state as of the end of a date is what
++-- the changes made while the sheet's today was on or before it left. What was there before this
++-- history was kept counts from the beginning of time (0001-01-01).
++
++-- A person counts from the sheet's today when they were added.
++ALTER TABLE person ADD COLUMN added_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++
++-- A hold counts from the sheet's today when it was given.
++ALTER TABLE person_hold ADD COLUMN held_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++
++-- A claim's values after each change to it (the ones its figures and statement binding depend on).
++CREATE TABLE claim_history (
++    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id       VARCHAR(200)   NOT NULL REFERENCES sheet (id),
++    on_date        DATE           NOT NULL,
++    claim_id       BIGINT         NOT NULL,
++    person_id      BIGINT         NOT NULL,
++    amount         DECIMAL(14, 2) NOT NULL,
++    claim_date     DATE           NOT NULL,
++    status         VARCHAR(10)    NOT NULL,
++    settled_due    DECIMAL(19, 2),
++    stated         BOOLEAN        NOT NULL,
++    stated_due     DECIMAL(19, 2),
++    stated_na      BOOLEAN        NOT NULL,
++    corrects       VARCHAR(600),
++    due_by         DATE           NOT NULL,
++    deferred_until DATE
++);
++CREATE INDEX claim_history_sheet ON claim_history (sheet_id, claim_id, id);
++INSERT INTO claim_history (sheet_id, on_date, claim_id, person_id, amount, claim_date, status, settled_due, stated,
++        stated_due, stated_na, corrects, due_by, deferred_until)
++    SELECT sheet_id, DATE '0001-01-01', id, person_id, amount, claim_date, status, settled_due, stated, stated_due,
++        stated_na, corrects, due_by, deferred_until FROM claim ORDER BY id;
++
++-- Each rate set: it replaces the grade's rate from the same from-date.
++CREATE TABLE rate_history (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200)  NOT NULL REFERENCES sheet (id),
++    on_date   DATE          NOT NULL,
++    grade     VARCHAR(1)    NOT NULL,
++    pct       DECIMAL(7, 2) NOT NULL,
++    from_date DATE,
++    to_date   DATE
++);
++CREATE INDEX rate_history_sheet ON rate_history (sheet_id, id);
++INSERT INTO rate_history (sheet_id, on_date, grade, pct, from_date, to_date)
++    SELECT sheet_id, DATE '0001-01-01', grade, pct, from_date, to_date FROM rate;
++
++-- Each grade given to a person: it replaces the one they had from the same from-date.
++CREATE TABLE grade_history (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    on_date   DATE         NOT NULL,
++    person_id BIGINT       NOT NULL,
++    grade     VARCHAR(1)   NOT NULL,
++    from_date DATE
++);
++CREATE INDEX grade_history_sheet ON grade_history (sheet_id, person_id, id);
++INSERT INTO grade_history (sheet_id, on_date, person_id, grade, from_date)
++    SELECT sheet_id, DATE '0001-01-01', person_id, grade, from_date FROM person_grade;
++
++-- Each dated setting value recorded: it replaces the one recorded from the same from-date.
++CREATE TABLE setting_history (
++    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id    VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    on_date     DATE         NOT NULL,
++    setting_key VARCHAR(20)  NOT NULL,
++    from_date   DATE         NOT NULL,
++    setting     VARCHAR(20)
++);
++CREATE INDEX setting_history_sheet ON setting_history (sheet_id, id);
++INSERT INTO setting_history (sheet_id, on_date, setting_key, from_date, setting)
++    SELECT sheet_id, DATE '0001-01-01', setting_key, from_date, setting FROM setting_value;
++
++-- Each policy date set (null: blank, the sheet's today).
++CREATE TABLE policy_history (
++    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id    VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    on_date     DATE         NOT NULL,
++    policy_date DATE
++);
++INSERT INTO policy_history (sheet_id, on_date, policy_date)
++    SELECT id, DATE '0001-01-01', policy_date FROM sheet WHERE policy_date IS NOT NULL;
++
++-- Each retirement of a person.
++CREATE TABLE retire_history (
++    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id     VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    on_date      DATE         NOT NULL,
++    person_id    BIGINT       NOT NULL,
++    retired_from DATE         NOT NULL
++);
++INSERT INTO retire_history (sheet_id, on_date, person_id, retired_from)
++    SELECT sheet_id, DATE '0001-01-01', id, retired_from FROM person WHERE retired_from IS NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index 9e4ae768e..994ec03e9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,7 +1,11 @@
+-# Take a person's statement: record their due-total, and bind each of their counting claims to the
+-# figure it has now (unbinding the rest), until their next statement.
++# Take a person's statement, now or as of a date on or before the sheet's today (blank: now): record
++# their due-total, and bind each of their counting claims to the figure it had then (unbinding the
++# rest), until their next statement.
+ guard:
+   class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.statement.ValidateStatement
+   next: take
+ take:
+   class: net.officefloor.hq.app.statement.TakeStatement
