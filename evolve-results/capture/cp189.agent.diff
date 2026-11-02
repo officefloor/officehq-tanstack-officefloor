@@ -1,0 +1,410 @@
+diff --git a/src/main/frontend/features/people/import.slot.tsx b/src/main/frontend/features/people/import.slot.tsx
+index 7df3023b..47836ec7 100644
+--- a/src/main/frontend/features/people/import.slot.tsx
++++ b/src/main/frontend/features/people/import.slot.tsx
+@@ -11,7 +11,7 @@ type Imported = { added: number; updated: number; people: Person[] };
+ 
+ // The import box: lines of name,grade,terms,contact (the last two may be absent or blank), in order. A line whose name
+ // is a name or alias of a person on the sheet updates them as the person form would (terms and contact only when given);
+-// any other adds a person. The server checks every line by the form's rules first (a person or contact repeated within
++// any other adds a person (a blank grade: the sheet's default grade). The server checks every line by the form's rules first (a person or contact repeated within
+ // the import too), so a refusal changes no one. Shows how many were added and how many updated.
+ function ImportPeople({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+@@ -59,7 +59,7 @@ function ImportPeople({ sheet, user }: { sheet: string; user: string }) {
+       {importing.isError && (
+         <span data-testid="import-error" role="alert">
+           {' '}Nothing was imported: every line needs a name (a person on the sheet, by name or alias, or a new name not
+-          in use), naming no one twice, a grade of A, B or C, terms of whole days or blank, and a contact not another
++          in use), naming no one twice, a grade of A, B or C (blank: the sheet's default grade), terms of whole days or blank, and a contact not another
+           person's nor repeated.
+         </span>
+       )}
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 9ef1d769..71f559f8 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -37,7 +37,7 @@ type Quick = { name: string; amount: string };
+ const QUICK_EMPTY: Quick = { name: '', amount: '' };
+ 
+ // The quick-add bar: a name and an amount make a draft claim dated the sheet's today with an empty
+-// note, for the person of that name (ignoring case), who is first added with grade A when not on the
++// note, for the person of that name (ignoring case), who is first added with the sheet's default grade when not on the
+ // sheet. The server checks every rule before writing, so a refusal adds no one.
+ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index f979ab7c..32abdadc 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -41,6 +41,8 @@ import { Fig } from '../locale/Fig';
+ // The fiscal start month (1 to 12, not dated; 1 unless set): the month each fiscal year starts in.
+ // The rounding mode (half-up or half-even, dated; blank means none): a claim whose date has one in force rounds its
+ // live figures by it in place of the policy date.
++// The default grade (A, B or C, not dated; blank means A): the grade a person added by the quick-add bar, or by an
++// import line with a blank grade, takes. Changing it changes no one.
+ function Settings({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSettings(sheet);
+@@ -64,6 +66,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
+   const [alertThreshold, setAlertThreshold] = useState('');
+   const [rounding, setRounding] = useState('');
++  const [defaultGrade, setDefaultGrade] = useState('');
+   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
+   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
+   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
+@@ -109,6 +112,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       setFiscalStartMonth('');
+       setAlertThreshold('');
+       setRounding('');
++      setDefaultGrade('');
+       setGradeTerms({});
+       setGradeGrace({});
+       setGradeProofThreshold({});
+@@ -150,7 +154,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
+       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
+       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
+-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
++      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
+       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
+     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
+@@ -525,6 +529,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+           />
+         </label>{' '}
+         now <span data-testid="setting-alert-threshold-current"><Fig>{data?.alertThreshold ?? ''}</Fig></span>{' '}
++        <label>
++          Default grade{' '}
++          <input
++            data-testid="setting-default-grade"
++            placeholder="A, B or C (blank: A)"
++            value={defaultGrade}
++            onChange={(e) => {
++              setDefaultGrade(e.target.value);
++              touch('default-grade');
++            }}
++            // As the policy date: clearing an already blank field must still send the blank.
++            onFocus={() => touch('default-grade')}
++          />
++        </label>{' '}
++        now <span data-testid="setting-default-grade-current">{data?.defaultGrade ?? ''}</span>{' '}
+         {PERMISSIONS.map(({ action, standing }) => (
+           <span key={action}>
+             <label>
+@@ -550,7 +569,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error" role="alert">
+-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank; the proof kinds receipt or photo, comma separated, or blank.
++            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank; the proof kinds receipt or photo, comma separated, or blank; the default grade A, B or C, or blank.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index dff3c1ca..27e3df1e 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -30,11 +30,13 @@ import { hundredths } from '../rates/rates';
+  *  And the review threshold (two decimals; '' for none), in force on the sheet's today.
+  *  And the review SLA (a whole number of days; '' for none, not dated): a REVIEW claim whose review day plus it is
+  *  before the sheet's today is late for review.
++ *  And the default grade (A, B or C; '' for A, not dated): the grade a person added by the quick-add bar, or by an
++ *  import line with a blank grade, takes.
+  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
+ export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
+   termsA: string; termsB: string; termsC: string; cap: string;
+   proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
+-  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; proofKinds: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
++  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; proofKinds: string; defaultGrade: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+ 
+ /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
+ export type DatedValue = { from: string; value: string };
+@@ -44,7 +46,7 @@ export type DatedCents = (date: string) => bigint;
+ 
+ /** Whether a setting is dated: every one that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates and the grace days are not. */
+ export function isDated(key: SettingKey): boolean {
+-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'review-sla' && key !== 'entry-date' && key !== 'proof-kinds' && key !== 'pot' && key !== 'alert-threshold' && key !== 'parent' && key !== 'fiscal-start-month' && !key.startsWith('perm-');
++  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'review-sla' && key !== 'entry-date' && key !== 'proof-kinds' && key !== 'pot' && key !== 'alert-threshold' && key !== 'parent' && key !== 'fiscal-start-month' && key !== 'default-grade' && !key.startsWith('perm-');
+ }
+ 
+ /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
+@@ -63,7 +65,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
+ 
+ /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
+ export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
+-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | `perm-${PermAction}`;
++  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
+ 
+ /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
+ export const PERMISSIONS = [
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+index f717c10d..f3c0bbfc 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
+  * statement bound them to, listed after the other's claims in the order they were added. Their statements count as
+  * the other's too; the other's last statement stays theirs (or, having none, becomes the merged person's). Their
+  * name and aliases become aliases of the other; their patrons are added to the other's (not the other themselves, no
+- * repeats); anyone naming them as patron names the other instead (no repeats); their pool memberships move to the
++ * repeats); anyone naming them as patron names the other instead (no repeats); their pool and crew places move to the
+  * other, the shares added when the other is already a member, and so do their closed periods' totals. Their holds,
+  * watchers and contact are dropped, and they leave the sheet.
+  */
+@@ -92,6 +92,17 @@ public class PersonMerger {
+         }
+         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
+ 
++        // Crews: the crews they lead are led by the other (who leaves being a member of them); their crew
++        // memberships move to the other, where the other is not already in the crew.
++        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet = ? AND lead_id = ?", t, sheet, f);
++        jdbc.update("DELETE FROM crew_member WHERE sheet = ? AND person_id = ? AND crew IN"
++                + " (SELECT name FROM crew WHERE sheet = ? AND lead_id = ?)", sheet, t, sheet, t);
++        jdbc.update("UPDATE crew_member m SET person_id = ? WHERE m.sheet = ? AND m.person_id = ?"
++                + " AND NOT EXISTS (SELECT 1 FROM crew c WHERE c.sheet = m.sheet AND c.name = m.crew AND c.lead_id = ?)"
++                + " AND NOT EXISTS (SELECT 1 FROM crew_member o WHERE o.sheet = m.sheet AND o.crew = m.crew AND o.person_id = ?)",
++                t, sheet, f, t, t);
++        jdbc.update("DELETE FROM crew_member WHERE sheet = ? AND person_id = ?", sheet, f);
++
+         // Closed periods' totals follow the claims.
+         for (Map<String, Object> p : jdbc.queryForList(
+                 "SELECT period, total, carried FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f)) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateImport.java b/src/main/java/net/officefloor/hq/app/person/ValidateImport.java
+index c4177953..f2aa24bc 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateImport.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateImport.java
+@@ -6,6 +6,7 @@ import java.util.List;
+ import java.util.Locale;
+ import java.util.Set;
+ import net.officefloor.hq.app.alias.Aliases;
++import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -15,13 +16,13 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * before anything is written, so a refused import changes no one. A line whose name is a name or alias of a person on
+  * the sheet updates them (refused when they clash with the tree, as the form refuses); any other line's name must not be
+  * in use in the tree. A contact must not be another person's, and neither a person nor a contact may repeat within the
+- * import (ignoring case). Blank lines are
++ * import (ignoring case). A blank grade takes the sheet's default grade. Blank lines are
+  * skipped; an import with no line is refused.
+  */
+ public class ValidateImport {
+ 
+     public void validate(@PathVariable("sheet") String sheet, @RequestBody ImportRequest request, People people,
+-            Aliases aliases, Out<ImportedPeople> imported) throws InvalidPersonException {
++            Aliases aliases, Settings settings, Out<ImportedPeople> imported) throws InvalidPersonException {
+         String text = request == null || request.text() == null ? "" : request.text();
+         List<ImportedPeople.Line> lines = new ArrayList<>();
+         Set<String> names = new HashSet<>();
+@@ -38,7 +39,8 @@ public class ValidateImport {
+             }
+             PersonRequest checked;
+             try {
+-                checked = ValidatePerson.check(new PersonRequest(fields[0], fields[1], null, null,
++                checked = ValidatePerson.check(new PersonRequest(fields[0],
++                        fields[1].isBlank() ? settings.defaultGrade(sheet) : fields[1], null, null,
+                         fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
+             } catch (InvalidPersonException e) {
+                 throw new InvalidPersonException("Line " + at + ": " + e.getMessage());
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 034ce52b..eb2c0828 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -51,17 +51,24 @@ public class Pools {
+      * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
+      * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}). Each member
+      * also has, for every period whose to-date is on or before the sheet's today, their cut as it stood at the end of
+-     * that period (see {@link #asAt}).
++     * that period (see {@link #asAt}); blank when they were not then in the pool.
+      */
+     public List<Pool> list(String sheet) {
+         LocalDate now = clock.today(sheet);
+         List<Pool> pools = list(sheet, now, settings.pot(sheet), null);
+         Map<String, Map<String, String>> cuts = new HashMap<>();
+-        for (Period period : periods.list(sheet)) {
+-            LocalDate end = LocalDate.parse(period.to());
+-            if (end.isAfter(now)) {
+-                continue;
++        List<Period> ended = periods.list(sheet).stream()
++                .filter((period) -> !LocalDate.parse(period.to()).isAfter(now)).toList();
++        // A member not in the pool at a period's end (or the pool not yet added) has a blank cut for it.
++        for (Pool pool : pools) {
++            for (PoolMember m : pool.members()) {
++                Map<String, String> blank = new LinkedHashMap<>();
++                ended.forEach((period) -> blank.put(period.name(), ""));
++                cuts.put(pool.name() + "\n" + m.key(), blank);
+             }
++        }
++        for (Period period : ended) {
++            LocalDate end = LocalDate.parse(period.to());
+             for (Pool pool : asAt(sheet, end)) {
+                 for (PoolMember m : pool.members()) {
+                     cuts.computeIfAbsent(pool.name() + "\n" + m.key(), (k) -> new LinkedHashMap<>())
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ResolveQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/ResolveQuickAddPerson.java
+index af55b9d5..b4eaed39 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/ResolveQuickAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ResolveQuickAddPerson.java
+@@ -5,15 +5,16 @@ import net.officefloor.hq.app.person.DuplicatePersonNameException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The person on the sheet with the typed name (ignoring case), else a new one of grade A. */
++/** The person on the sheet with the typed name (ignoring case), else a new one of the sheet's default grade. */
+ public class ResolveQuickAddPerson {
+     public void resolve(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+-            @Val QuickAddRequest request, People people, Audit audit, Rollup rollup, Out<Person> person)
++            @Val QuickAddRequest request, People people, Settings settings, Audit audit, Rollup rollup, Out<Person> person)
+             throws DuplicatePersonNameException {
+         Person found = people.findByName(sheet, request.name());
+         if (found != null) {
+@@ -21,7 +22,7 @@ public class ResolveQuickAddPerson {
+             return;
+         }
+         Rollup.Snapshot before = rollup.take(sheet);
+-        Person added = people.add(sheet, request.name(), "A");
++        Person added = people.add(sheet, request.name(), settings.defaultGrade(sheet));
+         person.set(added);
+         audit.record("PERSON_ADDED sheet=" + sheet + " by=" + user + " name=" + added.name() + " grade="
+                 + added.grade());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index bf958841..b2197679 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -104,6 +104,10 @@ public class Settings {
+      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
+     public static final String PARENT = "parent";
+ 
++    /** The grade (one of the grades, not dated) a person added by the quick-add bar, or by an import line with a blank
++     *  grade, takes; blank: A. Changing it changes no one. */
++    public static final String DEFAULT_GRADE = "default-grade";
++
+     /** The month (1 to 12, not dated) a fiscal year starts in; unset: 1. A fiscal year is named FY<yyyy> by the calendar
+      *  year its first day falls in. */
+     public static final String FISCAL_START_MONTH = "fiscal-start-month";
+@@ -137,7 +141,7 @@ public class Settings {
+     public static boolean dated(String key) {
+         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+-                && !key.startsWith("perm-");
++                && !DEFAULT_GRADE.equals(key) && !key.startsWith("perm-");
+     }
+ 
+     /** The from-date an undated setting's one value is kept under. */
+@@ -376,6 +380,12 @@ public class Settings {
+         return Integer.parseInt(month.isEmpty() ? DEFAULT_FISCAL_START_MONTH : month);
+     }
+ 
++    /** The grade a new person takes where none is given: the sheet's default grade, else A. */
++    public String defaultGrade(String sheet) {
++        String grade = get(sheet, DEFAULT_GRADE);
++        return grade.isEmpty() ? GRADES.get(0) : grade;
++    }
++
+     /** The id of the sheet's parent, or "" when it has none. */
+     public String parent(String sheet) {
+         List<String> found = jdbc.queryForList("SELECT parent FROM sheet_parent WHERE child = ?", String.class, sheet);
+@@ -445,6 +455,7 @@ public class Settings {
+                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
+                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
+                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
+-                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS));
++                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
++                get(sheet, DEFAULT_GRADE));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index b6687406..e8ad3d72 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -13,12 +13,12 @@ import java.util.Map;
+  * or "" for none. And the parent sheet's id, or "" for none. And the fiscal start month (1 to 12). And the alert
+  * threshold with two decimals, or "" for off. And the rounding mode (half-up or half-even), or "" for none. And the review
+  * threshold with two decimals, or "" for none. And the escalation gap (a whole number of days), or "" for off. And the review SLA (a whole number of
+- * days), or "" for none. And the proof kinds (comma separated), or "" for none.
++ * days), or "" for none. And the proof kinds (comma separated), or "" for none. And the default grade, or "" for A.
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
+         String proofThreshold, Map<String, String> perms, Map<String, List<DatedValue>> dated,
+         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
++        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index cbf0583b..eaa57518 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -64,7 +64,7 @@ public class ValidateSetting {
+         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.PROOF_KINDS.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
+                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ESCALATE_AFTER.equals(key) && !Settings.REVIEW_SLA.equals(key) && !Settings.ENTRY_DATE.equals(key)
+-                && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key)
++                && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key) && !Settings.DEFAULT_GRADE.equals(key)
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
+@@ -147,6 +147,13 @@ public class ValidateSetting {
+             }
+             return new SettingInput(key, Integer.toString(month));
+         }
++        // The default grade is one of the grades; blank means A.
++        if (Settings.DEFAULT_GRADE.equals(key)) {
++            if (!value.isEmpty() && !Settings.GRADES.contains(value)) {
++                throw new InvalidSettingException("The default grade must be A, B or C, or blank");
++            }
++            return new SettingInput(key, value);
++        }
+         // The parent is a sheet id, checked against the sheets by the caller; blank means none.
+         if (Settings.PARENT.equals(key)) {
+             return new SettingInput(key, value);
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+index d6d1bfa7..34af4b59 100644
+--- a/tmp_e2e/run.log
++++ b/tmp_e2e/run.log
+@@ -2,29 +2,11 @@ Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/20261027
+ 
+ Running 4 tests using 1 worker
+ 
+-  ✘  1 [chromium] › acceptance.spec.ts:6:7 › partial settle › partial settle (18.3s)
+-  ✓  2 [chromium] › acceptance.spec.ts:78:7 › partial settle › partial settle scenario 1 (37.4s)
+-  ✓  3 [chromium] › acceptance.spec.ts:766:7 › partial settle › partial settle scenario 2 (25.2s)
+-  ✓  4 [chromium] › acceptance.spec.ts:1313:7 › partial settle › partial settle scenario 3 (25.2s)
+-
+-
+-  1) [chromium] › acceptance.spec.ts:6:7 › partial settle › partial settle ─────────────────────────
+-
+-    Error: the screen refused this action (its error element appeared)
+-
+-       at ../support/ui.ts:25
+-
+-      23 |  *  lands on the arranging line rather than on a later assertion. */
+-      24 | export function must(id: string | null): string {
+-    > 25 |   if (id === null) throw new Error('the screen refused this action (its error element appeared)');
+-         |                          ^
+-      26 |   return id;
+-      27 | }
+-      28 |
+-
+-        at Object.must (/home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/support/ui.ts:25:26)
+-        at /home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/specs/acceptance.spec.ts:24:24
+-
+-  1 failed
+-    [chromium] › acceptance.spec.ts:6:7 › partial settle › partial settle ──────────────────────────
+-  3 passed (1.9m)
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › default grade › default grade (9.7s)
++  ✓  2 [chromium] › acceptance.spec.ts:101:7 › default grade › default grade scenario 1 (24.5s)
++  ✓  3 [chromium] › acceptance.spec.ts:476:7 › default grade › default grade scenario 2 (29.7s)
++  ✓  4 [chromium] › acceptance.spec.ts:1060:7 › default grade › default grade scenario 3 (39.2s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.7m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (1.7m)
