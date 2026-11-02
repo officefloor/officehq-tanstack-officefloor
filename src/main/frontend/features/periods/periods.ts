@@ -14,7 +14,8 @@ import type { DatedCents } from '../settings/settings';
  *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change; and the most OPEN or
  *  PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
  *  (soft-)closed (by person id; empty while open); and each person's opening balance for it, added to their carried
- *  figure (by person id; none for a person with no opening). */
+ *  figure (by person id; none for a person with no opening); and whether a steward has locked it, so it cannot be
+ *  reopened. */
 export type Period = {
   name: string;
   from: string;
@@ -26,6 +27,7 @@ export type Period = {
   cap: number | null;
   closedCarried: Record<string, string>;
   openings: Record<string, string>;
+  locked: boolean;
 };
 
 export const periodsKey = (sheet: string) => ['periods', sheet] as const;
@@ -63,6 +65,14 @@ export const softClosePeriodPath = (sheet: string, name: string) =>
 /** Where a closed or soft-closed period is reopened (a steward only). */
 export const reopenPeriodPath = (sheet: string, name: string) =>
   `${periodsPath(sheet)}/${encodeURIComponent(name)}/reopen`;
+
+/** Where a period is locked (a steward only). */
+export const lockPeriodPath = (sheet: string, name: string) =>
+  `${periodsPath(sheet)}/${encodeURIComponent(name)}/lock`;
+
+/** Where a locked period is unlocked (a steward only). */
+export const unlockPeriodPath = (sheet: string, name: string) =>
+  `${periodsPath(sheet)}/${encodeURIComponent(name)}/unlock`;
 
 /** Every period on the sheet, by from-date; no two overlap. */
 export function usePeriods(sheet: string) {

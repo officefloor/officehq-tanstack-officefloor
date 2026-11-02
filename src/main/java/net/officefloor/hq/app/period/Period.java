@@ -9,11 +9,12 @@ import java.util.Map;
  * figures fixed the same way, but claims due inside it may still be added, edited and change status; and the most OPEN
  * or PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
  * (soft-)closed (by person id, two decimals; empty while open); and each person's opening balance for it, added to their
- * carried figure (by person id, two decimals; none for a person with no opening).
+ * carried figure (by person id, two decimals; none for a person with no opening); and whether a steward has locked it, so
+ * it cannot be reopened.
  */
 public record Period(String name, String from, String to, boolean closed, String closedTotal,
         Map<Long, String> closedPeople, boolean soft, Integer cap, Map<Long, String> closedCarried,
-        Map<Long, String> openings) {
+        Map<Long, String> openings, boolean locked) {
 
     /** Whether its figures are fixed: closed or soft-closed. */
     public boolean fixed() {

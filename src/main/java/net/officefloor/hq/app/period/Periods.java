@@ -18,9 +18,10 @@ public class Periods {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
-            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of());
+            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of(),
+            rs.getBoolean("locked"));
 
-    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap FROM period";
+    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap, locked FROM period";
 
     private final JdbcTemplate jdbc;
 
@@ -42,7 +43,7 @@ public class Periods {
                     openings.put(rs.getLong("person"), rs.getBigDecimal("amount").toPlainString());
                 }, sheet, period.name());
         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(),
-                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings);
+                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings, period.locked());
     }
 
     /** Each person's opening balance for the period (by person id); none for a person with no opening. */
@@ -77,7 +78,7 @@ public class Periods {
                     carried.put(rs.getLong("person"), rs.getBigDecimal("carried").toPlainString());
                 }, sheet, period.name());
         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
-                period.soft(), period.cap(), carried, period.openings());
+                period.soft(), period.cap(), carried, period.openings(), period.locked());
     }
 
     /** The sheet's period of the name, or null when there is none. */
@@ -156,14 +157,20 @@ public class Periods {
         return true;
     }
 
-    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither (or is gone). */
+    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither, is locked (or is gone). */
     public boolean reopen(String sheet, String name) {
         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet = ? AND name = ?"
-                + " AND (closed OR soft)",
+                + " AND (closed OR soft) AND NOT locked",
                 sheet, name) != 1) {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
         return true;
+    }
+
+    /** Locks or unlocks the period; false when it already was (or is gone). */
+    public boolean lock(String sheet, String name, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE sheet = ? AND name = ? AND locked <> ?", locked, sheet,
+                name, locked) == 1;
     }
 }

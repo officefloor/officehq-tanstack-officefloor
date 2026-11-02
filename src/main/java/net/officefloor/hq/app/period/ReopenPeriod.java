@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Reopens a closed or soft-closed period: its fixed due-total is dropped, so it totals its claims' current figures again. Only a
- * role the permission matrix lets (by default a steward) may; refuses anyone else, a period not on the sheet, or one not closed.
+ * role the permission matrix lets (by default a steward) may; refuses anyone else, a period not on the sheet, one locked, or one not closed.
  */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheet") String sheet, @PathVariable("period") String period,
@@ -20,6 +20,9 @@ public class ReopenPeriod {
         Period found = periods.find(sheet, period);
         if (found == null) {
             throw new InvalidPeriodException("There is no period named " + period);
+        }
+        if (found.locked()) {
+            throw new InvalidPeriodException("The period " + period + " is locked");
         }
         if (!found.fixed() || !periods.reopen(sheet, period)) {
             throw new InvalidPeriodException("The period " + period + " is not closed");

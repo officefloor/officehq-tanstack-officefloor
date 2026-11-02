@@ -11,6 +11,8 @@ import { useFiscalStartMonth, useFloorCents } from '../settings/settings';
 import { useClaims, useLate } from '../claims/claims';
 import {
   closePeriodPath,
+  lockPeriodPath,
+  unlockPeriodPath,
   fiscalYearOf,
   generateFiscalYearPath,
   generatePeriodsPath,
@@ -28,7 +30,9 @@ import { Fig } from '../locale/Fig';
 // One period with its due-total (fixed once closed or soft-closed) and closed flag (yes, soft or no), and the buttons
 // that close, soft-close and reopen it. The server refuses closing a period already closed, soft-closing one already
 // closed or soft-closed, and reopening one neither; and any of them by a role the permission matrix does not allow;
-// the row shows that error until its next action.
+// the row shows that error until its next action. It also shows whether the period is locked, with the buttons that
+// lock and unlock it; the server refuses either by anyone but a steward, locking one locked, unlocking one not, and
+// reopening one locked.
 // It also shows the fiscal year its from-date falls in.
 function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; fiscalStart: number }) {
   const queryClient = useQueryClient();
@@ -46,8 +50,20 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
   });
   const closeOnce = useSubmitOnce(close);
   const softCloseOnce = useSubmitOnce(softClose);
-  const pending = close.isPending || softClose.isPending || reopen.isPending;
+  const lock = useMutation({
+    mutationFn: () => postJson<Period[]>(byUser(lockPeriodPath(sheet, period.name), user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
+  });
+  const unlock = useMutation({
+    mutationFn: () => postJson<Period[]>(byUser(unlockPeriodPath(sheet, period.name), user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
+  });
+  const pending = close.isPending || softClose.isPending || reopen.isPending || lock.isPending || unlock.isPending;
   const reopenOnce = useSubmitOnce(reopen);
+  const lockOnce = useSubmitOnce(lock);
+  const unlockOnce = useSubmitOnce(unlock);
+  // Clears every action's error but the one about to be taken.
+  const resetAll = () => [close, softClose, reopen, lock, unlock].forEach((m) => m.reset());
 
   return (
     <tr data-testid={`period-row-${period.name}`}>
@@ -58,14 +74,14 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
       <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
       <td data-testid="period-cap"><Fig>{period.cap ?? ''}</Fig></td>
+      <td data-testid="period-locked">{period.locked ? 'yes' : 'no'}</td>
       <td>
         <button
           type="button"
           data-testid="period-close"
           disabled={pending}
           onClick={() => {
-            softClose.reset();
-            reopen.reset();
+            resetAll();
             closeOnce(undefined);
           }}
         >
@@ -76,8 +92,7 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
           data-testid="period-soft-close"
           disabled={pending}
           onClick={() => {
-            close.reset();
-            reopen.reset();
+            resetAll();
             softCloseOnce(undefined);
           }}
         >
@@ -88,12 +103,33 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
           data-testid="period-reopen"
           disabled={pending}
           onClick={() => {
-            close.reset();
-            softClose.reset();
+            resetAll();
             reopenOnce(undefined);
           }}
         >
           Reopen
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-lock"
+          disabled={pending}
+          onClick={() => {
+            resetAll();
+            lockOnce(undefined);
+          }}
+        >
+          Lock
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-unlock"
+          disabled={pending}
+          onClick={() => {
+            resetAll();
+            unlockOnce(undefined);
+          }}
+        >
+          Unlock
         </button>
         {close.isError && (
           <span data-testid="period-error" role="alert">
@@ -107,7 +143,17 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
         )}
         {reopen.isError && (
           <span data-testid="period-error" role="alert">
-            {' '}This period cannot be reopened: it is not closed or soft-closed, or your role may not reopen it.
+            {' '}This period cannot be reopened: it is not closed or soft-closed, it is locked, or your role may not reopen it.
+          </span>
+        )}
+        {lock.isError && (
+          <span data-testid="period-error" role="alert">
+            {' '}This period cannot be locked: it is already locked, or only a steward may lock it.
+          </span>
+        )}
+        {unlock.isError && (
+          <span data-testid="period-error" role="alert">
+            {' '}This period cannot be unlocked: it is not locked, or only a steward may unlock it.
           </span>
         )}
       </td>
@@ -306,6 +352,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th></th>
           </tr>
         </thead>
