@@ -1,0 +1,300 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 50af2e5be..803ec3079 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -7,12 +7,21 @@ import { usePeople } from '../people/usePeople';
+ import { due, rateFor, useRates } from '../rates/useRates';
+ import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
+ 
+-/** A person's claimed: the sum of their claims' amounts. */
++/** A person's claimed: the sum of their counted (OPEN or SETTLED) claims' amounts. */
+ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const claims = useClaims(sheetId);
+   return <td data-testid="person-claimed">{claimed((claims.data ?? []).filter((c) => c.personId === personId))}</td>;
+ }
+ 
++type ClaimAction = 'open' | 'settle' | 'void';
++
++/** A claim's status changes; the server refuses one its status does not allow. */
++const ACTIONS: [ClaimAction, string][] = [
++  ['open', 'Open'],
++  ['settle', 'Settle'],
++  ['void', 'Void'],
++];
++
+ /** A person's claims, newest first, under their row, with a form that adds a claim, or edits one
+  *  when its editor is open. A blank date takes the sheet's today. */
+ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number }) {
+@@ -44,8 +53,23 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+     },
+   });
+ 
++  // A status change (open, settle, void) of one claim; a refusal shows on that claim's row.
++  const action = useMutation({
++    mutationFn: (a: { id: number; action: ClaimAction }) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, {}),
++    onSettled: async () => {
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
++
++  const act = (id: number, a: ClaimAction) => {
++    action.reset();
++    action.mutate({ id, action: a });
++  };
++
+   const openEditor = (c: Claim) => {
+     save.reset();
++    action.reset();
+     setEditing(c.id);
+     setAmount(c.amount);
+     setDate(c.date);
+@@ -106,6 +130,23 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                 <td data-testid="claim-date">{c.date}</td>
+                 <td data-testid="claim-note">{c.note}</td>
+                 <td data-testid="claim-due">{due(c.amount, pct)}</td>
++                <td data-testid="claim-status">{c.status}</td>
++                <td>
++                  {ACTIONS.map(([a, label]) => (
++                    <button
++                      key={a}
++                      type="button"
++                      data-testid={`claim-${a}`}
++                      disabled={action.isPending}
++                      onClick={() => act(c.id, a)}
++                    >
++                      {label}
++                    </button>
++                  ))}
++                  {action.isError && action.variables?.id === c.id && (
++                    <span data-testid="claim-error">{action.error.message}</span>
++                  )}
++                </td>
+                 <td>
+                   {editing === c.id ? (
+                     <button type="button" data-testid="claim-cancel" onClick={cancel}>
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 1fdd7e1e5..8d00c4feb 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -1,8 +1,16 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** A claim: its amount with two decimals, its date (yyyy-mm-dd) and its note. */
+-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
++/** A claim's status: DRAFT -> OPEN -> SETTLED; a DRAFT or OPEN claim can become VOID. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
++
++/** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note and its status. */
++export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
++
++/** Whether a claim counts toward claimed and every total: only OPEN and SETTLED claims do. */
++export function counts(c: Claim): boolean {
++  return c.status === 'OPEN' || c.status === 'SETTLED';
++}
+ 
+ export function claimsKey(sheetId: string) {
+   return ['sheet', sheetId, 'claims'];
+@@ -17,8 +25,9 @@ export function useClaims(sheetId: string) {
+   });
+ }
+ 
+-/** The sum of these claims' amounts, with two decimals (added up in cents, so no rounding drift). */
++/** The sum of the amounts of those of these claims that count, with two decimals (added up in
++ *  cents, so no rounding drift). */
+ export function claimed(claims: Claim[]): string {
+-  const cents = claims.reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter(counts).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+new file mode 100644
+index 000000000..b13a7ae76
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -0,0 +1,45 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Move a claim along its status: open, settle or void, each only from the statuses it allows. */
++public class ChangeClaimStatus {
++    public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
++            @PathVariable("action") String action, ServerHttpConnection connection, ClaimRepository repository,
++            Audit audit, Out<Claim> claim) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        long cid;
++        try {
++            cid = Long.parseLong(claimId == null ? "" : claimId.trim());
++        } catch (NumberFormatException e) {
++            throw new BadRequestException("no such claim");
++        }
++        String to;
++        List<String> from;
++        String event;
++        switch (action == null ? "" : action.trim()) {
++            case "open" -> { to = "OPEN"; from = List.of("DRAFT"); event = "CLAIM_OPENED"; }
++            case "settle" -> { to = "SETTLED"; from = List.of("OPEN"); event = "CLAIM_SETTLED"; }
++            case "void" -> { to = "VOID"; from = List.of("DRAFT", "OPEN"); event = "CLAIM_VOIDED"; }
++            default -> throw new BadRequestException("no such action");
++        }
++        Claim found = repository.find(id, cid);
++        if (found == null) {
++            throw new BadRequestException("no such claim");
++        }
++        if (!repository.changeStatus(id, cid, from, to)) {
++            throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
++        }
++        Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to);
++        audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
++                + " amount=" + changed.amount() + " date=" + changed.date());
++        claim.set(changed);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 8245300ab..c2cf3cc9d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A claim of a person on a sheet: its amount with two decimals, its date (ISO yyyy-MM-dd) and note. */
+-public record Claim(long id, long personId, String amount, String date, String note) {
++/** A claim of a person on a sheet: its amount with two decimals, its date (ISO yyyy-MM-dd), note and status
++ *  (DRAFT, OPEN, SETTLED or VOID). */
++public record Claim(long id, long personId, String amount, String date, String note, String status) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index b531fecf9..738312498 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -4,14 +4,22 @@ import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.sql.PreparedStatement;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+ 
+ @Repository
+ public class ClaimRepository {
+ 
++    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status";
++
++    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
++            money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
++            rs.getString("note"), rs.getString("status"));
++
+     private final JdbcTemplate jdbc;
+ 
+     public ClaimRepository(JdbcTemplate jdbc) {
+@@ -26,12 +34,23 @@ public class ClaimRepository {
+ 
+     /** The sheet's claims, newest first. */
+     public List<Claim> list(String sheetId) {
+-        return jdbc.query(
+-                "SELECT id, person_id, amount, claim_date, note FROM claim WHERE sheet_id = ? ORDER BY id DESC",
+-                (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
+-                        money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
+-                        rs.getString("note")),
+-                sheetId);
++        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
++    }
++
++    /** A claim on the sheet; null when the sheet has no such claim. */
++    public Claim find(String sheetId, long claimId) {
++        List<Claim> found = jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?", ROW,
++                sheetId, claimId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** Move a claim to a status, only when it is now in one of {@code from}; false when it is not. */
++    public boolean changeStatus(String sheetId, long claimId, List<String> from, String to) {
++        String in = String.join(", ", from.stream().map(s -> "?").toList());
++        List<Object> args = new ArrayList<>(List.of(to, claimId, sheetId));
++        args.addAll(from);
++        return jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
++                args.toArray()) > 0;
+     }
+ 
+     /** The name of a person on the sheet. */
+@@ -40,13 +59,6 @@ public class ClaimRepository {
+                 String.class, sheetId, personId);
+     }
+ 
+-    /** The person (on the sheet) a claim belongs to; null when the sheet has no such claim. */
+-    public Long personOf(String sheetId, long claimId) {
+-        List<Long> found = jdbc.queryForList("SELECT person_id FROM claim WHERE sheet_id = ? AND id = ?",
+-                Long.class, sheetId, claimId);
+-        return found.isEmpty() ? null : found.get(0);
+-    }
+-
+     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(c -> {
+@@ -60,7 +72,7 @@ public class ClaimRepository {
+             ps.setString(5, note);
+             return ps;
+         }, keys);
+-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note);
++        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT");
+     }
+ 
+     /** Change a claim's amount, date and note; false when the sheet has no such claim. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 0567b038c..47da90219 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -22,13 +22,15 @@ public class SaveClaim {
+         } catch (NumberFormatException e) {
+             throw new BadRequestException("no such claim");
+         }
+-        Long pid = repository.personOf(id, cid);
+-        if (pid == null) {
++        Claim found = repository.find(id, cid);
++        if (found == null) {
+             throw new BadRequestException("no such claim");
+         }
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
+         repository.update(id, cid, input.amount(), date, input.note());
+-        Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note());
++        long pid = found.personId();
++        Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
++                found.status());
+         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                 + " amount=" + saved.amount() + " date=" + saved.date());
+         claim.set(saved);
+diff --git a/src/main/resources/db/migration/V7__claim_status.sql b/src/main/resources/db/migration/V7__claim_status.sql
+new file mode 100644
+index 000000000..e71dcd5de
+--- /dev/null
++++ b/src/main/resources/db/migration/V7__claim_status.sql
+@@ -0,0 +1,3 @@
++-- A claim's status: DRAFT (new) -> OPEN -> SETTLED; a DRAFT or OPEN claim can be VOID.
++-- Only OPEN and SETTLED claims count toward the totals.
++ALTER TABLE claim ADD COLUMN status VARCHAR(10) DEFAULT 'DRAFT' NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+new file mode 100644
+index 000000000..1f8b273fb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -0,0 +1,8 @@
++# Change a claim's status: open (DRAFT -> OPEN), settle (OPEN -> SETTLED) or void (DRAFT or OPEN ->
++# VOID). Any other change is refused (400) and writes nothing.
++change:
++  class: net.officefloor.hq.app.claim.ChangeClaimStatus
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
