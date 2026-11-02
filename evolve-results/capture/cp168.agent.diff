@@ -1,0 +1,238 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 75f576bb..15fa3bb0 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -10,6 +10,7 @@ import { twoDecimals } from '../rates/rates';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { crewDueCents, crewMembersPath, crewsKey, crewsPath, useCrews, type Crew } from './crews';
+ import { Fig } from '../locale/Fig';
++import { poolsKey } from '../pools/pools';
+ 
+ // One crew's row: its lead, its members, its due-total (the lead's and the members' due-totals added up, an n/a one
+ // skipped), and a form that adds a member chosen from the sheet's people.
+@@ -24,6 +25,8 @@ function CrewRow({ sheet, user, crew }: { sheet: string; user: string; crew: Cre
+       postJson<Crew[]>(byUser(crewMembersPath(sheet), user), body),
+     onSuccess: (updated) => {
+       queryClient.setQueryData(crewsKey(sheet), updated);
++      // Each crew is also a pool, its members the crew's.
++      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+       setMember('');
+     },
+   });
+@@ -90,6 +93,8 @@ function Crews({ sheet, user }: { sheet: string; user: string }) {
+       postJson<Crew[]>(byUser(crewsPath(sheet), user), body),
+     onSuccess: (updated) => {
+       queryClient.setQueryData(crewsKey(sheet), updated);
++      // Each crew is also a pool, its members the crew's.
++      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+       setName('');
+       setLead('');
+     },
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AddCrew.java b/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
+index c00608cd..5053b66d 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
+@@ -3,14 +3,16 @@ package net.officefloor.hq.app.crew;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.pool.Pools;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Adds a crew (its name trimmed) led by a person; refused for a blank name, one already a crew, or an unknown lead. */
++/** Adds a crew (its name trimmed) led by a person; refused for a blank name, one already a crew or a pool, or an unknown lead. */
+ public class AddCrew {
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+-            @RequestBody CrewRequest request, Crews crews, People people, Audit audit) throws InvalidCrewException {
++            @RequestBody CrewRequest request, Crews crews, Pools pools, People people,
++            Audit audit) throws InvalidCrewException {
+         String name = request == null || request.name() == null ? "" : request.name().trim();
+         if (name.isEmpty()) {
+             throw new InvalidCrewException("A crew's name must not be blank");
+@@ -18,6 +20,9 @@ public class AddCrew {
+         if (crews.has(sheet, name)) {
+             throw new InvalidCrewException(name + " is already a crew");
+         }
++        if (pools.hasAdded(sheet, name)) {
++            throw new InvalidCrewException(name + " is a pool");
++        }
+         Person lead = request.lead() == null ? null : people.find(sheet, request.lead());
+         if (lead == null) {
+             throw new InvalidCrewException("Choose the crew's lead");
+diff --git a/src/main/java/net/officefloor/hq/app/pool/AddPool.java b/src/main/java/net/officefloor/hq/app/pool/AddPool.java
+index 47df6316..d58a8d87 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/AddPool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/AddPool.java
+@@ -5,7 +5,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Adds a pool (its name trimmed); refused for a blank name or one already a pool on the sheet. */
++/** Adds a pool (its name trimmed); refused for a blank name or one already a pool or a crew on the sheet. */
+ public class AddPool {
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+             @RequestBody PoolRequest request, Pools pools, Audit audit) throws InvalidPoolException {
+@@ -16,6 +16,9 @@ public class AddPool {
+         if (pools.has(sheet, name)) {
+             throw new InvalidPoolException(name + " is already a pool");
+         }
++        if (pools.isCrew(sheet, name)) {
++            throw new InvalidPoolException(name + " is a crew");
++        }
+         pools.add(sheet, name);
+         audit.record("POOL_ADDED sheet=" + sheet + " by=" + user + " name=" + name);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java b/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java
+index 4457bcad..ef3f4dc1 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java
+@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * most 100.00); refused for an unknown pool or person, a person already in the pool, or a bad share. A pool member is
+  * also refused when it is already a member of a pool, when the pool would contain itself through any chain, or when
+  * the chain of pools would be more than three deep. The membership may carry a from-date and a to-date (each optional);
+- * a to-date before the from-date is refused.
++ * a to-date before the from-date is refused. A crew's pool takes no members this way: its members are the crew's.
+  */
+ public class AddPoolMember {
+ 
+@@ -32,6 +32,9 @@ public class AddPoolMember {
+         if (request == null || request.pool() == null || !pools.has(sheet, request.pool())) {
+             throw new InvalidPoolException("No such pool");
+         }
++        if (pools.isCrew(sheet, request.pool())) {
++            throw new InvalidPoolException(request.pool() + " is a crew: its members are the crew's");
++        }
+         String sub = request.memberPool() == null ? null : request.memberPool().trim();
+         Person person = sub != null || request.person() == null ? null : people.find(sheet, request.person());
+         if (sub != null ? !pools.has(sheet, sub) : person == null) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 053eb60e..5ed5b45d 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -43,7 +43,8 @@ public class Pools {
+      * has its cut there as its pot (none when that pool is unbalanced or has none). A person with a hold in force on
+      * the sheet's today gets no cut, their share spread over the other members with a cut, and so does a retired
+      * person, whose share still counts in the total share. A member whose membership dates do not include the sheet's
+-     * today is left out entirely: not in the total share, no cut.
++     * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
++     * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}).
+      */
+     public List<Pool> list(String sheet) {
+         LocalDate now = clock.today(sheet);
+@@ -64,6 +65,7 @@ public class Pools {
+                                 current(rs, now), "")));
+                     }
+                 }, sheet);
++        crewPools(sheet, members);
+         Map<String, String> parents = new HashMap<>();
+         jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?",
+                 (rs) -> {
+@@ -104,6 +106,61 @@ public class Pools {
+     private record Ordered(int position, PoolMember member) {
+     }
+ 
++    /** Adds each crew as a pool: its lead first, then its members in the order added, at {@link #crewShares}. */
++    private void crewPools(String sheet, Map<String, List<Ordered>> members) {
++        Map<String, List<PoolMember>> crews = new LinkedHashMap<>();
++        jdbc.query("SELECT c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
++                + " JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
++                (rs) -> {
++                    List<PoolMember> list = new ArrayList<>();
++                    list.add(crewMember(rs, "lead_id"));
++                    crews.put(rs.getString("name"), list);
++                }, sheet);
++        jdbc.query("SELECT m.crew, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"
++                + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ? ORDER BY m.position",
++                (rs) -> {
++                    List<PoolMember> list = crews.get(rs.getString("crew"));
++                    if (list != null) {
++                        list.add(crewMember(rs, "person_id"));
++                    }
++                }, sheet);
++        crews.forEach((name, list) -> {
++            if (members.containsKey(name)) {
++                return;
++            }
++            List<BigDecimal> shares = crewShares(list.size());
++            List<Ordered> ordered = new ArrayList<>();
++            for (int i = 0; i < list.size(); i++) {
++                PoolMember m = list.get(i);
++                ordered.add(new Ordered(i, new PoolMember(m.person(), null, m.name(), shares.get(i).toPlainString(),
++                        m.retired(), "", "", true, "")));
++            }
++            members.put(name, ordered);
++        });
++    }
++
++    private static PoolMember crewMember(ResultSet rs, String id) throws SQLException {
++        return new PoolMember(rs.getLong(id), null, rs.getString("person_name"), "", rs.getDate("retired_from") != null,
++                "", "", true, "");
++    }
++
++    /**
++     * Shares for a crew of this many (lead first), as patrons' shares are: 100.00 split equally, each rounded half to
++     * even to two decimals, with the remainder (100.00 less the shares added up) on the first, the lead.
++     */
++    static List<BigDecimal> crewShares(int count) {
++        List<BigDecimal> shares = new ArrayList<>();
++        if (count == 0) {
++            return shares;
++        }
++        BigDecimal each = FULL.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
++        for (int i = 0; i < count; i++) {
++            shares.add(each);
++        }
++        shares.set(0, each.add(FULL.subtract(each.multiply(BigDecimal.valueOf(count)))));
++        return shares;
++    }
++
+     /** The date in the column, or "" when none. */
+     private static String dateOf(ResultSet rs, String column) throws SQLException {
+         Date date = rs.getDate(column);
+@@ -200,13 +257,25 @@ public class Pools {
+         return m.current() && (m.memberPool() != null || !(m.retired() || held.contains(m.person())));
+     }
+ 
+-    /** Whether the sheet has a pool of this name. */
++    /** Whether the sheet has a pool of this name, one added or a crew. */
+     public boolean has(String sheet, String name) {
++        return hasAdded(sheet, name) || isCrew(sheet, name);
++    }
++
++    /** Whether the sheet has a pool of this name that was added as a pool (not a crew). */
++    public boolean hasAdded(String sheet, String name) {
+         Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet = ? AND name = ?", Integer.class,
+                 sheet, name);
+         return found != null && found > 0;
+     }
+ 
++    /** Whether the pool of this name is a crew, its members the crew's. */
++    public boolean isCrew(String sheet, String name) {
++        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM crew WHERE sheet = ? AND name = ?", Integer.class,
++                sheet, name);
++        return found != null && found > 0;
++    }
++
+     /** Whether the person is in the pool. */
+     public boolean isMember(String sheet, String pool, long person) {
+         Integer found = jdbc.queryForObject(
+diff --git a/tmp_e2e/run_crewpool.log b/tmp_e2e/run_crewpool.log
+new file mode 100644
+index 00000000..5058ece0
+--- /dev/null
++++ b/tmp_e2e/run_crewpool.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › crews are pools › crews are pools (14.6s)
++  ✓  2 [chromium] › acceptance.spec.ts:99:7 › crews are pools › crews are pools scenario 1 (27.4s)
++  ✓  3 [chromium] › acceptance.spec.ts:621:7 › crews are pools › crews are pools scenario 2 (36.3s)
++  ✓  4 [chromium] › acceptance.spec.ts:1320:7 › crews are pools › crews are pools scenario 3 (37.8s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.9m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.0m)
