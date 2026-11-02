@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  3650; the late percent is 0.00 or more with up to two decimals; the policy date is a date
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
- *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none. A from-date given for a
+ *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
@@ -58,6 +58,10 @@ public class ValidateSettings {
         if (cap != null && !cap.isEmpty() && !MONEY.matcher(cap).matches()) {
             throw new BadRequestException("cap must be 0.00 or more with up to two decimals");
         }
+        String proof = request == null || request.proofThreshold() == null ? null : request.proofThreshold().trim();
+        if (proof != null && !proof.isEmpty() && !MONEY.matcher(proof).matches()) {
+            throw new BadRequestException("proof threshold must be 0.00 or more with up to two decimals");
+        }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
         if (policy != null && !policy.isEmpty()) {
@@ -89,6 +93,7 @@ public class ValidateSettings {
                 case "terms" -> terms != null;
                 case "late-pct" -> latePct != null;
                 case "cap" -> cap != null;
+                case "proof-threshold" -> proof != null;
                 default -> key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6));
             };
             if (!saved) continue;
@@ -104,6 +109,7 @@ public class ValidateSettings {
                 terms != null, terms == null ? null : Integer.parseInt(terms),
                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
-                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from));
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
+                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2)));
     }
 }

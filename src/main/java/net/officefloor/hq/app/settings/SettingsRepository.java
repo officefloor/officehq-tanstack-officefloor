@@ -95,6 +95,17 @@ public class SettingsRepository {
         record(sheetId, "cap", from, cap == null ? null : money(cap));
     }
 
+    /** The sheet's proof threshold in force on a date: a claim of that date whose due is above it cannot be
+     *  settled or approved without a proof; null when it has none. */
+    public BigDecimal proofThreshold(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "proof-threshold", date);
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
+    }
+
+    public void setProofThreshold(String sheetId, LocalDate from, BigDecimal threshold) {
+        record(sheetId, "proof-threshold", from, threshold == null ? null : money(threshold));
+    }
+
     /** A due-total held to the cap: at most the cap when there is one. */
     public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
         return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;

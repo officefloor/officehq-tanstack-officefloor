@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}). */
+ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}). */
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
@@ -29,6 +29,10 @@ public class ChangeClaimStatus {
         if ("defer".equals(action == null ? "" : action.trim())) {
             claim.set(ClaimDeferral.apply(id, cid, request == null ? null : request.until(), by, repository, sheets,
                     periods, audit, rollup));
+            return;
+        }
+        if ("proof".equals(action == null ? "" : action.trim())) {
+            claim.set(ClaimProof.apply(id, cid, by, repository, periods, audit));
             return;
         }
         claim.set(ClaimStatusChange.apply(id, cid, action,

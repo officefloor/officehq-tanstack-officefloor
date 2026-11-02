@@ -25,12 +25,13 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
- *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row. */
-const ACTIONS: [Exclude<ClaimAction, 'defer'>, string][] = [
+ *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row.
+ *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof'>, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
@@ -83,7 +84,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   });
 
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
-  // date typed on its row; a refusal shows on that claim's row.
+  // date typed on its row, or adding a proof to it; a refusal shows on that claim's row.
   const action = useMutation({
     mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string }) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until }),
@@ -233,8 +234,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+                <td data-testid="claim-proofs">{c.proofs}</td>
                 <td data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</td>
-                <td data-testid="claim-deferred-until">{isDeferred(c, today) ? c.deferredUntil : ''}</td>
+                <td data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</td>
                 <td data-testid="claim-log">
                   {c.log.map((line, i) => (
                     <div key={i} data-testid="claim-log-line">
@@ -263,6 +265,14 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       {label}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    data-testid="claim-proof"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'proof')}
+                  >
+                    Add proof
+                  </button>{' '}
                   <input
                     type="text"
                     data-testid="claim-defer-date"

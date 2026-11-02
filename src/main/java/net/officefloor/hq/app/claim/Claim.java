@@ -13,10 +13,10 @@ import net.officefloor.hq.app.person.Hold;
  *  whether its last statement bound it to n/a (the rate that would apply to it had ended: its due then
  *  stays n/a, not live), and the date it is deferred until (null when never deferred) and whether it is
  *  deferred now (OPEN and that date after the sheet's today: it then counts in no total, is not overdue,
- *  cannot be settled and a statement leaves it unbound). */
+ *  cannot be settled and a statement leaves it unbound), and how many proofs it has been given. */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
-        String dueBy, boolean statedNa, String deferredUntil, boolean deferred) {
+        String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {

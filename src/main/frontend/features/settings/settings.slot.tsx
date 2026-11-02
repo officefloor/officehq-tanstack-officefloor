@@ -13,10 +13,11 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  up, one on or after it half to even; blank is the sheet's today), its period numbering from-date
  *  (while set and the sheet's today is on or after it, a claim opened is numbered within its period,
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
- *  terms), its cap (the most a person's due-total can be; blank is none), and the role (clerk or steward)
+ *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
+ *  above the one in force on its date cannot be settled or approved without a proof; blank is none), and the role (clerk or steward)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
- *  floor, the terms, each grade's terms, the late percent and the cap) is saved from its from-date, blank
+ *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
 /** The grades a person can have, each of which can have its own terms. */
 const GRADES = ['A', 'B', 'C'];
@@ -52,6 +53,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [policyDate, setPolicyDate] = useState<string | null>(null);
   const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
   const [cap, setCap] = useState<string | null>(null);
+  const [proofThreshold, setProofThreshold] = useState<string | null>(null);
   const [from, setFrom] = useState<Record<string, string>>({});
   const today = useSheetToday(sheetId).data?.today;
   const [user, setUser] = useState('');
@@ -59,7 +61,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string> }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -70,6 +72,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setPolicyDate(null);
       setNumberingFrom(null);
       setCap(null);
+      setProofThreshold(null);
       setFrom({});
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
@@ -94,7 +97,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold });
           });
         }}
       >
@@ -210,6 +213,20 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="cap" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+        <label>
+          Proof threshold{' '}
+          <input
+            data-testid="setting-proof-threshold"
+            inputMode="decimal"
+            value={proofThreshold ?? ''}
+            onFocus={() => setProofThreshold((v) => v ?? '')}
+            onChange={(e) => {
+              setProofThreshold(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <FromInput settingKey="proof-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
@@ -225,7 +242,8 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>,
         period numbering from{' '}
         <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
-        cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>
+        cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>,
+        proof threshold <strong data-testid="setting-proof-threshold-current">{settingOn(settings.data, 'proof-threshold', today) ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

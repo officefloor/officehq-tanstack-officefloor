@@ -14,7 +14,8 @@ export type Role = { user: string; role: string };
  *  terms; a claim's due-by is fixed from them when it is created), and its cap (two decimals; null means
  *  none: a person's due-total is at most it). Those with a figure are as in force on the sheet's today when
  *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
- *  late-pct, cap), oldest from-date first. */
+ *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
+ *  approved without a proof), oldest from-date first. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]> };
 

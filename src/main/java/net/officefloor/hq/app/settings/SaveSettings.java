@@ -62,6 +62,12 @@ public class SaveSettings {
             audit.record(prefix + "cap value="
                     + (input.cap() == null ? "" : SettingsRepository.money(input.cap())) + given(input, "cap"));
         }
+        if (input.setsProofThreshold()) {
+            repository.setProofThreshold(id, from(input, "proof-threshold", today), input.proofThreshold());
+            audit.record(prefix + "proof-threshold value="
+                    + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
+                    + given(input, "proof-threshold"));
+        }
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }

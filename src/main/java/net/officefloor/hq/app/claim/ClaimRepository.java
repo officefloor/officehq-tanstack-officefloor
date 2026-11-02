@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -30,7 +30,7 @@ public class ClaimRepository {
             rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString(),
             rs.getBoolean("stated_na"),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
-            rs.getBoolean("deferred"));
+            rs.getBoolean("deferred"), rs.getInt("proofs"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -232,6 +232,16 @@ public class ClaimRepository {
                 Date.valueOf(until), claimId, sheetId) > 0;
     }
 
+    /** Raise a claim's proofs count by one, only when it is not SETTLED or VOID; the count now, or null when the
+     *  sheet has no such claim in those statuses. */
+    public Integer addProof(String sheetId, long claimId) {
+        if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND sheet_id = ?"
+                + " AND status NOT IN ('SETTLED', 'VOID')", claimId, sheetId) == 0) {
+            return null;
+        }
+        return jdbc.queryForObject("SELECT proofs FROM claim WHERE id = ? AND sheet_id = ?", Integer.class, claimId, sheetId);
+    }
+
     /** Fix a settled claim's due. */
     public void settleDue(String sheetId, long claimId, BigDecimal due) {
         jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId);
@@ -276,7 +286,7 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false);
+                dueBy.toString(), false, null, false, 0);
     }
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
