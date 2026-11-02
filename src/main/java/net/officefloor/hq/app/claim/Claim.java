@@ -15,11 +15,12 @@ import net.officefloor.hq.app.person.Hold;
  *  deferred now (OPEN and that date after the sheet's today: it then counts in no total, is not overdue,
  *  cannot be settled and a statement leaves it unbound), and how many proofs it has been given, and, for a claim
  *  split off another, the number of the claim it was split from (null otherwise), and whether it was a late entry
- *  (added while the period its due-by falls in was soft-closed). */
+ *  (added while the period its due-by falls in was soft-closed), and the last day (the sheet's today then) a reminder
+ *  was written for it (null when never reminded). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
-        boolean lateEntry) {
+        boolean lateEntry, String reminded) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {
@@ -46,7 +47,7 @@ public record Claim(long id, long personId, String amount, String date, String n
         if (statusThen == null) return false;
         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry);
+                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded);
         return then.counts(open() ? holds : List.of());
     }
 

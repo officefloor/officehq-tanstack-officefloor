@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -32,7 +32,8 @@ public class ClaimRepository {
             rs.getBoolean("stated_na"),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
-            rs.getBoolean("late_entry"));
+            rs.getBoolean("late_entry"),
+            rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString());
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -280,6 +281,15 @@ public class ClaimRepository {
         return jdbc.queryForObject("SELECT proofs FROM claim WHERE id = ? AND sheet_id = ?", Integer.class, claimId, sheetId);
     }
 
+    /** Remind an OPEN or PENDING claim on the sheet's today, only when it was not already reminded that day;
+     *  false when the sheet has no such claim. */
+    public boolean remind(String sheetId, long claimId) {
+        return jdbc.update("UPDATE claim c SET reminded = (SELECT s.today FROM sheet s WHERE s.id = c.sheet_id)"
+                + " WHERE c.id = ? AND c.sheet_id = ? AND c.status IN ('OPEN', 'PENDING')"
+                + " AND (c.reminded IS NULL OR c.reminded <> (SELECT s.today FROM sheet s WHERE s.id = c.sheet_id))",
+                claimId, sheetId) > 0;
+    }
+
     /** Fix a settled claim's due. */
     public void settleDue(String sheetId, long claimId, BigDecimal due) {
         kept(sheetId, claimId, jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId) > 0);
@@ -338,7 +348,7 @@ public class ClaimRepository {
         }, keys);
         kept(sheetId, keys.getKey().longValue(), true);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null, late);
+                dueBy.toString(), false, null, false, 0, null, late, null);
     }
 
     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */

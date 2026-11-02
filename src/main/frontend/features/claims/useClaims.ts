@@ -19,7 +19,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
  *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has,
  *  and, for a claim split off another, the number of the claim it was split from (null otherwise), and the user
- *  whose open editor locks it for everyone else (null when it is not locked). */
+ *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
+ *  then) a reminder was written for it (null when never reminded). */
 export type Claim = {
   id: number;
   personId: number;
@@ -39,6 +40,7 @@ export type Claim = {
   proofs: number;
   splitFrom: string | null;
   lateEntry: boolean;
+  reminded: string | null;
   log: string[];
   lockedBy: string | null;
 };
