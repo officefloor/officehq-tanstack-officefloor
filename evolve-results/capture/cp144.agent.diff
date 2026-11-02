@@ -1,0 +1,86 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index 4138167f..de77a871 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -77,7 +77,7 @@ public class ClaimStatusChanger {
+             throw new InvalidClaimStatusChangeException(
+                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+         }
+-        // Opening gives the next number its sheet's tree shares, or, while the sheet numbers by period from on or
++        // Opening gives the next number (FY<yyyy>-<n>) of its fiscal year its sheet's tree shares, or, while the sheet numbers by period from on or
+         // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
+         // had (never reused).
+         Claim changed = claim;
+@@ -226,7 +226,7 @@ public class ClaimStatusChanger {
+     }
+ 
+     /**
+-     * Gives an opening claim the next number of the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
++     * Gives an opening claim the next number (FY<yyyy>-<n>) of its due-by's fiscal year in the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
+      * today, the next number in the claim's period (X for none); returns the claim so numbered.
+      */
+     public Claim number(String sheet, Claim claim) {
+@@ -238,8 +238,13 @@ public class ClaimStatusChanger {
+             claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
+             return numbered;
+         }
+-        Claim numbered = claim.withNumber(claims.nextNumber(sheet, settings.wholeTree(sheet)));
+-        claims.setNumber(sheet, claim.id(), numbered.number());
++        // Sheet-wide numbering restarts each fiscal year (of the due-by, the date that places it in a period):
++        // FY<yyyy>-<n>, kept as the number it shows.
++        LocalDate dueBy = LocalDate.parse(claim.dueBy());
++        int start = settings.fiscalStartMonth(sheet);
++        String fy = "FY" + (dueBy.getMonthValue() >= start ? dueBy.getYear() : dueBy.getYear() - 1);
++        Claim numbered = claim.withPeriodNumber(fy + "-" + claims.nextFiscalYearNumber(sheet, settings.wholeTree(sheet), fy));
++        claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
+         return numbered;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index d9f8a765..40836b95 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -440,4 +440,28 @@ public class Claims {
+         jdbc.update("UPDATE claim_number SET last_number = ? WHERE sheet = ?", next, sheet);
+         return next;
+     }
++
++    /**
++     * Takes the next number of the fiscal year's sequence (FY<yyyy>) the sheet shares with the other sheets of its
++     * tree: the one after the last number given in that year on any of them (1 when none has given one), recorded as
++     * the sheet's last number in it. Locked as {@link #nextNumber}.
++     */
++    public int nextFiscalYearNumber(String sheet, List<String> tree, String fy) {
++        try {
++            jdbc.update("INSERT INTO claim_fy_number (sheet, fy, last_number) VALUES (?, ?, 0)", sheet, fy);
++        } catch (DuplicateKeyException exists) {
++            // The sheet has given a number in this fiscal year already: its counter is in place.
++        }
++        java.util.TreeSet<String> sheets = new java.util.TreeSet<>(tree);
++        sheets.add(sheet);
++        String in = String.join(", ", java.util.Collections.nCopies(sheets.size(), "?"));
++        List<Object> args = new java.util.ArrayList<>();
++        args.add(fy);
++        args.addAll(sheets);
++        List<Integer> lasts = jdbc.queryForList("SELECT last_number FROM claim_fy_number WHERE fy = ? AND sheet IN (" + in
++                + ") ORDER BY sheet FOR UPDATE", Integer.class, args.toArray());
++        int next = lasts.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
++        jdbc.update("UPDATE claim_fy_number SET last_number = ? WHERE sheet = ? AND fy = ?", next, sheet, fy);
++        return next;
++    }
+ }
+diff --git a/src/main/resources/db/migration/V69__claim_fy_number.sql b/src/main/resources/db/migration/V69__claim_fy_number.sql
+new file mode 100644
+index 00000000..aa9e6da4
+--- /dev/null
++++ b/src/main/resources/db/migration/V69__claim_fy_number.sql
+@@ -0,0 +1,9 @@
++-- Sheet-wide numbering restarts each fiscal year: a claim opened outside period numbering shows FY<yyyy>-<n>,
++-- kept like a period number (in claim.period_number, the number it shows). The last number given in each
++-- fiscal year on each sheet; the sequence of a fiscal year is shared across the sheet's tree.
++CREATE TABLE claim_fy_number (
++    sheet       VARCHAR(200) NOT NULL,
++    fy          VARCHAR(20)  NOT NULL,
++    last_number INT NOT NULL,
++    PRIMARY KEY (sheet, fy)
++);
