@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rate;
 
 import java.math.RoundingMode;
 import java.sql.Date;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -118,5 +119,33 @@ public class Rates {
             jdbc.update("INSERT INTO rate (sheet, grade, pct, from_date, to_date, forward_after) VALUES (?, ?, ?, ?, ?, ?)",
                     sheet, input.grade(), input.pct(), from, to, after);
         }
+    }
+
+    /**
+     * Withdraws the newest version of the grade's rate for the from-date (null: the one from the start): the version
+     * before it, when there is one, is the rate in force again; with none the rate is gone. False when there is no such
+     * rate on the sheet.
+     */
+    public boolean withdraw(String sheet, String grade, LocalDate on) {
+        Date from = on == null ? null : Date.valueOf(on);
+        List<Integer> newest = jdbc.queryForList("SELECT version FROM rate WHERE sheet = ? AND grade = ?"
+                + " AND from_date IS NOT DISTINCT FROM ?", Integer.class, sheet, grade, from);
+        if (newest.isEmpty()) {
+            return false;
+        }
+        jdbc.update("DELETE FROM rate WHERE sheet = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?", sheet, grade,
+                from);
+        List<Integer> older = jdbc.queryForList("SELECT MAX(version) FROM rate_version WHERE sheet = ? AND grade = ?"
+                + " AND from_date IS NOT DISTINCT FROM ? AND version < ?", Integer.class, sheet, grade, from,
+                newest.get(0));
+        Integer previous = older.isEmpty() ? null : older.get(0);
+        if (previous != null) {
+            jdbc.update("INSERT INTO rate (sheet, grade, pct, from_date, to_date, version, forward_after) SELECT"
+                    + " sheet, grade, pct, from_date, to_date, version, forward_after FROM rate_version WHERE sheet = ?"
+                    + " AND grade = ? AND from_date IS NOT DISTINCT FROM ? AND version = ?", sheet, grade, from, previous);
+            jdbc.update("DELETE FROM rate_version WHERE sheet = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?"
+                    + " AND version = ?", sheet, grade, from, previous);
+        }
+        return true;
     }
 }

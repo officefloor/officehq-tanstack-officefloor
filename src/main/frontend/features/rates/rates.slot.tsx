@@ -38,13 +38,26 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
   });
   const send = useSubmitOnce(save);
 
+  // Withdrawing a rate's newest version: only a steward may; the server refuses anyone else.
+  const withdraw = useMutation({
+    mutationFn: (r: Rate) => postJson<Rate[]>(byUser(`${ratesPath(sheet)}/withdraw`, user), { grade: r.grade, from: r.from ?? '' }),
+    onSuccess: (updated) => queryClient.setQueryData(ratesKey(sheet), updated),
+  });
+  const runWithdraw = (r: Rate) => {
+    save.reset();
+    withdraw.reset();
+    withdraw.mutate(r);
+  };
+
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
     save.reset();
+    withdraw.reset();
   };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    withdraw.reset();
     // The server refuses a percent that is not 0.00 or more with up to two decimals, a bad from- or to-date, or a to-date before the from-date.
     send(draft);
   };
@@ -104,7 +117,12 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
-        {save.isError && (
+        {withdraw.isError && (
+          <span data-testid="rate-form-error" role="alert">
+            {' '}Only a steward may withdraw a rate, and only one on the sheet.
+          </span>
+        )}
+        {save.isError && !withdraw.isError && (
           <span data-testid="rate-form-error" role="alert">
             {' '}A rate needs one of the sheet's grades and a percent of 0.00 or more with up to two decimals, a from-date and a to-date that are each a valid date or blank, and a to-date not before the from-date.
           </span>
@@ -200,6 +218,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
             <th>To</th>
             <th>Rate %</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -212,6 +231,11 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
                 <span data-testid="rate-pct"><Fig>{r.pct}</Fig></span>
               </td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
+              <td>
+                <button type="button" data-testid="rate-withdraw" disabled={withdraw.isPending} onClick={() => runWithdraw(r)}>
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
