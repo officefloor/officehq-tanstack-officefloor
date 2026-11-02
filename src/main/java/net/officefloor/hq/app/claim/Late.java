@@ -58,11 +58,11 @@ public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, Lis
      * The claim's late charge on its figure, compounding: for each full 30 days it is overdue, the late percent in force
      * on that boundary (its {@link #graceBy} plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
      * before it, rounded in hundredths by the claim's {@link #rounding}, the charges added up (a boundary at 0.00 adds
-     * nothing); 0.00 when it is not overdue, and always for a correction.
+     * nothing); 0.00 when it is not overdue, and always for a correction or a claim whose charge was waived.
      */
     public BigDecimal charge(Claim claim, String grade, BigDecimal figure) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.correction() || !overdue(claim, grade)) {
+        if (figure == null || claim.correction() || claim.waived() || !overdue(claim, grade)) {
             return total;
         }
         LocalDate dueBy = graceBy(claim, grade);

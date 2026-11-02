@@ -105,6 +105,8 @@ export type Claim = {
   /** When it was added (the claim sequence's value; null when kept from before it was recorded): it sees only the
    *  forward-only rates saved before it (see {@link claimRateOf}). */
   added: number | null;
+  /** Whether a steward waived its late charge (only while OPEN or PENDING, once): from then on it bears none. */
+  waived: boolean;
 };
 
 /** One line of a claim: its label, quantity (a whole number) and unit amount (two decimals). */
@@ -238,9 +240,9 @@ function plusDays(day: string, days: number): string {
 /** A claim's late charge on its figure (in hundredths), compounding: for each full 30 days it is overdue, the late
  *  percent in force on that boundary (its due-by plus its grace plus 30, 60, 90 ... days) of the figure plus the
  *  charges of the boundaries before it, rounded as the claim's live figures
- *  are (see {@link roundsHalfUp}), the charges added up; a correction has none. */
+ *  are (see {@link roundsHalfUp}), the charges added up; a correction, and a claim whose charge was waived, has none. */
 export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
-  if (correction(claim)) return 0n;
+  if (correction(claim) || claim.waived) return 0n;
   const periods = Math.floor(daysOverdue(claim, late) / 30);
   let total = 0n;
   for (let k = 1; k <= periods; k++) {
