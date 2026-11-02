@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.history.HistoryRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,9 +12,11 @@ import org.springframework.stereotype.Repository;
 public class RateRepository {
 
     private final JdbcTemplate jdbc;
+    private final HistoryRepository history;
 
-    public RateRepository(JdbcTemplate jdbc) {
+    public RateRepository(JdbcTemplate jdbc, HistoryRepository history) {
         this.jdbc = jdbc;
+        this.history = history;
     }
 
     public boolean sheetExists(String sheetId) {
@@ -38,6 +41,7 @@ public class RateRepository {
                 sheetId, grade, on);
         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
                 sheetId, grade, pct, on, to == null ? null : Date.valueOf(to));
+        history.rate(sheetId, grade, pct, from, to);
         return new Rate(grade, pct(pct), from(from), from(to));
     }
 

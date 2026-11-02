@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.history.HistoryRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -30,9 +31,11 @@ public class PersonRepository {
             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class));
 
     private final JdbcTemplate jdbc;
+    private final HistoryRepository history;
 
-    public PersonRepository(JdbcTemplate jdbc) {
+    public PersonRepository(JdbcTemplate jdbc, HistoryRepository history) {
         this.jdbc = jdbc;
+        this.history = history;
     }
 
     public boolean sheetExists(String sheetId) {
@@ -93,6 +96,7 @@ public class PersonRepository {
                 sheetId, id, on);
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)",
                 sheetId, id, grade, on);
+        history.grade(sheetId, id, grade, from);
     }
 
     /** A person on the sheet; null when the sheet has no such person. */
@@ -127,12 +131,14 @@ public class PersonRepository {
     /** Retire a person from a date. */
     public void retire(String sheetId, long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), id, sheetId);
+        history.retire(sheetId, id, from);
     }
 
     /** Put a person on hold from a from-date to a to-date (null: open-ended). */
     public void hold(String sheetId, long id, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
-                sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to));
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on)"
+                + " SELECT ?, ?, ?, ?, today FROM sheet WHERE id = ?",
+                sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to), sheetId);
     }
 
     /** Refuse a claim of the person dated after the date they are retired from. */
@@ -162,11 +168,13 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, added_on)"
+                            + " SELECT ?, ?, ?, ?, today FROM sheet WHERE id = ?", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
             ps.setObject(4, terms, java.sql.Types.INTEGER);
+            ps.setString(5, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();

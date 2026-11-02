@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.HistoryRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -19,9 +20,11 @@ public class SettingsRepository {
     public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
     private final JdbcTemplate jdbc;
+    private final HistoryRepository history;
 
-    public SettingsRepository(JdbcTemplate jdbc) {
+    public SettingsRepository(JdbcTemplate jdbc, HistoryRepository history) {
         this.jdbc = jdbc;
+        this.history = history;
     }
 
     public boolean sheetExists(String sheetId) {
@@ -73,6 +76,7 @@ public class SettingsRepository {
     public void record(String sheetId, String key, LocalDate from, String value) {
         jdbc.update("MERGE INTO setting_value (sheet_id, setting_key, from_date, setting) KEY (sheet_id, setting_key, from_date)"
                 + " VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
+        history.setting(sheetId, key, from, value);
     }
 
     /** Every value recorded for each dated setting, by key, each oldest from-date first. */
@@ -185,6 +189,7 @@ public class SettingsRepository {
     public void setPolicyDate(String sheetId, LocalDate policyDate) {
         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", policyDate == null ? null : Date.valueOf(policyDate),
                 sheetId);
+        history.policy(sheetId, policyDate);
     }
 
     /** The sheet's period numbering from-date; null when blank (period numbering is off). */

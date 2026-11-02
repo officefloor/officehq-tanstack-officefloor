@@ -2,17 +2,22 @@ package net.officefloor.hq.app.statement;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.history.HistoryRepository;
+import net.officefloor.hq.app.history.SheetAsOf;
+import net.officefloor.hq.app.person.Hold;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
+import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
@@ -23,11 +28,19 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
  *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at
- *  most the sheet's cap. */
+ *  most the sheet's cap.
+ *
+ *  <p>Taken as of a date (on or before the sheet's today; a later one is refused, as is one before the person
+ *  was added), it binds the claims of theirs that counted at the end of that date to their figures as they
+ *  stood then: every change made while the sheet's today was on or before that date counts, every later one
+ *  does not, and that date stands in for the sheet's today in every figure (see {@link SheetAsOf}). Every
+ *  other claim of theirs is unbound. The statement's date is that date, its due-total that day's, and its
+ *  record ends with asof=<date>. */
 public class TakeStatement {
     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
-            ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
-            SheetRepository sheets, SettingsRepository settings, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
+            @Val StatementInput input, ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
+            SheetRepository sheets, SettingsRepository settings, HistoryRepository history, Audit audit, Rollup rollup,
+            Out<Person> person) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long pid;
@@ -41,33 +54,49 @@ public class TakeStatement {
             throw new BadRequestException("no such person");
         }
         LocalDate today = sheets.today(id);
+        LocalDate asof = input.asof();
+        if (asof != null) {
+            if (today != null && asof.isAfter(today)) {
+                throw new BadRequestException("a statement cannot be taken as of a date after the sheet's today (" + today + ")");
+            }
+            if (!history.existed(id, pid, asof)) {
+                throw new BadRequestException(found.name() + " was not on the sheet on " + asof);
+            }
+        }
+        SheetAsOf then = asof == null ? null : history.asOf(id, asof);
+        List<Hold> holds = then == null ? found.liveHolds(today == null ? null : today.toString()) : then.liveHolds(pid);
         Rollup.Snapshot before = rollup.take(id);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int count = 0;
-        for (Claim c : claims.ofPerson(id, pid)) {
-            if (!c.counts(found.liveHolds(today == null ? null : today.toString()))) {
-                claims.bind(id, c.id(), false, null, false);
+        for (Claim live : claims.ofPerson(id, pid)) {
+            // As of a date, the claim as it stood then: absent when it was added later, or was another's then.
+            Claim c = then == null ? live : then.claims().get(live.id());
+            if (c == null || c.personId() != pid || !c.counts(holds)) {
+                claims.bind(id, live.id(), false, null, false);
                 continue;
             }
             count++;
             fixed |= c.fixed();
             // The claim is bound to its figure; its late charge is not bound, but counts in the due-total.
-            BigDecimal figure = claims.figure(id, c);
-            BigDecimal now = claims.dueNow(id, c);
+            BigDecimal figure = then == null ? claims.figure(id, c) : then.figure(c);
+            BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
             if (now != null) {
                 total = total.add(now);
                 fixed = true;
             }
             // With no figure because the rate that would apply has ended (or it is bound to n/a already),
             // it is bound to n/a: it stays n/a even once a later rate is in force on its date.
-            boolean na = figure == null && ((c.bound() && c.statedNa()) || claims.rateEnded(id, c));
+            boolean na = figure == null && ((c.bound() && c.statedNa())
+                    || (then == null ? claims.rateEnded(id, c) : then.rateEnded(c)));
             claims.bind(id, c.id(), true, figure, na);
         }
-        String dueTotal = fixed || claims.rated(id, pid, today) ? SettingsRepository.capped(total, settings.cap(id)).setScale(2).toPlainString() : "n/a";
-        people.stated(id, pid, dueTotal, today);
+        boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
+        BigDecimal cap = then == null ? settings.cap(id) : then.cap();
+        String dueTotal = fixed || rated ? SettingsRepository.capped(total, cap).setScale(2).toPlainString() : "n/a";
+        people.stated(id, pid, dueTotal, asof == null ? today : asof);
         audit.record("STATEMENT sheet=" + id + " by=" + by + " name=" + found.name() + " due-total=" + dueTotal
-                + " claims=" + count);
+                + " claims=" + count + (asof == null ? "" : " asof=" + asof));
         rollup.record(id, by, before);
         person.set(people.find(id, pid));
     }

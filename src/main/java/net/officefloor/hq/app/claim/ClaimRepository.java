@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.HistoryRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -47,10 +48,18 @@ public class ClaimRepository {
 
     private final JdbcTemplate jdbc;
     private final SettingsRepository settings;
+    private final HistoryRepository history;
 
-    public ClaimRepository(JdbcTemplate jdbc, SettingsRepository settings) {
+    public ClaimRepository(JdbcTemplate jdbc, SettingsRepository settings, HistoryRepository history) {
         this.jdbc = jdbc;
         this.settings = settings;
+        this.history = history;
+    }
+
+    /** Keep a claim's values in the sheet's history after a change to it; whether it changed. */
+    private boolean kept(String sheetId, long claimId, boolean changed) {
+        if (changed) history.claim(sheetId, claimId);
+        return changed;
     }
 
     public boolean personExists(String sheetId, long personId) {
@@ -76,8 +85,8 @@ public class ClaimRepository {
         String in = String.join(", ", from.stream().map(s -> "?").toList());
         List<Object> args = new ArrayList<>(List.of(to, claimId, sheetId));
         args.addAll(from);
-        return jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
-                args.toArray()) > 0;
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
+                args.toArray()) > 0);
     }
 
     /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
@@ -87,6 +96,7 @@ public class ClaimRepository {
         Long next = jdbc.queryForObject("SELECT claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
         String number = String.valueOf(next);
         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
+        kept(sheetId, claimId, true);
         return number;
     }
 
@@ -114,6 +124,7 @@ public class ClaimRepository {
                 Long.class, sheetId, key);
         String number = prefix + "-" + next;
         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
+        kept(sheetId, claimId, true);
         return number;
     }
 
@@ -134,8 +145,8 @@ public class ClaimRepository {
     /** Re-date an OPEN or PENDING claim (its due-by and statement binding stay as they are); false when the
      *  sheet has no such claim in those statuses. */
     public boolean redate(String sheetId, long claimId, LocalDate date) {
-        return jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND sheet_id = ? AND status IN ('OPEN', 'PENDING')",
-                Date.valueOf(date), claimId, sheetId) > 0;
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND sheet_id = ? AND status IN ('OPEN', 'PENDING')",
+                Date.valueOf(date), claimId, sheetId) > 0);
     }
 
     /** Record who opened a claim. */
@@ -240,9 +251,9 @@ public class ClaimRepository {
 
     /** Bind a claim to a figure (stated; to n/a when {@code na}), or unbind it (not stated, live again). */
     public void bind(String sheetId, long claimId, boolean stated, BigDecimal figure, boolean na) {
-        jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE id = ? AND sheet_id = ?",
+        kept(sheetId, claimId, jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE id = ? AND sheet_id = ?",
                 stated, figure, na,
-                claimId, sheetId);
+                claimId, sheetId) > 0);
     }
 
     /** A person's claims on the sheet. */
@@ -254,15 +265,15 @@ public class ClaimRepository {
     /** Move a DRAFT, OPEN or PENDING claim to another person: it is unbound from its last statement (live
      *  again) and listed as its new person's newest claim; false when the sheet has no such claim in those statuses. */
     public boolean reassign(String sheetId, long claimId, long personId) {
-        return jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE,"
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE,"
                 + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?"
-                + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0;
+                + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0);
     }
 
     /** Defer an OPEN claim until a date; false when the sheet has no such OPEN claim. */
     public boolean defer(String sheetId, long claimId, LocalDate until) {
-        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
-                Date.valueOf(until), claimId, sheetId) > 0;
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
+                Date.valueOf(until), claimId, sheetId) > 0);
     }
 
     /** Raise a claim's proofs count by one, only when it is not SETTLED or VOID; the count now, or null when the
@@ -277,7 +288,7 @@ public class ClaimRepository {
 
     /** Fix a settled claim's due. */
     public void settleDue(String sheetId, long claimId, BigDecimal due) {
-        jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId);
+        kept(sheetId, claimId, jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId) > 0);
     }
 
     /** The name of a person on the sheet. */
@@ -325,6 +336,7 @@ public class ClaimRepository {
             ps.setBoolean(8, late);
             return ps;
         }, keys);
+        kept(sheetId, keys.getKey().longValue(), true);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
                 dueBy.toString(), false, null, false, 0, null, late);
     }
@@ -346,6 +358,7 @@ public class ClaimRepository {
                 + " WHERE id = ? AND sheet_id = ? AND status = 'OPEN'", rest, claim.id(), sheetId) == 0) {
             return null;
         }
+        kept(sheetId, claim.id(), true);
         LocalDate date = LocalDate.parse(claim.date());
         LocalDate dueBy = dueBy(sheetId, claim.personId(), date);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -364,15 +377,16 @@ public class ClaimRepository {
             ps.setString(8, claim.number());
             return ps;
         }, keys);
+        kept(sheetId, keys.getKey().longValue(), true);
         return keys.getKey().longValue();
     }
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
      *  such draft claim. */
     public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
                 + " AND sheet_id = ? AND status = 'DRAFT'",
-                amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0;
+                amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0);
     }
 
     /** Lock a claim for {@code by}'s editor, releasing any other claim of the same person {@code by} held;
