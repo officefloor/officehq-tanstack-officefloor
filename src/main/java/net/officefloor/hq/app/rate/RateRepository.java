@@ -23,21 +23,22 @@ public class RateRepository {
 
     /** The sheet's rates, by grade then from-date (an undated rate first). */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT grade, pct, from_date FROM rate WHERE sheet_id = ?"
+        return jdbc.query("SELECT grade, pct, from_date, to_date FROM rate WHERE sheet_id = ?"
                 + " ORDER BY grade, from_date NULLS FIRST",
                 (rs, i) -> new Rate(rs.getString("grade"), pct(rs.getBigDecimal("pct")),
-                        from(rs.getObject("from_date", LocalDate.class))), sheetId);
+                        from(rs.getObject("from_date", LocalDate.class)),
+                        from(rs.getObject("to_date", LocalDate.class))), sheetId);
     }
 
     /** Set a grade's rate from a from-date (null: from the beginning of time), replacing the one the
-     *  grade had from that date. */
-    public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from) {
+     *  grade had from that date; it applies through its to-date (null: with no end). */
+    public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
         Date on = from == null ? null : Date.valueOf(from);
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 sheetId, grade, on);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date) VALUES (?, ?, ?, ?)",
-                sheetId, grade, pct, on);
-        return new Rate(grade, pct(pct), from(from));
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                sheetId, grade, pct, on, to == null ? null : Date.valueOf(to));
+        return new Rate(grade, pct(pct), from(from), from(to));
     }
 
     /** A from-date as shown (yyyy-mm-dd), or null when there is none. */

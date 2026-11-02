@@ -9,10 +9,12 @@ import net.officefloor.hq.app.person.Hold;
  *  (null until it is opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound with no figure: its due then stays live), and, for a correction (a negative
  *  amount), the number of the settled claim it corrects (null otherwise), and its due-by (yyyy-MM-dd: fixed when it was
- *  created, its date then plus the terms of its person's grade on that date, else the sheet's terms). */
+ *  created, its date then plus the terms of its person's grade on that date, else the sheet's terms), and
+ *  whether its last statement bound it to n/a (the rate that would apply to it had ended: its due then
+ *  stays n/a, not live). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
-        String dueBy) {
+        String dueBy, boolean statedNa) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {

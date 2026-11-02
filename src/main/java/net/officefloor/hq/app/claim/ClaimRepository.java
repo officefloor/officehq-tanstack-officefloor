@@ -18,19 +18,27 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
             rs.getString("claim_no"), dueOf(rs.getBigDecimal("settled_due")),
             rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")),
-            rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString());
+            rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString(),
+            rs.getBoolean("stated_na"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
     private static final String GRADE_ON = "(SELECT g.grade FROM person_grade g WHERE g.sheet_id = ? AND g.person_id = ?"
             + " AND (g.from_date IS NULL OR g.from_date <= CAST(? AS DATE)) ORDER BY g.from_date DESC NULLS LAST LIMIT 1)";
+
+    /** The rate that would apply on a date (sheet, then GRADE_ON's person and date, then the date):
+     *  the one for the person's grade with the latest from-date on or before it, an undated rate
+     *  applying from the beginning of time; at most one row, with its pct and to_date. */
+    private static final String RATE_ON = "(SELECT r.pct, r.to_date FROM rate r WHERE r.sheet_id = ? AND r.grade = "
+            + GRADE_ON + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
+            + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1)";
 
     private final JdbcTemplate jdbc;
 
@@ -113,13 +121,12 @@ public class ClaimRepository {
     /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
      *  had on that date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time), rounded to two decimals by the claim's rounding (see {@link #rounding}), and at least the sheet's floor (a correction's, a
+     *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's rounding (see {@link #rounding}), and at least the sheet's floor (a correction's, a
      *  negative amount's, has no floor); null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
-        List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r WHERE r.sheet_id = ? AND r.grade = "
-                + GRADE_ON + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
-                + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1", BigDecimal.class, sheetId,
-                sheetId, claim.personId(), claim.date(), claim.date());
+        List<BigDecimal> pct = jdbc.queryForList("SELECT a.pct FROM " + RATE_ON + " a"
+                + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class, sheetId,
+                sheetId, claim.personId(), claim.date(), claim.date(), claim.date());
         if (pct.isEmpty()) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
                 .setScale(2, rounding(sheetId, claim));
@@ -150,9 +157,10 @@ public class ClaimRepository {
     }
 
     /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
-     *  it to (not while PENDING), else its live due; null when it has none. */
+     *  it to (not while PENDING; none when it bound it to n/a), else its live due; null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
+        if (claim.bound() && claim.statedNa()) return null;
         if (claim.bound() && claim.statedDue() != null) return new BigDecimal(claim.statedDue());
         return due(sheetId, claim);
     }
@@ -180,17 +188,28 @@ public class ClaimRepository {
         return figure.add(charge);
     }
 
-    /** Whether a rate for the grade the person has on a date is in force on that date. */
-    public boolean rated(String sheetId, long personId, LocalDate on) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM rate r WHERE r.sheet_id = ? AND r.grade = " + GRADE_ON
-                + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))", Integer.class, sheetId,
-                sheetId, personId, on.toString(), on.toString());
+    /** Whether the rate that would apply to a claim (for the grade its person had on its date, the one
+     *  with the latest from-date on or before it) has ended before the claim's date. */
+    public boolean rateEnded(String sheetId, Claim claim) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + RATE_ON + " a"
+                + " WHERE a.to_date < CAST(? AS DATE)", Integer.class, sheetId,
+                sheetId, claim.personId(), claim.date(), claim.date(), claim.date());
         return n != null && n > 0;
     }
 
-    /** Bind a claim to a figure (stated), or unbind it (not stated, live again). */
-    public void bind(String sheetId, long claimId, boolean stated, BigDecimal figure) {
-        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE id = ? AND sheet_id = ?", stated, figure,
+    /** Whether a rate for the grade the person has on a date is in force on that date (not past its
+     *  to-date). */
+    public boolean rated(String sheetId, long personId, LocalDate on) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + RATE_ON + " a"
+                + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", Integer.class, sheetId,
+                sheetId, personId, on.toString(), on.toString(), on.toString());
+        return n != null && n > 0;
+    }
+
+    /** Bind a claim to a figure (stated; to n/a when {@code na}), or unbind it (not stated, live again). */
+    public void bind(String sheetId, long claimId, boolean stated, BigDecimal figure, boolean na) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE id = ? AND sheet_id = ?",
+                stated, figure, na,
                 claimId, sheetId);
     }
 
@@ -203,7 +222,7 @@ public class ClaimRepository {
     /** Move a DRAFT, OPEN or PENDING claim to another person: it is unbound from its last statement (live
      *  again) and listed as its new person's newest claim; false when the sheet has no such claim in those statuses. */
     public boolean reassign(String sheetId, long claimId, long personId) {
-        return jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
+        return jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE,"
                 + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?"
                 + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0;
     }
@@ -253,7 +272,7 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString());
+                dueBy.toString(), false);
     }
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no

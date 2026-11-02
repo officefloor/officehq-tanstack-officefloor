@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Take a person's statement: record their due-total now, and bind each claim of theirs that counts (a
  *  person's open (OPEN or PENDING) claims dated within a hold do not, unless already bound) to the figure it has now (a settled claim keeps its frozen due); a
+ *  claim with no figure because the rate that would apply to it has ended is bound to n/a; a
  *  claim that does not count is unbound (live again). A late charge is never bound: it keeps following
  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
@@ -44,7 +45,7 @@ public class TakeStatement {
         int count = 0;
         for (Claim c : claims.ofPerson(id, pid)) {
             if (!c.counts(found.holds())) {
-                claims.bind(id, c.id(), false, null);
+                claims.bind(id, c.id(), false, null, false);
                 continue;
             }
             count++;
@@ -56,7 +57,10 @@ public class TakeStatement {
                 total = total.add(now);
                 fixed = true;
             }
-            claims.bind(id, c.id(), true, figure);
+            // With no figure because the rate that would apply has ended (or it is bound to n/a already),
+            // it is bound to n/a: it stays n/a even once a later rate is in force on its date.
+            boolean na = figure == null && ((c.bound() && c.statedNa()) || claims.rateEnded(id, c));
+            claims.bind(id, c.id(), true, figure, na);
         }
         String dueTotal = fixed || claims.rated(id, pid, today) ? total.setScale(2).toPlainString() : "n/a";
         people.stated(id, pid, dueTotal, today);

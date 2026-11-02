@@ -96,7 +96,8 @@ final class ClaimStatusChange {
         }
         repository.log(id, cid, by);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
-                number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy());
+                number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
+                found.statedNa());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
         rollup.record(id, by, before);

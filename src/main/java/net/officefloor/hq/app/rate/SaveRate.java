@@ -19,9 +19,10 @@ public class SaveRate {
             throw new BadRequestException("no such sheet");
         }
         Rollup.Snapshot before = rollup.take(id);
-        Rate saved = repository.set(id, input.grade(), input.pct(), input.from());
+        Rate saved = repository.set(id, input.grade(), input.pct(), input.from(), input.to());
         audit.record("RATE_SET sheet=" + id + " by=" + by + " grade=" + saved.grade() + " rate=" + saved.pct()
-                + (saved.from() == null ? "" : " from=" + saved.from()));
+                + (saved.from() == null ? "" : " from=" + saved.from())
+                + (saved.to() == null ? "" : " to=" + saved.to()));
         rollup.record(id, by, before);
         rate.set(saved);
     }

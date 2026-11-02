@@ -15,7 +15,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  correction (a negative amount), the number of the settled claim of the same person it corrects, and
  *  its due-by (yyyy-mm-dd), fixed when it was created from the terms of its person's grade then (else the
  *  sheet's terms), and its status log: a line per status it has had, oldest first, as
- *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment. */
+ *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
+ *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a). */
 export type Claim = {
   id: number;
   personId: number;
@@ -30,6 +31,7 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   dueBy: string;
+  statedNa: boolean;
   log: string[];
 };
 
@@ -39,9 +41,11 @@ export function isOpen(c: Claim): boolean {
 }
 
 /** A claim's fixed figure: the due frozen when it was settled, else the one its last statement bound
- *  it to (a PENDING claim is not bound); null when its due is live. */
+ *  it to (a PENDING claim is not bound; 'n/a' when it bound it to n/a); null when its due is live. */
 export function fixedDue(c: Claim): string | null {
-  return c.due ?? (c.stated && c.status !== 'PENDING' ? c.statedDue : null);
+  if (c.due !== null) return c.due;
+  if (!isBound(c)) return null;
+  return c.statedNa ? 'n/a' : c.statedDue;
 }
 
 /** Whether a claim counts toward claimed and every live total, given the people's holds by person id:

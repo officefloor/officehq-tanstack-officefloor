@@ -10,7 +10,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the rate form: the grade must be A, B or C; the percent is required, 0.00 or more with up
- *  to two decimals (below 100000); a from-date is yyyy-mm-dd, and blank means from the beginning of time. */
+ *  to two decimals (below 100000); a from-date is yyyy-mm-dd, and blank means from the beginning of time; a to-date is yyyy-mm-dd, not before the from-date, and blank means
+ *  no end. */
 public class ValidateRate {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
@@ -19,6 +20,7 @@ public class ValidateRate {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
         String from = request == null || request.from() == null ? "" : request.from().trim();
+        String to = request == null || request.to() == null ? "" : request.to().trim();
         if (!GRADES.contains(grade)) {
             throw new BadRequestException("grade must be A, B or C");
         }
@@ -36,6 +38,17 @@ public class ValidateRate {
                 throw new BadRequestException("from-date must be yyyy-mm-dd");
             }
         }
-        rate.set(new RateInput(grade, new BigDecimal(pct).setScale(2), on));
+        LocalDate until = null;
+        if (!to.isEmpty()) {
+            try {
+                until = LocalDate.parse(to);
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("to-date must be yyyy-mm-dd");
+            }
+        }
+        if (until != null && on != null && until.isBefore(on)) {
+            throw new BadRequestException("to-date must not be before the from-date");
+        }
+        rate.set(new RateInput(grade, new BigDecimal(pct).setScale(2), on, until));
     }
 }

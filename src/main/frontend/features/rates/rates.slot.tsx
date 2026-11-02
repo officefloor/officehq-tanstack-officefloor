@@ -10,7 +10,8 @@ import { useDueTotals } from './useDueTotals';
 import { rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
- *  grade's rate from that date; blank is from the beginning of time), the rates set, and the rate in
+ *  grade's rate from that date; blank is from the beginning of time) through an optional to-date
+ *  (blank is no end), the rates set, and the rate in
  *  force on the sheet's today for every grade ('n/a' when none is). */
 function Rates({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
@@ -19,14 +20,16 @@ function Rates({ sheetId }: { sheetId: string }) {
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { grade: string; pct: string; from: string }) =>
+    mutationFn: (f: { grade: string; pct: string; from: string; to: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, f),
     onSuccess: async () => {
       setPct('');
       setFrom('');
+      setTo('');
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
   });
@@ -39,7 +42,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ grade, pct, from });
+            return save.mutateAsync({ grade, pct, from, to });
           });
         }}
       >
@@ -85,6 +88,19 @@ function Rates({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            type="text"
+            placeholder="yyyy-mm-dd"
+            data-testid="rate-form-to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -96,6 +112,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>Rate %</th>
             <th>From</th>
+            <th>To</th>
           </tr>
         </thead>
         <tbody>
@@ -104,6 +121,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-grade">{r.grade}</td>
               <td data-testid="rate-pct">{r.pct}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
             </tr>
           ))}
         </tbody>

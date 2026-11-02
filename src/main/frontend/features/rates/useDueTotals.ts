@@ -24,7 +24,7 @@ export function useDueTotals(sheetId: string): Map<number, string> {
     const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
     const dues = counting.map((c) =>
       claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), floor, settings, today.data?.today));
-    totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null) || dues.some((d) => d !== 'n/a')
+    totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a')
       ? sumDues(dues)
       : 'n/a');
   }
