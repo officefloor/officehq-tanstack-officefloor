@@ -4,13 +4,21 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class ClaimRepository {
+
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status";
+
+    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
+            money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
+            rs.getString("note"), rs.getString("status"));
 
     private final JdbcTemplate jdbc;
 
@@ -26,25 +34,29 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query(
-                "SELECT id, person_id, amount, claim_date, note FROM claim WHERE sheet_id = ? ORDER BY id DESC",
-                (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
-                        money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
-                        rs.getString("note")),
-                sheetId);
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+    }
+
+    /** A claim on the sheet; null when the sheet has no such claim. */
+    public Claim find(String sheetId, long claimId) {
+        List<Claim> found = jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?", ROW,
+                sheetId, claimId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Move a claim to a status, only when it is now in one of {@code from}; false when it is not. */
+    public boolean changeStatus(String sheetId, long claimId, List<String> from, String to) {
+        String in = String.join(", ", from.stream().map(s -> "?").toList());
+        List<Object> args = new ArrayList<>(List.of(to, claimId, sheetId));
+        args.addAll(from);
+        return jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
+                args.toArray()) > 0;
     }
 
     /** The name of a person on the sheet. */
     public String personName(String sheetId, long personId) {
         return jdbc.queryForObject("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
                 String.class, sheetId, personId);
-    }
-
-    /** The person (on the sheet) a claim belongs to; null when the sheet has no such claim. */
-    public Long personOf(String sheetId, long claimId) {
-        List<Long> found = jdbc.queryForList("SELECT person_id FROM claim WHERE sheet_id = ? AND id = ?",
-                Long.class, sheetId, claimId);
-        return found.isEmpty() ? null : found.get(0);
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
@@ -60,7 +72,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note);
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT");
     }
 
     /** Change a claim's amount, date and note; false when the sheet has no such claim. */

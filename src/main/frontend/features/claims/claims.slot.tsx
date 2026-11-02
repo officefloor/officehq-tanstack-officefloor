@@ -7,11 +7,20 @@ import { usePeople } from '../people/usePeople';
 import { due, rateFor, useRates } from '../rates/useRates';
 import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
 
-/** A person's claimed: the sum of their claims' amounts. */
+/** A person's claimed: the sum of their counted (OPEN or SETTLED) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
   return <td data-testid="person-claimed">{claimed((claims.data ?? []).filter((c) => c.personId === personId))}</td>;
 }
+
+type ClaimAction = 'open' | 'settle' | 'void';
+
+/** A claim's status changes; the server refuses one its status does not allow. */
+const ACTIONS: [ClaimAction, string][] = [
+  ['open', 'Open'],
+  ['settle', 'Settle'],
+  ['void', 'Void'],
+];
 
 /** A person's claims, newest first, under their row, with a form that adds a claim, or edits one
  *  when its editor is open. A blank date takes the sheet's today. */
@@ -44,8 +53,23 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     },
   });
 
+  // A status change (open, settle, void) of one claim; a refusal shows on that claim's row.
+  const action = useMutation({
+    mutationFn: (a: { id: number; action: ClaimAction }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, {}),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const act = (id: number, a: ClaimAction) => {
+    action.reset();
+    action.mutate({ id, action: a });
+  };
+
   const openEditor = (c: Claim) => {
     save.reset();
+    action.reset();
     setEditing(c.id);
     setAmount(c.amount);
     setDate(c.date);
@@ -106,6 +130,23 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">{due(c.amount, pct)}</td>
+                <td data-testid="claim-status">{c.status}</td>
+                <td>
+                  {ACTIONS.map(([a, label]) => (
+                    <button
+                      key={a}
+                      type="button"
+                      data-testid={`claim-${a}`}
+                      disabled={action.isPending}
+                      onClick={() => act(c.id, a)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  {action.isError && action.variables?.id === c.id && (
+                    <span data-testid="claim-error">{action.error.message}</span>
+                  )}
+                </td>
                 <td>
                   {editing === c.id ? (
                     <button type="button" data-testid="claim-cancel" onClick={cancel}>

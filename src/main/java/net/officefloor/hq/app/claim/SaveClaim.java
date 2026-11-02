@@ -22,13 +22,15 @@ public class SaveClaim {
         } catch (NumberFormatException e) {
             throw new BadRequestException("no such claim");
         }
-        Long pid = repository.personOf(id, cid);
-        if (pid == null) {
+        Claim found = repository.find(id, cid);
+        if (found == null) {
             throw new BadRequestException("no such claim");
         }
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         repository.update(id, cid, input.amount(), date, input.note());
-        Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note());
+        long pid = found.personId();
+        Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
+                found.status());
         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                 + " amount=" + saved.amount() + " date=" + saved.date());
         claim.set(saved);
