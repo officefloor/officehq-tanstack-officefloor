@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useReadScope } from '../../query/live';
 import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
+import { dueCents, hundredths, claimRateOf, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheet, useSheetToday } from '../sheet/sheet';
 import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
 
@@ -86,6 +86,9 @@ export type Claim = {
   comments: ClaimComment[];
   /** Its lines, in the order added: with any, its amount is their quantities times unit amounts added up. */
   lines: ClaimLine[];
+  /** When it was added (the claim sequence's value; null when kept from before it was recorded): it sees only the
+   *  forward-only rates saved before it (see {@link claimRateOf}). */
+  added: number | null;
 };
 
 /** One line of a claim: its label, quantity (a whole number) and unit amount (two decimals). */
@@ -277,11 +280,11 @@ export function uncappedPersonDueCents(
   // A claim has a figure apart from today's grade when it keeps one, or when another grade in force on its date gives one.
   const apart = (c: Claim) => {
     const then = gradeOn(person, c.date);
-    return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, rateOf(rates, then, c.date), floor) !== undefined)
-      || (then !== undefined && today !== undefined && c.date <= today && claimFigureCents(c, rateOf(rates, then, c.date), floor) !== undefined);
+    return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, claimRateOf(rates, then, c), floor) !== undefined)
+      || (then !== undefined && today !== undefined && c.date <= today && claimFigureCents(c, claimRateOf(rates, then, c), floor) !== undefined);
   };
   if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart)) return undefined;
-  return mine.reduce((sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n), 0n);
+  return mine.reduce((sum, c) => sum + (claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n), 0n);
 }
 
 /** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
@@ -296,7 +299,7 @@ export function splitDueCents(
 ): { settled: bigint; open: bigint } {
   const split = { settled: 0n, open: 0n };
   for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
-    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
     if (c.status === 'SETTLED') split.settled += due;
     else if (isOpen(c)) split.open += due;
   }
@@ -340,7 +343,7 @@ export function overdueCents(
   const byId = new Map(people.map((p) => [p.id, p]));
   const overdueClaims = counted(claims, people).filter((c) => byId.has(c.person) && overdue(c, late));
   const cents = overdueClaims.reduce(
-    (sum, c) => sum + (claimDueCents(c, rateOf(rates, gradeOn(byId.get(c.person)!, c.date), c.date), floor, late) ?? 0n),
+    (sum, c) => sum + (claimDueCents(c, claimRateOf(rates, gradeOn(byId.get(c.person)!, c.date), c), floor, late) ?? 0n),
     0n,
   );
   return { count: overdueClaims.length, cents };
@@ -360,7 +363,7 @@ export function agedCents(
   const today = late.today;
   for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
     if (!isOpen(c)) continue;
-    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
     const days =
       today === undefined ? 0 : Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000);
     if (days <= 30) aged.upTo30 += due;
@@ -441,7 +444,7 @@ export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[]
     if (person === undefined) continue;
     const tags = new Set([...c.tags, ...person.tags]);
     if (tags.size === 0) continue;
-    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
     for (const t of tags) totals.set(t, (totals.get(t) ?? 0n) + due);
   }
   return [...totals].map(([tag, cents]) => ({ tag, cents }));
@@ -460,7 +463,7 @@ export function useMonthDueTotals(sheet: string): { month: string; cents: bigint
   for (const c of counted(all, people)) {
     const person = byId.get(c.person);
     if (person === undefined) continue;
-    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
     const month = c.date.slice(0, 7);
     totals.set(month, (totals.get(month) ?? 0n) + due);
   }

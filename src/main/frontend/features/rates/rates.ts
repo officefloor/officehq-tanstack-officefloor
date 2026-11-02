@@ -5,8 +5,20 @@ import type { Grade } from '../people/people';
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
  *  applies from the beginning of time) through its to-date (null when it has no end). Its level is the sheet it is
  *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. Its version counts
- *  the values set for its grade and from-date, this one (the newest, the one in force) included. */
-export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null; level: number; version: number };
+ *  the values set for its grade and from-date, this one (the newest, the one in force) included. A forward-only rate
+ *  (saved with a from-date on or after the sheet's today) carries the claim sequence's value when it was saved (after;
+ *  null for a rate that applies to every claim) and the version it replaced (before; null when none): a claim added
+ *  before it uses that one instead (see {@link claimRateOf}). */
+export type Rate = {
+  grade: Grade;
+  pct: string;
+  from: string | null;
+  to: string | null;
+  level: number;
+  version: number;
+  after?: number | null;
+  before?: Rate | null;
+};
 
 /** The most levels up a sheet's parents give it rates. */
 export const RATE_LEVELS = 3;
@@ -42,6 +54,23 @@ export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | u
     if (pct !== undefined) return pct;
   }
   return undefined;
+}
+
+/** The rates as a claim added at the sequence value sees them (null for one kept from before it was recorded): each
+ *  forward-only rate saved after it gives way to the version it replaced, or is left out when it replaced none. */
+export function seenBy(rates: Rate[], added: number | null | undefined): Rate[] {
+  const seen: Rate[] = [];
+  for (const rate of rates) {
+    let r: Rate | null | undefined = rate;
+    while (r != null && r.after != null && (added == null || added <= r.after)) r = r.before;
+    if (r != null) seen.push(r);
+  }
+  return seen;
+}
+
+/** The rate for a grade on a claim's date, of the rates the claim sees (see {@link seenBy}). */
+export function claimRateOf(rates: Rate[], grade: Grade | undefined, claim: { date: string; added?: number | null }): string | undefined {
+  return rateOf(seenBy(rates, claim.added), grade, claim.date);
 }
 
 function rateAt(rates: Rate[], grade: Grade, date: string, level: number): string | undefined {

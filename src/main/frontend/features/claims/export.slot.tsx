@@ -1,6 +1,6 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { gradeOn, usePeople } from '../people/people';
-import { rateOf, showDue, useRates } from '../rates/rates';
+import { claimRateOf, showDue, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useFloorCents } from '../settings/settings';
 import { claimDueCents, useClaims, useLate } from './claims';
@@ -29,7 +29,7 @@ function ExportClaims({ sheet }: { sheet: string; user: string }) {
             String(c.periodNumber ?? c.number ?? ''),
             c.date,
             c.amount,
-            showDue(claimDueCents(c, rateOf(rates, gradeOn(p, c.date), c.date), floor, late)),
+            showDue(claimDueCents(c, claimRateOf(rates, gradeOn(p, c.date), c), floor, late)),
             c.status,
             periodOf(periods, c.dueBy)?.name ?? '',
           ]

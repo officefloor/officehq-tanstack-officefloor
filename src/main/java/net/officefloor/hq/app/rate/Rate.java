@@ -3,6 +3,7 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -11,8 +12,11 @@ import java.util.List;
  * (yyyy-MM-dd; null when it applies from the beginning of time) through its to-date (null when it has no end). Its
  * level is the sheet it is kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link #LEVELS}.
  * Its version counts the values set for its grade and from-date, this one (the newest, the one in force) included.
+ * A forward-only rate (saved with a from-date on or after the sheet's today) carries the claim sequence's value when
+ * it was saved (after; null for a rate that applies to every claim) and the version it replaced (before; null when
+ * none, or the rate applies to every claim): a claim added before it uses that one instead (see {@link #seenBy}).
  */
-public record Rate(String grade, String pct, String from, String to, int level, int version) {
+public record Rate(String grade, String pct, String from, String to, int level, int version, Long after, Rate before) {
 
     /** The most levels up a sheet's parents give it rates. */
     public static final int LEVELS = 3;
@@ -24,12 +28,31 @@ public record Rate(String grade, String pct, String from, String to, int level, 
 
     /** A sheet's own rate at its version. */
     public Rate(String grade, String pct, String from, String to, int version) {
-        this(grade, pct, from, to, 0, version);
+        this(grade, pct, from, to, 0, version, null, null);
     }
 
     /** This rate as one inherited from the levels up. */
     public Rate up(int levels) {
-        return new Rate(grade, pct, from, to, level + levels, version);
+        return new Rate(grade, pct, from, to, level + levels, version, after, before == null ? null : before.up(levels));
+    }
+
+    /**
+     * The rates as a claim added at the sequence value sees them (null for a claim kept from before it was recorded,
+     * which counts as added before every forward-only rate): each forward-only rate saved after it gives way to the
+     * version it replaced, or is left out when it replaced none.
+     */
+    public static List<Rate> seenBy(List<Rate> rates, Long added) {
+        List<Rate> seen = new ArrayList<>(rates.size());
+        for (Rate rate : rates) {
+            Rate r = rate;
+            while (r != null && r.after() != null && (added == null || added <= r.after())) {
+                r = r.before();
+            }
+            if (r != null) {
+                seen.add(r);
+            }
+        }
+        return seen;
     }
 
     /**

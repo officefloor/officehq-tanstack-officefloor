@@ -4,7 +4,7 @@ import { claimDueCents, counted, countedOn } from '../claims/claims';
 import type { Claim, Late } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
-import { rateOf, twoDecimals } from '../rates/rates';
+import { claimRateOf, twoDecimals } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import type { DatedCents } from '../settings/settings';
 
@@ -104,7 +104,7 @@ export function personPeriodDueCents(
     const period = periodOf(periods, c.dueBy);
     const person = byId.get(c.person);
     if (period === undefined || person === undefined || !countedOn(c, person, period.to)) continue;
-    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
     const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
     byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
     totals.set(period.name, byPerson);
@@ -129,7 +129,7 @@ export function classicPeriodDueCents(
     const period = periodOf(periods, c.dueBy);
     const person = byId.get(c.person);
     if (period === undefined || person === undefined) continue;
-    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
     totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
   }
   return totals;

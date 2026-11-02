@@ -8,7 +8,7 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { gradeOn, peoplePath, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { rateOf, showDue, twoDecimals, useRates } from '../rates/rates';
+import { claimRateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useCapCents, useFloorCents } from '../settings/settings';
@@ -233,7 +233,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
-      due <span data-testid="claim-due">{showDue(claimDueCents(claim, rateOf(rates, grade, claim.date), floor, late))}</span>{' '}
+      due <span data-testid="claim-due">{showDue(claimDueCents(claim, claimRateOf(rates, grade, claim), floor, late))}</span>{' '}
       due by <span data-testid="claim-due-by">{claim.dueBy}</span>{' '}
       overdue <span data-testid="claim-overdue">{overdue(claim, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
