@@ -16,3 +16,13 @@ export function useRoles(sheet: string) {
     queryFn: () => getJson<Role[]>(rolesPath(sheet)),
   });
 }
+
+export const userRoleKey = (sheet: string, user: string) => ['roles', sheet, 'of', user] as const;
+
+/** The role the user acts in on the sheet (steward while lent the role), as of the screen's date. */
+export function useUserRole(sheet: string, user: string) {
+  return useQuery({
+    queryKey: userRoleKey(sheet, user),
+    queryFn: () => getJson<Role>(`${rolesPath(sheet)}/of?user=${encodeURIComponent(user)}`),
+  });
+}

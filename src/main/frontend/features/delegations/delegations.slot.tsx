@@ -1,3 +1,4 @@
+import { userRoleKey } from '../roles/roles';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +23,7 @@ function Delegations({ sheet, user }: { sheet: string; user: string }) {
     mutationFn: (body: Draft) => postJson<Delegation[]>(byUser(delegationsPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(delegationsKey(sheet), updated);
+      void queryClient.invalidateQueries({ queryKey: userRoleKey(sheet, user).slice(0, 3) });
       setDraft(EMPTY);
     },
   });

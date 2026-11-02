@@ -5,7 +5,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { rolesKey, rolesPath, useRoles } from './roles';
+import { rolesKey, rolesPath, useRoles, userRoleKey } from './roles';
 import type { Role } from './roles';
 
 type Draft = { user: string; role: string };
@@ -22,6 +22,7 @@ function Roles({ sheet, user }: { sheet: string; user: string }) {
     mutationFn: (body: Draft) => postJson<Role[]>(byUser(rolesPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(rolesKey(sheet), updated);
+      void queryClient.invalidateQueries({ queryKey: userRoleKey(sheet, user).slice(0, 3) });
       setDraft(EMPTY);
     },
   });

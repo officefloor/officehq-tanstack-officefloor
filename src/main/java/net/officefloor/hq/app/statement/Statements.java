@@ -24,13 +24,13 @@ public class Statements {
 
     /**
      * Per person on the sheet with a statement: the count, the last one's due-total and date (the date it was taken as
-     * of, else the sheet's today then), and a line per statement, oldest first by date.
+     * of, else the sheet's today then), and a line per statement, in the order they were taken.
      */
     public List<StatementSummary> list(String sheet) {
         Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
         jdbc.query("""
                 SELECT person, due_total, COALESCE(as_of, taken_on) AS stated_on FROM statement WHERE sheet = ?
-                ORDER BY person, stated_on, seq, id""", rs -> {
+                ORDER BY person, seq, id""", rs -> {
             lines.computeIfAbsent(rs.getLong("person"), p -> new ArrayList<>()).add(new StatementSummary.Line(
                     rs.getDate("stated_on").toLocalDate().toString(), figure(rs.getBigDecimal("due_total"))));
         }, sheet);
