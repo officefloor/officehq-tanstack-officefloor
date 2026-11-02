@@ -13,6 +13,11 @@ public class ValidateRate {
     private static final Pattern PCT = Pattern.compile("\\d{1,7}(\\.\\d{1,2})?");
 
     public void validate(@RequestBody RateRequest request, Out<RateInput> body) throws InvalidRateException {
+        body.set(check(request));
+    }
+
+    /** Checks a rate by the form's rules, as the rate import checks each of its lines. */
+    static RateInput check(RateRequest request) throws InvalidRateException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
         String from = request == null || request.from() == null ? "" : request.from().trim();
@@ -38,6 +43,6 @@ public class ValidateRate {
         if (on != null && through != null && through.isBefore(on)) {
             throw new InvalidRateException("The to-date must not be before the from-date");
         }
-        body.set(new RateInput(grade, new BigDecimal(pct), on, through));
+        return new RateInput(grade, new BigDecimal(pct), on, through);
     }
 }

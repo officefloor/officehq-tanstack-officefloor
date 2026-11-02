@@ -10,6 +10,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class SaveRate {
     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val RateInput input,
             Rates rates, Audit audit, Rollup rollup) {
+        apply(sheet, user, input, rates, audit, rollup);
+    }
+
+    /** Sets one rate as the form does, replacing the one for the same grade and from-date; the rate import uses it too. */
+    static void apply(String sheet, String user, RateInput input, Rates rates, Audit audit, Rollup rollup) {
         Rollup.Snapshot before = rollup.take(sheet);
         rates.set(sheet, input);
         audit.record("RATE_SET sheet=" + sheet + " by=" + user + " grade=" + input.grade() + " rate="
