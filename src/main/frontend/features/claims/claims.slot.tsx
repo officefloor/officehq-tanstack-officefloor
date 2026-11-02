@@ -34,6 +34,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
+  const [refused, setRefused] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
@@ -68,13 +69,21 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   });
 
   const act = (id: number, a: ClaimAction) => {
+    setRefused(null);
     action.reset();
     action.mutate({ id, action: a });
   };
 
+  // Only a DRAFT can be edited: editing any other claim is refused on its row and opens no editor
+  // (to change an open claim, void it and add a new one).
   const openEditor = (c: Claim) => {
     save.reset();
     action.reset();
+    if (c.status !== 'DRAFT') {
+      setRefused(c.id);
+      return;
+    }
+    setRefused(null);
     setEditing(c.id);
     setAmount(c.amount);
     setDate(c.date);
@@ -103,6 +112,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           data-testid="claim-form"
           onSubmit={(e) => {
             e.preventDefault();
+            setRefused(null);
             submitOnce(() => {
               save.reset();
               return save.mutateAsync({ id: editing, amount, date, note });
@@ -158,6 +168,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                   {action.isError && action.variables?.id === c.id && (
                     <span data-testid="claim-error">{action.error.message}</span>
                   )}
+                  {refused === c.id && <span data-testid="claim-error">only a DRAFT claim can be edited</span>}
                 </td>
                 <td>
                   {editing === c.id ? (

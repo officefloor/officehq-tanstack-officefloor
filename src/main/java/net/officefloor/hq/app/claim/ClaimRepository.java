@@ -70,11 +70,6 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET opened_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
     }
 
-    /** Clear a claim's number (it is never given to another claim). */
-    public void clearNumber(String sheetId, long claimId) {
-        jdbc.update("UPDATE claim SET claim_no = NULL WHERE id = ? AND sheet_id = ?", claimId, sheetId);
-    }
-
     /** A claim's due now: its amount at the rate for its person's grade in force on the claim's date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
      *  of time), rounded half to even to two decimals; null when no rate applies. */
@@ -143,9 +138,10 @@ public class ClaimRepository {
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null);
     }
 
-    /** Change a claim's amount, date and note; false when the sheet has no such claim. */
+    /** Change a DRAFT claim's amount, date and note; false when the sheet has no such draft claim. */
     public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ? AND sheet_id = ?",
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ? AND sheet_id = ?"
+                + " AND status = 'DRAFT'",
                 amount, Date.valueOf(date), note, claimId, sheetId) > 0;
     }
 

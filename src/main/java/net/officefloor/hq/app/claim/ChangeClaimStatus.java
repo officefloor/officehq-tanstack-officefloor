@@ -48,17 +48,13 @@ public class ChangeClaimStatus {
         if (!repository.changeStatus(id, cid, from, to)) {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
-        // Opening gives the sheet's next number; voiding clears it, but its line carries the number it had.
+        // Opening gives the sheet's next number; a voided claim keeps the number it had (never reused).
         Long number = found.number();
-        Long had = number;
         String openedBy = found.openedBy();
         if (to.equals("OPEN")) {
-            number = had = repository.number(id, cid);
+            number = repository.number(id, cid);
             repository.openedBy(id, cid, by);
             openedBy = by;
-        } else if (to.equals("VOID")) {
-            repository.clearNumber(id, cid);
-            number = null;
         }
         // Settling fixes the claim's due as it is now: the figure its last statement bound it to, else its
         // live due ('n/a' when its grade has no rate, which stays live).
@@ -73,7 +69,7 @@ public class ChangeClaimStatus {
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
                 number, due, openedBy, found.stated(), found.statedDue());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
-                + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(had) + settledDue);
+                + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + settledDue);
         rollup.record(id, by, before);
         claim.set(changed);
     }

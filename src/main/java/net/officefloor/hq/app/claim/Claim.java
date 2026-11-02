@@ -1,7 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 /** A claim of a person on a sheet: its amount with two decimals, its date (ISO yyyy-MM-dd), note and status
- *  (DRAFT, OPEN, SETTLED or VOID), its number on the sheet (null while a draft and once void), and the due fixed when it was settled
+ *  (DRAFT, OPEN, SETTLED or VOID), its number on the sheet (null while a draft; a voided claim keeps the one it had), and the due fixed when it was settled
  *  (null unless settled with a rate; its due is then worked out live from the rates), and who opened it
  *  (null until it is opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound with no figure: its due then stays live). */
