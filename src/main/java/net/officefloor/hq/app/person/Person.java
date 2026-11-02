@@ -25,4 +25,13 @@ public record Person(long id, String name, String grade, long version, long stat
     public boolean retired() {
         return retiredFrom != null;
     }
+
+    /** Their holds as they act on live totals on the sheet's today: once their retirement date is reached
+     *  (the sheet's today on or after it) they are held over every date as well. */
+    public List<Hold> liveHolds(String today) {
+        if (retiredFrom == null || today == null || retiredFrom.compareTo(today) > 0) return holds;
+        List<Hold> all = new java.util.ArrayList<>(holds);
+        all.add(new Hold(null, null));
+        return all;
+    }
 }

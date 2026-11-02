@@ -13,7 +13,7 @@ export function useActive(sheetId: string): Map<number, boolean> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const today = useSheetToday(sheetId).data?.today;
-  const holds = holdsById(people.data);
+  const holds = holdsById(people.data, today);
   const active = new Map<number, boolean>();
   if (today === undefined) return active;
   const from = windowStart(today);

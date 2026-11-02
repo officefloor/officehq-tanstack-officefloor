@@ -90,9 +90,16 @@ export function useWatched(sheetId: string) {
   });
 }
 
-/** These people's holds, by person id. */
-export function holdsById(people: Person[] | undefined): Map<number, Hold[]> {
-  return new Map((people ?? []).map((p) => [p.id, p.holds ?? []]));
+/** These people's holds, by person id, as they act on live totals on the sheet's today: a person whose
+ *  retirement date is reached (the sheet's today on or after it) is held over every date as well. */
+export function holdsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {
+  return new Map((people ?? []).map((p) => [p.id, retiredOn(p, today)
+    ? [...(p.holds ?? []), { from: null, to: null }] : p.holds ?? []]));
+}
+
+/** Whether a person's retirement date is reached on the sheet's today (unknown until it is loaded). */
+export function retiredOn(person: Person, today: string | undefined): boolean {
+  return person.retiredFrom !== null && today !== undefined && person.retiredFrom <= today;
 }
 
 /** The sheet's people, in the order they were added. */

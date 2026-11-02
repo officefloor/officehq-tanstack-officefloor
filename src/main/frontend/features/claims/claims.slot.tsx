@@ -21,7 +21,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   const today = useSheetToday(sheetId).data?.today;
   return (
     <td data-testid="person-claimed">
-      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data), today)}
+      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today)}
     </td>
   );
 }
@@ -550,7 +550,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId).data?.today;
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data), today)}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data, today), today)}</strong>
     </p>
   );
 }

@@ -17,7 +17,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
   const today = useSheetToday(sheetId).data?.today;
-  const holds = holdsById(people.data);
+  const holds = holdsById(people.data, today);
   const totals = new Map<number, Map<string, string>>();
   for (const person of people.data ?? []) {
     const own = (claims.data ?? []).filter((c) => c.personId === person.id);

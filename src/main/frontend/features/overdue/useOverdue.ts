@@ -64,7 +64,7 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
   const today = useSheetToday(sheetId).data?.today;
-  const holds = holdsById(people.data);
+  const holds = holdsById(people.data, today);
   const figures = new Map<number, { count: number; total: string }>();
   if (settings === undefined || today === undefined) return figures;
   for (const p of people.data ?? []) {

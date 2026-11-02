@@ -48,12 +48,15 @@ public class PeriodCloser {
     public Period close(String sheetId, String by, Period found, boolean auto, boolean soft) {
         LocalDate from = LocalDate.parse(found.from());
         LocalDate to = LocalDate.parse(found.to());
-        Map<Long, List<Hold>> holds = people.holds(sheetId);
+        String today = periods.today(sheetId);
+        Map<Long, List<Hold>> holds = new java.util.HashMap<>();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
-        for (Person p : people.list(sheetId)) personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
+        for (Person p : people.list(sheetId)) {
+            personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
+            holds.put(p.id(), p.liveHolds(today));
+        }
         Map<Long, String> statusesThen = claims.statusesOn(sheetId, to);
-        String today = periods.today(sheetId);
         for (Claim c : claims.list(sheetId)) {
             LocalDate on = LocalDate.parse(c.date());
             if (on.isBefore(from) || on.isAfter(to)

@@ -32,7 +32,7 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const settings = useSettings(sheetId).data;
-  const holds = holdsById(people.data);
+  const holds = holdsById(people.data, today.data?.today);
   const cap = settingOn(settings, 'cap', today.data?.today);
   const totals = new Map<number, { total: string; excess: string }>();
   for (const p of people.data ?? []) {

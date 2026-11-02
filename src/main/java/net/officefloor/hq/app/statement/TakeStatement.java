@@ -46,7 +46,7 @@ public class TakeStatement {
         boolean fixed = false;
         int count = 0;
         for (Claim c : claims.ofPerson(id, pid)) {
-            if (!c.counts(found.holds())) {
+            if (!c.counts(found.liveHolds(today == null ? null : today.toString()))) {
                 claims.bind(id, c.id(), false, null, false);
                 continue;
             }
