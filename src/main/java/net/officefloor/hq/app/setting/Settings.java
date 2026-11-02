@@ -97,6 +97,10 @@ public class Settings {
      *  late for review (a whole number, not dated); blank: none. */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The most OPEN or PENDING claims a person may have for opening another (a whole number, not dated); blank:
+     *  none. */
+    public static final String MAX_OPEN = "max-open";
+
     /** The default date of a new claim in place of the sheet's today (yyyy-MM-dd); blank: off. */
     public static final String ENTRY_DATE = "entry-date";
 
@@ -155,7 +159,7 @@ public class Settings {
 
     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !MAX_OPEN.equals(key)
                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !DEFAULT_GRADE.equals(key) && !key.startsWith("perm-");
     }
@@ -367,6 +371,12 @@ public class Settings {
         return days.isEmpty() ? null : Integer.valueOf(days);
     }
 
+    /** The sheet's maximum of OPEN or PENDING claims per person, or null when there is none. */
+    public Integer maxOpen(String sheet) {
+        String max = get(sheet, MAX_OPEN);
+        return max.isEmpty() ? null : Integer.valueOf(max);
+    }
+
     /** The default date of a new claim: the sheet's entry date while it is set, else the sheet's today. */
     public LocalDate entryDay(String sheet) {
         String entry = get(sheet, ENTRY_DATE);
@@ -484,6 +494,6 @@ public class Settings {
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
                 on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
                 get(sheet, DEFAULT_GRADE), on(sheet, gradeClerkLimit("A"), today), on(sheet, gradeClerkLimit("B"), today),
-                on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH), get(sheet, SCORE_LOG));
+                on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH), get(sheet, SCORE_LOG), get(sheet, MAX_OPEN));
     }
 }

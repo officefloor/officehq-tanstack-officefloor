@@ -61,6 +61,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [graceDays, setGraceDays] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [maxOpen, setMaxOpen] = useState('');
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
   const [scoreLog, setScoreLog] = useState('');
@@ -111,6 +112,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setGraceDays('');
       setEscalateAfter('');
       setReviewSla('');
+      setMaxOpen('');
       setScoreMid('');
       setScoreHigh('');
       setScoreLog('');
@@ -163,7 +165,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'score-mid': scoreMid, 'score-high': scoreHigh, 'score-log': scoreLog, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'max-open': maxOpen, 'score-mid': scoreMid, 'score-high': scoreHigh, 'score-log': scoreLog, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '',
       'clerk-limit-A': gradeClerkLimit.A ?? '', 'clerk-limit-B': gradeClerkLimit.B ?? '', 'clerk-limit-C': gradeClerkLimit.C ?? '' };
@@ -486,6 +488,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-review-sla-current"><Fig>{data?.reviewSla ?? ''}</Fig></span>{' '}
+        <label>
+          Max open claims{' '}
+          <input
+            data-testid="setting-max-open"
+            placeholder="whole number (blank: none)"
+            value={maxOpen}
+            onChange={(e) => {
+              setMaxOpen(e.target.value);
+              touch('max-open');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('max-open')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-max-open-current"><Fig>{data?.maxOpen ?? ''}</Fig></span>{' '}
         <label>
           Score mid{' '}
           <input

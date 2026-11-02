@@ -301,6 +301,17 @@ public class ClaimStatusChanger {
         }
         // A period with a cap lets each person have at most that many OPEN or PENDING claims due inside it.
         if (requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.REVIEW) {
+            // The sheet's maximum lets each person have at most that many OPEN or PENDING claims in all.
+            Integer max = settings.maxOpen(sheet);
+            if (max != null) {
+                long held = claims.list(sheet).stream()
+                        .filter((c) -> c.person() == claim.person() && c.id() != claim.id())
+                        .filter((c) -> c.status() == ClaimStatus.OPEN || c.status() == ClaimStatus.PENDING)
+                        .count();
+                if (held >= max) {
+                    throw new InvalidClaimStatusChangeException("A person may have at most " + max + " open claims");
+                }
+            }
             Period period = periods.on(sheet, LocalDate.parse(claim.dueBy()));
             if (period != null && period.cap() != null) {
                 long held = claims.list(sheet).stream()
