@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
  *  taken, and the last one's due-total and date (null before the first); the date they are retired
  *  from (null when not retired); their holds, oldest first, and whether they have any (their open (OPEN or PENDING)
- *  claims dated within a hold, unless bound by a statement, then count in no live total). */
+ *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
+ *  days (null when they have none: their grade's, else the sheet's, apply). */
 export type Person = {
   id: number;
   name: string;
@@ -18,6 +19,7 @@ export type Person = {
   retiredFrom: string | null;
   held: boolean;
   holds: Hold[];
+  terms: number | null;
 };
 
 /** One of a person's holds: from its from-date to its to-date (yyyy-mm-dd, both inclusive; a null

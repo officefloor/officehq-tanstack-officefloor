@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Save an edited person; refused (409) when someone else has saved them since the editor loaded its version.
  *  The form's grade is recorded from its from-date (blank: the sheet's today), keeping their other grades,
  *  except that a save leaving the grade in force on the sheet's today as it is, with the from-date blank,
- *  records no grade. PERSON_EDITED carries the grade in force on the sheet's today after the save. */
+ *  records no grade. PERSON_EDITED carries the grade in force on the sheet's today after the save, then
+ *  the person's own terms when the save changed them (empty when it cleared them). */
 public class SavePerson {
     public void save(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @Val PersonRequest request, ServerHttpConnection connection, PersonRepository repository,
@@ -41,11 +42,13 @@ public class SavePerson {
         Person current = repository.find(id, pid);
         boolean regrade = !request.gradeFrom().isEmpty() || !request.grade().equals(current.grade());
         LocalDate from = request.gradeFrom().isEmpty() ? sheets.today(id) : LocalDate.parse(request.gradeFrom());
+        Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
+        boolean reterm = !java.util.Objects.equals(terms, current.terms());
         long version = request.version();
         Rollup.Snapshot before = rollup.take(id);
         boolean updated;
         try {
-            updated = repository.update(id, pid, version, request.name());
+            updated = repository.update(id, pid, version, request.name(), terms);
         } catch (DuplicateKeyException e) {
             throw new BadRequestException("name is already in use");
         }
@@ -57,7 +60,7 @@ public class SavePerson {
         }
         Person saved = repository.find(id, pid);
         audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
-                + " grade=" + saved.grade());
+                + " grade=" + saved.grade() + (reterm ? " terms=" + (terms == null ? "" : terms) : ""));
         rollup.record(id, by, before);
         person.set(saved);
     }

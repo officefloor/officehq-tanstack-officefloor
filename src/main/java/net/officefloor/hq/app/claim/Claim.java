@@ -9,7 +9,7 @@ import net.officefloor.hq.app.person.Hold;
  *  (null until it is opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound with no figure: its due then stays live), and, for a correction (a negative
  *  amount), the number of the settled claim it corrects (null otherwise), and its due-by (yyyy-MM-dd: fixed when it was
- *  created, its date then plus the terms of its person's grade on that date, else the sheet's terms), and
+ *  created, its date then plus its person's own terms, else the terms of their grade on that date, else the sheet's terms), and
  *  whether its last statement bound it to n/a (the rate that would apply to it had ended: its due then
  *  stays n/a, not live), and the date it is deferred until (null when never deferred) and whether it is
  *  deferred now (OPEN and that date after the sheet's today: it then counts in no total, is not overdue,

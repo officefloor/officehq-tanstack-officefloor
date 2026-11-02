@@ -265,9 +265,14 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
-    /** The due-by of a claim created now for a person with a date: the date plus the terms, in force on it,
-     *  of the grade the person has on it, else the sheet's terms in force on it. */
+    /** The due-by of a claim created now for a person with a date: the date plus the person's own terms,
+     *  else the terms, in force on it, of the grade the person has on it, else the sheet's terms in force on it. */
     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
+        List<Integer> mine = jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
+                sheetId, personId);
+        if (!mine.isEmpty() && mine.get(0) != null) {
+            return date.plusDays(mine.get(0));
+        }
         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
                 date.toString());
         Integer own = grade.isEmpty() || grade.get(0) == null ? null : settings.gradeTerms(sheetId, grade.get(0), date);

@@ -39,7 +39,7 @@ public class QuickAdd {
         if (person == null) {
             Rollup.Snapshot before = rollup.take(id);
             try {
-                person = people.add(id, input.name(), "A");
+                person = people.add(id, input.name(), "A", null);
             } catch (DuplicateKeyException e) {
                 throw new BadRequestException("name is already in use");
             }
