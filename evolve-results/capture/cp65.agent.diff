@@ -1,0 +1,95 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 64d03fd59..3b67056cb 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -29,7 +29,7 @@ type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle
+ 
+ /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
+  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+- *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row.
++ *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
+  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
+ const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'split'>, string][] = [
+   ['open', 'Open'],
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 32a2c0ed8..a9beffcc1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -357,6 +357,15 @@ public class ClaimRepository {
+                 sheetId, claimId, claim.status(), by, dueNow(sheetId, claim), sheetId);
+     }
+ 
++    /** How many days the sheet's today is past the date a claim's status log last records it SETTLED; null when
++     *  it records no SETTLED line. */
++    public Long daysSinceSettled(String sheetId, long claimId) {
++        List<Long> found = jdbc.query("SELECT DATEDIFF('DAY', l.on_date, s.today) AS days FROM claim_log l"
++                + " JOIN sheet s ON s.id = l.sheet_id WHERE l.sheet_id = ? AND l.claim_id = ? AND l.status = 'SETTLED'"
++                + " ORDER BY l.id DESC LIMIT 1", (rs, i) -> rs.getLong("days"), sheetId, claimId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** The status logs of the sheet's claims, by claim id: each a line per status it has had, oldest first,
+      *  as "<STATUS> by <user> on <date> due=<due>" ('n/a' when it had no due). */
+     public Map<String, List<String>> logs(String sheetId) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 204e61aea..60e808962 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -11,7 +11,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ 
+-/** A claim's status change (open, settle, approve, reject or void), shared by the single and the bulk actions. Every
++/** A claim's status change (open, settle, approve, reject or void — a SETTLED claim too, by a steward within 7 days of its settlement), shared by the single and the bulk actions. Every
+  *  check is made before anything is written, so a refusal writes nothing to the store or the audit. */
+ final class ClaimStatusChange {
+     private ClaimStatusChange() {
+@@ -38,7 +38,7 @@ final class ClaimStatusChange {
+             case "settle" -> { to = "SETTLED"; from = List.of("OPEN"); event = "CLAIM_SETTLED"; }
+             case "approve" -> { to = "SETTLED"; from = List.of("PENDING"); event = "CLAIM_APPROVED"; }
+             case "reject" -> { to = "OPEN"; from = List.of("PENDING"); event = "CLAIM_REJECTED"; }
+-            case "void" -> { to = "VOID"; from = List.of("DRAFT", "OPEN", "PENDING"); event = "CLAIM_VOIDED"; }
++            case "void" -> { to = "VOID"; from = List.of("DRAFT", "OPEN", "PENDING", "SETTLED"); event = "CLAIM_VOIDED"; }
+             default -> throw new BadRequestException("no such action");
+         }
+         Claim found = repository.find(id, cid);
+@@ -71,6 +71,17 @@ final class ClaimStatusChange {
+                 throw new BadRequestException("the user who opened a claim cannot approve it");
+             }
+         }
++        // Only a steward voids a SETTLED claim, and only within 7 days of the date its status log settled it.
++        boolean reversing = found.status().equals("SETTLED") && to.equals("VOID");
++        if (reversing) {
++            if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
++                throw new BadRequestException("only a steward can void a settled claim");
++            }
++            Long days = repository.daysSinceSettled(id, cid);
++            if (days == null || days < 0 || days > 7) {
++                throw new BadRequestException("a settled claim can be voided only within 7 days of its settlement");
++            }
++        }
+         String why = reason == null ? "" : reason.trim();
+         if (event.equals("CLAIM_REJECTED") && why.isEmpty()) {
+             throw new BadRequestException("give a reason to reject the claim");
+@@ -113,6 +124,9 @@ final class ClaimStatusChange {
+         // (a PENDING claim's is live), else its live due ('n/a' when its grade has no rate, which stays live), with its late charge frozen in.
+         String due = null;
+         String tail = event.equals("CLAIM_REJECTED") ? " reason=" + why : "";
++        if (reversing) {
++            tail = " reversed=" + (found.due() == null ? "n/a" : found.due());
++        }
+         if (to.equals("SETTLED")) {
+             BigDecimal now = repository.dueNow(id, found);
+             repository.settleDue(id, cid, now);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 4acbbd95b..1a6358d1c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -1,6 +1,6 @@
+ # Change a claim's status: open (DRAFT -> OPEN), settle (OPEN -> SETTLED, or PENDING when a clerk settles
+ # above the clerk limit), approve (PENDING -> SETTLED), reject with a reason (PENDING -> OPEN) or void
+-# (DRAFT, OPEN or PENDING -> VOID), or resettle (a steward refreezes a SETTLED claim at its figure today), or defer an
++# (DRAFT, OPEN or PENDING -> VOID; SETTLED -> VOID by a steward within 7 days of its settlement), or resettle (a steward refreezes a SETTLED claim at its figure today), or defer an
+ # OPEN claim (not in a closed period) until a date after the sheet's today (body: until).
+ # Or split an OPEN claim (body: amount; see ClaimSplit).
+ # Or proof: raise the proofs count of a claim not SETTLED or VOID (nor in a closed period) by one. Any other change is refused (400) and writes nothing.
