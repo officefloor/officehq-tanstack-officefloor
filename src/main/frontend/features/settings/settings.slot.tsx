@@ -33,6 +33,8 @@ import { Fig } from '../locale/Fig';
 // The entry date (not dated; blank turns it off): while set, a new claim with a blank date takes it in place of the sheet's today.
 // A grade's grace (whole days, dated; blank means none): a claim whose person's grade in force on its date has a grace
 // in force on that date is overdue only once its due-by plus the grace is before the sheet's today.
+// The proof kinds (receipt and photo, comma separated, not dated; blank means none): while set, a claim above the
+// proof threshold needs a proof of each before it is settled or approved.
 // The pot (two decimals, not dated; blank means none): what each balanced pool shares out among its members.
 // The parent (a sheet id, not dated; blank means none): where the sheet has no rate in force for a grade on a date,
 // the parent's is used, then its parent's, up to three levels up.
@@ -45,6 +47,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [clerkLimit, setClerkLimit] = useState('');
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
+  const [proofKinds, setProofKinds] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
   const [reviewThreshold, setReviewThreshold] = useState('');
   const [floor, setFloor] = useState('');
@@ -89,6 +92,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setClerkLimit('');
       setCap('');
       setProofThreshold('');
+      setProofKinds('');
       setNoteThreshold('');
       setReviewThreshold('');
       setFloor('');
@@ -145,7 +149,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     const values: Record<SettingKey, string> = {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
-      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
+      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
       'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
@@ -203,6 +207,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </label>{' '}
         {from('proof-threshold')}
         now <span data-testid="setting-proof-threshold-current"><Fig>{data?.proofThreshold ?? ''}</Fig></span>{' '}
+        <label>
+          Proof kinds{' '}
+          <input
+            data-testid="setting-proof-kinds"
+            placeholder="receipt,photo (blank: none)"
+            value={proofKinds}
+            onChange={(e) => {
+              setProofKinds(e.target.value);
+              touch('proof-kinds');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('proof-kinds')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-proof-kinds-current">{data?.proofKinds ?? ''}</span>{' '}
         <label>
           Note threshold{' '}
           <input
@@ -531,7 +550,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank; the proof kinds receipt or photo, comma separated, or blank.
           </span>
         )}
       </form>

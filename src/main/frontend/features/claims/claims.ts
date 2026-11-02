@@ -83,6 +83,8 @@ export type Claim = {
   deferred: boolean;
   /** How many proofs the claim has: one above the sheet's proof threshold needs one to be settled or approved. */
   proofs: number;
+  /** How many of its proofs are photos; the rest are receipts. */
+  photos: number;
   splitFrom: string | null;
   /** The user whose open editor locks the claim against everyone else's edit button (null when none does). */
   lockedBy: string | null;

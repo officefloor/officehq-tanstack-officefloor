@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import net.officefloor.hq.app.Audit;
 import java.time.LocalDate;
+import java.util.List;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
@@ -199,12 +200,15 @@ public class ClaimStatusChanger {
         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
             BigDecimal threshold = settings.proofThreshold(sheet, person.gradeOn(claim.date()),
                     LocalDate.parse(claim.date()));
-            if (threshold != null && claim.proofs() == 0) {
+            // While the sheet has proof kinds, it needs one proof of each of them, not just one.
+            List<String> kinds = settings.proofKinds(sheet);
+            boolean proven = kinds.isEmpty() ? claim.proofs() > 0 : kinds.stream().allMatch((k) -> claim.proofsOf(k) > 0);
+            if (threshold != null && !proven) {
                 BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                         settings.late(sheet, clock.today(sheet)));
                 if (due != null && due.compareTo(threshold) > 0) {
                     throw new InvalidClaimStatusChangeException(
-                            "A claim whose due is above the proof threshold needs a proof before it is settled or approved");
+                            "A claim whose due is above the proof threshold needs a proof (one of each of the sheet's proof kinds) before it is settled or approved");
                 }
             }
         }

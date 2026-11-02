@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.claim.ProofKind;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.SheetRegistry;
 import net.officefloor.plugin.variable.Out;
@@ -60,7 +61,7 @@ public class ValidateSetting {
     private SettingInput input(SettingRequest request) throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
-        if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+        if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.PROOF_KINDS.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ESCALATE_AFTER.equals(key) && !Settings.REVIEW_SLA.equals(key) && !Settings.ENTRY_DATE.equals(key)
                 && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key)
@@ -83,6 +84,20 @@ public class ValidateSetting {
                 }
             }
             return new SettingInput(key, String.join(",", roles));
+        }
+        // The proof kinds are a comma separated list of receipt and photo; blank means none.
+        if (Settings.PROOF_KINDS.equals(key)) {
+            List<String> kinds = new ArrayList<>();
+            for (String kind : value.isEmpty() ? new String[0] : value.split(",")) {
+                kind = kind.trim();
+                if (!ProofKind.ALL.contains(kind)) {
+                    throw new InvalidSettingException("The proof kinds must be receipt or photo, comma separated, or blank");
+                }
+                if (!kinds.contains(kind)) {
+                    kinds.add(kind);
+                }
+            }
+            return new SettingInput(key, String.join(",", kinds));
         }
         // The policy date is a date; blank follows the sheet's today.
         if (Settings.POLICY_DATE.equals(key)) {

@@ -153,10 +153,15 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     },
   });
   const redate = useSubmitOnce(redateMutation);
-  // A proof raises the claim's proofs count by one (not on a SETTLED or VOID claim, nor one in a closed period).
+  // A proof raises the claim's proofs count by one (not on a SETTLED or VOID claim, nor one in a closed period), of
+  // the kind chosen beside the button (receipt or photo; none chosen counts as a receipt).
+  const [proofKind, setProofKind] = useState('');
   const proofMutation = useMutation({
-    mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/proof`, user), {}),
-    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+    mutationFn: (kind: string) => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/proof`, user), { kind }),
+    onSuccess: (updated) => {
+      setProofKind('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
   });
   const addProof = useSubmitOnce(proofMutation);
   // A comment, typed beside the Comment button, is kept with its writer and the sheet's today (an empty one is refused).
@@ -304,6 +309,20 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         Waive late charge
       </button>{' '}
       proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+      (receipts <span data-testid="claim-proofs-receipt">{claim.proofs - claim.photos}</span>,{' '}
+      photos <span data-testid="claim-proofs-photo">{claim.photos}</span>){' '}
+      <select
+        data-testid="claim-proof-kind"
+        value={proofKind}
+        onChange={(e) => {
+          setProofKind(e.target.value);
+          proofMutation.reset();
+        }}
+      >
+        <option value="">kind (receipt)</option>
+        <option value="receipt">receipt</option>
+        <option value="photo">photo</option>
+      </select>{' '}
       <button
         type="button"
         data-testid="claim-proof"
@@ -319,7 +338,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
-          addProof(undefined);
+          addProof(proofKind);
         }}
       >
         Add proof
@@ -761,7 +780,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, and one whose due is above the note threshold needs a note to be opened; only a steward reviews a REVIEW claim, which is not edited, settled nor split; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted).
+          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, one of each of the sheet's proof kinds while it has them, and one whose due is above the note threshold needs a note to be opened; only a steward reviews a REVIEW claim, which is not edited, settled nor split; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted).
         </span>
       )}
       {resettleMutation.isError && (
@@ -791,7 +810,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       )}
       {proofMutation.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one due inside a closed period).
+          {' '}A {claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one due inside a closed period; a proof is a receipt or a photo).
         </span>
       )}
       {commentMutation.isError && (

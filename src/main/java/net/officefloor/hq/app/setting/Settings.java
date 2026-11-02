@@ -34,6 +34,10 @@ public class Settings {
         return PROOF_THRESHOLD + "-" + grade;
     }
 
+    /** The kinds of proof (a comma separated list of receipt and photo, not dated) a claim above the proof threshold
+     *  needs one of each of before it is settled or approved; blank: none. */
+    public static final String PROOF_KINDS = "proof-kinds";
+
     /** The due above which a claim with an empty note cannot be opened (two decimals); blank: none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
@@ -132,7 +136,7 @@ public class Settings {
     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith("perm-");
     }
 
@@ -242,6 +246,12 @@ public class Settings {
     public BigDecimal proofThreshold(String sheet, String grade, LocalDate date) {
         String own = grade == null ? "" : on(sheet, gradeProofThreshold(grade), date);
         return own.isEmpty() ? proofThreshold(sheet, date) : new BigDecimal(own);
+    }
+
+    /** The kinds of proof the sheet needs one of each of on a claim above the proof threshold (none when unset). */
+    public List<String> proofKinds(String sheet) {
+        String kinds = get(sheet, PROOF_KINDS);
+        return kinds.isEmpty() ? List.of() : List.of(kinds.split(","));
     }
 
     /** The sheet's note threshold in force on the date, or null when there is none. */
@@ -417,6 +427,6 @@ public class Settings {
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
-                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA));
+                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS));
     }
 }

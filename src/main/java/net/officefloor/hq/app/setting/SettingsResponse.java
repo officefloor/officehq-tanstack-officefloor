@@ -13,12 +13,12 @@ import java.util.Map;
  * or "" for none. And the parent sheet's id, or "" for none. And the fiscal start month (1 to 12). And the alert
  * threshold with two decimals, or "" for off. And the rounding mode (half-up or half-even), or "" for none. And the review
  * threshold with two decimals, or "" for none. And the escalation gap (a whole number of days), or "" for off. And the review SLA (a whole number of
- * days), or "" for none.
+ * days), or "" for none. And the proof kinds (comma separated), or "" for none.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
         String proofThreshold, Map<String, String> perms, Map<String, List<DatedValue>> dated,
         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
+        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
 }

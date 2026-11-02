@@ -38,7 +38,7 @@ public class Claims {
             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
             rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of(),
             rs.getObject("batch", Integer.class), List.of(), rs.getObject("added", Long.class),
-            rs.getBoolean("waived"));
+            rs.getBoolean("waived"), rs.getInt("proof_photos"));
 
     /** The tags kept as comma separated text (empty for none). */
     private static List<String> tagList(String kept) {
@@ -55,7 +55,7 @@ public class Claims {
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, claim.added, claim.waived, (claim.status IN ('OPEN', 'VOID') AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, claim.added, claim.waived, claim.proof_photos, (claim.status IN ('OPEN', 'VOID') AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -374,12 +374,12 @@ public class Claims {
     }
 
     /**
-     * Raises the claim's proofs count by one, conditional on the status and count read, so a concurrent change by
+     * Raises the claim's proofs count by one (and its photos when the proof is a photo), conditional on the status and count read, so a concurrent change by
      * another user is refused, not overwritten: false when it was not.
      */
-    public boolean addProof(String sheet, long id, ClaimStatus status, int was) {
-        return jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet = ? AND id = ? AND status = ? AND proofs = ?",
-                sheet, id, status.name(), was) == 1;
+    public boolean addProof(String sheet, long id, ClaimStatus status, int was, String kind) {
+        return jdbc.update("UPDATE claim SET proofs = proofs + 1, proof_photos = proof_photos + ? WHERE sheet = ? AND id = ?"
+                + " AND status = ? AND proofs = ?", ProofKind.PHOTO.equals(kind) ? 1 : 0, sheet, id, status.name(), was) == 1;
     }
 
     /** Fixes the claim's due as it is settled, or leaves none with null. */
