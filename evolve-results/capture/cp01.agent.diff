@@ -1,0 +1,480 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 2db5d7ab8..6b6a6192e 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,9 +1,28 @@
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+-// of a silent `if (res.ok)` that leaves the UI showing stale data.
++// of a silent `if (res.ok)` that leaves the UI showing stale data. The rejection's message is the
++// server's own `error` text when it sent one.
++//
++// Every request carries the signed-in name in X-User (the server records it as `by=<user>`).
++let signedInUser = '';
++
++/** Called by the session (features/session) whenever the signed-in name changes. */
++export function setSignedInUser(name: string): void {
++  signedInUser = name;
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const res = await fetch(path, init);
++  const headers = new Headers(init?.headers);
++  if (signedInUser) headers.set('X-User', signedInUser);
++  const res = await fetch(path, { ...init, headers });
+   if (!res.ok) {
+-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
++    let message = `${init?.method ?? 'GET'} ${path} -> ${res.status}`;
++    try {
++      const body = (await res.json()) as { error?: string };
++      if (body?.error) message = body.error;
++    } catch {
++      /* no JSON body: keep the status message */
++    }
++    throw new Error(message);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 000000000..969fc339b
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,54 @@
++import { useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSignedInUser } from './useSession';
++
++/** Sign in by typing a name; there is no password. */
++export function SignIn() {
++  const [, setUser] = useSignedInUser();
++  const [name, setName] = useState('');
++  const signIn = useMutation({
++    mutationFn: (n: string) => postJson<{ name: string }>('/api/session', { name: n }),
++    onSuccess: (s) => setUser(s.name),
++  });
++
++  return (
++    <form
++      data-testid="signin-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        signIn.reset();
++        signIn.mutate(name);
++      }}
++    >
++      <label>
++        Name{' '}
++        <input
++          data-testid="signin-name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            signIn.reset();
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="signin-submit" disabled={signIn.isPending}>
++        Sign in
++      </button>
++      {signIn.isError && <p data-testid="signin-error">{signIn.error.message}</p>}
++    </form>
++  );
++}
++
++/** The signed-in name, with a way to sign out. */
++export function CurrentUser() {
++  const [user, setUser] = useSignedInUser();
++  return (
++    <p>
++      Signed in as <strong data-testid="current-user">{user}</strong>{' '}
++      <button type="button" data-testid="signout" onClick={() => setUser(undefined)}>
++        Sign out
++      </button>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/session/useSession.ts b/src/main/frontend/features/session/useSession.ts
+new file mode 100644
+index 000000000..edab52b97
+--- /dev/null
++++ b/src/main/frontend/features/session/useSession.ts
+@@ -0,0 +1,14 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { setSignedInUser } from '../../api/http';
++
++/** The signed-in name (URL key `user`); '' when no one is signed in. */
++export function useSignedInUser(): [string, (name: string | undefined) => void] {
++  const [user, setUser] = useSearchParam('user', asString);
++  setSignedInUser(user);
++  return [user, setUser];
++}
++
++/** The id of the active sheet (URL key `sheet`); '' when none is loaded. */
++export function useActiveSheet(): [string, (id: string | undefined) => void] {
++  return useSearchParam('sheet', asString);
++}
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+new file mode 100644
+index 000000000..12f686d87
+--- /dev/null
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -0,0 +1,53 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useActiveSheet } from '../session/useSession';
++
++type Sheet = { id: string };
++
++/** Choose a sheet by typing its id and loading it. Loading (even the same id again) drops every
++ *  ['sheet', id, ...] query, so the sheet is re-read from the store. */
++export function SheetPicker() {
++  const [active, setActive] = useActiveSheet();
++  const [id, setId] = useState(active);
++  const queryClient = useQueryClient();
++  const load = useMutation({
++    mutationFn: async (raw: string) => {
++      const want = raw.trim();
++      if (want === '') throw new Error('sheet id is required');
++      return postJson<Sheet>(`/api/sheets/${encodeURIComponent(want)}`, {});
++    },
++    onSuccess: (sheet) => {
++      queryClient.removeQueries({ queryKey: ['sheet', sheet.id] });
++      setActive(sheet.id);
++    },
++  });
++
++  return (
++    <form
++      data-testid="sheet-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        load.reset();
++        load.mutate(id);
++      }}
++    >
++      <label>
++        Sheet{' '}
++        <input
++          data-testid="sheet-id-input"
++          value={id}
++          onChange={(e) => {
++            setId(e.target.value);
++            load.reset();
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="sheet-load" disabled={load.isPending}>
++        Load
++      </button>{' '}
++      Active sheet: <strong data-testid="sheet-current-id">{active}</strong>
++      {load.isError && <p data-testid="sheet-error">{load.error.message}</p>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb03126a..9e96624f0 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,27 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { CurrentUser, SignIn } from '../features/session/SignIn';
++import { useActiveSheet, useSignedInUser } from '../features/session/useSession';
++import { SheetPicker } from '../features/sheet/SheetPicker';
++import { SheetBody } from '../slots/defs/sheetBody';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The one screen. Sign in first; then choose a sheet; the sheet's own features fill SheetBody.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  const [user] = useSignedInUser();
++  const [sheetId] = useActiveSheet();
++  if (!user) return <SignIn />;
++  return (
++    <>
++      <CurrentUser />
++      <SheetPicker />
++      {sheetId && (
++        <section data-testid="sheet-body" key={sheetId}>
++          <SheetBody.Slot sheetId={sheetId} user={user} />
++        </section>
++      )}
++    </>
++  );
+ }
+diff --git a/src/main/frontend/slots/defs/sheetBody.ts b/src/main/frontend/slots/defs/sheetBody.ts
+new file mode 100644
+index 000000000..f7fda7161
+--- /dev/null
++++ b/src/main/frontend/slots/defs/sheetBody.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The body of the active sheet, rendered once a user is signed in and a sheet is loaded. A
++ * feature that shows or changes a sheet's data fills this region. Its data lives under query
++ * keys starting ['sheet', sheetId, ...]: loading a sheet drops every such key, so the whole
++ * sheet is re-read from the store.
++ */
++export const SheetBody = defineSlot<{ sheetId: string; user: string }>('sheet.body');
+diff --git a/src/main/java/net/officefloor/hq/app/BadRequestException.java b/src/main/java/net/officefloor/hq/app/BadRequestException.java
+new file mode 100644
+index 000000000..b6f32c01e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/BadRequestException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app;
++
++/** A refused request: answered 400 with its message (escalation/…BadRequestException.yml). */
++public class BadRequestException extends Exception {
++    public BadRequestException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/CurrentUser.java b/src/main/java/net/officefloor/hq/app/CurrentUser.java
+new file mode 100644
+index 000000000..ae7d17862
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CurrentUser.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.server.http.HttpHeader;
++import net.officefloor.server.http.ServerHttpConnection;
++
++/** The signed-in user of a request: the name the front end sends in the X-User header. */
++public final class CurrentUser {
++    public static final String HEADER = "X-User";
++
++    private CurrentUser() {
++    }
++
++    /** The trimmed name, refused when blank. A step takes the {@link ServerHttpConnection} and
++     *  passes it here (header names are matched ignoring case, as browsers send them lower-case). */
++    public static String require(ServerHttpConnection connection) throws BadRequestException {
++        String name = "";
++        for (HttpHeader header : connection.getRequest().getHeaders()) {
++            if (HEADER.equalsIgnoreCase(header.getName())) {
++                name = header.getValue() == null ? "" : header.getValue().trim();
++                break;
++            }
++        }
++        if (name.isEmpty()) {
++            throw new BadRequestException("not signed in");
++        }
++        return name;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/HandleBadRequest.java b/src/main/java/net/officefloor/hq/app/HandleBadRequest.java
+new file mode 100644
+index 000000000..8a836a978
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/HandleBadRequest.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.util.Map;
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleBadRequest {
++    public void handle(@Parameter BadRequestException ex,
++            ObjectResponse<ResponseEntity<Map<String, String>>> response) {
++        response.send(new ResponseEntity<>(Map.of("error", ex.getMessage()), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/RespondWithSession.java b/src/main/java/net/officefloor/hq/app/session/RespondWithSession.java
+new file mode 100644
+index 000000000..3a538f422
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/RespondWithSession.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.session;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSession {
++    public void respond(@Val Session session, ObjectResponse<Session> response) {
++        response.send(session);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/Session.java b/src/main/java/net/officefloor/hq/app/session/Session.java
+new file mode 100644
+index 000000000..3263a6a65
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/Session.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.session;
++
++public record Session(String name) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/SignInRequest.java b/src/main/java/net/officefloor/hq/app/session/SignInRequest.java
+new file mode 100644
+index 000000000..c8bb76c5a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/SignInRequest.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.session;
++
++public record SignInRequest(String name) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/ValidateSignIn.java b/src/main/java/net/officefloor/hq/app/session/ValidateSignIn.java
+new file mode 100644
+index 000000000..e5f915838
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/ValidateSignIn.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.session;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateSignIn {
++    public void validate(@RequestBody SignInRequest request, Out<Session> session) throws BadRequestException {
++        String name = request == null || request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) {
++            throw new BadRequestException("name is required");
++        }
++        session.set(new Session(name));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+new file mode 100644
+index 000000000..8fa0f74ac
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadSheet {
++    public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
++            SheetRepository repository, Out<Sheet> sheet) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (id.isEmpty()) {
++            throw new BadRequestException("sheet id is required");
++        }
++        sheet.set(repository.loadOrCreate(id, by));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 000000000..9761f2a15
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSheet {
++    public void respond(@Val Sheet sheet, ObjectResponse<Sheet> response) {
++        response.send(sheet);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+new file mode 100644
+index 000000000..f2a6dcb6c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.sheet;
++
++public record Sheet(String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+new file mode 100644
+index 000000000..956d4f156
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.dao.DuplicateKeyException;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class SheetRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SheetRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet with this id, made empty when the id was never used. */
++    public Sheet loadOrCreate(String id, String user) {
++        Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, id);
++        if (known == null || known == 0) {
++            try {
++                jdbc.update("INSERT INTO sheet (id, created_by) VALUES (?, ?)", id, user);
++            } catch (DuplicateKeyException made) {
++                // another user loaded the same new id at the same moment: it is made either way
++            }
++        }
++        return new Sheet(id);
++    }
++}
+diff --git a/src/main/resources/db/migration/V1__sheet.sql b/src/main/resources/db/migration/V1__sheet.sql
+new file mode 100644
+index 000000000..b1219cde9
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__sheet.sql
+@@ -0,0 +1,6 @@
++-- A sheet: everything else in the app is kept per sheet, keyed by its id. A row is made the
++-- first time an id is loaded; a sheet never loaded before starts empty.
++CREATE TABLE sheet (
++    id         VARCHAR(200) PRIMARY KEY,
++    created_by VARCHAR(200) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.BadRequestException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.BadRequestException.yml
+new file mode 100644
+index 000000000..5eea0c0ca
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.BadRequestException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.HandleBadRequest
+diff --git a/src/main/resources/officefloor/rest/api/session.POST.yml b/src/main/resources/officefloor/rest/api/session.POST.yml
+new file mode 100644
+index 000000000..40f759318
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/session.POST.yml
+@@ -0,0 +1,6 @@
++# Sign in by name (no password). Answers the signed-in name, trimmed.
++validate:
++  class: net.officefloor.hq.app.session.ValidateSignIn
++  next: respond
++respond:
++  class: net.officefloor.hq.app.session.RespondWithSession
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.POST.yml
+new file mode 100644
+index 000000000..722bcebb0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.POST.yml
+@@ -0,0 +1,7 @@
++# Load a sheet by id: made (empty) the first time the id is used, re-read from the store after.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
