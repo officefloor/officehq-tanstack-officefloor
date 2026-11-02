@@ -20,7 +20,10 @@ import org.springframework.stereotype.Service;
 
 /**
  * Transfers a person to another sheet by id; only a steward may, a retired person may not be, nor to this sheet's own
- * id or an archived sheet, and a name, alias or contact of theirs already on the other sheet refuses it. They arrive as
+ * id or an archived sheet, and a contact of theirs already on the other sheet refuses it. A name or alias of theirs
+ * already on the other sheet (as names are compared) merges them into that person there, as a merge does: their claims
+ * follow that person's, their name and aliases join that person's, and their grades, terms and contact are dropped (it is
+ * refused when that person is retired, or their names are on more than one person there). Otherwise they arrive as
  * the other sheet's newest person, with this sheet as their origin, every grade (and its from-date), their terms,
  * contact and aliases, and their claims with their status, dates, notes, frozen figures, logs and comments, listed in
  * the order they were. Each claim that had a number takes the other sheet's next one, in the order the claims were
@@ -75,36 +78,43 @@ public class PersonTransferrer {
                 sheet, f);
         List<String> names = new ArrayList<>(theirAliases);
         names.add(0, person.name());
+        // A name or alias already on the other sheet names the person they are merged into there.
+        Person into = null;
         for (String name : names) {
-            if (people.nameTaken(to, name, null) || aliases.taken(to, name)) {
-                throw new InvalidPersonException("The name " + name + " is already on sheet " + to);
+            Person found = people.findByName(to, name);
+            if (found != null && into != null && found.id() != into.id()) {
+                throw new InvalidPersonException("The names of " + person.name() + " are on more than one person on"
+                        + " sheet " + to);
+            }
+            if (found != null) {
+                into = found;
             }
         }
-        if (person.contact() != null && people.contactTaken(to, person.contact(), null)) {
+        if (into != null && into.retiredFrom() != null) {
+            throw new InvalidPersonException("A retired person cannot be merged");
+        }
+        if (into == null && person.contact() != null && people.contactTaken(to, person.contact(), null)) {
             throw new InvalidPersonException("The contact " + person.contact() + " is already on sheet " + to);
         }
 
         Rollup.Snapshot beforeHere = rollup.take(sheet);
         Rollup.Snapshot beforeThere = rollup.take(to);
 
-        // The person, as the other sheet's newest, with their grades, terms, contact and aliases.
-        GeneratedKeyHolder keys = new GeneratedKeyHolder();
-        jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position, origin) SELECT ?,"
-                    + " name, terms, contact, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
-                    new String[] { "id" });
-            ps.setString(1, to);
-            ps.setString(2, to);
-            ps.setString(3, sheet);
-            ps.setString(4, sheet);
-            ps.setLong(5, f);
-            return ps;
-        }, keys);
-        long t = keys.getKey().longValue();
-        jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
-                + " WHERE person_id = ?", t, f);
-        for (String alias : theirAliases) {
-            aliases.add(to, t, alias);
+        // The person, as the other sheet's newest, with their grades, terms, contact and aliases; or, merged, their
+        // name and aliases joined to the other's.
+        long t;
+        if (into != null) {
+            t = into.id();
+            List<String> held = jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet = ? AND person_id = ?",
+                    String.class, to, t);
+            for (String name : names) {
+                if (!name.equals(into.name()) && !held.contains(name)) {
+                    aliases.add(to, t, name);
+                    held.add(name);
+                }
+            }
+        } else {
+            t = arrive(sheet, f, to, theirAliases);
         }
 
         // Claims, in the order they were listed, each with its log, comments and void reason.
@@ -172,7 +182,33 @@ public class PersonTransferrer {
         audit.record("PERSON_TRANSFERRED sheet=" + sheet + " by=" + user + " name=" + person.name() + " to=" + to);
         rollup.record(sheet, user, beforeHere);
         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user + " name=" + person.name() + " from=" + sheet);
+        if (into != null) {
+            audit.record("PERSON_MERGED sheet=" + to + " by=" + user + " from=" + person.name() + " into=" + into.name());
+        }
         rollup.record(to, user, beforeThere);
+    }
+
+    /** Adds the person to the other sheet as its newest, with their grades, terms, contact and aliases; returns their id. */
+    private long arrive(String sheet, long f, String to, List<String> theirAliases) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position, origin) SELECT ?,"
+                    + " name, terms, contact, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
+                    new String[] { "id" });
+            ps.setString(1, to);
+            ps.setString(2, to);
+            ps.setString(3, sheet);
+            ps.setString(4, sheet);
+            ps.setLong(5, f);
+            return ps;
+        }, keys);
+        long t = keys.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
+                + " WHERE person_id = ?", t, f);
+        for (String alias : theirAliases) {
+            aliases.add(to, t, alias);
+        }
+        return t;
     }
 
     /** The columns of the table a copy writes: all but its identity and generated ones. */

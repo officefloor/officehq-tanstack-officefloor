@@ -13,7 +13,8 @@ function TransferHeader() {
 }
 
 // The id of the sheet to transfer this person to, and the button that transfers them. Only a steward may; the server
-// refuses a retired person, this sheet's own id, or a name, alias or contact already on the other sheet. A transfer
+// refuses a retired person, this sheet's own id, or a contact already on the other sheet; a name or alias already there
+// merges them into that person (refused when that person is retired or the names are on several people). A transfer
 // drops the person's claims, patron links and pool memberships here, so everything on both sheets is re-read.
 function PersonTransfer({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -56,7 +57,7 @@ function PersonTransfer({ sheet, user, person }: { sheet: string; user: string; 
       </button>
       {transfer.isError && latest && (
         <span data-testid="person-error" role="alert">
-          {' '}Only a steward may transfer a person, not retired, to another sheet without their name, alias or contact.
+          {' '}Only a steward may transfer a person, not retired, to another sheet without their contact, merging only into one person who is not retired.
         </span>
       )}
     </td>
