@@ -1,0 +1,180 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index 580b483d..f04f285f 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -20,7 +20,7 @@ function PlansHeader() {
+   return <th>Plans</th>;
+ }
+ 
+-// A person's plans, each with how many claims it has made so far, and the form adding one: an amount (0.00 or more,
++// A person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form adding one: an amount (0.00 or more,
+ // up to two decimals), a start date (blank: the sheet's today), every N days (a whole number, at least 1) or monthly
+ // on a day of the month (1 to 31, filled instead of every), and an end date not before the start. The server refuses anything else.
+ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+@@ -58,7 +58,8 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
+           <li key={p.id} data-testid={`plan-row-${p.id}`}>
+             {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end};
+             made{' '}
+-            <span data-testid="plan-generated">{p.generated}</span>
++            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
++            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
+           </li>
+         ))}
+       </ul>
+diff --git a/src/main/frontend/features/plans/plans.ts b/src/main/frontend/features/plans/plans.ts
+index 672a1f13..c413f10d 100644
+--- a/src/main/frontend/features/plans/plans.ts
++++ b/src/main/frontend/features/plans/plans.ts
+@@ -3,9 +3,10 @@ import { getJson } from '../../api/http';
+ 
+ /** A person's plan: an amount (two decimals), from `start` every `every` days (or, when `day` is set,
+  *  monthly on that day of the month) to `end` (yyyy-MM-dd), and how many
+- *  claims it has `generated` so far. */
++ *  claims it has `generated` so far, and its `nextDates`: the first five plan dates after the sheet's
++ *  today and on or before the end. */
+ export type Plan = { id: number; person: number; amount: string; start: string; every: number; end: string; generated: number;
+-  day: number | null };
++  day: number | null; nextDates: string[] };
+ 
+ export const plansKey = (sheet: string) => ['plans', sheet] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
+index 013f4a65..cf902f9c 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
+@@ -2,8 +2,6 @@ package net.officefloor.hq.app.plan;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+-import java.time.YearMonth;
+-import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimInput;
+@@ -64,23 +62,8 @@ public class GeneratePlans {
+         response.send(new GeneratedPlans(made, claims.list(sheet), plans.list(sheet)));
+     }
+ 
+-    /** The plan's dates up to {@code last}: the start then every N days, or, for a monthly plan, its day in every
+-     *  month from the start's month (on the month's last day when shorter), leaving out any before the start. */
++    /** The plan's dates up to {@code last}. */
+     private static List<LocalDate> planDates(Plan plan, LocalDate last) {
+-        LocalDate start = LocalDate.parse(plan.start());
+-        List<LocalDate> dates = new ArrayList<>();
+-        if (plan.day() == null) {
+-            for (LocalDate day = start; !day.isAfter(last); day = day.plusDays(plan.every())) {
+-                dates.add(day);
+-            }
+-            return dates;
+-        }
+-        for (YearMonth month = YearMonth.from(start); !month.atDay(1).isAfter(last); month = month.plusMonths(1)) {
+-            LocalDate day = month.atDay(Math.min(plan.day(), month.lengthOfMonth()));
+-            if (!day.isBefore(start) && !day.isAfter(last)) {
+-                dates.add(day);
+-            }
+-        }
+-        return dates;
++        return Plan.dates(LocalDate.parse(plan.start()), plan.every(), plan.day(), null, last, Integer.MAX_VALUE);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index 8c3cc00c..b5b41970 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -1,7 +1,40 @@
+ package net.officefloor.hq.app.plan;
+ 
++import java.time.LocalDate;
++import java.time.YearMonth;
++import java.util.ArrayList;
++import java.util.List;
++
+ /** A person's plan: an amount (two decimals), from {@code start} every {@code every} days (or, when {@code day} is set,
+  *  monthly on that day of the month) to {@code end} (ISO dates),
+- *  with how many claims it has {@code generated} so far. */
+-public record Plan(long id, long person, String amount, String start, int every, String end, int generated, Integer day) {
++ *  with how many claims it has {@code generated} so far, and its {@code nextDates}: the first five plan dates after
++ *  the sheet's today and on or before the end. */
++public record Plan(long id, long person, String amount, String start, int every, String end, int generated, Integer day,
++        List<String> nextDates) {
++
++    /** How many dates {@code nextDates} shows at most. */
++    static final int NEXT = 5;
++
++    /** The plan's dates after {@code after} (none left out when null) and up to {@code last}, at most {@code limit}:
++     *  the start then every N days, or, for a monthly plan, its day in every month from the start's month (on the
++     *  month's last day when shorter), leaving out any before the start. */
++    static List<LocalDate> dates(LocalDate start, int every, Integer day, LocalDate after, LocalDate last, int limit) {
++        List<LocalDate> dates = new ArrayList<>();
++        if (day == null) {
++            for (LocalDate d = start; !d.isAfter(last) && dates.size() < limit; d = d.plusDays(every)) {
++                if (after == null || d.isAfter(after)) {
++                    dates.add(d);
++                }
++            }
++            return dates;
++        }
++        for (YearMonth month = YearMonth.from(start); !month.atDay(1).isAfter(last) && dates.size() < limit;
++                month = month.plusMonths(1)) {
++            LocalDate d = month.atDay(Math.min(day, month.lengthOfMonth()));
++            if (!d.isBefore(start) && !d.isAfter(last) && (after == null || d.isAfter(after))) {
++                dates.add(d);
++            }
++        }
++        return dates;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plans.java b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+index 46f3307a..47587bbf 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plans.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+@@ -12,22 +13,34 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class Plans {
+ 
+-    private static final RowMapper<Plan> ROW = (rs, i) -> new Plan(rs.getLong("id"), rs.getLong("person_id"),
+-            rs.getBigDecimal("amount").setScale(2).toPlainString(), rs.getDate("start_date").toLocalDate().toString(),
+-            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"),
+-            (Integer) rs.getObject("month_day"));
++    private static RowMapper<Plan> row(LocalDate today) {
++        return (rs, i) -> {
++            LocalDate start = rs.getDate("start_date").toLocalDate();
++            LocalDate end = rs.getDate("end_date").toLocalDate();
++            int every = rs.getInt("every_days");
++            Integer day = (Integer) rs.getObject("month_day");
++            List<String> next = Plan.dates(start, every, day, today, end, Plan.NEXT).stream()
++                    .map(LocalDate::toString).toList();
++            return new Plan(rs.getLong("id"), rs.getLong("person_id"),
++                    rs.getBigDecimal("amount").setScale(2).toPlainString(), start.toString(), every, end.toString(),
++                    rs.getInt("generated"), day, next);
++        };
++    }
+ 
+     private final JdbcTemplate jdbc;
+ 
+-    public Plans(JdbcTemplate jdbc) {
++    private final SheetClock clock;
++
++    public Plans(JdbcTemplate jdbc, SheetClock clock) {
+         this.jdbc = jdbc;
++        this.clock = clock;
+     }
+ 
+-    /** Every plan on the sheet, in the order added. */
++    /** Every plan on the sheet, in the order added, with its next dates after the sheet's today. */
+     public List<Plan> list(String sheet) {
+         return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date, p.month_day,"
+                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
+-                + " FROM plan p WHERE p.sheet = ? ORDER BY p.id", ROW, sheet);
++                + " FROM plan p WHERE p.sheet = ? ORDER BY p.id", row(clock.today(sheet)), sheet);
+     }
+ 
+     /** Adds a plan running every {@code every} days, or, when {@code day} is not null, monthly on that day. */
