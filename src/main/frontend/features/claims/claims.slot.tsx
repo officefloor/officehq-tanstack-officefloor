@@ -347,6 +347,48 @@ function BulkOpen({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** Settle the selected claims together: the server settles, in list order and by the rules of a single
+ *  settle, each that can be settled (one sent to PENDING counts) and leaves the rest; the bar shows how
+ *  many were settled and how many refused (gone while it runs). */
+function BulkSettle({ sheetId }: { sheetId: string }) {
+  const selection = useClaimSelection(sheetId);
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const bulk = useMutation({
+    mutationFn: (claimIds: number[]) =>
+      postJson<{ settled: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-settle`, { claimIds }),
+    onSuccess: () => selection.clear(),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+  return (
+    <p data-testid="bulk-settle-bar">
+      <button
+        type="button"
+        data-testid="bulk-settle"
+        disabled={bulk.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            bulk.reset();
+            return bulk.mutateAsync([...selection.ids]);
+          })
+        }
+      >
+        Settle selected ({selection.ids.size})
+      </button>
+      {bulk.isSuccess && (
+        <>
+          {' '}
+          Settled <strong data-testid="bulk-settled">{bulk.data.settled}</strong>, refused{' '}
+          <strong data-testid="bulk-settle-refused">{bulk.data.refused}</strong>
+        </>
+      )}
+      {bulk.isError && <span data-testid="bulk-settle-error">{bulk.error.message}</span>}
+    </p>
+  );
+}
+
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
@@ -363,5 +405,6 @@ export const contributions = [
   PersonCells.fill({ order: 10, Component: PersonClaimed }),
   PersonDetail.fill({ order: 10, Component: PersonClaims }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),
+  SheetBody.fill({ order: 16, Component: BulkSettle }),
   SheetBody.fill({ order: 20, Component: ({ sheetId }) => <ClaimedTotal sheetId={sheetId} /> }),
 ];
