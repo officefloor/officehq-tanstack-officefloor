@@ -1,0 +1,132 @@
+diff --git a/src/main/frontend/features/snapshots/compare.slot.tsx b/src/main/frontend/features/snapshots/compare.slot.tsx
+new file mode 100644
+index 00000000..4f092161
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/compare.slot.tsx
+@@ -0,0 +1,40 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { fetchSnapshotCompare } from './snapshots';
++
++// Compares two snapshot dates: per person in list order, their due-total in the SNAPSHOT written on leaving the
++// from-date, then likewise for the to-date (or their due-total now when it is blank). A blank from-date is the
++// sheet's today.
++function SnapshotCompare({ sheet }: { sheet: string; user: string }) {
++  const [from, setFrom] = useState('');
++  const [to, setTo] = useState('');
++  const [lines, setLines] = useState<string[]>([]);
++
++  const submit = async (e: FormEvent) => {
++    e.preventDefault();
++    // The old lines go as soon as the comparison is asked for again.
++    setLines([]);
++    setLines(await fetchSnapshotCompare(sheet, from.trim(), to.trim()));
++  };
++
++  return (
++    <form onSubmit={submit}>
++      Compare snapshots:{' '}
++      <input data-testid="snapshot-from" type="text" placeholder="from yyyy-mm-dd" value={from}
++        onChange={(e) => setFrom(e.target.value)} />{' '}
++      <input data-testid="snapshot-to" type="text" placeholder="to yyyy-mm-dd" value={to}
++        onChange={(e) => setTo(e.target.value)} />{' '}
++      <button type="submit" data-testid="snapshot-compare">
++        Compare
++      </button>
++      {lines.map((line, i) => (
++        <div key={i} data-testid="snapshot-line">
++          {line}
++        </div>
++      ))}
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 85, Component: SnapshotCompare });
+diff --git a/src/main/frontend/features/snapshots/snapshots.ts b/src/main/frontend/features/snapshots/snapshots.ts
+index 315e365a..4a76759e 100644
+--- a/src/main/frontend/features/snapshots/snapshots.ts
++++ b/src/main/frontend/features/snapshots/snapshots.ts
+@@ -16,3 +16,11 @@ export function useSnapshotLines(sheet: string) {
+     queryFn: () => getJson<SnapshotLine[]>(snapshotLinesPath(sheet)),
+   });
+ }
++
++export const snapshotComparePath = (sheet: string, from: string, to: string) =>
++  `/api/sheets/${encodeURIComponent(sheet)}/snapshot-compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
++
++/** Compares two snapshot dates: per person in list order, `<name> <then> <now>`, trimmed. */
++export function fetchSnapshotCompare(sheet: string, from: string, to: string) {
++  return getJson<string[]>(snapshotComparePath(sheet, from, to));
++}
+diff --git a/src/main/java/net/officefloor/hq/app/snapshot/RespondWithSnapshotCompare.java b/src/main/java/net/officefloor/hq/app/snapshot/RespondWithSnapshotCompare.java
+new file mode 100644
+index 00000000..c1f0b7a3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/snapshot/RespondWithSnapshotCompare.java
+@@ -0,0 +1,55 @@
++package net.officefloor.hq.app.snapshot;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.SheetClock;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Responds with the comparison of two snapshot dates, per person in list order: {@code <name> <then> <now>}, where
++ * {@code then} is their due-total in the SNAPSHOT written on leaving the from-date (empty when there is none) and
++ * {@code now} likewise for the to-date, or their due-total now when the to-date is blank. Each line is trimmed.
++ */
++public class RespondWithSnapshotCompare {
++    public void respond(@PathVariable("sheet") String sheet,
++            @RequestParam(value = "from", required = false) String from,
++            @RequestParam(value = "to", required = false) String to, SnapshotLines lines, Rollup rollup,
++            SheetClock clock, ObjectResponse<List<String>> response) {
++        String fromDay = from == null || from.isBlank() ? clock.today(sheet).toString() : day(from);
++        String toDay = to == null || to.isBlank() ? null : day(to);
++        List<SnapshotLine> all = lines.list(sheet);
++        List<String> result = new ArrayList<>();
++        for (Map.Entry<Long, Rollup.Figures> entry : rollup.take(sheet).people().entrySet()) {
++            long person = entry.getKey();
++            String then = latest(all, person, fromDay);
++            String now = toDay == null ? entry.getValue().dueTotal() : latest(all, person, toDay);
++            result.add((entry.getValue().name() + " " + then + " " + now).trim());
++        }
++        response.send(result);
++    }
++
++    /** The day as yyyy-mm-dd, or the text as given when it is not a date (it then matches no snapshot). */
++    private static String day(String text) {
++        try {
++            return LocalDate.parse(text.trim()).toString();
++        } catch (RuntimeException e) {
++            return text.trim();
++        }
++    }
++
++    /** The person's due-total in the latest snapshot written on leaving the day, or empty when there is none. */
++    private static String latest(List<SnapshotLine> all, long person, String day) {
++        String found = "";
++        for (SnapshotLine line : all) {
++            if (line.person() == person && line.day().equals(day)) {
++                found = line.dueTotal();
++            }
++        }
++        return found;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/snapshot-compare.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/snapshot-compare.GET.yml
+new file mode 100644
+index 00000000..99fd11d6
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/snapshot-compare.GET.yml
+@@ -0,0 +1,3 @@
++respond:
++  class: net.officefloor.hq.app.snapshot.RespondWithSnapshotCompare
++  govern: [ readonly-transaction ]
