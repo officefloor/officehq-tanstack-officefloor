@@ -11,6 +11,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.HashSet;
 import java.sql.Date;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,32 +41,36 @@ public class Pools {
      * Every pool on the sheet in the order added, its members (people and pools) in the order added, each with their
      * cut of the pool's pot: a pool that is a member of none has the sheet's pot; a pool that is a member of another
      * has its cut there as its pot (none when that pool is unbalanced or has none). A person with a hold in force on
-     * the sheet's today gets no cut, their share spread over the other members with a cut.
+     * the sheet's today gets no cut, their share spread over the other members with a cut. A member whose membership
+     * dates do not include the sheet's today is left out entirely: not in the total share, no cut.
      */
     public List<Pool> list(String sheet) {
+        LocalDate now = clock.today(sheet);
         Map<String, List<Ordered>> members = new LinkedHashMap<>();
         jdbc.query("SELECT name FROM pool WHERE sheet = ? ORDER BY position",
                 (rs) -> {
                     members.put(rs.getString("name"), new ArrayList<>());
                 }, sheet);
-        jdbc.query("SELECT m.pool, m.person_id, p.name, m.share, p.retired_from, m.position FROM pool_member m"
+        jdbc.query("SELECT m.pool, m.person_id, p.name, m.share, p.retired_from, m.position, m.from_date, m.to_date"
+                + " FROM pool_member m"
                 + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ?",
                 (rs) -> {
                     List<Ordered> list = members.get(rs.getString("pool"));
                     if (list != null) {
                         list.add(new Ordered(rs.getInt("position"), new PoolMember(rs.getLong("person_id"), null,
                                 rs.getString("name"), rs.getBigDecimal("share").setScale(2).toPlainString(),
-                                rs.getDate("retired_from") != null, "")));
+                                rs.getDate("retired_from") != null, dateOf(rs, "from_date"), dateOf(rs, "to_date"),
+                                current(rs, now), "")));
                     }
                 }, sheet);
         Map<String, String> parents = new HashMap<>();
-        jdbc.query("SELECT pool, member, share, position FROM pool_sub WHERE sheet = ?",
+        jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?",
                 (rs) -> {
                     List<Ordered> list = members.get(rs.getString("pool"));
                     if (list != null) {
                         list.add(new Ordered(rs.getInt("position"), new PoolMember(0, rs.getString("member"),
                                 rs.getString("member"), rs.getBigDecimal("share").setScale(2).toPlainString(), false,
-                                "")));
+                                dateOf(rs, "from_date"), dateOf(rs, "to_date"), current(rs, now), "")));
                         parents.put(rs.getString("member"), rs.getString("pool"));
                     }
                 }, sheet);
@@ -73,14 +80,14 @@ public class Pools {
             List<PoolMember> list = ordered.stream().map(Ordered::member).toList();
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolMember m : list) {
-                if (!m.retired()) {
+                if (!m.retired() && m.current()) {
                     total = total.add(new BigDecimal(m.share()));
                 }
             }
             pools.put(name, new Pool(name, list, total.toPlainString(), total.compareTo(FULL) == 0));
         });
         // The people with a hold whose dates include the sheet's today.
-        Date today = Date.valueOf(clock.today(sheet));
+        Date today = Date.valueOf(now);
         Set<Long> held = new HashSet<>(jdbc.queryForList("SELECT DISTINCT h.person_id FROM person_hold h"
                 + " JOIN person p ON p.id = h.person_id WHERE p.sheet = ? AND h.from_date <= ?"
                 + " AND (h.to_date IS NULL OR h.to_date >= ?)", Long.class, sheet, today, today));
@@ -94,6 +101,19 @@ public class Pools {
     }
 
     private record Ordered(int position, PoolMember member) {
+    }
+
+    /** The date in the column, or "" when none. */
+    private static String dateOf(ResultSet rs, String column) throws SQLException {
+        Date date = rs.getDate(column);
+        return date == null ? "" : date.toLocalDate().toString();
+    }
+
+    /** Whether the membership's dates include the sheet's today. */
+    private static boolean current(ResultSet rs, LocalDate today) throws SQLException {
+        Date from = rs.getDate("from_date");
+        Date to = rs.getDate("to_date");
+        return (from == null || !from.toLocalDate().isAfter(today)) && (to == null || !to.toLocalDate().isBefore(today));
     }
 
     /** The pool with its members' cuts, its pool above cut first. */
@@ -155,14 +175,15 @@ public class Pools {
         List<PoolMember> out = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
-            out.add(new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), cuts.get(i).toPlainString()));
+            out.add(new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), m.from(), m.to(),
+                    m.current(), m.current() ? cuts.get(i).toPlainString() : ""));
         }
         return out;
     }
 
-    /** Whether the member takes a cut: a pool, or a person neither retired nor held. */
+    /** Whether the member takes a cut: within their membership dates, and a pool or a person neither retired nor held. */
     private static boolean hasCut(PoolMember m, Set<Long> held) {
-        return m.memberPool() != null || !(m.retired() || held.contains(m.person()));
+        return m.current() && (m.memberPool() != null || !(m.retired() || held.contains(m.person())));
     }
 
     /** Whether the sheet has a pool of this name. */
@@ -198,14 +219,20 @@ public class Pools {
                 + " (SELECT COALESCE(MAX(p.position), 0) + 1 FROM pool p WHERE p.sheet = ?))", sheet, name, sheet);
     }
 
-    public void addMember(String sheet, String pool, long person, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (sheet, pool, person_id, share, position) VALUES (?, ?, ?, ?, "
-                + NEXT_MEMBER + ")", sheet, pool, person, share, sheet, sheet);
+    public void addMember(String sheet, String pool, long person, BigDecimal share, LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO pool_member (sheet, pool, person_id, share, from_date, to_date, position)"
+                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ")", sheet, pool, person, share, sqlDate(from),
+                sqlDate(to), sheet, sheet);
     }
 
-    public void addSubPool(String sheet, String pool, String member, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_sub (sheet, pool, member, share, position) VALUES (?, ?, ?, ?, " + NEXT_MEMBER
-                + ")", sheet, pool, member, share, sheet, sheet);
+    public void addSubPool(String sheet, String pool, String member, BigDecimal share, LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO pool_sub (sheet, pool, member, share, from_date, to_date, position)"
+                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ")", sheet, pool, member, share, sqlDate(from),
+                sqlDate(to), sheet, sheet);
+    }
+
+    private static Date sqlDate(LocalDate date) {
+        return date == null ? null : Date.valueOf(date);
     }
 
     /** The next position among all pools' members, people and pools. */

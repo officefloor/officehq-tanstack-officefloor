@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
@@ -13,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Adds a member to a pool, a person or another pool, with a share percent (at most two decimals, above 0.00 and at
  * most 100.00); refused for an unknown pool or person, a person already in the pool, or a bad share. A pool member is
  * also refused when it is already a member of a pool, when the pool would contain itself through any chain, or when
- * the chain of pools would be more than three deep.
+ * the chain of pools would be more than three deep. The membership may carry a from-date and a to-date (each optional);
+ * a to-date before the from-date is refused.
  */
 public class AddPoolMember {
 
@@ -42,19 +45,38 @@ public class AddPoolMember {
         if (share.signum() <= 0 || share.compareTo(FULL) > 0) {
             throw new InvalidPoolException("A share must be more than 0.00 and at most 100.00");
         }
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidPoolException("A membership may not end before it starts");
+        }
+        String dates = (from == null ? "" : " from=" + from) + (to == null ? "" : " to=" + to);
         if (sub != null) {
             checkSubPool(sheet, request.pool(), sub, pools);
-            pools.addSubPool(sheet, request.pool(), sub, share);
+            pools.addSubPool(sheet, request.pool(), sub, share, from, to);
             audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
-                    + sub + " share=" + share.toPlainString());
+                    + sub + " share=" + share.toPlainString() + dates);
             return;
         }
         if (pools.isMember(sheet, request.pool(), person.id())) {
             throw new InvalidPoolException(person.name() + " is already in " + request.pool());
         }
-        pools.addMember(sheet, request.pool(), person.id(), share);
+        pools.addMember(sheet, request.pool(), person.id(), share, from, to);
         audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
-                + person.name() + " share=" + share.toPlainString());
+                + person.name() + " share=" + share.toPlainString() + dates);
+    }
+
+    /** The date given, or null when blank. */
+    private static LocalDate date(String raw) throws InvalidPoolException {
+        String date = raw == null ? "" : raw.trim();
+        if (date.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(date);
+        } catch (DateTimeParseException e) {
+            throw new InvalidPoolException("Not a valid date: " + date);
+        }
     }
 
     /** Refuses a pool already in a pool, one that would contain itself, or a chain more than three deep. */

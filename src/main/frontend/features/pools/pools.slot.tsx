@@ -16,14 +16,25 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
   // A person's id, or pool:<name> for another pool.
   const [member, setMember] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const add = useMutation({
-    mutationFn: (body: { pool: string; person: number | null; memberPool: string | null; share: string }) =>
+    mutationFn: (body: {
+      pool: string;
+      person: number | null;
+      memberPool: string | null;
+      share: string;
+      from: string;
+      to: string;
+    }) =>
       postJson<Pool[]>(byUser(poolMembersPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(poolsKey(sheet), updated);
       setMember('');
       setShare('');
+      setFrom('');
+      setTo('');
     },
   });
   const send = useSubmitOnce(add);
@@ -31,10 +42,10 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
   const submit = (e: FormEvent) => {
     e.preventDefault();
     // The server refuses a person already in the pool, a bad share, or a pool already in one, that would contain
-    // itself, or would make a chain more than three deep.
+    // itself, or would make a chain more than three deep, and a to-date before the from-date.
     const memberPool = member.startsWith('pool:') ? member.slice('pool:'.length) : null;
     const person = memberPool !== null || member === '' ? null : Number(member);
-    send({ pool: pool.name, person, memberPool, share });
+    send({ pool: pool.name, person, memberPool, share, from, to });
   };
 
   return (
@@ -47,7 +58,9 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
             key={m.memberPool !== null ? `pool:${m.memberPool}` : m.person}
             data-testid={`pool-member-${pool.name}-${m.memberPool !== null ? `pool-${m.memberPool}` : m.person}`}
           >
-            {m.name} <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}, cut{' '}
+            {m.name} <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}
+            {m.from || m.to ? ` (${m.from || '…'} to ${m.to || '…'})` : ''}
+            {m.current ? '' : ' (not current)'}, cut{' '}
             <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
@@ -84,6 +97,30 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
             }}
           />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            type="date"
+            data-testid="pool-member-from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              add.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          To{' '}
+          <input
+            type="date"
+            data-testid="pool-member-to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              add.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
           Add member
         </button>
@@ -91,7 +128,7 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
           <span data-testid="pool-error" role="alert">
             {' '}A member must not already be in the pool, and a share has two decimals, above 0.00 and at most
             100.00. A pool may be in at most one pool, never contain itself, and a chain of pools is at most three
-            deep.
+            deep. A membership's to-date may not be before its from-date.
           </span>
         )}
       </form>
