@@ -1,0 +1,805 @@
+diff --git a/pom.xml b/pom.xml
+index a5ff43e69..92c1663e1 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -60,11 +60,11 @@
+       <artifactId>spring-boot-starter-validation</artifactId>
+     </dependency>
+ 
+-    <!-- In-memory H2 + Flyway schema migrations on boot (Spring-managed). -->
++    <!-- In-memory H2 + Flyway schema migrations on boot (Spring-managed). Compile scope: the row-change
++         trigger (history/RowCapture) implements H2's Trigger. -->
+     <dependency>
+       <groupId>com.h2database</groupId>
+       <artifactId>h2</artifactId>
+-      <scope>runtime</scope>
+     </dependency>
+     <dependency>
+       <groupId>org.flywaydb</groupId>
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index a41cdc391..4d56afe76 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -2,8 +2,11 @@
+ // of a silent `if (res.ok)` that leaves the UI showing stale data. The rejection's message is the
+ // server's own `error` text when it sent one.
+ //
+-// Every request carries the signed-in name in X-User (the server records it as `by=<user>`).
++// Every request carries the signed-in name in X-User (the server records it as `by=<user>`), and,
++// while this screen shows the sheet as of a date, that date in X-As-Of: reads answer as the sheet stood
++// then, and every change is refused.
+ let signedInUser = '';
++let asOfDate = '';
+ 
+ /** A non-2xx answer: the server's message, and its status (409 when someone else saved first). */
+ export class HttpError extends Error {
+@@ -17,9 +20,20 @@ export function setSignedInUser(name: string): void {
+   signedInUser = name;
+ }
+ 
++/** Called by the as-of control (features/asof) whenever the screen's as-of date changes ('' when none). */
++export function setAsOfDate(date: string): void {
++  asOfDate = date;
++}
++
++/** The as-of date requests are sent with ('' when none). */
++export function currentAsOfDate(): string {
++  return asOfDate;
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const headers = new Headers(init?.headers);
+   if (signedInUser) headers.set('X-User', signedInUser);
++  if (asOfDate) headers.set('X-As-Of', asOfDate);
+   const res = await fetch(path, { ...init, headers });
+   if (!res.ok) {
+     let message = `${init?.method ?? 'GET'} ${path} -> ${res.status}`;
+diff --git a/src/main/frontend/features/asof/asof.slot.tsx b/src/main/frontend/features/asof/asof.slot.tsx
+new file mode 100644
+index 000000000..74bb999a4
+--- /dev/null
++++ b/src/main/frontend/features/asof/asof.slot.tsx
+@@ -0,0 +1,40 @@
++import { useState } from 'react';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useAsOf } from './useAsOf';
++
++/** Show the sheet as of a date: every cell then shows the sheet as it stood at the end of that day (the
++ *  date standing in for the sheet's today), and every change is refused, until it is cleared. */
++function AsOfControl() {
++  const [asOf, setAsOf] = useAsOf();
++  const [date, setDate] = useState('');
++  return (
++    <form
++      data-testid="asof-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const want = date.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(want)) setAsOf(want);
++      }}
++    >
++      As of: <strong data-testid="sheet-asof">{asOf}</strong>{' '}
++      <label>
++        Show as of{' '}
++        <input
++          type="text"
++          placeholder="yyyy-mm-dd"
++          data-testid="asof-date"
++          value={date}
++          onChange={(e) => setDate(e.target.value)}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="asof-set">
++        Set
++      </button>{' '}
++      <button type="button" data-testid="asof-clear" onClick={() => setAsOf(undefined)}>
++        Clear
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 1, Component: () => <AsOfControl /> });
+diff --git a/src/main/frontend/features/asof/useAsOf.ts b/src/main/frontend/features/asof/useAsOf.ts
+new file mode 100644
+index 000000000..90621d254
+--- /dev/null
++++ b/src/main/frontend/features/asof/useAsOf.ts
+@@ -0,0 +1,23 @@
++import { useEffect, useRef } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { currentAsOfDate, setAsOfDate } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The date this screen shows the sheet as of (URL key `asOf`; '' when it shows the sheet as it is now).
++ *  It belongs to this user's screen only, and is left as it is by loading a sheet. Every request is sent
++ *  with it, so a change of it re-reads every query. */
++export function useAsOf(): [string, (date: string | undefined) => void] {
++  const [asOf, setAsOf] = useSearchParam('asOf', asString);
++  const queryClient = useQueryClient();
++  const changed = useRef(false);
++  if (currentAsOfDate() !== asOf) {
++    setAsOfDate(asOf);
++    changed.current = true;
++  }
++  useEffect(() => {
++    if (!changed.current) return;
++    changed.current = false;
++    void queryClient.resetQueries();
++  }, [asOf, queryClient]);
++  return [asOf, setAsOf];
++}
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 6bab290bf..699941adc 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -10,7 +10,8 @@ import { usePersonRowAction } from '../people/usePersonRowAction';
+  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
+  *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
+  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
+- *  statement as of that date (on or before the sheet's today; blank: now). */
++ *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
++ *  taken or refused. */
+ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const people = usePeople(sheetId);
+   const queryClient = useQueryClient();
+@@ -20,8 +21,10 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+   const take = useMutation({
+     mutationFn: (date: string) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statement`, { asof: date }),
++    // The date is for the one statement it was typed for: taken or refused, the next one is now unless a
++    // date is typed again.
++    onSettled: () => setAsof(''),
+     onSuccess: async () => {
+-      setAsof('');
+       await Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java b/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java
+index 57b59ed3b..d1410a67e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java
+@@ -2,15 +2,16 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadClaims {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            ClaimRepository repository, Out<Claims> claims) throws BadRequestException {
++            ClaimRepository repository, AsOfView view, Out<Claims> claims) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        claims.set(new Claims(repository.list(id), repository.logs(id), repository.locks(id)));
++        claims.set(view.read(connection, id, () -> new Claims(repository.list(id), repository.logs(id), repository.locks(id))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOfView.java b/src/main/java/net/officefloor/hq/app/history/AsOfView.java
+new file mode 100644
+index 000000000..6bb074603
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/AsOfView.java
+@@ -0,0 +1,147 @@
++package net.officefloor.hq.app.history;
++
++import java.sql.Date;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.function.Supplier;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.server.http.HttpHeader;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Component;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
++
++/** A signed-in user's screen showing a sheet as of a date (the X-As-Of header, yyyy-mm-dd): the sheet as it stood
++ *  at the end of that day. Every change kept in row_change (see {@link RowCapture}) made while the sheet's today
++ *  was on or before the date counts, in the order made, every later one does not (the sheet itself always
++ *  exists); the date stands in for the sheet's today. A read replays those changes into the asof schema's tables,
++ *  runs the usual read against them, and removes them again, all in one transaction, so no other read sees them.
++ *  While the date is set, every change is refused. */
++@Component
++public class AsOfView {
++
++    public static final String HEADER = "X-As-Of";
++
++    private final JdbcTemplate jdbc;
++    private final RowCaptureInstaller installer;
++    private final TransactionTemplate transaction;
++
++    public AsOfView(JdbcTemplate jdbc, RowCaptureInstaller installer, PlatformTransactionManager transactions) {
++        this.jdbc = jdbc;
++        this.installer = installer;
++        this.transaction = new TransactionTemplate(transactions);
++    }
++
++    /** The as-of date the request's screen shows; null when it shows the sheet as it is now. */
++    public static LocalDate of(ServerHttpConnection connection) throws BadRequestException {
++        String raw = "";
++        for (HttpHeader header : connection.getRequest().getHeaders()) {
++            if (HEADER.equalsIgnoreCase(header.getName())) {
++                raw = header.getValue() == null ? "" : header.getValue().trim();
++                break;
++            }
++        }
++        if (raw.isEmpty()) return null;
++        try {
++            return LocalDate.parse(raw);
++        } catch (DateTimeParseException e) {
++            throw new BadRequestException("as-of date must be yyyy-mm-dd");
++        }
++    }
++
++    /** Refuse any change made from a screen showing the sheet as of a date (400, nothing written). */
++    public static void refuse(ServerHttpConnection connection) throws BadRequestException {
++        if (of(connection) != null) {
++            throw new BadRequestException("the sheet is shown as of a date: nothing can be changed");
++        }
++    }
++
++    /** The read, as the request's screen shows the sheet: as of its date when one is set, else as it is now. */
++    public <T> T read(ServerHttpConnection connection, String sheetId, Supplier<T> read) throws BadRequestException {
++        LocalDate day = of(connection);
++        if (day == null) return read.get();
++        return transaction.execute(status -> {
++            Map<String, List<Object[]>> rows = replay(sheetId, day);
++            for (Map.Entry<String, List<Object[]>> e : rows.entrySet()) {
++                RowCaptureInstaller.Table table = installer.tables().get(e.getKey());
++                String marks = String.join(", ", table.columns().stream().map(c -> "?").toList());
++                for (Object[] row : e.getValue()) {
++                    jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" VALUES (" + marks + ")", row);
++                }
++            }
++            if (rows.getOrDefault("SHEET", List.of()).isEmpty()) {
++                jdbc.update("INSERT INTO ASOF.SHEET SELECT * FROM PUBLIC.SHEET WHERE id = ?", sheetId);
++            }
++            jdbc.update("UPDATE ASOF.SHEET SET today = ? WHERE id = ?", Date.valueOf(day), sheetId);
++            jdbc.execute("SET SCHEMA ASOF");
++            try {
++                return read.get();
++            } finally {
++                jdbc.execute("SET SCHEMA PUBLIC");
++                for (RowCaptureInstaller.Table table : installer.tables().values()) {
++                    jdbc.update("DELETE FROM ASOF.\"" + table.name() + "\" WHERE \"" + table.columns().get(table.sheetColumn())
++                            + "\" = ?", sheetId);
++                }
++            }
++        });
++    }
++
++    /** The sheet's rows as of the end of a day, by table: the kept changes made while its today was on or before
++     *  it, applied in the order made. An insert adds its row (the sheet's own always counts); an update changes
++     *  the columns it changed of the row it changed (found by its primary key, else by all its values), and a
++     *  delete removes that row; one whose row is not there (it was added later) changes nothing. */
++    private Map<String, List<Object[]>> replay(String sheetId, LocalDate day) {
++        Map<String, List<Object[]>> rows = new LinkedHashMap<>();
++        Date on = Date.valueOf(day);
++        jdbc.query("SELECT on_date, table_name, old_row, new_row FROM ROW_CHANGE WHERE sheet_id = ? ORDER BY id", rs -> {
++            RowCaptureInstaller.Table table = installer.tables().get(rs.getString("table_name"));
++            if (table == null) return;
++            Object[] before = RowCapture.read(rs.getBytes("old_row"));
++            Object[] after = RowCapture.read(rs.getBytes("new_row"));
++            boolean counts = !rs.getDate("on_date").after(on) || (before == null && table.name().equals("SHEET"));
++            if (!counts) return;
++            List<Object[]> kept = rows.computeIfAbsent(table.name(), k -> new ArrayList<>());
++            if (before == null) {
++                if (!table.key().isEmpty()) {
++                    int same = find(kept, table, after);
++                    if (same >= 0) kept.remove(same);
++                }
++                kept.add(after.clone());
++                return;
++            }
++            int found = find(kept, table, before);
++            if (found < 0) return;
++            if (after == null) {
++                kept.remove(found);
++                return;
++            }
++            Object[] row = kept.get(found);
++            for (int i = 0; i < row.length && i < after.length; i++) {
++                if (!Objects.deepEquals(before[i], after[i])) row[i] = after[i];
++            }
++        }, sheetId);
++        return rows;
++    }
++
++    /** The position of the kept row a change's row is: the one with its primary key, else with all its values. */
++    private static int find(List<Object[]> kept, RowCaptureInstaller.Table table, Object[] row) {
++        for (int i = kept.size() - 1; i >= 0; i--) {
++            Object[] k = kept.get(i);
++            boolean same = true;
++            if (table.key().isEmpty()) {
++                same = Arrays.deepEquals(k, row);
++            } else {
++                for (int c : table.key()) same &= Objects.deepEquals(k[c], row[c]);
++            }
++            if (same) return i;
++        }
++        return -1;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/RefuseAsOf.java b/src/main/java/net/officefloor/hq/app/history/RefuseAsOf.java
+new file mode 100644
+index 000000000..da693c799
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/RefuseAsOf.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.history;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.server.http.ServerHttpConnection;
++
++/** Refuse any change from a screen showing the sheet as of a date (400, nothing written). The first step of
++ *  every endpoint that changes a sheet without {@link net.officefloor.hq.app.settings.RefuseViewer}. */
++public class RefuseAsOf {
++    public void refuse(ServerHttpConnection connection) throws BadRequestException {
++        CurrentUser.require(connection);
++        AsOfView.refuse(connection);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/RowCapture.java b/src/main/java/net/officefloor/hq/app/history/RowCapture.java
+new file mode 100644
+index 000000000..6e509b457
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/RowCapture.java
+@@ -0,0 +1,119 @@
++package net.officefloor.hq.app.history;
++
++import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
++import java.io.IOException;
++import java.io.ObjectInputFilter;
++import java.io.ObjectInputStream;
++import java.io.ObjectOutputStream;
++import java.io.UncheckedIOException;
++import java.sql.Connection;
++import java.sql.Date;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import org.h2.api.Trigger;
++
++/** The trigger on each of a sheet's tables (installed by {@link RowCaptureInstaller}): keeps every insert,
++ *  update and delete of a row in row_change (see V49__row_change.sql), with the sheet's today when it was
++ *  made, in the same transaction. */
++public class RowCapture implements Trigger {
++
++    /** The on_date of a row kept before its sheet had a today: the beginning of time. */
++    static final Date BEGINNING = Date.valueOf(LocalDate.of(1, 1, 1));
++
++    private String table;
++    private int sheetColumn;
++    private int todayColumn = -1;
++
++    @Override
++    public void init(Connection conn, String schemaName, String triggerName, String tableName, boolean before, int type)
++            throws SQLException {
++        this.table = tableName;
++        List<String> columns = columns(conn, schemaName, tableName);
++        boolean sheet = tableName.equalsIgnoreCase("SHEET");
++        this.sheetColumn = columns.indexOf(sheet ? "ID" : "SHEET_ID");
++        if (sheet) this.todayColumn = columns.indexOf("TODAY");
++    }
++
++    @Override
++    public void fire(Connection conn, Object[] oldRow, Object[] newRow) throws SQLException {
++        Object[] row = newRow != null ? newRow : oldRow;
++        String sheetId = String.valueOf(row[sheetColumn]);
++        Date onDate = todayColumn >= 0 && newRow != null ? date(newRow[todayColumn]) : today(conn, sheetId);
++        record(conn, sheetId, onDate, table, oldRow, newRow);
++    }
++
++    /** Keep one row change. */
++    static void record(Connection conn, String sheetId, Date onDate, String table, Object[] oldRow, Object[] newRow)
++            throws SQLException {
++        try (PreparedStatement ps = conn.prepareStatement("INSERT INTO PUBLIC.ROW_CHANGE"
++                + " (sheet_id, on_date, table_name, old_row, new_row) VALUES (?, ?, ?, ?, ?)")) {
++            ps.setString(1, sheetId);
++            ps.setDate(2, onDate);
++            ps.setString(3, table);
++            ps.setBytes(4, oldRow == null ? null : write(oldRow));
++            ps.setBytes(5, newRow == null ? null : write(newRow));
++            ps.executeUpdate();
++        }
++    }
++
++    /** The sheet's today as the change is made; the beginning of time when the sheet has none. */
++    private static Date today(Connection conn, String sheetId) throws SQLException {
++        try (PreparedStatement ps = conn.prepareStatement("SELECT today FROM PUBLIC.SHEET WHERE id = ?")) {
++            ps.setString(1, sheetId);
++            try (ResultSet rs = ps.executeQuery()) {
++                return rs.next() && rs.getDate(1) != null ? rs.getDate(1) : BEGINNING;
++            }
++        }
++    }
++
++    private static Date date(Object value) {
++        if (value instanceof Date d) return d;
++        if (value instanceof LocalDate d) return Date.valueOf(d);
++        return value == null ? BEGINNING : Date.valueOf(value.toString());
++    }
++
++    /** A table's column names, in column order. */
++    static List<String> columns(Connection conn, String schema, String table) throws SQLException {
++        List<String> columns = new ArrayList<>();
++        try (PreparedStatement ps = conn.prepareStatement("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
++                + " WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION")) {
++            ps.setString(1, schema);
++            ps.setString(2, table);
++            try (ResultSet rs = ps.executeQuery()) {
++                while (rs.next()) columns.add(rs.getString(1));
++            }
++        }
++        return columns;
++    }
++
++    /** Only the value types a row holds may be read back. */
++    private static final ObjectInputFilter VALUES = ObjectInputFilter.Config.createFilter(
++            "java.lang.*;java.math.*;java.sql.*;java.time.*;java.util.UUID;[Ljava.lang.Object;;[B;!*");
++
++    static byte[] write(Object[] row) {
++        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
++        try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
++            out.writeObject(row);
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++        return bytes.toByteArray();
++    }
++
++    static Object[] read(byte[] bytes) {
++        if (bytes == null) return null;
++        try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
++            in.setObjectInputFilter(VALUES);
++            return (Object[]) in.readObject();
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        } catch (ClassNotFoundException e) {
++            throw new IllegalStateException(e);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/RowCaptureInstaller.java b/src/main/java/net/officefloor/hq/app/history/RowCaptureInstaller.java
+new file mode 100644
+index 000000000..ee4d792dd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/RowCaptureInstaller.java
+@@ -0,0 +1,105 @@
++package net.officefloor.hq.app.history;
++
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Statement;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import javax.sql.DataSource;
++import org.springframework.beans.factory.InitializingBean;
++import org.springframework.context.annotation.DependsOn;
++import org.springframework.stereotype.Component;
++
++/** At start-up, once the schema is migrated: puts the {@link RowCapture} trigger on each of a sheet's tables
++ *  (every table with a sheet_id, and the sheet itself), and makes the table each is replayed into in the asof
++ *  schema (see {@link AsOfView}). A table added later is captured the same way, with no change here. */
++@Component
++@DependsOn("flywayInitializer")
++public class RowCaptureInstaller implements InitializingBean {
++
++    /** The tables that are not a sheet's state: the change log itself, and the history a statement as of a
++     *  past date reads (V48__history.sql). */
++    private static final Set<String> SKIPPED = Set.of("ROW_CHANGE", "CLAIM_HISTORY", "RATE_HISTORY", "GRADE_HISTORY",
++            "SETTING_HISTORY", "POLICY_HISTORY", "RETIRE_HISTORY");
++
++    /** A captured table: its name, its columns in order, the positions of its primary key's columns (empty
++     *  when it has none) and of the column holding the sheet's id. */
++    public record Table(String name, List<String> columns, List<Integer> key, int sheetColumn) {
++    }
++
++    private final DataSource dataSource;
++    private final Map<String, Table> tables = new LinkedHashMap<>();
++
++    public RowCaptureInstaller(DataSource dataSource) {
++        this.dataSource = dataSource;
++    }
++
++    /** The captured tables, by name. */
++    public Map<String, Table> tables() {
++        return tables;
++    }
++
++    @Override
++    public void afterPropertiesSet() throws SQLException {
++        try (Connection conn = dataSource.getConnection()) {
++            List<String> names = new ArrayList<>();
++            try (ResultSet rs = conn.createStatement().executeQuery("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
++                    + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME")) {
++                while (rs.next()) names.add(rs.getString(1));
++            }
++            boolean baseline = empty(conn);
++            for (String name : names) {
++                if (SKIPPED.contains(name)) continue;
++                List<String> columns = RowCapture.columns(conn, "PUBLIC", name);
++                int sheetColumn = columns.indexOf(name.equals("SHEET") ? "ID" : "SHEET_ID");
++                if (sheetColumn < 0) continue;
++                Table table = new Table(name, columns, key(conn, name, columns), sheetColumn);
++                tables.put(name, table);
++                try (Statement st = conn.createStatement()) {
++                    st.execute("DROP TABLE IF EXISTS ASOF.\"" + name + "\"");
++                    st.execute("CREATE TABLE ASOF.\"" + name + "\" AS SELECT * FROM PUBLIC.\"" + name + "\" WITH NO DATA");
++                    st.execute("DROP TRIGGER IF EXISTS PUBLIC.\"CAPTURE_" + name + "\"");
++                    st.execute("CREATE TRIGGER PUBLIC.\"CAPTURE_" + name + "\" AFTER INSERT, UPDATE, DELETE ON PUBLIC.\""
++                            + name + "\" FOR EACH ROW CALL '" + RowCapture.class.getName() + "'");
++                }
++                if (baseline) baseline(conn, table);
++            }
++        }
++    }
++
++    private static boolean empty(Connection conn) throws SQLException {
++        try (ResultSet rs = conn.createStatement().executeQuery("SELECT COUNT(*) FROM PUBLIC.ROW_CHANGE")) {
++            return rs.next() && rs.getLong(1) == 0;
++        }
++    }
++
++    /** The rows there before any change was kept count from the beginning of time. */
++    private static void baseline(Connection conn, Table table) throws SQLException {
++        try (ResultSet rs = conn.createStatement().executeQuery("SELECT * FROM PUBLIC.\"" + table.name() + "\"")) {
++            while (rs.next()) {
++                Object[] row = new Object[table.columns().size()];
++                for (int i = 0; i < row.length; i++) row[i] = rs.getObject(i + 1);
++                RowCapture.record(conn, String.valueOf(row[table.sheetColumn()]), RowCapture.BEGINNING, table.name(), null, row);
++            }
++        }
++    }
++
++    private static List<Integer> key(Connection conn, String table, List<String> columns) throws SQLException {
++        List<Integer> key = new ArrayList<>();
++        try (PreparedStatement ps = conn.prepareStatement("SELECT k.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS c"
++                + " JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON k.CONSTRAINT_SCHEMA = c.CONSTRAINT_SCHEMA"
++                + " AND k.CONSTRAINT_NAME = c.CONSTRAINT_NAME WHERE c.TABLE_SCHEMA = 'PUBLIC' AND c.TABLE_NAME = ?"
++                + " AND c.CONSTRAINT_TYPE = 'PRIMARY KEY' ORDER BY k.ORDINAL_POSITION")) {
++            ps.setString(1, table);
++            try (ResultSet rs = ps.executeQuery()) {
++                while (rs.next()) key.add(columns.indexOf(rs.getString(1)));
++            }
++        }
++        return key;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/LoadPeriods.java b/src/main/java/net/officefloor/hq/app/period/LoadPeriods.java
+index 1b4dbb393..f076a1950 100644
+--- a/src/main/java/net/officefloor/hq/app/period/LoadPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/LoadPeriods.java
+@@ -2,15 +2,16 @@ package net.officefloor.hq.app.period;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadPeriods {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            PeriodRepository repository, Out<Periods> periods) throws BadRequestException {
++            PeriodRepository repository, AsOfView view, Out<Periods> periods) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        periods.set(new Periods(repository.list(id)));
++        periods.set(view.read(connection, id, () -> new Periods(repository.list(id))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+index 8313bcfb1..172fec731 100644
+--- a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+@@ -2,15 +2,16 @@ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadPeople {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            PersonRepository repository, PatronRepository patrons, WatchRepository watches, Out<People> people) throws BadRequestException {
++            PersonRepository repository, PatronRepository patrons, WatchRepository watches, AsOfView view, Out<People> people) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        people.set(new People(repository.list(id), patrons.list(id), watches.watched(id, by)));
++        people.set(view.read(connection, id, () -> new People(repository.list(id), patrons.list(id), watches.watched(id, by))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/LoadRates.java b/src/main/java/net/officefloor/hq/app/rate/LoadRates.java
+index 993ea64b5..706bc41ba 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/LoadRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/LoadRates.java
+@@ -2,15 +2,16 @@ package net.officefloor.hq.app.rate;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadRates {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            RateRepository repository, Out<Rates> rates) throws BadRequestException {
++            RateRepository repository, AsOfView view, Out<Rates> rates) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        rates.set(new Rates(repository.list(id)));
++        rates.set(view.read(connection, id, () -> new Rates(repository.list(id))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/LoadSettings.java b/src/main/java/net/officefloor/hq/app/settings/LoadSettings.java
+index a6e8221b1..21663e51f 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/LoadSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/LoadSettings.java
+@@ -2,15 +2,16 @@ package net.officefloor.hq.app.settings;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadSettings {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            SettingsRepository repository, Out<Settings> settings) throws BadRequestException {
++            SettingsRepository repository, AsOfView view, Out<Settings> settings) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        settings.set(repository.load(id));
++        settings.set(view.read(connection, id, () -> repository.load(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java b/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
+index a8c49f62a..b6ecd4a3a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
+@@ -2,15 +2,17 @@ package net.officefloor.hq.app.settings;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Refuse any change by a viewer of the sheet, and any change at all to an archived sheet (400, nothing written). The first step of every endpoint
++/** Refuse any change from a screen showing the sheet as of a date, any change by a viewer of the sheet, and any change at all to an archived sheet (400, nothing written). The first step of every endpoint
+  *  that changes a sheet, except the bulk ones, where a viewer's selection is simply all refused. */
+ public class RefuseViewer {
+     public void refuse(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+             SettingsRepository settings) throws BadRequestException {
+         String by = CurrentUser.require(connection);
++        AsOfView.refuse(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         if (settings.archived(id)) {
+             throw new BadRequestException("the sheet is archived");
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java
+index 915d4c425..dfdeaae92 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.sheet;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.dao.EmptyResultDataAccessException;
+@@ -9,11 +10,11 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadSheetToday {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            SheetRepository repository, Out<Sheet> sheet) throws BadRequestException {
++            SheetRepository repository, AsOfView view, Out<Sheet> sheet) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         try {
+-            sheet.set(new Sheet(id, repository.today(id).toString(), repository.archived(id)));
++            sheet.set(view.read(connection, id, () -> new Sheet(id, repository.today(id).toString(), repository.archived(id))));
+         } catch (EmptyResultDataAccessException e) {
+             throw new BadRequestException("no such sheet");
+         }
+diff --git a/src/main/resources/db/migration/V49__row_change.sql b/src/main/resources/db/migration/V49__row_change.sql
+new file mode 100644
+index 000000000..1ec0ea746
+--- /dev/null
++++ b/src/main/resources/db/migration/V49__row_change.sql
+@@ -0,0 +1,17 @@
++-- Every change to a row of a sheet, for showing the sheet as of a past date (see history/AsOfView): each
++-- insert, update or delete of a row of a sheet's tables, kept in the order made (id) with the sheet's
++-- today when it was made (on_date) and the row's values before and after (each a serialized Object[] in
++-- the table's column order; old_row null for an insert, new_row null for a delete). The rows are
++-- captured by a trigger on each table (history/RowCapture), installed at start-up.
++CREATE TABLE row_change (
++    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id   VARCHAR(200) NOT NULL,
++    on_date    DATE         NOT NULL,
++    table_name VARCHAR(100) NOT NULL,
++    old_row    VARBINARY(1000000),
++    new_row    VARBINARY(1000000)
++);
++CREATE INDEX row_change_sheet ON row_change (sheet_id, id);
++
++-- The tables a sheet's view is replayed into: one per captured table, created at start-up.
++CREATE SCHEMA IF NOT EXISTS asof;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+index fc68362dc..1a40c2afb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+@@ -1,4 +1,7 @@
+ # Archive the sheet: a steward only. Everything stays visible; every change after is refused.
++guard:
++  class: net.officefloor.hq.app.history.RefuseAsOf
++  next: archive
+ archive:
+   class: net.officefloor.hq.app.sheet.ArchiveSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+index 9bc3563b0..30b78b2f4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+@@ -1,6 +1,9 @@
+ # Open the selected claims together: each DRAFT that may be opened is opened and numbered in list order
+ # (people in the order they were added, each person's claims newest first); every other is left as it
+ # is. Answers how many were opened and how many refused.
++guard:
++  class: net.officefloor.hq.app.history.RefuseAsOf
++  next: open
+ open:
+   class: net.officefloor.hq.app.claim.BulkOpenClaims
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+index 7b8d8a052..8fd06218d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+@@ -1,6 +1,9 @@
+ # Settle the selected claims together: each is settled in list order (people in the order they were
+ # added, each person's claims newest first) by the rules of a single settle (a claim sent to PENDING
+ # counts as settled); every other is left as it is. Answers how many were settled and how many refused.
++guard:
++  class: net.officefloor.hq.app.history.RefuseAsOf
++  next: settle
+ settle:
+   class: net.officefloor.hq.app.claim.BulkSettleClaims
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+index 3deed15ff..8058d47d1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.POST.yml
+@@ -1,4 +1,7 @@
+ # Start or stop watching a person as the signed-in user.
++guard:
++  class: net.officefloor.hq.app.history.RefuseAsOf
++  next: watch
+ watch:
+   class: net.officefloor.hq.app.person.WatchPerson
+   govern: [ transaction ]
