@@ -83,7 +83,8 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
 }
 
 // One plan, with its Pause and Resume buttons: a pause skips (never postpones) every plan date from the sheet's
-// today until the day it is resumed. Pausing a paused plan, or resuming a running one, is refused.
+// today until the day it is resumed. Pausing a paused plan, or resuming a running one, is refused. Its amount can be
+// changed (0.00 or more, up to two decimals) for the claims generated from then on; it lists its changes, oldest first.
 function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: string; plan: Plan; submits: number }) {
   const queryClient = useQueryClient();
   const toggle = useMutation({
@@ -92,8 +93,32 @@ function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: strin
     onSuccess: (updated) => queryClient.setQueryData(plansKey(sheet), updated),
   });
   const send = useSubmitOnce(toggle);
+  const [amount, setAmount] = useState('');
+  const change = useMutation({
+    mutationFn: (value: string) =>
+      postJson<Plan[]>(byUser(`${plansPath(sheet)}/${p.id}/amount`, user), { amount: value }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(plansKey(sheet), updated);
+      setAmount('');
+    },
+  });
+  const sendAmount = useSubmitOnce(change);
   const { reset } = toggle;
-  useEffect(() => reset(), [submits, reset]);
+  const { reset: resetChange } = change;
+  useEffect(() => {
+    reset();
+    resetChange();
+  }, [submits, reset, resetChange]);
+
+  // Each action on the plan clears the other's old error.
+  const act = (action: 'pause' | 'resume') => {
+    resetChange();
+    send(action);
+  };
+  const saveAmount = () => {
+    reset();
+    sendAmount(amount);
+  };
 
   return (
     <li data-testid={`plan-row-${p.id}`}>
@@ -102,17 +127,42 @@ function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: strin
       <span data-testid="plan-generated">{p.generated}</span>; next{' '}
       <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>; paused{' '}
       <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
-      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => send('pause')}>
+      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => act('pause')}>
         Pause
       </button>{' '}
-      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => send('resume')}>
+      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => act('resume')}>
         Resume
+      </button>{' '}
+      <input
+        data-testid="plan-amount"
+        placeholder="New amount"
+        size={7}
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          resetChange();
+        }}
+      />{' '}
+      <button type="button" data-testid="plan-amount-save" disabled={change.isPending} onClick={saveAmount}>
+        Save amount
       </button>
       {toggle.isError && (
         <span data-testid="plan-error" role="alert">
           {' '}{p.paused ? 'The plan is already paused.' : 'The plan is not paused.'}
         </span>
       )}
+      {change.isError && (
+        <span data-testid="plan-error" role="alert">
+          {' '}The amount must be 0.00 or more with up to two decimals.
+        </span>
+      )}
+      <ul>
+        {p.changes.map((c, i) => (
+          <li key={i} data-testid="plan-change-line">
+            {c}
+          </li>
+        ))}
+      </ul>
     </li>
   );
 }

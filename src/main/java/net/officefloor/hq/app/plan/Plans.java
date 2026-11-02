@@ -25,7 +25,7 @@ public class Plans {
             return new Plan(rs.getLong("id"), rs.getLong("person_id"),
                     rs.getBigDecimal("amount").setScale(2).toPlainString(), start.toString(), every, end.toString(),
                     rs.getInt("generated"), day, next,
-                    pauses.stream().anyMatch(p -> p.until() == null));
+                    pauses.stream().anyMatch(p -> p.until() == null), changes(rs.getLong("id")));
         };
     }
 
@@ -62,6 +62,19 @@ public class Plans {
         return jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY id",
                 (rs, i) -> new Plan.Pause(rs.getDate("paused_on").toLocalDate(),
                         rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()), plan);
+    }
+
+    private List<String> changes(long plan) {
+        return jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                (rs, i) -> rs.getDate("changed_on").toLocalDate() + " amount="
+                        + rs.getBigDecimal("amount").setScale(2).toPlainString(), plan);
+    }
+
+    /** Changes the plan's amount on {@code day}, for the claims it generates from then on. */
+    public void changeAmount(long plan, LocalDate day, BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, plan);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", plan, Date.valueOf(day),
+                amount);
     }
 
     /** Pauses the plan from {@code day}: false, changing nothing, when it is already paused. */
