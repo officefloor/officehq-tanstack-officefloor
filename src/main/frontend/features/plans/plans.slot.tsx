@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -27,6 +27,8 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
   const queryClient = useQueryClient();
   const { data: plans = [] } = usePlans(sheet);
   const [form, setForm] = useState<PlanForm>(EMPTY);
+  // Counts the add form's submissions, so a plan's old pause/resume error goes when the person's next plan is sent.
+  const [submits, setSubmits] = useState(0);
   const mine = plans.filter((p) => p.person === person.id);
 
   const add = useMutation({
@@ -48,6 +50,7 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    setSubmits((n) => n + 1);
     send(form);
   };
 
@@ -55,12 +58,7 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
     <td>
       <ul>
         {mine.map((p) => (
-          <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end};
-            made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
-            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
-          </li>
+          <PlanRow key={p.id} sheet={sheet} user={user} plan={p} submits={submits} />
         ))}
       </ul>
       <form onSubmit={submit}>
@@ -81,6 +79,41 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
         )}
       </form>
     </td>
+  );
+}
+
+// One plan, with its Pause and Resume buttons: a pause skips (never postpones) every plan date from the sheet's
+// today until the day it is resumed. Pausing a paused plan, or resuming a running one, is refused.
+function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: string; plan: Plan; submits: number }) {
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      postJson<Plan[]>(byUser(`${plansPath(sheet)}/${p.id}/${action}`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(plansKey(sheet), updated),
+  });
+  const send = useSubmitOnce(toggle);
+  const { reset } = toggle;
+  useEffect(() => reset(), [submits, reset]);
+
+  return (
+    <li data-testid={`plan-row-${p.id}`}>
+      {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end};
+      made{' '}
+      <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+      <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>; paused{' '}
+      <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => send('pause')}>
+        Pause
+      </button>{' '}
+      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => send('resume')}>
+        Resume
+      </button>
+      {toggle.isError && (
+        <span data-testid="plan-error" role="alert">
+          {' '}{p.paused ? 'The plan is already paused.' : 'The plan is not paused.'}
+        </span>
+      )}
+    </li>
   );
 }
 
