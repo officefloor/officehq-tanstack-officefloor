@@ -1,0 +1,330 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index f44e0da3..21619ba8 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -20,8 +20,22 @@ function withAsOf(path: string): string {
+   return asOf ? `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}` : path;
+ }
+ 
++/** The date the screen previews the sheet at (search param `preview`), or '' when it shows its real today. */
++export function currentPreview(): string {
++  const raw = new URLSearchParams(window.location.search).get('preview') ?? '';
++  return raw.replace(/^"|"$/g, '');
++}
++
++/** Every read carries the screen's preview date: the server makes each figure as if it were the sheet's today.
++ *  Changes never carry it, so they use the sheet's real today. */
++function withPreview(path: string, init?: RequestInit): string {
++  const preview = currentPreview();
++  if (!preview || (init?.method ?? 'GET') !== 'GET') return path;
++  return `${path}${path.includes('?') ? '&' : '?'}preview=${encodeURIComponent(preview)}`;
++}
++
+ async function send<T>(path: string, init?: RequestInit, now = false): Promise<T> {
+-  const res = await fetch(now ? path : withAsOf(path), init);
++  const res = await fetch(withPreview(now ? path : withAsOf(path), init), init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+   }
+@@ -32,7 +46,7 @@ export function getJson<T>(path: string): Promise<T> {
+   return send<T>(path);
+ }
+ 
+-/** A read answered as the sheet is now, whatever the screen's as-of date. */
++/** A read answered as the sheet is now, whatever the screen's as-of date (still at the screen's preview date). */
+ export function getJsonNow<T>(path: string): Promise<T> {
+   return send<T>(path, undefined, true);
+ }
+diff --git a/src/main/frontend/features/preview/preview.slot.tsx b/src/main/frontend/features/preview/preview.slot.tsx
+new file mode 100644
+index 00000000..f1b1aca6
+--- /dev/null
++++ b/src/main/frontend/features/preview/preview.slot.tsx
+@@ -0,0 +1,49 @@
++import { useEffect, useRef, useState } from 'react';
++import type { FormEvent } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The date this screen previews the sheet at (search param `preview`, so it is this user's screen only). While it is
++// set every read carries it (api/http.ts): every figure is made as if it were the sheet's today, over the sheet's
++// current records. Changes never carry it, so they still use the sheet's real today.
++function Preview() {
++  const queryClient = useQueryClient();
++  const [preview, setPreview] = useSearchParam('preview', asString);
++  const [draft, setDraft] = useState('');
++  const shown = useRef(preview);
++
++  // Once the URL carries the new date, everything on screen is read again for it.
++  useEffect(() => {
++    if (shown.current === preview) return;
++    shown.current = preview;
++    void queryClient.resetQueries();
++  }, [preview, queryClient]);
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const date = draft.trim();
++    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) setPreview(date);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      Preview: <strong data-testid="sheet-preview">{preview}</strong>{' '}
++      <input
++        data-testid="preview-date"
++        type="text"
++        placeholder="yyyy-mm-dd"
++        value={draft}
++        onChange={(e) => setDraft(e.target.value)}
++      />
++      <button type="submit" data-testid="preview-set">
++        Preview at
++      </button>
++      <button type="button" data-testid="preview-clear" onClick={() => setPreview(undefined)}>
++        Clear preview
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 2, Component: Preview });
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index de3527ba..c04f7da8 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { useReadScope } from '../../query/live';
++import { asString, useSearchParam } from '../../url/useSearchParam';
+ 
+ /** `lastBatch`: the number of the sheet's last bulk settle batch, null when there has been none. `tagsGone`: the tags
+  *  claims carried on the sheet before leaving it (a transfer takes them away), sorted. */
+@@ -17,7 +18,12 @@ export function useSheet(sheet: string) {
+   });
+ }
+ 
+-/** The sheet's today (yyyy-MM-dd), or undefined while it loads. */
++/** The sheet's today (yyyy-MM-dd) as the screen's figures take it, or undefined while it loads: the screen's preview
++ *  date while one is set (and no as-of date, which takes precedence), else the sheet's today. The sheet itself always
++ *  answers its real today, which every change uses. */
+ export function useSheetToday(sheet: string): string | undefined {
+-  return useSheet(sheet).data?.today;
++  const today = useSheet(sheet).data?.today;
++  const [asof] = useSearchParam('asof', asString);
++  const [preview] = useSearchParam('preview', asString);
++  return today !== undefined && preview && !asof ? preview : today;
+ }
+diff --git a/src/main/frontend/features/sheetcompare/sheetcompare.ts b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+index 1321e2cb..b97e611e 100644
+--- a/src/main/frontend/features/sheetcompare/sheetcompare.ts
++++ b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
+-import { useSheet } from '../sheet/sheet';
++import { useSheet, useSheetToday } from '../sheet/sheet';
+ import { useRates } from '../rates/rates';
+ import { useFloorCents, useSettings } from '../settings/settings';
+ import { personDueCents, useClaims, useLate } from '../claims/claims';
+@@ -26,7 +26,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
+   const claimsQ = useClaims(sheet);
+   const ratesQ = useRates(sheet);
+   const settingsQ = useSettings(sheet);
+-  const today = sheetQ.data?.today;
++  const today = useSheetToday(sheet);
+   const floor = useFloorCents(sheet);
+   const capOf = useCapCentsOf(sheet);
+   const late = useLate(sheet);
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 7db4e7c3..564b52c0 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -13,7 +13,7 @@ import { getJson } from '../api/http';
+ // Loading a sheet re-reads its notes, people and claims before the sheet shows as loaded, so the lists on screen are
+ // the store's as they stand, never the lists cached from an earlier load (or none at all while a read is still on its way).
+ export const Route = createFileRoute('/')({
+-  loaderDeps: ({ search }) => ({ sheet: (search as Record<string, unknown>).sheet, asof: (search as Record<string, unknown>).asof }),
++  loaderDeps: ({ search }) => ({ sheet: (search as Record<string, unknown>).sheet, asof: (search as Record<string, unknown>).asof, preview: (search as Record<string, unknown>).preview }),
+   loader: async ({ context, deps }) => {
+     if (typeof deps.sheet === 'string' && deps.sheet) {
+       // A failed read shows through the panel's own query; it never stops the sheet loading.
+diff --git a/src/main/java/net/officefloor/hq/app/preview/PreviewView.java b/src/main/java/net/officefloor/hq/app/preview/PreviewView.java
+new file mode 100644
+index 00000000..0317d995
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/preview/PreviewView.java
+@@ -0,0 +1,86 @@
++package net.officefloor.hq.app.preview;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.net.URLDecoder;
++import java.nio.charset.StandardCharsets;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.asof.AsOfView;
++import net.officefloor.hq.app.sheet.SheetClock;
++import org.springframework.core.Ordered;
++import org.springframework.core.annotation.Order;
++import org.springframework.stereotype.Component;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * A screen previewing the sheet at a date (?preview=yyyy-MM-dd on its reads): each read of the sheet's figures runs
++ * in a transaction that first puts the date in for the sheet's today, over its current records, and is always rolled
++ * back, so every figure the endpoints make is made as if that date were its today, and nothing is written. Only the
++ * today is moved: nothing a change of today does (snapshots, scores, auto-closing) happens. The sheet itself
++ * (GET /api/sheets/{id}) still answers its real today, which every change and every default date uses. Writes never
++ * carry the preview (the screen sends it on reads only). An as-of date, when set too, takes precedence.
++ */
++@Component
++@Order(Ordered.HIGHEST_PRECEDENCE + 2)
++public class PreviewView extends OncePerRequestFilter {
++
++    public static final String PARAM = "preview";
++
++    private static final Pattern SHEET_READ = Pattern.compile("^/api/sheets/([^/]+)/.+$");
++
++    private final SheetClock clock;
++    private final TransactionTemplate transaction;
++
++    public PreviewView(SheetClock clock, PlatformTransactionManager transactions) {
++        this.clock = clock;
++        this.transaction = new TransactionTemplate(transactions);
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String raw = request.getParameter(PARAM);
++        String asOf = request.getParameter(AsOfView.PARAM);
++        Matcher m = SHEET_READ.matcher(request.getRequestURI().substring(request.getContextPath().length()));
++        if (raw == null || raw.isBlank() || (asOf != null && !asOf.isBlank()) || !"GET".equals(request.getMethod())
++                || !m.matches()) {
++            chain.doFilter(request, response);
++            return;
++        }
++        LocalDate date;
++        try {
++            date = LocalDate.parse(raw.trim());
++        } catch (DateTimeParseException e) {
++            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Not a valid preview date: " + raw);
++            return;
++        }
++        String sheet = URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
++        try {
++            transaction.executeWithoutResult((status) -> {
++                status.setRollbackOnly();
++                clock.setToday(sheet, date);
++                try {
++                    chain.doFilter(request, response);
++                } catch (IOException | ServletException e) {
++                    throw new IllegalStateException(e);
++                }
++            });
++        } catch (IllegalStateException e) {
++            if (e.getCause() instanceof IOException io) {
++                throw io;
++            }
++            if (e.getCause() instanceof ServletException se) {
++                throw se;
++            }
++            throw e;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 9da416ca..40e0710b 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -10,6 +10,7 @@ import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimShare;
+ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.claim.Late;
+ import net.officefloor.hq.app.person.InvalidPersonException;
+@@ -27,7 +28,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Takes a statement of the person: records their due-total now (late charges included), binds each of their
++ * Takes a statement of the person: records their due-total now (late charges included; their parts of claims shared
++ * with them counted in, and the parts of theirs shared with others left out, as the rollup counts them), binds each of their
+  * counting claims to the due it shows now (late charge included; a claim already bound keeps its figure) and
+  * unbinds the rest. The due-total is n/a
+  * when their grade has no rate on the sheet's today, unless a
+@@ -59,8 +61,6 @@ public class TakeStatement {
+         Dated floor = state.floorDated();
+         Late late = state.late(on);
+         List<Claim> past = state.claimsOf(person.id(), on);
+-        boolean na = Rate.on(sheetRates, then.grade(), on) == null
+-                && past.stream().noneMatch((c) -> then.counts(c) && then.figureApartFrom(c, on, sheetRates, floor));
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         Map<Long, BigDecimal> bound = new HashMap<>();
+         for (Claim claim : past) {
+@@ -68,9 +68,34 @@ public class TakeStatement {
+                 // The statement binds the due as shown, late charge included: it no longer follows the sheet's today.
+                 BigDecimal due = claim.due(sheetRates, then.gradeOn(claim.date()), floor, late);
+                 bound.put(claim.id(), due);
+-                total = due == null ? total : total.add(due);
++                // The holders' parts of a shared claim count for them, not for its own person (as the rollup counts them).
++                total = due == null ? total : total.add(due.subtract(claim.sharedPart(due)));
++            }
++        }
++        // The person's parts of the claims shared with them, counted as their own persons count them.
++        boolean holdsPart = false;
++        for (Claim claim : state.claims()) {
++            if (claim.person() == person.id() || claim.shares() == null) {
++                continue;
++            }
++            Person owner = state.person(claim.person(), on);
++            Claim shown = claim.on(on);
++            if (owner == null || !owner.counts(shown)) {
++                continue;
++            }
++            for (ClaimShare share : shown.shares()) {
++                if (share.person() != person.id()) {
++                    continue;
++                }
++                BigDecimal due = shown.due(sheetRates, owner.gradeOn(shown.date()), floor, late);
++                if (due != null) {
++                    holdsPart = true;
++                    total = total.add(share.partOf(due));
++                }
+             }
+         }
++        boolean na = !holdsPart && Rate.on(sheetRates, then.grade(), on) == null
++                && past.stream().noneMatch((c) -> then.counts(c) && then.figureApartFrom(c, on, sheetRates, floor));
+         Map<Long, Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id())
+                 .collect(Collectors.toMap(Claim::id, Function.identity()));
+         for (Claim claim : mine.values()) {
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+new file mode 100644
+index 00000000..c013a803
+--- /dev/null
++++ b/tmp_e2e/run.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › preview date › preview date (22.6s)
++  ✓  2 [chromium] › acceptance.spec.ts:255:7 › preview date › preview date scenario 1 (41.5s)
++  ✓  3 [chromium] › acceptance.spec.ts:714:7 › preview date › preview date scenario 2 (1.4m)
++  ✓  4 [chromium] › acceptance.spec.ts:1329:7 › preview date › preview date scenario 3 (16.9s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (2.8m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.8m)
