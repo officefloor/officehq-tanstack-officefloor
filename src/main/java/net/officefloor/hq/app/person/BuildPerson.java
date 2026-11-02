@@ -12,6 +12,9 @@ public class BuildPerson {
             @Val PersonRequest request, People people, Audit audit, Rollup rollup, Out<Person> person)
             throws DuplicatePersonNameException, InvalidPersonException {
         Rollup.Snapshot before = rollup.take(sheet);
+        if (people.gradeRetired(sheet, request.grade())) {
+            throw new InvalidPersonException("Grade " + request.grade() + " is retired");
+        }
         String contact = request.contactOrNull();
         if (contact != null && people.contactTaken(sheet, contact, null)) {
             throw new InvalidPersonException("The contact is already in use: " + contact);

@@ -20,6 +20,11 @@ public class SavePerson {
         apply(sheet, user, person, request, people, clock, audit, rollup);
     }
 
+    /** Whether the save chooses a grade: one other than the row shows, or any grade with a from-date. */
+    static boolean choosesGrade(Person person, PersonRequest request) {
+        return request.gradeFrom() != null || !request.grade().equals(person.grade());
+    }
+
     /** Saves the person as the form gave them, auditing the edit and the rollup it moves; shared with the bulk grade. */
     static void apply(String sheet, String user, Person person, PersonRequest request, People people, SheetClock clock,
             Audit audit, Rollup rollup) throws DuplicatePersonNameException, StalePersonException, InvalidPersonException {
@@ -27,6 +32,10 @@ public class SavePerson {
         long loaded = request.version() == null ? person.version() : request.version();
         if (loaded != person.version()) {
             throw new StalePersonException(person.id());
+        }
+        // Choosing a retired grade is refused; leaving the grade as the row showed it, with no from-date, is no choice.
+        if (choosesGrade(person, request) && people.gradeRetired(sheet, request.grade())) {
+            throw new InvalidPersonException("Grade " + request.grade() + " is retired");
         }
         // A contact another person on the sheet already has is refused, and writes nothing.
         String contact = request.contactOrNull();
@@ -40,7 +49,7 @@ public class SavePerson {
                 person.flagUntil(), person.flagged(), person.approver()));
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the ones already
         // recorded; leaving the grade as the row showed it, with the from-date blank, records nothing.
-        if (request.gradeFrom() != null || !request.grade().equals(person.grade())) {
+        if (choosesGrade(person, request)) {
             LocalDate from = request.gradeFrom() == null ? clock.today(sheet) : LocalDate.parse(request.gradeFrom());
             people.setGrade(person.id(), request.grade(), from);
         }

@@ -46,6 +46,14 @@ public class BulkGradePeople {
         if (chosen.size() != selected.size()) {
             throw new InvalidPersonException("Every selected person must be on the sheet");
         }
+        // A retired grade may not be chosen for anyone: refused before anything is written.
+        if (people.gradeRetired(sheet, grade)) {
+            for (Person person : chosen) {
+                if (!from.isEmpty() || !grade.equals(person.grade())) {
+                    throw new InvalidPersonException("Grade " + grade + " is retired");
+                }
+            }
+        }
         if (Role.VIEWER.equals(roles.of(sheet, user))) {
             response.send(new BulkGradeResponse(0, everyone));
             return;

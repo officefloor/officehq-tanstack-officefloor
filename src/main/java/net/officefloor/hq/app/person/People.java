@@ -39,6 +39,13 @@ public class People {
         this.settings = settings;
     }
 
+    /** Whether the grade is retired on the sheet: it can no longer be chosen for a person. */
+    public boolean gradeRetired(String sheet, String grade) {
+        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM grade_retired WHERE sheet = ? AND grade = ?",
+                Integer.class, sheet, grade);
+        return found != null && found > 0;
+    }
+
     /** Every name and alias, lower-cased, on the other sheets of the sheet's tree (its ancestors and descendants). */
     private Set<String> treeNames(String sheet) {
         Set<String> names = new HashSet<>();

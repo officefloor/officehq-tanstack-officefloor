@@ -61,6 +61,11 @@ public class ValidateImport {
                     || people.usedInTree(sheet, name)) {
                 throw new InvalidPersonException("Line " + at + ": the name is already in use: " + name);
             }
+            // A retired grade may not be chosen: only a line leaving a person on the grade they have keeps it.
+            if (people.gradeRetired(sheet, checked.grade())
+                    && (existing == null || !checked.grade().equals(existing.grade()))) {
+                throw new InvalidPersonException("Line " + at + ": grade " + checked.grade() + " is retired");
+            }
             String contact = checked.contactOrNull();
             if (contact != null) {
                 if (!contacts.add(contact)) {
