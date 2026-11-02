@@ -1,0 +1,663 @@
+diff --git a/src/main/frontend/features/aliases/aliases.slot.tsx b/src/main/frontend/features/aliases/aliases.slot.tsx
+index bf9f7d1f..b3b2eaf1 100644
+--- a/src/main/frontend/features/aliases/aliases.slot.tsx
++++ b/src/main/frontend/features/aliases/aliases.slot.tsx
+@@ -5,15 +5,17 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { useShown } from '../columns/columns';
+ import { peoplePath, personActionKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { aliasesKey, byNameKey, useAliases } from './aliases';
+ import type { Alias } from './aliases';
+ 
+-function AliasesHeader() {
++function AliasesHeader({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   return (
+     <>
+-      <th>Aliases</th>
++      {shown('aliases') && <th>Aliases</th>}
+       <th />
+     </>
+   );
+@@ -22,6 +24,7 @@ function AliasesHeader() {
+ // A person's aliases (sorted as names are compared, comma separated) and the entry that adds one. An alias shares
+ // the names' uniqueness: the server refuses a blank one, or one equal to any name or alias on the sheet.
+ function PersonAliases({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const { data: aliases = [] } = useAliases(sheet);
+   const [typed, setTyped] = useState('');
+@@ -45,7 +48,7 @@ function PersonAliases({ sheet, user, person }: { sheet: string; user: string; p
+ 
+   return (
+     <>
+-      <td data-testid="person-aliases">{mine.join(', ')}</td>
++      {shown('aliases') && <td data-testid="person-aliases">{mine.join(', ')}</td>}
+       <td>
+         <input
+           data-testid="person-alias-input"
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 72cebf07..03220119 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -5,6 +5,7 @@ import { postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { useShown } from '../columns/columns';
+ import { gradeOn, peoplePath, usePeople } from '../people/people';
+ import type { Grade, Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+@@ -36,14 +37,15 @@ import { Fig } from '../locale/Fig';
+ type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+ const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+ 
+-function ClaimedHeader() {
++function ClaimedHeader({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   return (
+     <>
+-      <th>Claimed</th>
+-      <th>Due total</th>
+-      <th>Excess</th>
+-      <th>Overdue</th>
+-      <th>Overdue total</th>
++      {shown('claimed') && <th>Claimed</th>}
++      {shown('due-total') && <th>Due total</th>}
++      {shown('excess') && <th>Excess</th>}
++      {shown('overdue-count') && <th>Overdue</th>}
++      {shown('overdue-total') && <th>Overdue total</th>}
+       <th>Due 0-30 days</th>
+       <th>Due 31-60 days</th>
+       <th>Due 61+ days</th>
+@@ -761,6 +763,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+ // A person's claimed total, then their claims (newest first) under one form that adds a claim or,
+ // once a claim's editor is opened, edits it. A blank date takes the sheet's today on the server.
+ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const { data: all = [] } = useClaims(sheet);
+   const claims = all.filter((c) => c.person === person.id);
+@@ -848,11 +851,11 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+ 
+   return (
+     <>
+-      <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>
+-      <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>
+-      <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>
+-      <td data-testid="person-overdue-count">{lateClaims.count}</td>
+-      <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>
++      {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>}
++      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>}
++      {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
++      {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
++      {shown('overdue-total') && <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>}
+       <td data-testid="person-aged-0-30"><Fig>{twoDecimals(aged.upTo30)}</Fig></td>
+       <td data-testid="person-aged-31-60"><Fig>{twoDecimals(aged.upTo60)}</Fig></td>
+       <td data-testid="person-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></td>
+diff --git a/src/main/frontend/features/columns/columns.slot.tsx b/src/main/frontend/features/columns/columns.slot.tsx
+new file mode 100644
+index 00000000..8d51ecea
+--- /dev/null
++++ b/src/main/frontend/features/columns/columns.slot.tsx
+@@ -0,0 +1,47 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { byUser } from '../session/session';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { COLUMNS, columnsKey, columnsPath, useHiddenColumns } from './columns';
++import type { Column, UserColumns } from './columns';
++
++// The signed-in user's choice of people-list columns: a checkbox per column, each saved as it is ticked. Each user
++// has their own (all shown unless chosen); it changes nothing on the sheet, so it is not audited.
++function ColumnChooser({ sheet, user }: { sheet: string; user: string }) {
++  const queryClient = useQueryClient();
++  const { data } = useHiddenColumns(sheet, user);
++  const hidden = data?.hidden ?? [];
++
++  const save = useMutation({
++    mutationFn: (choice: { column: Column; shown: boolean }) =>
++      postJson<UserColumns>(byUser(columnsPath(sheet), user), choice),
++    onMutate: ({ column, shown }) => {
++      // Shown at once; each press names only its own column, so presses in flight never undo one another.
++      queryClient.setQueryData<UserColumns>(columnsKey(sheet, user), (old) => {
++        const rest = (old?.hidden ?? []).filter((c) => c !== column);
++        return { hidden: shown ? rest : [...rest, column] };
++      });
++    },
++    onError: () => queryClient.invalidateQueries({ queryKey: columnsKey(sheet, user) }),
++  });
++
++  return (
++    <fieldset>
++      <legend>Columns</legend>
++      {COLUMNS.map((c) => (
++        <label key={c}>
++          <input
++            type="checkbox"
++            data-testid={`column-${c}`}
++            checked={!hidden.includes(c)}
++            disabled={data === undefined}
++            onChange={(e) => save.mutate({ column: c, shown: e.target.checked })}
++          />{' '}
++          {c}{' '}
++        </label>
++      ))}
++    </fieldset>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 9.95, Component: ColumnChooser });
+diff --git a/src/main/frontend/features/columns/columns.ts b/src/main/frontend/features/columns/columns.ts
+new file mode 100644
+index 00000000..01e0877c
+--- /dev/null
++++ b/src/main/frontend/features/columns/columns.ts
+@@ -0,0 +1,47 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJsonNow } from '../../api/http';
++import { byUser } from '../session/session';
++
++/** The people-list columns a user may switch off on their own screen. A column switched off has no cell; every
++ *  total, the header and the summary are figured the same whatever is shown. */
++export const COLUMNS = [
++  'claimed',
++  'due-total',
++  'excess',
++  'statement-count',
++  'stated-total',
++  'statement-date',
++  'overdue-count',
++  'overdue-total',
++  'patrons',
++  'backing',
++  'hold',
++  'retired',
++  'terms',
++  'contact',
++  'aliases',
++] as const;
++
++export type Column = (typeof COLUMNS)[number];
++
++export type UserColumns = { hidden: Column[] };
++
++export const columnsKey = (sheet: string, user: string) => ['columns', sheet, user] as const;
++
++export const columnsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/columns`;
++
++/** The columns the signed-in user switched off on the sheet (none unless chosen); read as they are now. */
++export function useHiddenColumns(sheet: string, user: string) {
++  return useQuery({
++    queryKey: columnsKey(sheet, user),
++    queryFn: () => getJsonNow<UserColumns>(byUser(columnsPath(sheet), user)),
++    enabled: sheet !== '' && user !== '',
++  });
++}
++
++/** Whether the signed-in user's screen shows a column: every column is shown unless switched off. */
++export function useShown(sheet: string, user: string): (column: Column) => boolean {
++  const { data } = useHiddenColumns(sheet, user);
++  const hidden = data?.hidden ?? [];
++  return (column) => !hidden.includes(column);
++}
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index fd71926b..bc2ae1ee 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { useShown } from '../columns/columns';
+ import { peoplePath, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { recentSettledCents, useClaims } from '../claims/claims';
+@@ -23,11 +24,12 @@ function roundHundredths(product: bigint): bigint {
+   return product < 0n ? -quotient : quotient;
+ }
+ 
+-function PatronsHeader() {
++function PatronsHeader({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   return (
+     <>
+-      <th>Patrons</th>
+-      <th>Backing</th>
++      {shown('patrons') && <th>Patrons</th>}
++      {shown('backing') && <th>Backing</th>}
+       <th />
+     </>
+   );
+@@ -39,6 +41,7 @@ function PatronsHeader() {
+ // none). A patron is picked from the others on the sheet and named one at a time; the server refuses a patron already
+ // named.
+ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const { data: everyone = [] } = usePeople(sheet);
+   const { data: patrons = [] } = usePatrons(sheet);
+@@ -73,8 +76,8 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
+ 
+   return (
+     <>
+-      <td data-testid="person-patrons">{names.join(', ')}</td>
+-      <td data-testid="person-backing"><Fig>{twoDecimals(backing)}</Fig></td>
++      {shown('patrons') && <td data-testid="person-patrons">{names.join(', ')}</td>}
++      {shown('backing') && <td data-testid="person-backing"><Fig>{twoDecimals(backing)}</Fig></td>}
+       <td>
+         <select
+           data-testid="person-patron-select"
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index fea89ae9..81f35d85 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -5,13 +5,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { useShown } from '../columns/columns';
+ import { isHeld, peopleKey, peoplePath, personActionKey } from './people';
+ import type { Person } from './people';
+ 
+-function HoldHeader() {
++function HoldHeader({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   return (
+     <>
+-      <th>Hold</th>
++      {shown('hold') && <th>Hold</th>}
+       <th>Holds</th>
+       <th />
+     </>
+@@ -22,6 +24,7 @@ function HoldHeader() {
+ // is the sheet's today; a blank to-date never ends). Their OPEN claims dated within a hold count in no live total,
+ // unless bound by a statement; their other claims still do. A hold ends on its to-date.
+ function PersonHold({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+@@ -40,7 +43,7 @@ function PersonHold({ sheet, user, person }: { sheet: string; user: string; pers
+ 
+   return (
+     <>
+-      <td data-testid="person-hold">{isHeld(person) ? 'yes' : 'no'}</td>
++      {shown('hold') && <td data-testid="person-hold">{isHeld(person) ? 'yes' : 'no'}</td>}
+       <td>
+         {person.holds.map((h, i) => (
+           <div key={i} data-testid="person-hold-line">
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 1e062b0c..b2d87968 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -11,6 +11,7 @@ import type { Grade, Person } from './people';
+ import { SORT_KEYS, useSorted, useSortBy } from './sort';
+ import type { SortKey } from './sort';
+ import { claimsKey } from '../claims/claims';
++import { useShown } from '../columns/columns';
+ import type { Claim } from '../claims/claims';
+ 
+ // gradeFrom is the date an edit records the grade from (yyyy-mm-dd; blank for the sheet's today); a person's
+@@ -83,6 +84,7 @@ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
+ // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
+ // when someone else has saved them since, the save is refused and the form shows their current values.
+ function People({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const { data: everyone = [] } = usePeople(sheet);
+   const [showRetired, setShowRetired] = useShowRetired();
+@@ -250,8 +252,8 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+           <tr>
+             <th>Name</th>
+             <th>Grade</th>
+-            <th>Terms</th>
+-            <th>Contact</th>
++            {shown('terms') && <th>Terms</th>}
++            {shown('contact') && <th>Contact</th>}
+             <th>Tags</th>
+             <th>Clashing</th>
+             <th>From sheet</th>
+@@ -264,8 +266,8 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+               <td data-testid="person-name">{p.name}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+-              <td data-testid="person-terms">{termsText(p)}</td>
+-              <td data-testid="person-contact">{p.contact ?? ''}</td>
++              {shown('terms') && <td data-testid="person-terms">{termsText(p)}</td>}
++              {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
+               <td data-testid="person-tags">{p.tags.join(', ')}</td>
+               <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
+               <td data-testid="person-origin">{p.origin ?? ''}</td>
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index 9fdcd173..4fb4e482 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -5,13 +5,15 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { useShown } from '../columns/columns';
+ import { isRetired, peopleKey, peoplePath, personActionKey } from './people';
+ import type { Person } from './people';
+ 
+-function RetireHeader() {
++function RetireHeader({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   return (
+     <>
+-      <th>Retired</th>
++      {shown('retired') && <th>Retired</th>}
+       <th>Retired from</th>
+       <th />
+       <th>Past retirements</th>
+@@ -24,6 +26,7 @@ function RetireHeader() {
+ // retired, a claim dated after that date is refused; each past retirement is kept, one line each, and a claim dated
+ // after its from and before its to is refused too.
+ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const [from, setFrom] = useState('');
+   const retire = useMutation({
+@@ -47,7 +50,7 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
+ 
+   return (
+     <>
+-      <td data-testid="person-retired">{isRetired(person) ? 'yes' : 'no'}</td>
++      {shown('retired') && <td data-testid="person-retired">{isRetired(person) ? 'yes' : 'no'}</td>}
+       <td data-testid="person-retired-from">{person.retiredFrom ?? ''}</td>
+       <td>
+         <input
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index e96509b7..4c31df83 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { useIsLatest } from '../../query/useIsLatest';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { useShown } from '../columns/columns';
+ import { peoplePath, personActionKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { claimsKey } from '../claims/claims';
+@@ -12,12 +13,13 @@ import { statementsKey, useStatements } from './statements';
+ import type { StatementSummary } from './statements';
+ import { Fig } from '../locale/Fig';
+ 
+-function StatementHeader() {
++function StatementHeader({ sheet, user }: { sheet: string; user: string }) {
++  const shown = useShown(sheet, user);
+   return (
+     <>
+-      <th>Statements</th>
+-      <th>Stated total</th>
+-      <th>Stated on</th>
++      {shown('statement-count') && <th>Statements</th>}
++      {shown('stated-total') && <th>Stated total</th>}
++      {shown('statement-date') && <th>Stated on</th>}
+       <th />
+     </>
+   );
+@@ -29,6 +31,7 @@ function StatementHeader() {
+ // the statement as of that date (blank: now); it is cleared once the statement is taken or refused, so a refused date
+ // never carries into the next press, and changing it clears the statement's error.
+ function PersonStatements({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const shown = useShown(sheet, user);
+   const queryClient = useQueryClient();
+   const { data: all = [] } = useStatements(sheet);
+   const mine = all.find((s) => s.person === person.id);
+@@ -59,9 +62,9 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
+ 
+   return (
+     <>
+-      <td data-testid="person-statement-count">{mine?.count ?? 0}</td>
+-      <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>
+-      <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>
++      {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
++      {shown('stated-total') && <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>}
++      {shown('statement-date') && <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>}
+       <td>
+         <input
+           type="date"
+diff --git a/src/main/java/net/officefloor/hq/app/ViewerGuard.java b/src/main/java/net/officefloor/hq/app/ViewerGuard.java
+index d71a2ba7..b4963020 100644
+--- a/src/main/java/net/officefloor/hq/app/ViewerGuard.java
++++ b/src/main/java/net/officefloor/hq/app/ViewerGuard.java
+@@ -26,7 +26,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
+  * a viewer's bulk grade and bulk retire, which change no one, and a viewer's generate of planned claims, which makes none.
+  * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
+  * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
+- * A user's own locale is not a change to the sheet: anyone may choose theirs, whatever the sheet.
++ * A user's own locale and people-list columns are not a change to the sheet: anyone may choose theirs, whatever the sheet.
+  */
+ @Component
+ @Order(Ordered.HIGHEST_PRECEDENCE)
+@@ -44,6 +44,9 @@ public class ViewerGuard extends OncePerRequestFilter {
+     /** The user's own locale: how the screen shows the sheet to them, never a change to it. */
+     private static final String LOCALE = "/locale";
+ 
++    /** The user's own people-list columns: which cells their screen shows, never a change to the sheet. */
++    private static final String COLUMNS = "/columns";
++
+     private final Roles roles;
+     private final SheetArchive archive;
+ 
+@@ -58,7 +61,7 @@ public class ViewerGuard extends OncePerRequestFilter {
+         String method = request.getMethod();
+         String user = request.getParameter("user");
+         Matcher own = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
+-        if (own.matches() && LOCALE.equals(own.group(2))) {
++        if (own.matches() && (LOCALE.equals(own.group(2)) || COLUMNS.equals(own.group(2)))) {
+             chain.doFilter(request, response);
+             return;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ColumnChoice.java b/src/main/java/net/officefloor/hq/app/columns/ColumnChoice.java
+new file mode 100644
+index 00000000..07bfd839
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ColumnChoice.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.columns;
++
++/** The body of POST /api/sheets/{sheet}/columns: one column switched on (shown) or off. */
++public record ColumnChoice(String column, Boolean shown) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/Columns.java b/src/main/java/net/officefloor/hq/app/columns/Columns.java
+new file mode 100644
+index 00000000..c2fa22d4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/Columns.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++import java.util.Set;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The people-list columns each user switched off per sheet; every column is shown unless switched off. It only
++ *  changes which cells that user's screen shows; totals, exports and audit lines are the same whatever it is. */
++@Repository
++public class Columns {
++
++    public static final Set<String> ALL = Set.of("claimed", "due-total", "excess", "statement-count", "stated-total",
++            "statement-date", "overdue-count", "overdue-total", "patrons", "backing", "hold", "retired", "terms",
++            "contact", "aliases");
++
++    private final JdbcTemplate jdbc;
++
++    public Columns(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The columns the user switched off on the sheet, in name order. */
++    public List<String> hidden(String sheet, String user) {
++        return jdbc.queryForList(
++                "SELECT column_name FROM user_hidden_column WHERE sheet = ? AND user_name = ? ORDER BY column_name",
++                String.class, sheet, user);
++    }
++
++    public void set(String sheet, String user, String column, boolean shown) {
++        if (shown) {
++            jdbc.update("DELETE FROM user_hidden_column WHERE sheet = ? AND user_name = ? AND column_name = ?", sheet,
++                    user, column);
++        } else {
++            jdbc.update("MERGE INTO user_hidden_column (sheet, user_name, column_name) KEY (sheet, user_name, column_name)"
++                    + " VALUES (?, ?, ?)", sheet, user, column);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/HandleInvalidColumn.java b/src/main/java/net/officefloor/hq/app/columns/HandleInvalidColumn.java
+new file mode 100644
+index 00000000..7a0a1d82
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/HandleInvalidColumn.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidColumn {
++    public void handle(@Parameter InvalidColumnException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/InvalidColumnException.java b/src/main/java/net/officefloor/hq/app/columns/InvalidColumnException.java
+new file mode 100644
+index 00000000..d8baed1a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/InvalidColumnException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.columns;
++
++/** The column chosen is not one of the people list's choosable columns. */
++public class InvalidColumnException extends Exception {
++    public InvalidColumnException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java b/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java
+new file mode 100644
+index 00000000..38c7c613
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Responds with the people-list columns the signed-in user switched off on the sheet. */
++public class RespondWithColumns {
++    public void respond(@PathVariable("sheet") String sheet, @RequestParam("user") String user, Columns columns,
++            ObjectResponse<UserColumns> response) {
++        response.send(new UserColumns(columns.hidden(sheet, user)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/SaveColumnChoice.java b/src/main/java/net/officefloor/hq/app/columns/SaveColumnChoice.java
+new file mode 100644
+index 00000000..48a71e6d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/SaveColumnChoice.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Saves the user's choice for one column. Not audited: it changes nothing on the sheet, only what their screen shows. */
++public class SaveColumnChoice {
++    public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @Val ColumnChoice choice, Columns columns) {
++        columns.set(sheet, user, choice.column(), choice.shown());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/UserColumns.java b/src/main/java/net/officefloor/hq/app/columns/UserColumns.java
+new file mode 100644
+index 00000000..b3fa3ed6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/UserColumns.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++
++/** The people-list columns the signed-in user switched off on the sheet. */
++public record UserColumns(List<String> hidden) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ValidateColumnChoice.java b/src/main/java/net/officefloor/hq/app/columns/ValidateColumnChoice.java
+new file mode 100644
+index 00000000..21645a50
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ValidateColumnChoice.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateColumnChoice {
++    public void validate(@RequestBody ColumnChoice request, Out<ColumnChoice> body) throws InvalidColumnException {
++        String column = request == null || request.column() == null ? "" : request.column().trim();
++        if (!Columns.ALL.contains(column) || request.shown() == null) {
++            throw new InvalidColumnException("No such column");
++        }
++        body.set(new ColumnChoice(column, request.shown()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V75__user_columns.sql b/src/main/resources/db/migration/V75__user_columns.sql
+new file mode 100644
+index 00000000..16e6eb8d
+--- /dev/null
++++ b/src/main/resources/db/migration/V75__user_columns.sql
+@@ -0,0 +1,7 @@
++-- The people-list columns a user name switched off on the sheet. A column with no row is shown.
++CREATE TABLE user_hidden_column (
++    sheet       VARCHAR(200) NOT NULL,
++    user_name   VARCHAR(200) NOT NULL,
++    column_name VARCHAR(50)  NOT NULL,
++    PRIMARY KEY (sheet, user_name, column_name)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.columns.InvalidColumnException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.columns.InvalidColumnException.yml
+new file mode 100644
+index 00000000..d943c2bc
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.columns.InvalidColumnException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.columns.HandleInvalidColumn
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/columns.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/columns.GET.yml
+new file mode 100644
+index 00000000..6a135f74
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/columns.GET.yml
+@@ -0,0 +1,4 @@
++# The people-list columns the signed-in user (?user=) switched off on the sheet: none unless chosen.
++respond:
++  class: net.officefloor.hq.app.columns.RespondWithColumns
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/columns.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/columns.POST.yml
+new file mode 100644
+index 00000000..5dac28b9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/columns.POST.yml
+@@ -0,0 +1,11 @@
++# Validate first so an unknown column is a 400 and writes nothing. Not audited. Responds with the columns switched off.
++validate:
++  class: net.officefloor.hq.app.columns.ValidateColumnChoice
++  next: save
++save:
++  class: net.officefloor.hq.app.columns.SaveColumnChoice
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.columns.RespondWithColumns
++  govern: [ transaction ]
