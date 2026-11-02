@@ -5,9 +5,10 @@ import { getJson } from '../../api/http';
  *  monthly on that day of the month) to `end` (yyyy-MM-dd), and how many
  *  claims it has `generated` so far, and its `nextDates`: the first five plan dates after the sheet's
  *  today and on or before the end, leaving out the dates a pause skips; whether it is `paused` now; and its amount
- *  `changes`, oldest first, each as `<date> amount=<amount>` (`amount` is the current one). */
+ *  `changes`, oldest first, each as `<date> amount=<amount>` (`amount` is the current one); and the descendant `sheet`
+ *  its claims are made on (null: this sheet). */
 export type Plan = { id: number; person: number; amount: string; start: string; every: number; end: string; generated: number;
-  day: number | null; nextDates: string[]; paused: boolean; changes: string[] };
+  day: number | null; nextDates: string[]; paused: boolean; changes: string[]; sheet: string | null };
 
 export const plansKey = (sheet: string) => ['plans', sheet] as const;
 

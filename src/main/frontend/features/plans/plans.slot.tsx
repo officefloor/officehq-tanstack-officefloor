@@ -12,9 +12,9 @@ import type { Claim } from '../claims/claims';
 import { plansKey, plansPath, usePlans } from './plans';
 import type { Plan } from './plans';
 
-type PlanForm = { amount: string; start: string; every: string; day: string; end: string };
+type PlanForm = { amount: string; start: string; every: string; day: string; end: string; sheet: string };
 
-const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '' };
+const EMPTY: PlanForm = { amount: '', start: '', every: '', day: '', end: '', sheet: '' };
 
 function PlansHeader() {
   return <th>Plans</th>;
@@ -22,7 +22,8 @@ function PlansHeader() {
 
 // A person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form adding one: an amount (0.00 or more,
 // up to two decimals), a start date (blank: the sheet's today), every N days (a whole number, at least 1) or monthly
-// on a day of the month (1 to 31, filled instead of every), and an end date not before the start. The server refuses anything else.
+// on a day of the month (1 to 31, filled instead of every), an end date not before the start, and optionally one of the
+// sheet's descendants to make its claims on (for the person of the same name there). The server refuses anything else.
 function PersonPlans({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { data: plans = [] } = usePlans(sheet);
@@ -67,14 +68,15 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
         <input data-testid="plan-form-every" placeholder="Every N days" size={4} {...field('every')} />{' '}
         <input data-testid="plan-form-day" placeholder="Or day of month" size={4} {...field('day')} />{' '}
         <input data-testid="plan-form-end" type="date" {...field('end')} />{' '}
+        <input data-testid="plan-form-sheet" placeholder="On descendant sheet" size={10} {...field('sheet')} />{' '}
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
         </button>
         {add.isError && (
           <span data-testid="plan-error" role="alert">
             {' '}A plan needs an amount of 0.00 or more with up to two decimals, every 1 or more whole days or
-            a day of the month from 1 to 31, and an end
-            not before its start.
+            a day of the month from 1 to 31, an end
+            not before its start, and a sheet (if any) that is one of this sheet's descendants.
           </span>
         )}
       </form>
@@ -122,7 +124,8 @@ function PlanRow({ sheet, user, plan: p, submits }: { sheet: string; user: strin
 
   return (
     <li data-testid={`plan-row-${p.id}`}>
-      {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end};
+      {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
+      {p.sheet != null && ` on sheet ${p.sheet}`};
       made{' '}
       <span data-testid="plan-generated">{p.generated}</span>; next{' '}
       <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>; paused{' '}

@@ -10,9 +10,9 @@ import java.util.List;
  *  with how many claims it has {@code generated} so far, and its {@code nextDates}: the first five plan dates after
  *  the sheet's today and on or before the end, leaving out the dates it was paused for; and whether it is
  *  {@code paused} now (paused and not yet resumed); and its amount {@code changes}, oldest first, each as
- *  {@code <date> amount=<amount>}. {@code amount} is the current one: the amount of the claims it generates next. */
+ *  {@code <date> amount=<amount>}; and the descendant {@code sheet} it generates its claims on (null: its own). {@code amount} is the current one: the amount of the claims it generates next. */
 public record Plan(long id, long person, String amount, String start, int every, String end, int generated, Integer day,
-        List<String> nextDates, boolean paused, List<String> changes) {
+        List<String> nextDates, boolean paused, List<String> changes, String sheet) {
 
     /** A pause: from the day paused up to, not including, the day resumed (null: still paused). */
     record Pause(LocalDate from, LocalDate until) {

@@ -25,7 +25,7 @@ public class Plans {
             return new Plan(rs.getLong("id"), rs.getLong("person_id"),
                     rs.getBigDecimal("amount").setScale(2).toPlainString(), start.toString(), every, end.toString(),
                     rs.getInt("generated"), day, next,
-                    pauses.stream().anyMatch(p -> p.until() == null), changes(rs.getLong("id")));
+                    pauses.stream().anyMatch(p -> p.until() == null), changes(rs.getLong("id")), rs.getString("target_sheet"));
         };
     }
 
@@ -39,7 +39,7 @@ public class Plans {
     }
 
     private static final String SELECT = "SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date,"
-            + " p.month_day, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
+            + " p.month_day, p.target_sheet, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
 
     /** Every plan on the sheet, in the order added, with its next dates after the sheet's today. */
     public List<Plan> list(String sheet) {
@@ -90,9 +90,12 @@ public class Plans {
     }
 
     /** Adds a plan running every {@code every} days, or, when {@code day} is not null, monthly on that day. */
-    public void add(String sheet, long person, BigDecimal amount, LocalDate start, int every, Integer day, LocalDate end) {
-        jdbc.update("INSERT INTO plan (sheet, person_id, amount, start_date, every_days, month_day, end_date)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?)", sheet, person, amount, Date.valueOf(start), every, day, Date.valueOf(end));
+    /** {@code target}, when not null, is the descendant sheet it generates its claims on. */
+    public void add(String sheet, long person, BigDecimal amount, LocalDate start, int every, Integer day, LocalDate end,
+            String target) {
+        jdbc.update("INSERT INTO plan (sheet, person_id, amount, start_date, every_days, month_day, end_date, target_sheet)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)", sheet, person, amount, Date.valueOf(start), every, day,
+                Date.valueOf(end), target);
     }
 
     /** Whether the plan has already made a claim for this plan date. */
