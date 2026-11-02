@@ -6,6 +6,7 @@ import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class SavePerson {
@@ -20,8 +21,17 @@ public class SavePerson {
         } catch (NumberFormatException e) {
             throw new BadRequestException("no such person");
         }
+        if (repository.nameTaken(id, request.name(), pid)) {
+            throw new BadRequestException("name is already in use");
+        }
         Person saved = new Person(pid, request.name(), request.grade());
-        if (!repository.update(id, saved)) {
+        boolean updated;
+        try {
+            updated = repository.update(id, saved);
+        } catch (DuplicateKeyException e) {
+            throw new BadRequestException("name is already in use");
+        }
+        if (!updated) {
             throw new BadRequestException("no such person");
         }
         audit.record("person-edit sheet=" + id + " by=" + by + " person=" + pid

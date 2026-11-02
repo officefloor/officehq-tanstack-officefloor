@@ -6,6 +6,7 @@ import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class AddPerson {
@@ -17,7 +18,15 @@ public class AddPerson {
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
-        Person added = repository.add(id, request.name(), request.grade());
+        if (repository.nameTaken(id, request.name(), 0)) {
+            throw new BadRequestException("name is already in use");
+        }
+        Person added;
+        try {
+            added = repository.add(id, request.name(), request.grade());
+        } catch (DuplicateKeyException e) {
+            throw new BadRequestException("name is already in use");
+        }
         audit.record("person-add sheet=" + id + " by=" + by + " person=" + added.id()
                 + " grade=" + added.grade() + " name=" + added.name());
         person.set(added);

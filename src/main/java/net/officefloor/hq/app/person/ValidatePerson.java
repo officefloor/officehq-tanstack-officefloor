@@ -5,7 +5,7 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Bind the person form: a name is required (trimmed), the grade must be A, B or C. */
+/** Bind the person form: a name is required (trimmed; unique on the sheet, checked when saved), the grade must be A, B or C. */
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
