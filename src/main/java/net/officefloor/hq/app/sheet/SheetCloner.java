@@ -40,7 +40,8 @@ public class SheetCloner {
 
     /** The tables whose rows show a sheet has been used. */
     private static final List<String> USED = List.of("sheet", "setting", "user_role", "rate", "person", "claim",
-            "period", "holiday", "void_reason", "claim_template", "pool", "statement", "delegation", "sheet_archive");
+            "period", "holiday", "void_reason", "claim_template", "pool", "statement", "delegation", "sheet_archive",
+            "sheet_note");
 
     private final JdbcTemplate jdbc;
     private final Roles roles;
