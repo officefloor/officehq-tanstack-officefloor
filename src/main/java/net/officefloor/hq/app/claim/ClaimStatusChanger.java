@@ -82,8 +82,11 @@ public class ClaimStatusChanger {
         // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
         // had (never reused).
         Claim changed = claim;
-        if (requested == ClaimStatusChange.OPEN) {
+        if (requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.REVIEW) {
             changed = number(sheet, claim);
+        }
+        // Who opened it is the user who pressed open, also when it went to REVIEW first (not the reviewing steward).
+        if (requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.HOLD_FOR_REVIEW) {
             claims.setOpenedBy(sheet, claim.id(), user);
         }
         String fields = changed.statusAuditFields(person.name());
@@ -107,7 +110,13 @@ public class ClaimStatusChanger {
             fields += " reason=" + voidReason;
         }
         log.record(sheet, user, claim.id());
-        audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+        // A review is written (naming the claim, before its number) then the open it makes, with its number.
+        if (requested == ClaimStatusChange.REVIEW) {
+            audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name()));
+            audit.record(ClaimStatusChange.OPEN.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+        } else {
+            audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+        }
         // Settling or approving tells each user watching the person, before the rollup lines.
         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
             watches.notify(sheet, user, person.id(), person.name(), changed.shownNumber());
@@ -130,6 +139,10 @@ public class ClaimStatusChanger {
         if ((requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.VOID)
                 && !settings.permits(sheet, requested.name().toLowerCase(), roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("Your role may not " + requested.name().toLowerCase() + " a claim");
+        }
+        // Only a steward reviews a REVIEW claim, opening it.
+        if (requested == ClaimStatusChange.REVIEW && !Role.STEWARD.equals(roles.of(sheet, user))) {
+            throw new InvalidClaimStatusChangeException("Only a steward reviews a claim");
         }
         if (periods.closedOn(sheet, LocalDate.parse(claim.dueBy()))) {
             throw new InvalidClaimStatusChangeException("A claim due inside a closed period cannot change status");
@@ -219,12 +232,24 @@ public class ClaimStatusChanger {
                 requested = ClaimStatusChange.PEND;
             }
         }
+        // A claim whose due is above the review threshold in force on its date goes to REVIEW when opened, for a
+        // steward to review (a due of n/a is above no threshold).
+        if (requested == ClaimStatusChange.OPEN && claim.status() == ClaimStatus.DRAFT) {
+            BigDecimal threshold = settings.reviewThreshold(sheet, LocalDate.parse(claim.date()));
+            if (threshold != null) {
+                BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+                        settings.late(sheet, clock.today(sheet)));
+                if (due != null && due.compareTo(threshold) > 0) {
+                    requested = ClaimStatusChange.HOLD_FOR_REVIEW;
+                }
+            }
+        }
         if (claim.status().after(requested) == null) {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
         // A period with a cap lets each person have at most that many OPEN or PENDING claims due inside it.
-        if (requested == ClaimStatusChange.OPEN) {
+        if (requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.REVIEW) {
             Period period = periods.on(sheet, LocalDate.parse(claim.dueBy()));
             if (period != null && period.cap() != null) {
                 long held = claims.list(sheet).stream()

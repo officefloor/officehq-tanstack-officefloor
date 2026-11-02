@@ -4,6 +4,10 @@ package net.officefloor.hq.app.claim;
 public enum ClaimStatusChange {
     OPEN("CLAIM_OPENED"), SETTLE("CLAIM_SETTLED"), VOID("CLAIM_VOIDED"), APPROVE("CLAIM_APPROVED"),
     REJECT("CLAIM_REJECTED"), DELETE("CLAIM_DELETED"), RESTORE("CLAIM_RESTORED"),
+    /** A steward's review of a REVIEW claim, which then opens it. */
+    REVIEW("CLAIM_REVIEWED"),
+    /** Not named in a path: an open of a due above the review threshold becomes this. */
+    HOLD_FOR_REVIEW("CLAIM_REVIEW"),
     /** Not named in a path: a clerk's settle of a due above the clerk limit becomes this. */
     PEND("CLAIM_PENDING");
 
@@ -17,10 +21,10 @@ public enum ClaimStatusChange {
         return event;
     }
 
-    /** The change named in the path (open, settle, void, approve, reject, delete or restore), or null when there is no such change. */
+    /** The change named in the path (open, settle, void, approve, reject, delete, restore or review), or null when there is no such change. */
     public static ClaimStatusChange of(String name) {
         for (ClaimStatusChange change : values()) {
-            if (change != PEND && change.name().equalsIgnoreCase(name)) {
+            if (change != PEND && change != HOLD_FOR_REVIEW && change.name().equalsIgnoreCase(name)) {
                 return change;
             }
         }

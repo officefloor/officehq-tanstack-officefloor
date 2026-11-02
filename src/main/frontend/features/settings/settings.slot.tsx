@@ -21,7 +21,8 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // decimals); blank means no cap. A claim whose due is above the proof threshold in force on its date (two decimals;
 // blank means none) needs a proof before it is settled or approved; a grade's own proof threshold (two decimals, dated;
 // blank means none) in force on a claim's date takes the place of the sheet's for a claim whose person has that grade then. A claim whose due is above the note threshold in force on its date (two decimals;
-// blank means none) cannot be opened with an empty note. Each setting that carries a figure (all but the policy date and the period numbering
+// blank means none) cannot be opened with an empty note. A claim whose due is above the review threshold in force on its
+// date (two decimals; blank means none) goes to REVIEW when opened, for a steward to review. Each setting that carries a figure (all but the policy date and the period numbering
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
 // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
 // for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
@@ -43,6 +44,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
+  const [reviewThreshold, setReviewThreshold] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
@@ -84,6 +86,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setCap('');
       setProofThreshold('');
       setNoteThreshold('');
+      setReviewThreshold('');
       setFloor('');
       setTerms('');
       setLatePct('');
@@ -136,7 +139,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
     const values: Record<SettingKey, string> = {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
-      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
+      'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
       'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
@@ -210,6 +213,22 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </label>{' '}
         {from('note-threshold')}
         now <span data-testid="setting-note-threshold-current">{data?.noteThreshold ?? ''}</span>{' '}
+        <label>
+          Review threshold{' '}
+          <input
+            data-testid="setting-review-threshold"
+            placeholder="0.00 (blank: none)"
+            value={reviewThreshold}
+            onChange={(e) => {
+              setReviewThreshold(e.target.value);
+              touch('review-threshold');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('review-threshold')}
+          />
+        </label>{' '}
+        {from('review-threshold')}
+        now <span data-testid="setting-review-threshold-current">{data?.reviewThreshold ?? ''}</span>{' '}
         <label>
           Floor{' '}
           <input
@@ -476,7 +495,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank.
           </span>
         )}
       </form>

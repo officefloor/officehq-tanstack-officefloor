@@ -37,6 +37,9 @@ public class Settings {
     /** The due above which a claim with an empty note cannot be opened (two decimals); blank: none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
+    /** The due above which a claim opened goes to REVIEW for a steward first (two decimals); blank: none. */
+    public static final String REVIEW_THRESHOLD = "review-threshold";
+
     /** The least a claim's live due is (two decimals); blank: its default. */
     public static final String FLOOR = "floor";
 
@@ -239,6 +242,12 @@ public class Settings {
         return threshold.isEmpty() ? null : new BigDecimal(threshold);
     }
 
+    /** The sheet's review threshold in force on the date, or null when there is none. */
+    public BigDecimal reviewThreshold(String sheet, LocalDate date) {
+        String threshold = on(sheet, REVIEW_THRESHOLD, date);
+        return threshold.isEmpty() ? null : new BigDecimal(threshold);
+    }
+
     /** The sheet's floor by date: the least a claim's live due is, the one in force on the claim's date. */
     public Dated floor(String sheet) {
         return figure(sheet, FLOOR, new BigDecimal(DEFAULT_FLOOR));
@@ -372,7 +381,7 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
-        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD, ROUNDING)) {
+        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD, REVIEW_THRESHOLD, ROUNDING)) {
             dated.put(key, history(sheet, key));
         }
         Map<String, String> perms = new LinkedHashMap<>();
@@ -387,6 +396,7 @@ public class Settings {
                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
-                Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today));
+                Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
+                on(sheet, REVIEW_THRESHOLD, today));
     }
 }
