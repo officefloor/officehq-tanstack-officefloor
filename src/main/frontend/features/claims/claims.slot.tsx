@@ -1016,7 +1016,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
   const aged = agedCents(claims, person, rates, late, floor);
   const split = splitDueCents(claims, rates, person, floor, late);
-  const score = scoreOf(split.settled, lateClaims.count);
+  const score = scoreOf(split.scored, lateClaims.count);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).

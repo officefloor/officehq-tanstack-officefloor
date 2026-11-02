@@ -88,7 +88,7 @@ public class Rollup {
             for (Claim claim : mine) {
                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 due = d == null ? due : due.add(d);
-                if (d != null && claim.status() == ClaimStatus.SETTLED) {
+                if (d != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
                     settled = settled.add(d);
                 }
                 if (late.overdue(claim, person.gradeOn(claim.date()))) {
@@ -114,7 +114,7 @@ public class Rollup {
                 trimmedSum(overdueFigures).toPlainString());
     }
 
-    /** A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
+    /** A person's score: the settled figure of their SETTLED claims that correct nothing, divided by 100, minus 5 for every overdue claim of theirs that counts,
      *  rounded half to even to a whole number. */
     static long score(BigDecimal settled, int overdueCount) {
         return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))

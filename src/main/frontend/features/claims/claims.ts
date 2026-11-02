@@ -326,24 +326,27 @@ export function uncappedPersonDueCents(
 
 /** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
  *  frozen figures, corrections included) and of their OPEN and PENDING ones that count (see {@link counted}). Together
- *  they make the due-total before the cap; a claim with no due adds nothing. */
+ *  they make the due-total before the cap; a claim with no due adds nothing. Also the score's settled figure: the
+ *  settled-total less the corrections. */
 export function splitDueCents(
   claims: Claim[],
   rates: Rate[],
   person: Person,
   floor: DatedCents,
   late: Late,
-): { settled: bigint; open: bigint } {
-  const split = { settled: 0n, open: 0n };
+): { settled: bigint; open: bigint; scored: bigint } {
+  const split = { settled: 0n, open: 0n, scored: 0n };
   for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
     const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
-    if (c.status === 'SETTLED') split.settled += due;
-    else if (isOpen(c)) split.open += due;
+    if (c.status === 'SETTLED') {
+      split.settled += due;
+      if (c.corrects === null) split.scored += due;
+    } else if (isOpen(c)) split.open += due;
   }
   return split;
 }
 
-/** A person's score: their settled-total (in hundredths) divided by 100, minus 5 for every overdue claim of theirs
+/** A person's score: the settled figure of their SETTLED claims that correct nothing (in hundredths) divided by 100, minus 5 for every overdue claim of theirs
  *  that counts, rounded half to even to a whole number. */
 export function scoreOf(settledCents: bigint, overdueCount: number): bigint {
   // In ten-thousandths of the score: hundredths divided by 100 is ten-thousandths of a whole.
