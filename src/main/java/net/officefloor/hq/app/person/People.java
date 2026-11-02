@@ -100,9 +100,20 @@ public class People {
         return people;
     }
 
-    /** Everyone on the sheet, in the order they were added. */
+    /** Everyone on the sheet, in list order (by position; new people go to the end). */
     public List<Person> list(String sheet) {
-        return query(sheet, "WHERE sheet = ? ORDER BY id", sheet);
+        return query(sheet, "WHERE sheet = ? ORDER BY list_position, id", sheet);
+    }
+
+    /** The position after the sheet's last, where a new person goes. */
+    public static final String NEXT_POSITION = "(SELECT COALESCE(MAX(n.list_position), 0) + 1 FROM person n WHERE n.sheet = ?)";
+
+    /** Swaps the list positions of two people on the sheet. */
+    public void swapPositions(String sheet, long a, long b) {
+        Long pa = jdbc.queryForObject("SELECT list_position FROM person WHERE sheet = ? AND id = ?", Long.class, sheet, a);
+        Long pb = jdbc.queryForObject("SELECT list_position FROM person WHERE sheet = ? AND id = ?", Long.class, sheet, b);
+        jdbc.update("UPDATE person SET list_position = ? WHERE sheet = ? AND id = ?", pb, sheet, a);
+        jdbc.update("UPDATE person SET list_position = ? WHERE sheet = ? AND id = ?", pa, sheet, b);
     }
 
     public Person find(String sheet, long id) {
@@ -154,9 +165,11 @@ public class People {
 
     private void insert(String sheet, String name, GeneratedKeyHolder keys) {
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet, name) VALUES (?, ?)", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO person (sheet, name, list_position) VALUES (?, ?, "
+                    + NEXT_POSITION + ")", new String[] { "id" });
             ps.setString(1, sheet);
             ps.setString(2, name);
+            ps.setString(3, sheet);
             return ps;
         }, keys);
     }

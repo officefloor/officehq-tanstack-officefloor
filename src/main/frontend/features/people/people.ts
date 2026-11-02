@@ -65,7 +65,7 @@ export const personActionKey = (sheet: string, person: number) => ['person-actio
 
 export const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
-/** Everyone on the sheet, in the order they were added. */
+/** Everyone on the sheet, in list order (by position; new people go to the end). */
 export function usePeople(sheet: string) {
   const read = useReadScope(peopleKey(sheet));
   return useQuery({

@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Moves each selected claim to the one person in list order (people in the order they were added, newest claim first
+ * Moves each selected claim to the one person in list order (people by their list positions, newest claim first
  * within a person) by the rules of reassigning one claim, as the signed-in user; one that cannot be moved is left as
  * it is and counted refused.
  */

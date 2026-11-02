@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Gives each selected person, in list order (the order they were added), the grade from the from-date exactly as
+ * Gives each selected person, in list order (by position), the grade from the from-date exactly as
  * the person form would, each with its own PERSON_EDITED and rollup lines. A bad grade or date, or a selected
  * person not on the sheet, refuses the whole action before anything is written. A viewer grades no one: it reports 0
  * and writes nothing.

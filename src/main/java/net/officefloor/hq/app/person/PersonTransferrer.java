@@ -90,11 +90,13 @@ public class PersonTransferrer {
         // The person, as the other sheet's newest, with their grades, terms, contact and aliases.
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact) SELECT ?, name, terms, contact"
-                    + " FROM person WHERE sheet = ? AND id = ?", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position) SELECT ?, name,"
+                    + " terms, contact, " + People.NEXT_POSITION + " FROM person WHERE sheet = ? AND id = ?",
+                    new String[] { "id" });
             ps.setString(1, to);
-            ps.setString(2, sheet);
-            ps.setLong(3, f);
+            ps.setString(2, to);
+            ps.setString(3, sheet);
+            ps.setLong(4, f);
             return ps;
         }, keys);
         long t = keys.getKey().longValue();

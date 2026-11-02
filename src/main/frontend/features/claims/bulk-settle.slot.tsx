@@ -12,7 +12,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
 type BulkSettled = { settled: number; refused: number; claims: Claim[]; lastBatch: number | null };
 
 // Settles the selected claims together as the signed-in user: the server settles each in list order (people in the
-// order they were added, newest claim first) by the rules of settling one, counting one sent to PENDING as settled,
+// list positions, newest claim first) by the rules of settling one, counting one sent to PENDING as settled,
 // all or nothing: when any one cannot be settled none is and all count refused. Shows how many of each, and the number of the sheet's last batch (a bulk settle
 // that settled at least one claim).
 function BulkSettle({ sheet, user }: { sheet: string; user: string }) {

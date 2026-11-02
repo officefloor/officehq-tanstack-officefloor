@@ -76,7 +76,7 @@ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
   );
 }
 
-// The sheet's people: listed in the order they were added (retired ones only when shown), with one form that adds a person or,
+// The sheet's people: listed by position, new ones at the end (retired ones only when shown), with one form that adds a person or,
 // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
 // when someone else has saved them since, the save is refused and the form shows their current values.
 function People({ sheet, user }: { sheet: string; user: string }) {

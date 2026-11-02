@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
  * The sheet's figures as the screen shows them: each person's claimed, due-total and overdue-total, and the sheet's
  * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
  * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
- * per person whose figures changed (in the order they were added; a new person counts as changed), then a TOTALS
+ * per person whose figures changed (in list order, by position; a new person counts as changed), then a TOTALS
  * line when the sheet's totals changed.
  */
 @Service
@@ -38,7 +38,7 @@ public class Rollup {
     public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
     }
 
-    /** The sheet's figures at one moment: per person id, in the order they were added, and the totals. */
+    /** The sheet's figures at one moment: per person id, in list order, and the totals. */
     public record Snapshot(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
     }
 

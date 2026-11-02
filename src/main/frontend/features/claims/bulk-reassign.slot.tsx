@@ -12,7 +12,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
 type BulkReassigned = { reassigned: number; refused: number; claims: Claim[] };
 
 // Moves the selected claims together to the person picked beside the button: the server moves each in list order
-// (people in the order they were added, newest claim first) by the rules of reassigning one, and leaves the rest as
+// (people by their list positions, newest claim first) by the rules of reassigning one, and leaves the rest as
 // they are. Shows how many of each.
 function BulkReassign({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();

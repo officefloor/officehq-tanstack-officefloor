@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Settles each selected claim in list order (people in the order they were added, newest claim first within a
+ * Settles each selected claim in list order (people by their list positions, newest claim first within a
  * person) by the rules of settling one claim, as the signed-in user; one a clerk's settle sends to PENDING counts as
  * settled. It is all or nothing: when any selected claim cannot be settled none is, every one counts refused and
  * nothing is written. Otherwise the bulk settle is the sheet's next batch, each claim it settled carries the batch's
