@@ -360,6 +360,12 @@ public class Claims {
                 Date.valueOf(today)) == 1;
     }
 
+    /** Marks the claim escalated, conditional on it not yet being so: false when it already was. */
+    public boolean escalate(String sheet, long id) {
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE sheet = ? AND id = ? AND NOT escalated", sheet,
+                id) == 1;
+    }
+
     /**
      * Raises the claim's proofs count by one, conditional on the status and count read, so a concurrent change by
      * another user is refused, not overwritten: false when it was not.

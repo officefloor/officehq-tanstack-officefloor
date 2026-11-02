@@ -52,6 +52,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [graceDays, setGraceDays] = useState('');
+  const [escalateAfter, setEscalateAfter] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
@@ -94,6 +95,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setPolicyDate('');
       setPeriodNumberingFrom('');
       setGraceDays('');
+      setEscalateAfter('');
       setEntryDate('');
       setPot('');
       setParent('');
@@ -141,7 +143,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
-      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'escalate-after': escalateAfter, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -397,6 +399,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-grace-days-current"><Fig>{data?.graceDays ?? ''}</Fig></span>{' '}
+        <label>
+          Escalate after{' '}
+          <input
+            data-testid="setting-escalate-after"
+            placeholder="whole days (blank: off)"
+            value={escalateAfter}
+            onChange={(e) => {
+              setEscalateAfter(e.target.value);
+              touch('escalate-after');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('escalate-after')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-escalate-after-current"><Fig>{data?.escalateAfter ?? ''}</Fig></span>{' '}
         <label>
           Entry date{' '}
           <input

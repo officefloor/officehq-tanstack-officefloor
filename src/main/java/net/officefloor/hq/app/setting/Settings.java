@@ -79,6 +79,10 @@ public class Settings {
      *  today change closes it (a whole number); blank: off. */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The days at least which a claim's previous reminder must lie before the sheet's today for reminding it to
+     *  escalate it, once per claim ever (a whole number, not dated); blank: off. */
+    public static final String ESCALATE_AFTER = "escalate-after";
+
     /** The default date of a new claim in place of the sheet's today (yyyy-MM-dd); blank: off. */
     public static final String ENTRY_DATE = "entry-date";
 
@@ -123,7 +127,7 @@ public class Settings {
 
     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith("perm-");
     }
@@ -304,6 +308,12 @@ public class Settings {
         return days.isEmpty() ? null : Integer.valueOf(days);
     }
 
+    /** The sheet's escalation gap in days, or null when it is off. */
+    public Integer escalateAfter(String sheet) {
+        String days = get(sheet, ESCALATE_AFTER);
+        return days.isEmpty() ? null : Integer.valueOf(days);
+    }
+
     /** The default date of a new claim: the sheet's entry date while it is set, else the sheet's today. */
     public LocalDate entryDay(String sheet) {
         String entry = get(sheet, ENTRY_DATE);
@@ -397,6 +407,6 @@ public class Settings {
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
-                on(sheet, REVIEW_THRESHOLD, today));
+                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER));
     }
 }

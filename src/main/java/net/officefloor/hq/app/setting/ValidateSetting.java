@@ -62,7 +62,7 @@ public class ValidateSetting {
         String value = request == null || request.value() == null ? "" : request.value().trim();
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
-                && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
+                && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ESCALATE_AFTER.equals(key) && !Settings.ENTRY_DATE.equals(key)
                 && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
@@ -140,6 +140,13 @@ public class ValidateSetting {
         if (Settings.GRACE_DAYS.equals(key)) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank");
+            }
+            return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
+        }
+        // The escalation gap is a whole number of days; blank turns escalation off.
+        if (Settings.ESCALATE_AFTER.equals(key)) {
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The escalation gap must be a whole number of days, 0 or more, or blank");
             }
             return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
         }
