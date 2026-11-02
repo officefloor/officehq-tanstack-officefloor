@@ -17,6 +17,7 @@ import {
   generateFiscalYearPath,
   generatePeriodsPath,
   generateQuartersPath,
+  periodClaimCounts,
   periodDueCents,
   shownDueTotal,
   reopenPeriodPath,
@@ -34,8 +35,8 @@ import { Fig } from '../locale/Fig';
 // the row shows that error until its next action. It also shows whether the period is locked, with the buttons that
 // lock and unlock it; the server refuses either by anyone but a steward, locking one locked, unlocking one not, and
 // reopening one locked.
-// It also shows the fiscal year its from-date falls in.
-function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; fiscalStart: number }) {
+// It also shows the fiscal year its from-date falls in, and how many claims belong to it (see periodClaimCounts).
+function PeriodRow({ sheet, user, period, dueCents, claimsCount, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; claimsCount: number; fiscalStart: number }) {
   const queryClient = useQueryClient();
   const close = useMutation({
     mutationFn: () => postJson<Period[]>(byUser(closePeriodPath(sheet, period.name), user), {}),
@@ -76,6 +77,7 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
       <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
       <td data-testid="period-cap"><Fig>{period.cap ?? ''}</Fig></td>
       <td data-testid="period-locked">{period.locked ? 'yes' : 'no'}</td>
+      <td data-testid="period-claims-count">{claimsCount}</td>
       <td>
         <button
           type="button"
@@ -324,6 +326,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
   };
 
   const totals = periodDueCents(periods, all, people, rates, floor, late);
+  const counts = periodClaimCounts(periods, all);
 
   return (
     <section>
@@ -381,12 +384,13 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
             <th>Fiscal year</th>
             <th>Cap</th>
             <th>Locked</th>
+            <th>Claims</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {periods.map((p) => (
-            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} fiscalStart={fiscalStart} />
+            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} claimsCount={counts.get(p.name) ?? 0} fiscalStart={fiscalStart} />
           ))}
         </tbody>
       </table>

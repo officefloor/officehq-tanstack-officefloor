@@ -139,6 +139,18 @@ export function personPeriodDueCents(
   return totals;
 }
 
+/** Each period's claim count (by name): how many of the sheet's claims have their due-by in it, VOID and DELETED ones
+ *  left out. */
+export function periodClaimCounts(periods: Period[], claims: Claim[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const c of claims) {
+    if (c.status === 'VOID' || c.status === 'DELETED') continue;
+    const period = periodOf(periods, c.dueBy);
+    if (period !== undefined) counts.set(period.name, (counts.get(period.name) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Each period's carried figure per person (in hundredths, by period name then person id): the due now of the person's
  *  claims that count at the end of the period (see {@link countedOn}) whose due-by falls in an earlier period (one
  *  ending before it starts) and that were still OPEN or PENDING at its end by their status log, plus their opening
