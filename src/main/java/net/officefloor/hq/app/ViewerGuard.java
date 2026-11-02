@@ -35,7 +35,7 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final Pattern SHEET_WRITE = Pattern.compile("^/api/sheets/([^/]+)(/.*)?$");
 
     /** The writes that report per-item counts, so a viewer's press goes through with every item refused. */
-    private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle");
+    private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle", "/claims/bulk-void");
 
     /** The writes that report a count, so a viewer's press goes through and changes no one (still refused when archived). */
     private static final Set<String> VIEWER_COUNTED = Set.of("/people/bulk-grade", "/people/bulk-retire",
