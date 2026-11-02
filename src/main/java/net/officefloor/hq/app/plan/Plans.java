@@ -14,7 +14,8 @@ public class Plans {
 
     private static final RowMapper<Plan> ROW = (rs, i) -> new Plan(rs.getLong("id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(), rs.getDate("start_date").toLocalDate().toString(),
-            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"));
+            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"),
+            (Integer) rs.getObject("month_day"));
 
     private final JdbcTemplate jdbc;
 
@@ -24,14 +25,15 @@ public class Plans {
 
     /** Every plan on the sheet, in the order added. */
     public List<Plan> list(String sheet) {
-        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date,"
+        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date, p.month_day,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
                 + " FROM plan p WHERE p.sheet = ? ORDER BY p.id", ROW, sheet);
     }
 
-    public void add(String sheet, long person, BigDecimal amount, LocalDate start, int every, LocalDate end) {
-        jdbc.update("INSERT INTO plan (sheet, person_id, amount, start_date, every_days, end_date) VALUES (?, ?, ?, ?, ?, ?)",
-                sheet, person, amount, Date.valueOf(start), every, Date.valueOf(end));
+    /** Adds a plan running every {@code every} days, or, when {@code day} is not null, monthly on that day. */
+    public void add(String sheet, long person, BigDecimal amount, LocalDate start, int every, Integer day, LocalDate end) {
+        jdbc.update("INSERT INTO plan (sheet, person_id, amount, start_date, every_days, month_day, end_date)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?)", sheet, person, amount, Date.valueOf(start), every, day, Date.valueOf(end));
     }
 
     /** Whether the plan has already made a claim for this plan date. */

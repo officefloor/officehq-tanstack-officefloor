@@ -2,6 +2,9 @@ package net.officefloor.hq.app.plan;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimLog;
@@ -19,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * For every plan on the sheet, in the order added, adds a DRAFT claim of the plan's amount, dated that day with an
- * empty note, for each plan date (the start, then every N days) up to the end and the sheet's today that has none
+ * empty note, for each plan date (the start, then every N days; or a monthly plan's day in each month) up to the end and the sheet's today that has none
  * yet, as the claim form's BuildClaim adds one. A date the form would refuse (due inside a closed period, or after the
  * person's retirement) is skipped, and tried again next time.
  */
@@ -36,7 +39,7 @@ public class GeneratePlans {
             }
             LocalDate end = LocalDate.parse(plan.end());
             LocalDate last = end.isBefore(today) ? end : today;
-            for (LocalDate day = LocalDate.parse(plan.start()); !day.isAfter(last); day = day.plusDays(plan.every())) {
+            for (LocalDate day : planDates(plan, last)) {
                 if (plans.made(plan.id(), day)) {
                     continue;
                 }
@@ -59,5 +62,25 @@ public class GeneratePlans {
             }
         }
         response.send(new GeneratedPlans(made, claims.list(sheet), plans.list(sheet)));
+    }
+
+    /** The plan's dates up to {@code last}: the start then every N days, or, for a monthly plan, its day in every
+     *  month from the start's month (on the month's last day when shorter), leaving out any before the start. */
+    private static List<LocalDate> planDates(Plan plan, LocalDate last) {
+        LocalDate start = LocalDate.parse(plan.start());
+        List<LocalDate> dates = new ArrayList<>();
+        if (plan.day() == null) {
+            for (LocalDate day = start; !day.isAfter(last); day = day.plusDays(plan.every())) {
+                dates.add(day);
+            }
+            return dates;
+        }
+        for (YearMonth month = YearMonth.from(start); !month.atDay(1).isAfter(last); month = month.plusMonths(1)) {
+            LocalDate day = month.atDay(Math.min(plan.day(), month.lengthOfMonth()));
+            if (!day.isBefore(start) && !day.isAfter(last)) {
+                dates.add(day);
+            }
+        }
+        return dates;
     }
 }
