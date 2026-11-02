@@ -3,7 +3,7 @@ import { useReadScope } from '../../query/live';
 import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
-import { useSheetToday } from '../sheet/sheet';
+import { useSheet, useSheetToday } from '../sheet/sheet';
 import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
@@ -405,9 +405,12 @@ export function useSheetTotals(sheet: string): {
   };
 }
 
-/** Every tag ever carried by a claim on the sheet, or carried by a person on it, sorted. */
-export function sheetTags(claims: Claim[], people: Person[] = []): string[] {
-  return [...new Set([...claims.flatMap((c) => [...c.tagsEver, ...c.tags]), ...people.flatMap((p) => p.tags)])].sort();
+/** Every tag ever carried by a claim on the sheet (`gone`: by claims since gone from it), or carried by a person on it,
+ *  sorted. */
+export function sheetTags(claims: Claim[], people: Person[] = [], gone: string[] = []): string[] {
+  return [
+    ...new Set([...claims.flatMap((c) => [...c.tagsEver, ...c.tags]), ...people.flatMap((p) => p.tags), ...gone]),
+  ].sort();
 }
 
 /** The due-total of each tag ever used on the sheet (in hundredths): the dues of the claims that count (see
@@ -419,8 +422,9 @@ export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[]
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
+  const { data: shown } = useSheet(sheet);
   const byId = new Map(people.map((p) => [p.id, p]));
-  const totals = new Map(sheetTags(all, people).map((t) => [t, 0n]));
+  const totals = new Map(sheetTags(all, people, shown?.tagsGone).map((t) => [t, 0n]));
   for (const c of counted(all, people)) {
     const person = byId.get(c.person);
     if (person === undefined) continue;

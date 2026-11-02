@@ -10,6 +10,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.alias.Aliases;
 import net.officefloor.hq.app.claim.ClaimStatusChanger;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.claim.SheetTags;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -48,10 +49,11 @@ public class PersonTransferrer {
     private final Audit audit;
     private final Rollup rollup;
     private final Statements statements;
+    private final SheetTags sheetTags;
 
     public PersonTransferrer(JdbcTemplate jdbc, People people, Aliases aliases, Claims claims,
             ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup,
-            Statements statements) {
+            Statements statements, SheetTags sheetTags) {
         this.jdbc = jdbc;
         this.people = people;
         this.aliases = aliases;
@@ -62,6 +64,7 @@ public class PersonTransferrer {
         this.audit = audit;
         this.rollup = rollup;
         this.statements = statements;
+        this.sheetTags = sheetTags;
     }
 
     /** Transfers the person to the sheet {@code to}, writing nothing when it is refused. */
@@ -171,8 +174,9 @@ public class PersonTransferrer {
         // Statements go with them, the receiving person's last staying theirs.
         statements.move(sheet, f, to, t);
 
-        // They leave this sheet entirely.
+        // They leave this sheet entirely, the tags their claims carried still counting as used on it.
         if (!moved.isEmpty()) {
+            sheetTags.keepOf(sheet, moved.keySet());
             String in = moved.keySet().stream().map(String::valueOf).collect(Collectors.joining(","));
             jdbc.update("DELETE FROM claim_log WHERE sheet = ? AND claim IN (" + in + ")", sheet);
             jdbc.update("DELETE FROM claim_comment WHERE sheet = ? AND claim IN (" + in + ")", sheet);

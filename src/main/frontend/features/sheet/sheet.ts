@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useReadScope } from '../../query/live';
 
-/** `lastBatch`: the number of the sheet's last bulk settle batch, null when there has been none. */
-export type Sheet = { id: string; today: string; archived: boolean; lastBatch: number | null };
+/** `lastBatch`: the number of the sheet's last bulk settle batch, null when there has been none. `tagsGone`: the tags
+ *  claims carried on the sheet before leaving it (a transfer takes them away), sorted. */
+export type Sheet = { id: string; today: string; archived: boolean; lastBatch: number | null; tagsGone: string[] };
 
 export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
 

@@ -35,8 +35,9 @@ public class SheetSnapshots {
     /** Tables that are history themselves, never part of what a sheet shows. */
     private static final Set<String> SKIP = Set.of("FLYWAY_SCHEMA_HISTORY", "SHEET_STATE", "SHEET_SNAPSHOT");
 
-    /** A table kept per sheet: its stored columns and how its rows of one sheet are found. */
-    private record Kept(String table, String columns, String scope) {
+    /** A table kept per sheet: its stored columns, how its rows of one sheet are found, and its primary key (null when it
+     *  has none kept). */
+    private record Kept(String table, String columns, String scope, String key) {
     }
 
     private final JdbcTemplate jdbc;
@@ -91,8 +92,15 @@ public class SheetSnapshots {
                 String scope = "SHEET".equals(next) ? "ID = ?"
                         : cols.contains("SHEET") ? "SHEET = ?"
                         : cols.contains("PERSON_ID") ? "PERSON_ID IN (SELECT ID FROM PERSON WHERE SHEET = ?)" : null;
+                List<String> key = new ArrayList<>();
+                try (ResultSet rs = meta.getPrimaryKeys(null, "PUBLIC", next)) {
+                    while (rs.next()) {
+                        key.add(rs.getString("COLUMN_NAME"));
+                    }
+                }
                 if (scope != null) {
-                    out.add(new Kept(next, String.join(", ", cols), scope));
+                    out.add(new Kept(next, String.join(", ", cols), scope,
+                            key.isEmpty() || !cols.containsAll(key) ? null : String.join(", ", key)));
                 }
             }
             try (Statement st = con.createStatement()) {
@@ -140,6 +148,12 @@ public class SheetSnapshots {
             for (int i = kept.size() - 1; i >= 0; i--) {
                 Kept k = kept.get(i);
                 jdbc.update("DELETE FROM " + k.table() + " WHERE " + k.scope(), sheet);
+                // A row moved to another sheet since (keeping its key, as a transferred statement does) is put back
+                // here, so it is taken from where it is now.
+                if (!found.isEmpty() && k.key() != null) {
+                    jdbc.update("DELETE FROM " + k.table() + " WHERE (" + k.key() + ") IN (SELECT " + k.key() + " FROM "
+                            + k.table() + SHADOW + " WHERE SNAPSHOT_ID = ?)", found.get(0));
+                }
             }
             if (!found.isEmpty()) {
                 for (Kept k : kept) {
