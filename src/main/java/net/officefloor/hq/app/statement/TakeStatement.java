@@ -16,7 +16,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Take a person's statement: record their due-total now, and bind each claim of theirs that counts (a
- *  held person's OPEN claims do not) to the figure it has now (a settled claim keeps its frozen due); a
+ *  held person's open (OPEN or PENDING) claims do not) to the figure it has now (a settled claim keeps its frozen due); a
  *  claim that does not count is unbound (live again). A late charge is never bound: it keeps following
  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
@@ -48,7 +48,7 @@ public class TakeStatement {
                 continue;
             }
             count++;
-            fixed |= c.due() != null || (c.stated() && c.statedDue() != null);
+            fixed |= c.fixed();
             // The claim is bound to its figure; its late charge is not bound, but counts in the due-total.
             BigDecimal figure = claims.figure(id, c);
             BigDecimal now = claims.dueNow(id, c);

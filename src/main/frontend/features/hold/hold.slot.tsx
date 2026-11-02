@@ -4,7 +4,7 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
 
 /** A person's hold: whether they are on hold, and a button that puts them on hold or takes them off
- *  it again. While held, their OPEN claims count in no live total; their SETTLED claims still do. */
+ *  it again. While held, their open (OPEN or PENDING) claims count in no live total; their SETTLED claims still do. */
 function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();

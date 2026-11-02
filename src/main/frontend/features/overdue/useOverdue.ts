@@ -1,4 +1,4 @@
-import { counts, fixedDue, useClaims, type Claim } from '../claims/useClaims';
+import { counts, fixedDue, isOpen, useClaims, type Claim } from '../claims/useClaims';
 import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
 import { useSettings, type Settings } from '../settings/useSettings';
@@ -11,9 +11,9 @@ export function dueBy(date: string, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's today. */
 export function isOverdue(c: Claim, terms: number, today: string): boolean {
-  return c.status === 'OPEN' && dueBy(c.date, terms) < today;
+  return isOpen(c) && dueBy(c.date, terms) < today;
 }
 
 /** Whether a claim's live figures (its rate step and late charge) round half up: when the claim is

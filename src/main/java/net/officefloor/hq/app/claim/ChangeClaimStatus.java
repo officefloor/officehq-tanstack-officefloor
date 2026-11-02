@@ -9,11 +9,13 @@ import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 
-/** Move a claim along its status: open, settle or void, each only from the statuses it allows. */
+/** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
+ *  statuses it allows. */
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
-            @PathVariable("action") String action, ServerHttpConnection connection, ClaimRepository repository,
+            @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -23,6 +25,7 @@ public class ChangeClaimStatus {
         } catch (NumberFormatException e) {
             throw new BadRequestException("no such claim");
         }
-        claim.set(ClaimStatusChange.apply(id, cid, action, by, repository, periods, settings, audit, rollup));
+        claim.set(ClaimStatusChange.apply(id, cid, action,
+                request == null ? null : request.reason(), by, repository, periods, settings, audit, rollup));
     }
 }

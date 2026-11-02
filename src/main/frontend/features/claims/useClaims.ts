@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A claim's status: DRAFT -> OPEN -> SETTLED; a DRAFT or OPEN claim can become VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
+ *  instead, which a steward approves (SETTLED) or rejects (OPEN again); a DRAFT, OPEN or PENDING claim
+ *  can become VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status, its number on
  *  the sheet (given when it is opened: 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft and once void) and the due fixed when it was
@@ -25,16 +27,21 @@ export type Claim = {
   corrects: string | null;
 };
 
+/** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
+export function isOpen(c: Claim): boolean {
+  return c.status === 'OPEN' || c.status === 'PENDING';
+}
+
 /** A claim's fixed figure: the due frozen when it was settled, else the one its last statement bound
- *  it to; null when its due is live. */
+ *  it to (a PENDING claim is not bound); null when its due is live. */
 export function fixedDue(c: Claim): string | null {
-  return c.due ?? (c.stated ? c.statedDue : null);
+  return c.due ?? (c.stated && c.status !== 'PENDING' ? c.statedDue : null);
 }
 
 /** Whether a claim counts toward claimed and every live total, given the ids of the people on hold:
- *  only OPEN and SETTLED claims do, and a held person's OPEN claims do not. */
+ *  only open (OPEN or PENDING) and SETTLED claims do, and a held person's open claims do not. */
 export function counts(c: Claim, held: ReadonlySet<number>): boolean {
-  return c.status === 'SETTLED' || (c.status === 'OPEN' && !held.has(c.personId));
+  return c.status === 'SETTLED' || (isOpen(c) && !held.has(c.personId));
 }
 
 export function claimsKey(sheetId: string) {

@@ -13,7 +13,7 @@ import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
-/** A person's claimed: the sum of their counted (OPEN or SETTLED; only SETTLED while held) claims' amounts. */
+/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; only SETTLED while held) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
@@ -24,13 +24,16 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'void';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void';
 
-/** A claim's status changes; the server refuses one its status does not allow, and a settle by
- *  the user who opened the claim. */
+/** A claim's status changes; the server refuses one its status does not allow, a settle by the user
+ *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+ *  user who opened the claim). A reject takes the reason typed on the claim's row. */
 const ACTIONS: [ClaimAction, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
+  ['approve', 'Approve'],
+  ['reject', 'Reject'],
   ['void', 'Void'],
 ];
 
@@ -54,6 +57,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
+  const [reasons, setReasons] = useState<Record<number, string>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -76,10 +80,13 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     },
   });
 
-  // A status change (open, settle, void) of one claim; a refusal shows on that claim's row.
+  // A status change (open, settle, approve, reject, void) of one claim; a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, {}),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason }),
+    onSuccess: (_, a) => {
+      if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
+    },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
@@ -88,7 +95,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const act = (id: number, a: ClaimAction) => {
     setRefused(null);
     action.reset();
-    action.mutate({ id, action: a });
+    action.mutate({ id, action: a, reason: a === 'reject' ? reasons[id] ?? '' : '' });
   };
 
   // Only a DRAFT can be edited: editing any other claim is refused on its row and opens no editor
@@ -198,6 +205,15 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
                 <td>
+                  <input
+                    data-testid="claim-reject-reason"
+                    placeholder="reject reason"
+                    value={reasons[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setReasons((r) => ({ ...r, [c.id]: v }));
+                    }}
+                  />{' '}
                   {ACTIONS.map(([a, label]) => (
                     <button
                       key={a}

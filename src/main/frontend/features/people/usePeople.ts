@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 /** A person: `grade` is the one in force on the sheet's today, `grades` every grade they have been
  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
  *  taken, and the last one's due-total and date (null before the first); the date they are retired
- *  from (null when not retired); whether they are on hold (their OPEN claims then count in no live
+ *  from (null when not retired); whether they are on hold (their open (OPEN or PENDING) claims then count in no live
  *  total). */
 export type Person = {
   id: number;

@@ -148,21 +148,21 @@ public class ClaimRepository {
     }
 
     /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
-     *  it to, else its live due; null when it has none. */
+     *  it to (not while PENDING), else its live due; null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
-        if (claim.stated() && claim.statedDue() != null) return new BigDecimal(claim.statedDue());
+        if (claim.bound() && claim.statedDue() != null) return new BigDecimal(claim.statedDue());
         return due(sheetId, claim);
     }
 
-    /** A claim's due now: its figure, plus, while it is overdue (OPEN and its due-by — its date plus the
+    /** A claim's due now: its figure, plus, while it is overdue (OPEN or PENDING and its due-by — its date plus the
      *  sheet's terms — before the sheet's today), the sheet's late percent of that figure for every full
      *  30 days it is overdue, rounded to two decimals by the claim's rounding. A statement never binds the charge:
      *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
      *  has no late charge. Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
         BigDecimal figure = figure(sheetId, claim);
-        if (figure == null || !claim.status().equals("OPEN") || new BigDecimal(claim.amount()).signum() < 0) {
+        if (figure == null || !claim.open() || new BigDecimal(claim.amount()).signum() < 0) {
             return figure;
         }
         List<Object[]> found = jdbc.query("SELECT today, terms, late_pct FROM sheet WHERE id = ?",

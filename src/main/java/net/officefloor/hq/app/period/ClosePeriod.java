@@ -14,7 +14,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Close a period: fix its due-total as shown now (the dues now, late charges included, of the counting claims dated in it, a held
- *  person's OPEN claims left out,
+ *  person's open (OPEN or PENDING) claims left out,
  *  skipping those with none), so later changes to rates do not alter it. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,

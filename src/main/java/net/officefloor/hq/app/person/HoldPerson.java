@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Put a person on hold, or take them off it again. While held, their OPEN claims count in no live
+/** Put a person on hold, or take them off it again. While held, their open (OPEN or PENDING) claims count in no live
  *  total; their SETTLED claims still do. */
 public class HoldPerson {
     public void hold(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
