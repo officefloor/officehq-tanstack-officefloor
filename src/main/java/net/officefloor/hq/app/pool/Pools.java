@@ -51,19 +51,27 @@ public class Pools {
      * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
      * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}). Each member
      * also has, for every period whose to-date is on or before the sheet's today, their cut as it stood at the end of
-     * that period (see {@link #asAt}); blank when they were not then in the pool.
+     * that period (see {@link #asAt}); blank when they were not then in the pool. A closed or soft-closed period instead
+     * shows, whether or not it has ended, each member's cut fixed when it was closed (see {@link #currentCuts}); blank for
+     * a member not then in the pool.
      */
     public List<Pool> list(String sheet) {
         LocalDate now = clock.today(sheet);
         List<Pool> pools = list(sheet, now, settings.pot(sheet), null);
         Map<String, Map<String, String>> cuts = new HashMap<>();
-        List<Period> ended = periods.list(sheet).stream()
-                .filter((period) -> !LocalDate.parse(period.to()).isAfter(now)).toList();
-        // A member not in the pool at a period's end (or the pool not yet added) has a blank cut for it.
+        // A closed or soft-closed period shows the cuts fixed when it was, whether or not it has ended.
+        List<Period> shown = periods.list(sheet).stream()
+                .filter((period) -> period.fixed() || !LocalDate.parse(period.to()).isAfter(now)).toList();
+        Map<String, Map<String, Map<String, String>>> fixed = periods.poolCuts(sheet);
+        List<Period> ended = shown.stream().filter((period) -> !period.fixed()).toList();
+        // A member not in the pool at a period's end (or the pool not yet added), or when it was closed, has a blank cut for it.
         for (Pool pool : pools) {
             for (PoolMember m : pool.members()) {
                 Map<String, String> blank = new LinkedHashMap<>();
-                ended.forEach((period) -> blank.put(period.name(), ""));
+                shown.forEach((period) -> blank.put(period.name(), period.fixed()
+                        ? fixed.getOrDefault(period.name(), Map.of()).getOrDefault(pool.name(), Map.of())
+                                .getOrDefault(m.key(), "")
+                        : ""));
                 cuts.put(pool.name() + "\n" + m.key(), blank);
             }
         }
@@ -80,6 +88,17 @@ public class Pools {
                 .map((m) -> new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), m.from(),
                         m.to(), m.current(), m.cut(), cuts.getOrDefault(pool.name() + "\n" + m.key(), Map.of())))
                 .toList(), pool.totalShare(), pool.balanced())).toList();
+    }
+
+    /** Each pool member's cut as it stands now, by pool then member key ("" when they have none), to fix for a period at its close. */
+    public Map<String, Map<String, String>> currentCuts(String sheet) {
+        Map<String, Map<String, String>> cuts = new LinkedHashMap<>();
+        for (Pool pool : list(sheet, clock.today(sheet), settings.pot(sheet), null)) {
+            Map<String, String> members = new LinkedHashMap<>();
+            pool.members().forEach((m) -> members.put(m.key(), m.cut()));
+            cuts.put(pool.name(), members);
+        }
+        return cuts;
     }
 
     /**

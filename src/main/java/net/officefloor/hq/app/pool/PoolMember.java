@@ -9,7 +9,8 @@ import java.util.Map;
  * their cut of the pool's pot (two decimals), or "" when the pool is not balanced or has no pot, or the member is
  * outside their dates; and, by the name of every period whose to-date is on or before the sheet's today, their cut as
  * it stood at the end of that period (the pool, its members, the pot and the holds as they were then, with that day as
- * the sheet's today), "" when there was none.
+ * the sheet's today), "" when there was none; a closed or soft-closed period (ended or not) instead has their cut
+ * fixed when it was closed, "" when they were not then in the pool.
  */
 public record PoolMember(long person, String memberPool, String name, String share, boolean retired, String from,
         String to, boolean current, String cut, Map<String, String> cuts) {

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.role.Role;
@@ -116,6 +117,26 @@ public class PersonMerger {
             }
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
+
+        // Closed periods' fixed pool cuts follow the memberships, cuts added where the other was already a member.
+        for (Map<String, Object> c : jdbc.queryForList(
+                "SELECT period, pool, cut FROM period_pool_cut WHERE sheet = ? AND member = ?", sheet, String.valueOf(f))) {
+            String period = (String) c.get("PERIOD");
+            String pool = (String) c.get("POOL");
+            String cut = (String) c.get("CUT");
+            List<String> other = jdbc.queryForList("SELECT cut FROM period_pool_cut WHERE sheet = ? AND period = ?"
+                    + " AND pool = ? AND member = ?", String.class, sheet, period, pool, String.valueOf(t));
+            if (other.isEmpty()) {
+                jdbc.update("UPDATE period_pool_cut SET member = ? WHERE sheet = ? AND period = ? AND pool = ? AND member = ?",
+                        String.valueOf(t), sheet, period, pool, String.valueOf(f));
+            } else if (!cut.isEmpty()) {
+                String sum = other.get(0).isEmpty() ? cut
+                        : new BigDecimal(other.get(0)).add(new BigDecimal(cut)).toPlainString();
+                jdbc.update("UPDATE period_pool_cut SET cut = ? WHERE sheet = ? AND period = ? AND pool = ? AND member = ?",
+                        sum, sheet, period, pool, String.valueOf(t));
+            }
+        }
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND member = ?", sheet, String.valueOf(f));
 
         // Opening balances add to the other's.
         for (Map<String, Object> o : jdbc.queryForList(

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -157,7 +158,30 @@ public class Periods {
         return true;
     }
 
-    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither, is locked (or is gone). */
+    /**
+     * Fixes each pool member's cut for the period (by pool, then by member key: the person's id or pool:<name>; ""
+     * when they have none), replacing any fixed before.
+     */
+    public void fixPoolCuts(String sheet, String name, Map<String, Map<String, String>> cuts) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND period = ?", sheet, name);
+        cuts.forEach((pool, members) -> members.forEach((member, cut) -> jdbc.update(
+                "INSERT INTO period_pool_cut (sheet, period, pool, member, cut) VALUES (?, ?, ?, ?, ?)", sheet, name,
+                pool, member, cut)));
+    }
+
+    /** Each fixed pool cut on the sheet, by period name, then pool, then member key (see {@link #fixPoolCuts}). */
+    public Map<String, Map<String, Map<String, String>>> poolCuts(String sheet) {
+        Map<String, Map<String, Map<String, String>>> cuts = new HashMap<>();
+        jdbc.query("SELECT period, pool, member, cut FROM period_pool_cut WHERE sheet = ?",
+                (rs) -> {
+                    cuts.computeIfAbsent(rs.getString("period"), (k) -> new HashMap<>())
+                            .computeIfAbsent(rs.getString("pool"), (k) -> new HashMap<>())
+                            .put(rs.getString("member"), rs.getString("cut"));
+                }, sheet);
+        return cuts;
+    }
+
+    /** Reopens the closed or soft-closed period, dropping its fixed due-totals, carried figures and pool cuts; false when it was neither, is locked (or is gone). */
     public boolean reopen(String sheet, String name) {
         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet = ? AND name = ?"
                 + " AND (closed OR soft) AND NOT locked",
@@ -165,6 +189,7 @@ public class Periods {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND period = ?", sheet, name);
         return true;
     }
 

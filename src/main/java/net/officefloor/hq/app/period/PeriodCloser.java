@@ -14,6 +14,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Dated;
@@ -26,7 +27,7 @@ import org.springframework.stereotype.Service;
  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
  * within its person's hold) (a claim with no rate adds nothing); and each person's carried figure for it: the due now of
  * their claims that count at its end whose due-by falls in an earlier period (one ending before it starts) and that were
- * still OPEN or PENDING at its end by their status log, plus their opening balance for it. Shared by a close by hand and the auto close of a today change.
+ * still OPEN or PENDING at its end by their status log, plus their opening balance for it; and every pool member's cut as it stands now. Shared by a close by hand and the auto close of a today change.
  */
 @Service
 public class PeriodCloser {
@@ -38,9 +39,11 @@ public class PeriodCloser {
     private final Settings settings;
     private final SheetClock clock;
     private final Audit audit;
+    private final Pools pools;
 
     public PeriodCloser(Periods periods, Claims claims, People people, Rates rates, Settings settings, SheetClock clock,
-            Audit audit) {
+            Audit audit, Pools pools) {
+        this.pools = pools;
         this.periods = periods;
         this.claims = claims;
         this.people = people;
@@ -107,6 +110,7 @@ public class PeriodCloser {
         if (!periods.close(sheet, found.name(), total, perPerson, carried, soft)) {
             return false;
         }
+        periods.fixPoolCuts(sheet, found.name(), pools.currentCuts(sheet));
         audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheet + " by=" + user + " period=" + found.name() + " total="
                 + total.toPlainString() + (auto ? " auto=yes" : ""));
         return true;
