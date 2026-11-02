@@ -311,6 +311,16 @@ public class Settings {
         return List.copyOf(found);
     }
 
+    /** Every sheet of the sheet's whole tree: its topmost ancestor then all that ancestor's descendants, each once. */
+    public List<String> wholeTree(String sheet) {
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheet));
+        String root = sheet;
+        for (String up = parent(root); !up.isEmpty() && seen.add(up); up = parent(up)) {
+            root = up;
+        }
+        return family(root);
+    }
+
     /** The other sheets of the sheet's tree: its ancestors, then its descendants (theirs too), each once. */
     public List<String> tree(String sheet) {
         java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();

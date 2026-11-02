@@ -77,8 +77,9 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
-        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
-        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
+        // Opening gives the next number its sheet's tree shares, or, while the sheet numbers by period from on or
+        // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
+        // had (never reused).
         Claim changed = claim;
         if (requested == ClaimStatusChange.OPEN) {
             changed = number(sheet, claim);
@@ -225,7 +226,7 @@ public class ClaimStatusChanger {
     }
 
     /**
-     * Gives an opening claim the sheet's next number, or, while the sheet numbers by period from on or before its
+     * Gives an opening claim the next number of the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
      * today, the next number in the claim's period (X for none); returns the claim so numbered.
      */
     public Claim number(String sheet, Claim claim) {
@@ -237,7 +238,7 @@ public class ClaimStatusChanger {
             claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
             return numbered;
         }
-        Claim numbered = claim.withNumber(claims.nextNumber(sheet));
+        Claim numbered = claim.withNumber(claims.nextNumber(sheet, settings.wholeTree(sheet)));
         claims.setNumber(sheet, claim.id(), numbered.number());
         return numbered;
     }

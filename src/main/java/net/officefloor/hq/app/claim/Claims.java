@@ -384,21 +384,24 @@ public class Claims {
     }
 
     /**
-     * Takes the sheet's next claim number: 1 first, then 2, and so on. The counter row stays locked until the
-     * transaction ends, so two claims opened at once get different numbers.
+     * Takes the next number of the sheet-wide sequence the sheet shares with the other sheets of its tree: the one
+     * after the last number given on any of them (1 when none has given one), recorded as the sheet's last number.
+     * The counter rows of the whole tree stay locked until the transaction ends, so two claims opened at once
+     * anywhere in the tree get different numbers.
      */
-    public int nextNumber(String sheet) {
-        while (true) {
-            if (jdbc.update("UPDATE claim_number SET last_number = last_number + 1 WHERE sheet = ?", sheet) == 1) {
-                return jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet = ?", Integer.class,
-                        sheet);
-            }
-            try {
-                jdbc.update("INSERT INTO claim_number (sheet, last_number) VALUES (?, 1)", sheet);
-                return 1;
-            } catch (DuplicateKeyException raced) {
-                // Another user took the sheet's first number at the same moment: take the one after it.
-            }
+    public int nextNumber(String sheet, List<String> tree) {
+        try {
+            jdbc.update("INSERT INTO claim_number (sheet, last_number) VALUES (?, 0)", sheet);
+        } catch (DuplicateKeyException exists) {
+            // The sheet has given a number already: its counter is in place.
         }
+        java.util.TreeSet<String> sheets = new java.util.TreeSet<>(tree);
+        sheets.add(sheet);
+        String in = String.join(", ", java.util.Collections.nCopies(sheets.size(), "?"));
+        List<Integer> lasts = jdbc.queryForList("SELECT last_number FROM claim_number WHERE sheet IN (" + in
+                + ") ORDER BY sheet FOR UPDATE", Integer.class, sheets.toArray());
+        int next = lasts.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        jdbc.update("UPDATE claim_number SET last_number = ? WHERE sheet = ?", next, sheet);
+        return next;
     }
 }
