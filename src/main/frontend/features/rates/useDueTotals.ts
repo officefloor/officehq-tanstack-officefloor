@@ -36,7 +36,7 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
   const cap = settingOn(settings, 'cap', today.data?.today);
   const totals = new Map<number, { total: string; excess: string }>();
   for (const p of people.data ?? []) {
-    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, holds));
+    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, holds, today.data?.today));
     const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
     const dues = counting.map((c) =>
       claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), settings, today.data?.today));

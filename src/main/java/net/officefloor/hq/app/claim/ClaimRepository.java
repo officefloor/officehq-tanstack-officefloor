@@ -19,7 +19,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until,"
+            + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
@@ -27,7 +28,9 @@ public class ClaimRepository {
             rs.getString("claim_no"), dueOf(rs.getBigDecimal("settled_due")),
             rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")),
             rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString(),
-            rs.getBoolean("stated_na"));
+            rs.getBoolean("stated_na"),
+            rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
+            rs.getBoolean("deferred"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -166,10 +169,10 @@ public class ClaimRepository {
      *  created — before the sheet's today), the sheet's late percent in force on the claim's date of that figure for every full
      *  30 days it is overdue, rounded to two decimals by the claim's rounding. A statement never binds the charge:
      *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
-     *  has no late charge. Null when it has no figure. */
+     *  has no late charge, nor does a deferred claim (it is not overdue). Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
         BigDecimal figure = figure(sheetId, claim);
-        if (figure == null || !claim.open() || new BigDecimal(claim.amount()).signum() < 0) {
+        if (figure == null || !claim.open() || claim.deferred() || new BigDecimal(claim.amount()).signum() < 0) {
             return figure;
         }
         List<Date> found = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", Date.class, sheetId);
@@ -223,6 +226,12 @@ public class ClaimRepository {
                 + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0;
     }
 
+    /** Defer an OPEN claim until a date; false when the sheet has no such OPEN claim. */
+    public boolean defer(String sheetId, long claimId, LocalDate until) {
+        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
+                Date.valueOf(until), claimId, sheetId) > 0;
+    }
+
     /** Fix a settled claim's due. */
     public void settleDue(String sheetId, long claimId, BigDecimal due) {
         jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId);
@@ -267,7 +276,7 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false);
+                dueBy.toString(), false, null, false);
     }
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no

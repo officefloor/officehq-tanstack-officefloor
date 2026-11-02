@@ -20,7 +20,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
   const holds = holdsById(people.data);
   const totals = new Map<number, Map<string, string>>();
   for (const person of people.data ?? []) {
-    const own = (claims.data ?? []).filter((c) => c.personId === person.id && counts(c, holds));
+    const own = (claims.data ?? []).filter((c) => c.personId === person.id && counts(c, holds, today));
     const byPeriod = new Map<string, string>();
     for (const p of periods.data ?? []) {
       byPeriod.set(

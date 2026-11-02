@@ -11,10 +11,12 @@ import net.officefloor.hq.app.person.Hold;
  *  amount), the number of the settled claim it corrects (null otherwise), and its due-by (yyyy-MM-dd: fixed when it was
  *  created, its date then plus the terms of its person's grade on that date, else the sheet's terms), and
  *  whether its last statement bound it to n/a (the rate that would apply to it had ended: its due then
- *  stays n/a, not live). */
+ *  stays n/a, not live), and the date it is deferred until (null when never deferred) and whether it is
+ *  deferred now (OPEN and that date after the sheet's today: it then counts in no total, is not overdue,
+ *  cannot be settled and a statement leaves it unbound). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
-        String dueBy, boolean statedNa) {
+        String dueBy, boolean statedNa, String deferredUntil, boolean deferred) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {
@@ -28,9 +30,9 @@ public record Claim(long id, long personId, String amount, String date, String n
 
     /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) given its
      *  person's holds: an open claim dated within a hold does not, unless a statement binds it; SETTLED
-     *  claims always do. */
+     *  claims always do. A deferred claim does not. */
     public boolean counts(List<Hold> holds) {
-        return status.equals("SETTLED") || (open() && (bound() || !Hold.anyCovers(holds, date)));
+        return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
     }
 
     /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it

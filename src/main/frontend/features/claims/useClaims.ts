@@ -16,7 +16,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  its due-by (yyyy-mm-dd), fixed when it was created from the terms of its person's grade then (else the
  *  sheet's terms), and its status log: a line per status it has had, oldest first, as
  *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
- *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a). */
+ *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
+ *  the date it is deferred until (null when it was never deferred: see `isDeferred`). */
 export type Claim = {
   id: number;
   personId: number;
@@ -32,6 +33,7 @@ export type Claim = {
   corrects: string | null;
   dueBy: string;
   statedNa: boolean;
+  deferredUntil: string | null;
   log: string[];
 };
 
@@ -48,11 +50,18 @@ export function fixedDue(c: Claim): string | null {
   return c.statedNa ? 'n/a' : c.statedDue;
 }
 
-/** Whether a claim counts toward claimed and every live total, given the people's holds by person id:
- *  only open (OPEN or PENDING) and SETTLED claims do, and an open claim dated within one of its person's
- *  holds does not, unless a statement binds it. */
-export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>): boolean {
-  return c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
+/** Whether a claim is deferred now: it is OPEN and the date it is deferred until is after the sheet's
+ *  today. Until today reaches that date it counts in no total, is not overdue and cannot be settled. */
+export function isDeferred(c: Claim, today: string | undefined): boolean {
+  return c.status === 'OPEN' && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+}
+
+/** Whether a claim counts toward claimed and every live total, given the people's holds by person id
+ *  and the sheet's today: only open (OPEN or PENDING) and SETTLED claims do, and an open claim dated within
+ *  one of its person's holds does not, unless a statement binds it, nor does a deferred one. */
+export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
+  return c.status === 'SETTLED'
+    || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
 }
 
 /** Whether its person's last statement binds a claim now: it was stated and is not PENDING. */
@@ -77,9 +86,9 @@ export function useClaims(sheetId: string) {
   });
 }
 
-/** The sum of the amounts of those of these claims that count (given the people's holds by person id),
- *  with two decimals (added up in cents, so no rounding drift). */
-export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>): string {
-  const cents = claims.filter((c) => counts(c, holds)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+/** The sum of the amounts of those of these claims that count (given the people's holds by person id and
+ *  the sheet's today), with two decimals (added up in cents, so no rounding drift). */
+export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>, today: string | undefined): string {
+  const cents = claims.filter((c) => counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

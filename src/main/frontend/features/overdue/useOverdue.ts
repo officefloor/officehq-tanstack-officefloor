@@ -1,12 +1,12 @@
-import { counts, fixedDue, isOpen, useClaims, type Claim } from '../claims/useClaims';
+import { counts, fixedDue, isDeferred, isOpen, useClaims, type Claim } from '../claims/useClaims';
 import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
 import { settingOn, useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 
-/** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and its due-by is before the sheet's today. */
 export function isOverdue(c: Claim, today: string): boolean {
-  return isOpen(c) && c.dueBy < today;
+  return isOpen(c) && !isDeferred(c, today) && c.dueBy < today;
 }
 
 /** Whether a claim's live figures (its rate step and late charge) round half up: when the claim is
@@ -62,7 +62,7 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
   if (settings === undefined || today === undefined) return figures;
   for (const p of people.data ?? []) {
     const overdue = (claims.data ?? []).filter(
-      (c) => c.personId === p.id && counts(c, holds) && isOverdue(c, today),
+      (c) => c.personId === p.id && counts(c, holds, today) && isOverdue(c, today),
     );
     figures.set(p.id, {
       count: overdue.length,

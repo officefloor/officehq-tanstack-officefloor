@@ -10,26 +10,27 @@ import { rateFor, useRates } from '../rates/useRates';
 import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
+import { claimed, claimsKey, isDeferred, useClaims, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
-/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it) claims' amounts. */
+/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
+  const today = useSheetToday(sheetId).data?.today;
   return (
     <td data-testid="person-claimed">
-      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data))}
+      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data), today)}
     </td>
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
  *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row. */
-const ACTIONS: [ClaimAction, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer'>, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
@@ -58,6 +59,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [corrects, setCorrects] = useState('');
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
+  const [deferDates, setDeferDates] = useState<Record<number, string>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -80,12 +82,14 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     },
   });
 
-  // A status change (open, settle, approve, reject, void) of one claim; a refusal shows on that claim's row.
+  // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
+  // date typed on its row; a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until }),
     onSuccess: (_, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
+      if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -114,7 +118,12 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     setRefused(null);
     action.reset();
     reassign.reset();
-    action.mutate({ id, action: a, reason: a === 'reject' ? reasons[id] ?? '' : '' });
+    action.mutate({
+      id,
+      action: a,
+      reason: a === 'reject' ? reasons[id] ?? '' : '',
+      until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
+    });
   };
 
   // Only a DRAFT can be edited: editing any other claim is refused on its row and opens no editor
@@ -224,6 +233,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+                <td data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</td>
+                <td data-testid="claim-deferred-until">{isDeferred(c, today) ? c.deferredUntil : ''}</td>
                 <td data-testid="claim-log">
                   {c.log.map((line, i) => (
                     <div key={i} data-testid="claim-log-line">
@@ -252,6 +263,25 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       {label}
                     </button>
                   ))}
+                  <input
+                    type="text"
+                    data-testid="claim-defer-date"
+                    placeholder="defer until yyyy-mm-dd"
+                    value={deferDates[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDeferDates((d) => ({ ...d, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-defer"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'defer')}
+                  >
+                    Defer
+                  </button>{' '}
                   <select
                     data-testid="claim-reassign-to"
                     value={targets[c.id] ?? ''}
@@ -393,9 +423,10 @@ function BulkSettle({ sheetId }: { sheetId: string }) {
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
+  const today = useSheetToday(sheetId).data?.today;
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data))}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data), today)}</strong>
     </p>
   );
 }

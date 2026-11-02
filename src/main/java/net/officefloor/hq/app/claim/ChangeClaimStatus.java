@@ -6,17 +6,18 @@ import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
- *  statuses it allows. */
+ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}). */
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
-            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
+            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long cid;
@@ -24,6 +25,11 @@ public class ChangeClaimStatus {
             cid = Long.parseLong(claimId == null ? "" : claimId.trim());
         } catch (NumberFormatException e) {
             throw new BadRequestException("no such claim");
+        }
+        if ("defer".equals(action == null ? "" : action.trim())) {
+            claim.set(ClaimDeferral.apply(id, cid, request == null ? null : request.until(), by, repository, sheets,
+                    periods, audit, rollup));
+            return;
         }
         claim.set(ClaimStatusChange.apply(id, cid, action,
                 request == null ? null : request.reason(), by, repository, periods, settings, audit, rollup));

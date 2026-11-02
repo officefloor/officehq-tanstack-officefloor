@@ -49,6 +49,10 @@ final class ClaimStatusChange {
         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
             throw new BadRequestException("the user who opened a claim cannot settle it");
         }
+        // A deferred claim cannot be settled until the sheet's today reaches the date it is deferred until.
+        if (to.equals("SETTLED") && found.deferred()) {
+            throw new BadRequestException("a claim deferred until " + found.deferredUntil() + " cannot be settled");
+        }
         // Only a steward approves or rejects a PENDING claim, and never one they opened themselves.
         if (found.status().equals("PENDING") && !to.equals("VOID")) {
             if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
@@ -100,7 +104,7 @@ final class ClaimStatusChange {
         repository.log(id, cid, by);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
-                found.statedNa());
+                found.statedNa(), found.deferredUntil(), found.deferred());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
         rollup.record(id, by, before);
@@ -123,7 +127,7 @@ final class ClaimStatusChange {
         }
         PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
         Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
-                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false);
+                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false);
         BigDecimal now = repository.dueNow(id, live);
         Rollup.Snapshot before = rollup.take(id);
         repository.settleDue(id, cid, now);
@@ -132,7 +136,7 @@ final class ClaimStatusChange {
         String due = ClaimRepository.dueOf(now);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
                 found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
-                found.corrects(), found.dueBy(), found.statedNa());
+                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred());
         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
                 + " old=" + old + " new=" + (due == null ? "n/a" : due));
