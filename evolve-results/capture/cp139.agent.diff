@@ -1,0 +1,40 @@
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+index f225fa6f..498e5983 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -16,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /**
+  * Responds with the sheet's audit lines exactly as the file holds them, newest first. A name keeps only the lines
+  * about that person: those carrying name=<the name> or person=<the name>, compared as names are (case and surrounding
+- * spaces ignored). When the name is that of a person on the sheet who was transferred to it, the lines about them on
++ * spaces ignored). A name also lists the lines about the person on each of the sheet's descendants (the sheets below it
++ * by parent), after the sheet's own: each sheet's lines newest first, the sheets by id. When the name is that of a person on the sheet who was transferred to it, the lines about them on
+  * the sheet they came from follow, newest first, each as that sheet's file holds it. The viewer reads the file; it
+  * records nothing.
+  */
+@@ -26,10 +28,16 @@ public class RespondWithAuditLines {
+     private static final Pattern PERSON_FIELD = Pattern.compile("(?:^| )(?:name|person)=(.*?)(?= [^ =]+=|$)");
+ 
+     public void respond(@PathVariable("sheet") String sheet, @RequestParam(value = "name", required = false) String name,
+-            Audit audit, People people, ObjectResponse<List<String>> response) {
++            Audit audit, People people, Settings settings, ObjectResponse<List<String>> response) {
+         String key = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+         List<String> lines = about(audit, sheet, key);
+         if (!key.isEmpty()) {
++            List<String> descendants = new ArrayList<>(settings.family(sheet));
++            descendants.remove(sheet);
++            Collections.sort(descendants);
++            for (String descendant : descendants) {
++                lines.addAll(about(audit, descendant, key));
++            }
+             Person person = people.findByName(sheet, key);
+             if (person != null && person.origin() != null && person.name().toLowerCase(Locale.ROOT).equals(key)) {
+                 lines.addAll(about(audit, person.origin(), key));
