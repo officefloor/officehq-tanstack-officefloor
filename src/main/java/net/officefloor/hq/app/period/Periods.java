@@ -20,9 +20,9 @@ public class Periods {
             rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
             Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of(),
-            rs.getBoolean("locked"));
+            rs.getBoolean("locked"), rs.getLong("added_seq"));
 
-    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap, locked FROM period";
+    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap, locked, added_seq FROM period";
 
     private final JdbcTemplate jdbc;
 
@@ -44,7 +44,8 @@ public class Periods {
                     openings.put(rs.getLong("person"), rs.getBigDecimal("amount").toPlainString());
                 }, sheet, period.name());
         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(),
-                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings, period.locked());
+                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings, period.locked(),
+                period.added());
     }
 
     /** Each person's opening balance for the period (by person id); none for a person with no opening. */
@@ -95,7 +96,7 @@ public class Periods {
                     carried.put(rs.getLong("person"), rs.getBigDecimal("carried").toPlainString());
                 }, sheet, period.name());
         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
-                period.soft(), period.cap(), carried, period.openings(), period.locked());
+                period.soft(), period.cap(), carried, period.openings(), period.locked(), period.added());
     }
 
     /** The sheet's period of the name, or null when there is none. */

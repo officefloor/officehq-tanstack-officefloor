@@ -88,7 +88,7 @@ public class SheetCloner {
         copy("CLAIM_TEMPLATE", Map.of("SHEET", to), "sheet = ?", sheet);
 
         // The periods, all open.
-        copy("PERIOD", Map.of("SHEET", to, "CLOSED", FALSE, "SOFT", FALSE, "CLOSED_TOTAL", NULL), "sheet = ?", sheet);
+        copy("PERIOD", Map.of("SHEET", to, "CLOSED", FALSE, "SOFT", FALSE, "CLOSED_TOTAL", NULL), "sheet = ? ORDER BY added_seq", sheet);
 
         // The people, listed as they are, with their grades, holds, retirements and aliases.
         Map<Long, Long> people = new LinkedHashMap<>();

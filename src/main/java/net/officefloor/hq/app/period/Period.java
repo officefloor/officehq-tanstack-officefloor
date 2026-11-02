@@ -10,11 +10,11 @@ import java.util.Map;
  * or PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
  * (soft-)closed (by person id, two decimals; empty while open); and each person's opening balance for it, added to their
  * carried figure (by person id, two decimals; none for a person with no opening); and whether a steward has locked it, so
- * it cannot be reopened.
+ * it cannot be reopened; and its place in the order the sheet's periods were added (lower first).
  */
 public record Period(String name, String from, String to, boolean closed, String closedTotal,
         Map<Long, String> closedPeople, boolean soft, Integer cap, Map<Long, String> closedCarried,
-        Map<Long, String> openings, boolean locked) {
+        Map<Long, String> openings, boolean locked, long added) {
 
     /** Whether its figures are fixed: closed or soft-closed. */
     public boolean fixed() {

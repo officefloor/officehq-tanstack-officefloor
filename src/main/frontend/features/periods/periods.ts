@@ -15,7 +15,7 @@ import type { DatedCents } from '../settings/settings';
  *  PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
  *  (soft-)closed (by person id; empty while open); and each person's opening balance for it, added to their carried
  *  figure (by person id; none for a person with no opening); and whether a steward has locked it, so it cannot be
- *  reopened. */
+ *  reopened; and its place in the order the sheet's periods were added (lower first). */
 export type Period = {
   name: string;
   from: string;
@@ -28,6 +28,7 @@ export type Period = {
   closedCarried: Record<string, string>;
   openings: Record<string, string>;
   locked: boolean;
+  added: number;
 };
 
 export const periodsKey = (sheet: string) => ['periods', sheet] as const;
