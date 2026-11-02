@@ -51,14 +51,23 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String 
                 + " date=" + date;
     }
 
-    /** Refuses a correction unless the claim it names is a SETTLED claim of the same person. */
-    public void checkCorrects(String sheet, long person, Claims claims) throws InvalidClaimException {
+    /**
+     * Refuses a correction unless the claim it names is a SETTLED claim of the same person, and one larger than what
+     * remains of that claim: its amount less the corrections already made against it (VOID and DELETED ones, and the
+     * one excluded — the claim being edited, null for none — left out).
+     */
+    public void checkCorrects(String sheet, long person, Long excluded, Claims claims) throws InvalidClaimException {
         if (corrects == null) {
             return;
         }
         Claim corrected = claims.findByNumber(sheet, corrects);
         if (corrected == null || corrected.person() != person || corrected.status() != ClaimStatus.SETTLED) {
             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person");
+        }
+        BigDecimal remains = new BigDecimal(corrected.amount()).subtract(claims.corrected(sheet, corrects, excluded));
+        if (amount.negate().compareTo(remains) > 0) {
+            throw new InvalidClaimException("A correction may not exceed what remains of the claim it corrects ("
+                    + remains.setScale(2, RoundingMode.HALF_UP).toPlainString() + ")");
         }
     }
 }

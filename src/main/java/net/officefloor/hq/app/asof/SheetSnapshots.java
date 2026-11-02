@@ -138,9 +138,9 @@ public class SheetSnapshots {
      * Puts the sheet, inside the caller's transaction, as it stood at the end of the date: the rows kept when its today
      * first moved from on or before the date to after it; what it holds now when its today has never moved past the
      * date; nothing when its today was never on or before it. The date then stands in for its today. The caller must
-     * roll back.
+     * roll back. Returns whether the sheet had anything to show then (false when it was put as nothing).
      */
-    public void show(String sheet, LocalDate date) {
+    public boolean show(String sheet, LocalDate date) {
         List<Long> found = jdbc.queryForList("SELECT id FROM sheet_snapshot WHERE sheet = ? AND from_today <= ?"
                 + " AND to_today > ? ORDER BY id LIMIT 1", Long.class, sheet, Date.valueOf(date), Date.valueOf(date));
         boolean now = found.isEmpty() && !clock.today(sheet).isAfter(date);
@@ -163,5 +163,6 @@ public class SheetSnapshots {
             }
         }
         clock.setToday(sheet, date);
+        return now || !found.isEmpty();
     }
 }

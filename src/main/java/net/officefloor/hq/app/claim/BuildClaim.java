@@ -24,7 +24,7 @@ public class BuildClaim {
         if (person.retiredBefore(input.date())) {
             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
         }
-        input.checkCorrects(sheet, person.id(), claims);
+        input.checkCorrects(sheet, person.id(), null, claims);
         input.checkRef(sheet, null, claims);
         Rollup.Snapshot before = rollup.take(sheet);
         long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, input.date(), settings));

@@ -210,6 +210,16 @@ public class Claims {
         }
     }
 
+    /**
+     * How much the corrections made against the claim showing this number already take off it: the sum of their
+     * amounts as positive values, leaving out VOID and DELETED ones and the one excluded (null for none).
+     */
+    public BigDecimal corrected(String sheet, String number, Long excluded) {
+        BigDecimal sum = jdbc.queryForObject("SELECT COALESCE(SUM(-amount), 0) FROM claim WHERE sheet = ? AND corrects = ?"
+                + " AND status NOT IN ('VOID', 'DELETED') AND id <> ?", BigDecimal.class, sheet, number, excluded == null ? -1L : excluded);
+        return sum == null ? BigDecimal.ZERO : sum;
+    }
+
     /** Whether a claim on the sheet other than the one excluded (null for none) has the reference, ignoring case. */
     public boolean refUsed(String sheet, String ref, Long excluded) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet = ? AND LOWER(ref) = LOWER(?) AND id <> ?",

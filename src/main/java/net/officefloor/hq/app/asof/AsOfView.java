@@ -29,7 +29,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * always rolled back, so every figure the endpoints make is made from that state, with the date for the sheet's
  * today, and nothing is ever written. The sheet's parents whose rates it takes (see Rates) are put as they stood at
  * the end of that date too, bar a parent whose today was never set: it has no dated history, so it is taken as it
- * stands now. Every change sent while the as-of date is set is refused (see ViewerGuard).
+ * stands now — unless the sheet itself had nothing then (the date is before its history), when no parent is taken.
+ * Every change sent while the as-of date is set is refused (see ViewerGuard).
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
@@ -72,11 +73,11 @@ public class AsOfView extends OncePerRequestFilter {
         try {
             transaction.executeWithoutResult((status) -> {
                 status.setRollbackOnly();
-                snapshots.show(sheet, date);
+                boolean had = snapshots.show(sheet, date);
                 Set<String> shown = new HashSet<>(Set.of(sheet));
                 String parent = settings.parent(sheet);
                 for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
-                    if (clock.isSet(parent)) {
+                    if (clock.isSet(parent) || !had) {
                         snapshots.show(parent, date);
                     }
                     parent = settings.parent(parent);

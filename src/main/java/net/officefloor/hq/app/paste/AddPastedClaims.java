@@ -142,6 +142,11 @@ public class AddPastedClaims {
         }
         ClaimInput input = new ClaimInput(amount, line.input().date(), line.input().note(), draft.corrects(),
                 line.input().ref() != null ? line.input().ref() : draft.ref(), draft.tags());
+        try {
+            input.checkCorrects(sheet, draft.person(), draft.id(), claims);
+        } catch (InvalidClaimException e) {
+            throw new InvalidClaimException("Line " + line.at() + ": " + e.getMessage());
+        }
         Rollup.Snapshot before = rollup.take(sheet);
         if (!claims.update(sheet, draft.id(), input, draft.tagsEver(), user)) {
             throw new InvalidClaimException("Line " + line.at() + ": the claim is no longer a DRAFT, or another user is editing it");
