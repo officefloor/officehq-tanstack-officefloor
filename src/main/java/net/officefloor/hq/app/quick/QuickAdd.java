@@ -18,7 +18,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Add a draft claim, dated the sheet's today with an empty note, for the person with this name (ignoring
+/** Add a draft claim, dated the sheet's entry date (its today when none is set) with an empty note, for the person with this name (ignoring
  *  case), adding them first with grade A when the sheet has no one by that name. One change: every check
  *  runs before anything is written, so a refusal leaves no new person and no audit record behind. */
 public class QuickAdd {
@@ -30,7 +30,7 @@ public class QuickAdd {
         if (!people.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
-        LocalDate date = sheets.today(id);
+        LocalDate date = sheets.entryDate(id);
         PeriodGuard.open(periods, id, date);
         Person person = people.findByName(id, input.name());
         if (person != null) {

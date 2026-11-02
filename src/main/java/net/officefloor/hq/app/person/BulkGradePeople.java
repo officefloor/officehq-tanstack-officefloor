@@ -8,6 +8,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -18,13 +19,14 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  the person form would save them with their own name and terms: the grade is recorded from the from-date
  *  (blank: the sheet's today), except that leaving the grade in force on the sheet's today as it is, with
  *  the from-date blank, records no grade; each writes PERSON_EDITED and its rollup lines. An id that is no
- *  person on the sheet is skipped. */
+ *  person on the sheet is skipped. A viewer's selection is all refused: no one is graded. An archived sheet
+ *  refuses it. */
 public class BulkGradePeople {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void grade(@PathVariable("sheetId") String sheetId, @RequestBody BulkGradeRequest request,
             ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, Audit audit,
-            Rollup rollup, Out<BulkGradeResult> result) throws BadRequestException {
+            Rollup rollup, SettingsRepository settings, Out<BulkGradeResult> result) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         Set<Long> selected = new LinkedHashSet<>();
@@ -47,7 +49,14 @@ public class BulkGradePeople {
         } catch (DateTimeParseException e) {
             throw new BadRequestException("from-date must be yyyy-mm-dd");
         }
+        if (settings.archived(id)) {
+            throw new BadRequestException("the sheet is archived");
+        }
         int graded = 0;
+        if (settings.role(id, by).equals(SettingsRepository.VIEWER)) {
+            result.set(new BulkGradeResult(graded));
+            return;
+        }
         for (Person current : repository.list(id)) {
             if (!selected.contains(current.id())) continue;
             boolean regrade = !fromText.isEmpty() || !grade.equals(current.grade());

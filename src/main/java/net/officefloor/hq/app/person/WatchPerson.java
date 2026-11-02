@@ -8,7 +8,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Start or stop watching a person as the signed-in user (per user; it changes nothing on the sheet itself).
+/** Start or stop watching a person as the signed-in user (per user; it changes nothing on the sheet itself; a viewer is refused).
  *  Asking for the state already held writes nothing. */
 public class WatchPerson {
     public void watch(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,

@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the claim form: an amount is required (a number with up to two decimals; a negative one is a
- *  correction), a blank date takes the sheet's today, the note may be empty, and corrects is blank or
+ *  correction), a blank date takes the sheet's entry date (its today when none is set), the note may be empty, and corrects is blank or
  *  the number of the claim a correction corrects. */
 public class ValidateClaim {
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> claim) throws BadRequestException {

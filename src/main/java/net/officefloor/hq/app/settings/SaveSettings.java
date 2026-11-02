@@ -78,6 +78,10 @@ public class SaveSettings {
             repository.setGraceDays(id, input.graceDays());
             audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
         }
+        if (input.setsEntryDate()) {
+            repository.setEntryDate(id, input.entryDate());
+            audit.record(prefix + "entry-date value=" + (input.entryDate() == null ? "" : input.entryDate().toString()));
+        }
         input.permissions().forEach((action, roles) -> {
             repository.setPermission(id, action, roles);
             audit.record(prefix + "perm-" + action + " value=" + roles);

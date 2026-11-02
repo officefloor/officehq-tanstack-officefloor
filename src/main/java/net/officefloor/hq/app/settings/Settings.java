@@ -14,9 +14,11 @@ import java.util.List;
  *  matrix entries set, by action (open, settle, void, reassign, close, reopen), each a comma separated list of roles; an
  *  action not listed keeps the standing rule. {@code graceDays} is the days after a period's to-date it is left
  *  open (null when blank: off; not dated): changing the sheet's today closes each open period lapsed past them.
- *  {@code delegations} is each delegation of the steward role made on the sheet, oldest first. */
+ *  {@code delegations} is each delegation of the steward role made on the sheet, oldest first.
+ *  {@code entryDate} is the sheet's entry date (yyyy-MM-dd; null when blank: off; not dated): while set, it is the
+ *  default date of a new claim instead of the sheet's today. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
-        List<Delegation> delegations) {
+        List<Delegation> delegations, String entryDate) {
 }

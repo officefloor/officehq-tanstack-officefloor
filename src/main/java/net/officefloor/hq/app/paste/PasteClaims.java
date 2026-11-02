@@ -34,7 +34,7 @@ public class PasteClaims {
         if (!people.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
-        LocalDate today = sheets.today(id);
+        LocalDate entry = sheets.entryDate(id);
         List<Checked> checked = new ArrayList<>();
         int n = 0;
         for (PasteLine line : input.lines()) {
@@ -44,7 +44,7 @@ public class PasteClaims {
                 if (person == null) {
                     throw new BadRequestException("no one on the sheet is named " + line.name());
                 }
-                LocalDate date = line.claim().date() != null ? line.claim().date() : today;
+                LocalDate date = line.claim().date() != null ? line.claim().date() : entry;
                 PeriodGuard.open(periods, id, date);
                 people.claimAllowed(id, person.id(), date);
                 line.claim().checkCorrection(claims, id, person.id());

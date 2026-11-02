@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -90,6 +90,15 @@ public class ValidateSettings {
                 throw new BadRequestException("period numbering from must be a date (yyyy-mm-dd)");
             }
         }
+        String entry = request == null || request.entryDate() == null ? null : request.entryDate().trim();
+        LocalDate entryDate = null;
+        if (entry != null && !entry.isEmpty()) {
+            try {
+                entryDate = LocalDate.parse(entry);
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("entry date must be a date (yyyy-mm-dd)");
+            }
+        }
         Map<String, String> permissions = new LinkedHashMap<>();
         Map<String, String> perms = request == null || request.permissions() == null ? Map.of() : request.permissions();
         for (String action : perms.keySet()) {
@@ -145,6 +154,7 @@ public class ValidateSettings {
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
                 proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
-                note != null, note == null || note.isEmpty() ? null : new BigDecimal(note).setScale(2)));
+                note != null, note == null || note.isEmpty() ? null : new BigDecimal(note).setScale(2),
+                entry != null, entryDate));
     }
 }

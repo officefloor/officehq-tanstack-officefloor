@@ -48,11 +48,12 @@ public class SettingsRepository {
         BigDecimal cap = cap(sheetId);
         LocalDate policy = policyDate(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
+        LocalDate entry = entryDate(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
-                delegations(sheetId));
+                delegations(sheetId), entry == null ? null : entry.toString());
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -213,6 +214,17 @@ public class SettingsRepository {
     public void setPeriodNumberingFrom(String sheetId, LocalDate from) {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from),
                 sheetId);
+    }
+
+    /** The sheet's entry date; null when blank (off: a new claim defaults to the sheet's today). */
+    public LocalDate entryDate(String sheetId) {
+        List<Date> found = jdbc.query("SELECT entry_date FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getDate("entry_date"), sheetId);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate();
+    }
+
+    public void setEntryDate(String sheetId, LocalDate date) {
+        jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
     }
 
     /** The sheet's grace days; null when blank (off). */

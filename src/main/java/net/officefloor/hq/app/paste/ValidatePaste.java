@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the paste box: each non-blank line is name,amount,date,note — the name is required (trimmed), the
- *  amount and date follow the claim form's rules (a blank date: the sheet's today), and the note is the rest
+ *  amount and date follow the claim form's rules (a blank date: the sheet's entry date, else its today), and the note is the rest
  *  of the line (it may hold commas, or be absent). A paste with no lines is refused. */
 public class ValidatePaste {
     public void validate(@RequestBody PasteRequest request, Out<PasteInput> paste) throws BadRequestException {

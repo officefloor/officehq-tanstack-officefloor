@@ -35,6 +35,12 @@ public class SheetRepository {
         return today.toLocalDate();
     }
 
+    /** The default date of a new claim: the sheet's entry date while one is set, else its today. */
+    public LocalDate entryDate(String id) {
+        Date date = jdbc.queryForObject("SELECT COALESCE(entry_date, today) FROM sheet WHERE id = ?", Date.class, id);
+        return date.toLocalDate();
+    }
+
     /** Whether a steward has archived the sheet. */
     public boolean archived(String id) {
         Boolean archived = jdbc.queryForObject("SELECT archived FROM sheet WHERE id = ?", Boolean.class, id);
