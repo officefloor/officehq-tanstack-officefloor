@@ -37,13 +37,14 @@ public record Claim(long id, long personId, String amount, String date, String n
 
     /** Whether the claim counts toward a period ending on a day, given the status it had at the end of that
      *  day (null when it did not exist then: it does not count) and its person's holds: the live rules
-     *  applied to that status (an open claim deferred until after the sheet's today does not count either). */
+     *  applied to that status (an open claim deferred until after the sheet's today does not count either). A hold
+     *  leaves out only a claim still open now: one since settled or voided counts by the status it had then. */
     public boolean countsAs(String statusThen, List<Hold> holds, String today) {
         if (statusThen == null) return false;
         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
                 corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs);
-        return then.counts(holds);
+        return then.counts(open() ? holds : List.of());
     }
 
     /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it

@@ -45,6 +45,11 @@ final class ClaimStatusChange {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
         PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        // Open, settle and void go by the sheet's permission matrix; approve and reject stay with stewards (below).
+        String act = action.trim();
+        if ((act.equals("open") || act.equals("settle") || act.equals("void")) && !settings.allows(id, act, by)) {
+            throw new BadRequestException("a " + settings.role(id, by) + " cannot " + act + " a claim");
+        }
         // Four eyes: whoever opened a claim cannot settle it.
         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
             throw new BadRequestException("the user who opened a claim cannot settle it");

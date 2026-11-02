@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
 public class SettingsRepository {
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
+    /** The actions the permission matrix covers, in the order shown. */
+    public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
     private final JdbcTemplate jdbc;
 
@@ -38,7 +40,7 @@ public class SettingsRepository {
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
-                cap == null ? null : money(cap), dated(sheetId));
+                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -198,6 +200,41 @@ public class SettingsRepository {
     public void setRole(String sheetId, String user, String role) {
         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
                 sheetId, user, role);
+    }
+
+    /** The permission matrix entries set on the sheet, by action, each a comma separated list of roles; an
+     *  action not listed keeps the standing rule. */
+    public Map<String, String> permissions(String sheetId) {
+        Map<String, String> perms = new LinkedHashMap<>();
+        jdbc.query("SELECT action, roles FROM sheet_permission WHERE sheet_id = ?",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> perms.put(rs.getString("action"), rs.getString("roles")),
+                sheetId);
+        Map<String, String> ordered = new LinkedHashMap<>();
+        for (String action : PERMISSION_ACTIONS) {
+            if (perms.containsKey(action)) ordered.put(action, perms.get(action));
+        }
+        return ordered;
+    }
+
+    /** Set the roles that may take an action (a comma separated list); null or blank restores the standing rule. */
+    public void setPermission(String sheetId, String action, String roles) {
+        if (roles == null || roles.isEmpty()) {
+            jdbc.update("DELETE FROM sheet_permission WHERE sheet_id = ? AND action = ?", sheetId, action);
+        } else {
+            jdbc.update("MERGE INTO sheet_permission (sheet_id, action, roles) KEY (sheet_id, action) VALUES (?, ?, ?)",
+                    sheetId, action, roles);
+        }
+    }
+
+    /** Whether a user may take an action on the sheet: by the sheet's permission matrix entry for it, else the
+     *  standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
+    public boolean allows(String sheetId, String action, String user) {
+        List<String> found = jdbc.query("SELECT roles FROM sheet_permission WHERE sheet_id = ? AND action = ?",
+                (rs, i) -> rs.getString("roles"), sheetId, action);
+        List<String> roles = found.isEmpty()
+                ? (action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : List.of(CLERK, STEWARD))
+                : List.of(found.get(0).split(","));
+        return roles.contains(role(sheetId, user));
     }
 
     /** A limit as shown: two decimals, a dot, no grouping. */

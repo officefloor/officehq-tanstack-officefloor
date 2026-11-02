@@ -77,10 +77,11 @@ export function statusOn(c: Claim, day: string): ClaimStatus | null {
 }
 
 /** Whether a claim counts toward a period ending on a day: by the live rules (holds, deferral, binding),
- *  applied to the status it had at the end of that day; not when it did not yet exist then. */
+ *  applied to the status it had at the end of that day; not when it did not yet exist then. A hold leaves
+ *  out only a claim still open now: one since settled or voided counts by the status it had then. */
 export function countsOn(c: Claim, day: string, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
   const status = statusOn(c, day);
-  return status !== null && counts({ ...c, status }, holds, today);
+  return status !== null && counts({ ...c, status }, isOpen(c) ? holds : new Map(), today);
 }
 
 /** Whether its person's last statement binds a claim now: it was stated and is not PENDING. */

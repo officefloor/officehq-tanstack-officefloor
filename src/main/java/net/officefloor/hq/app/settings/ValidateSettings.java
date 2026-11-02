@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold likewise. A from-date given for a
- *  setting with a figure is a date; blank is the sheet's today. A setting left out is not changed. */
+ *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
+ *  list of roles (clerk, steward), blank keeping the standing rule. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -81,6 +82,29 @@ public class ValidateSettings {
                 throw new BadRequestException("period numbering from must be a date (yyyy-mm-dd)");
             }
         }
+        Map<String, String> permissions = new LinkedHashMap<>();
+        Map<String, String> perms = request == null || request.permissions() == null ? Map.of() : request.permissions();
+        for (String action : perms.keySet()) {
+            if (!SettingsRepository.PERMISSION_ACTIONS.contains(action)) {
+                throw new BadRequestException("permissions are for open, settle, void, reassign, close and reopen");
+            }
+        }
+        for (String action : SettingsRepository.PERMISSION_ACTIONS) {
+            String value = perms.get(action) == null ? null : perms.get(action).trim();
+            if (value == null) continue;
+            List<String> roles = new java.util.ArrayList<>();
+            if (!value.isEmpty()) {
+                for (String part : value.split(",", -1)) {
+                    String r = part.trim();
+                    if (!r.equals(SettingsRepository.CLERK) && !r.equals(SettingsRepository.STEWARD)) {
+                        throw new BadRequestException("permission for " + action
+                                + " must be a comma separated list of roles (clerk, steward)");
+                    }
+                    if (!roles.contains(r)) roles.add(r);
+                }
+            }
+            permissions.put(action, String.join(",", roles));
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         Map<String, String> froms = request == null || request.from() == null ? Map.of() : request.from();
         for (Map.Entry<String, String> given : froms.entrySet()) {
@@ -110,6 +134,6 @@ public class ValidateSettings {
                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
-                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2)));
+                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions));
     }
 }

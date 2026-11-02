@@ -68,6 +68,10 @@ public class SaveSettings {
                     + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
                     + given(input, "proof-threshold"));
         }
+        input.permissions().forEach((action, roles) -> {
+            repository.setPermission(id, action, roles);
+            audit.record(prefix + "perm-" + action + " value=" + roles);
+        });
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }

@@ -16,11 +16,11 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
   const submitOnce = useSingleFlight();
   const paste = useMutation({
     mutationFn: (t: string) => postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/paste`, { text: t }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
-        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-      ]);
+    // The count shows as soon as the paste is done; the new rows follow once re-read (not awaited, so the
+    // rows never show ahead of the count).
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
   return (

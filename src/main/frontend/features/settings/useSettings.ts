@@ -15,9 +15,12 @@ export type Role = { user: string; role: string };
  *  none: a person's due-total is at most it). Those with a figure are as in force on the sheet's today when
  *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
  *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
- *  approved without a proof), oldest from-date first. */
+ *  approved without a proof), oldest from-date first. `permissions` is the permission matrix entries set, by action
+ *  (open, settle, void, reassign, close, reopen): the roles that may take it, comma separated; an action not listed
+ *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
-  gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]> };
+  gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+  permissions: Record<string, string> };
 
 /** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */
 export type DatedValue = { from: string; value: string | null };

@@ -10,8 +10,10 @@ import java.util.List;
  *  by grade (a grade not listed uses the sheet's terms). And its cap (two decimals; null means none): a
  *  person's due-total is at most it. The clerk limit, floor, terms, late percent, grade terms and cap are those in
  *  force on the sheet's today; {@code dated} is every value recorded for each of them, by key (clerk-limit, floor,
- *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first. */
+ *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first. {@code permissions} is the permission
+ *  matrix entries set, by action (open, settle, void, reassign, close, reopen), each a comma separated list of roles; an
+ *  action not listed keeps the standing rule. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
-        java.util.Map<String, List<DatedValue>> dated) {
+        java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions) {
 }
