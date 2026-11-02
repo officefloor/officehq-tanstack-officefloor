@@ -1,0 +1,470 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 2d99bb390..fdfa769b9 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -77,10 +77,11 @@ export function statusOn(c: Claim, day: string): ClaimStatus | null {
+ }
+ 
+ /** Whether a claim counts toward a period ending on a day: by the live rules (holds, deferral, binding),
+- *  applied to the status it had at the end of that day; not when it did not yet exist then. */
++ *  applied to the status it had at the end of that day; not when it did not yet exist then. A hold leaves
++ *  out only a claim still open now: one since settled or voided counts by the status it had then. */
+ export function countsOn(c: Claim, day: string, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
+   const status = statusOn(c, day);
+-  return status !== null && counts({ ...c, status }, holds, today);
++  return status !== null && counts({ ...c, status }, isOpen(c) ? holds : new Map(), today);
+ }
+ 
+ /** Whether its person's last statement binds a claim now: it was stated and is not PENDING. */
+diff --git a/src/main/frontend/features/paste/paste.slot.tsx b/src/main/frontend/features/paste/paste.slot.tsx
+index 5c7599b73..5b288f9d5 100644
+--- a/src/main/frontend/features/paste/paste.slot.tsx
++++ b/src/main/frontend/features/paste/paste.slot.tsx
+@@ -16,11 +16,11 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+   const submitOnce = useSingleFlight();
+   const paste = useMutation({
+     mutationFn: (t: string) => postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/paste`, { text: t }),
+-    onSuccess: async () => {
+-      await Promise.all([
+-        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+-        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+-      ]);
++    // The count shows as soon as the paste is done; the new rows follow once re-read (not awaited, so the
++    // rows never show ahead of the count).
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
+   });
+   return (
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 47087e781..0afed24ee 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -14,7 +14,8 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
+  *  (while set and the sheet's today is on or after it, a claim opened is numbered within its period,
+  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
+  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
+- *  above the one in force on its date cannot be settled or approved without a proof; blank is none), and the role (clerk or steward)
++ *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
++ *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk or steward)
+  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
+  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
+  *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
+@@ -22,6 +23,9 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
+ /** The grades a person can have, each of which can have its own terms. */
+ const GRADES = ['A', 'B', 'C'];
+ 
++/** The actions the permission matrix covers. */
++const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
++
+ /** The from-date field of a setting with a figure: blank is the sheet's today. */
+ function FromInput({ settingKey, from, setFrom, onChange }: { settingKey: string; from: Record<string, string>;
+   setFrom: (f: (v: Record<string, string>) => Record<string, string>) => void; onChange: () => void }) {
+@@ -55,13 +59,14 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+   const [cap, setCap] = useState<string | null>(null);
+   const [proofThreshold, setProofThreshold] = useState<string | null>(null);
+   const [from, setFrom] = useState<Record<string, string>>({});
++  const [permissions, setPermissions] = useState<Record<string, string>>({});
+   const today = useSheetToday(sheetId).data?.today;
+   const [user, setUser] = useState('');
+   const [role, setRole] = useState('');
+ 
+   const saveOnce = useSingleFlight();
+   const save = useMutation({
+-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null }) =>
++    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string> }) =>
+       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
+     onSuccess: (saved) => {
+       setLimit(null);
+@@ -74,6 +79,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+       setCap(null);
+       setProofThreshold(null);
+       setFrom({});
++      setPermissions({});
+       queryClient.setQueryData(settingsKey(sheetId), saved);
+     },
+   });
+@@ -97,7 +103,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           e.preventDefault();
+           saveOnce(() => {
+             save.reset();
+-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold });
++            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, permissions });
+           });
+         }}
+       >
+@@ -227,6 +233,21 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           />
+         </label>{' '}
+         <FromInput settingKey="proof-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
++        {PERM_ACTIONS.map((a) => (
++          <label key={a}>
++            Who may {a}{' '}
++            <input
++              data-testid={`setting-perm-${a}`}
++              placeholder="clerk,steward"
++              value={permissions[a] ?? ''}
++              onFocus={() => setPermissions((v) => (a in v ? v : { ...v, [a]: '' }))}
++              onChange={(e) => {
++                setPermissions((v) => ({ ...v, [a]: e.target.value }));
++                save.reset();
++              }}
++            />{' '}
++          </label>
++        ))}
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+         </button>{' '}
+@@ -244,6 +265,11 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+         <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
+         cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>,
+         proof threshold <strong data-testid="setting-proof-threshold-current">{settingOn(settings.data, 'proof-threshold', today) ?? ''}</strong>
++        {PERM_ACTIONS.map((a) => (
++          <span key={a}>
++            , may {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.permissions?.[a] ?? ''}</strong>
++          </span>
++        ))}
+         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
+       </form>
+       <form
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index e72db656b..70d28a14f 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -15,9 +15,12 @@ export type Role = { user: string; role: string };
+  *  none: a person's due-total is at most it). Those with a figure are as in force on the sheet's today when
+  *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
+  *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
+- *  approved without a proof), oldest from-date first. */
++ *  approved without a proof), oldest from-date first. `permissions` is the permission matrix entries set, by action
++ *  (open, settle, void, reassign, close, reopen): the roles that may take it, comma separated; an action not listed
++ *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+-  gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]> };
++  gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
++  permissions: Record<string, string> };
+ 
+ /** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */
+ export type DatedValue = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 7835efbca..83487ea63 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -37,13 +37,14 @@ public record Claim(long id, long personId, String amount, String date, String n
+ 
+     /** Whether the claim counts toward a period ending on a day, given the status it had at the end of that
+      *  day (null when it did not exist then: it does not count) and its person's holds: the live rules
+-     *  applied to that status (an open claim deferred until after the sheet's today does not count either). */
++     *  applied to that status (an open claim deferred until after the sheet's today does not count either). A hold
++     *  leaves out only a claim still open now: one since settled or voided counts by the status it had then. */
+     public boolean countsAs(String statusThen, List<Hold> holds, String today) {
+         if (statusThen == null) return false;
+         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
+         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
+                 corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs);
+-        return then.counts(holds);
++        return then.counts(open() ? holds : List.of());
+     }
+ 
+     /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index a55c14116..16ee77365 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -45,6 +45,11 @@ final class ClaimStatusChange {
+             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
+         }
+         PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
++        // Open, settle and void go by the sheet's permission matrix; approve and reject stay with stewards (below).
++        String act = action.trim();
++        if ((act.equals("open") || act.equals("settle") || act.equals("void")) && !settings.allows(id, act, by)) {
++            throw new BadRequestException("a " + settings.role(id, by) + " cannot " + act + " a claim");
++        }
+         // Four eyes: whoever opened a claim cannot settle it.
+         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
+             throw new BadRequestException("the user who opened a claim cannot settle it");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+index cf8ee6f32..2d673d820 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -13,7 +13,8 @@ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Move a DRAFT, OPEN or PENDING claim to another person on the sheet; only a steward may. The claim keeps its
++/** Move a DRAFT, OPEN or PENDING claim to another person on the sheet; only a role the sheet's permission matrix allows
++ *  (by default a steward) may. The claim keeps its
+  *  number and date, loses any figure a statement bound it to (live again until its new person's next
+  *  statement) and is listed as its new person's newest claim. Every check is made before anything is written. */
+ public class ReassignClaim {
+@@ -28,8 +29,8 @@ public class ReassignClaim {
+         if (request.personId() == null) {
+             throw new BadRequestException("choose the person to move the claim to");
+         }
+-        if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
+-            throw new BadRequestException("only a steward can reassign a claim");
++        if (!settings.allows(id, "reassign", by)) {
++            throw new BadRequestException("a " + settings.role(id, by) + " cannot reassign a claim");
+         }
+         Claim found = repository.find(id, request.claimId());
+         if (found == null) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 597db4145..2ec35f748 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -14,19 +14,20 @@ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Hold;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.settings.SettingsRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Close a period: fix its due-total as shown now (the dues now, late charges included, of the claims dated in it that count by
++/** Close a period, by a role the sheet's permission matrix allows (by default a clerk or a steward): fix its due-total as shown now (the dues now, late charges included, of the claims dated in it that count by
+  *  the status they had at the end of its last day, a person's
+  *  open (OPEN or PENDING) claims dated within one of their holds left out unless bound by a statement,
+  *  skipping those with none), so later changes to rates do not alter it; and each person's due-total for it
+  *  likewise, for every person on the sheet (0.00 for one with nothing in it). */
+ public class ClosePeriod {
+     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
+-            ServerHttpConnection connection, PeriodRepository repository, ClaimRepository claims, PersonRepository people, Audit audit,
+-            Out<Period> period) throws BadRequestException {
++            ServerHttpConnection connection, PeriodRepository repository, ClaimRepository claims, PersonRepository people, SettingsRepository settings,
++            Audit audit, Out<Period> period) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         if (!repository.lockSheet(id)) {
+@@ -36,6 +37,9 @@ public class ClosePeriod {
+         if (found == null) {
+             throw new BadRequestException("no such period");
+         }
++        if (!settings.allows(id, "close", by)) {
++            throw new BadRequestException("a " + settings.role(id, by) + " cannot close a period");
++        }
+         if (found.closed()) {
+             throw new BadRequestException("the period " + found.name() + " is already closed");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index f42fed689..3e0d6769b 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Reopen a closed period, by a steward only: its fixed due-total is dropped, so it totals the
++/** Reopen a closed period, by a role the sheet's permission matrix allows (by default a steward only): its fixed due-total is dropped, so it totals the
+  *  claims in it live again (bound ones at their bound figure). */
+ public class ReopenPeriod {
+     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
+@@ -23,8 +23,8 @@ public class ReopenPeriod {
+         if (found == null) {
+             throw new BadRequestException("no such period");
+         }
+-        if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
+-            throw new BadRequestException("only a steward can reopen a period");
++        if (!settings.allows(id, "reopen", by)) {
++            throw new BadRequestException("a " + settings.role(id, by) + " cannot reopen a period");
+         }
+         if (!found.closed()) {
+             throw new BadRequestException("the period " + found.name() + " is not closed");
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index d12eb063f..b016cdd2a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -68,6 +68,10 @@ public class SaveSettings {
+                     + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
+                     + given(input, "proof-threshold"));
+         }
++        input.permissions().forEach((action, roles) -> {
++            repository.setPermission(id, action, roles);
++            audit.record(prefix + "perm-" + action + " value=" + roles);
++        });
+         rollup.record(id, by, before);
+         settings.set(repository.load(id));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 1f10f9105..5ae369df6 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -10,8 +10,10 @@ import java.util.List;
+  *  by grade (a grade not listed uses the sheet's terms). And its cap (two decimals; null means none): a
+  *  person's due-total is at most it. The clerk limit, floor, terms, late percent, grade terms and cap are those in
+  *  force on the sheet's today; {@code dated} is every value recorded for each of them, by key (clerk-limit, floor,
+- *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first. */
++ *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first. {@code permissions} is the permission
++ *  matrix entries set, by action (open, settle, void, reassign, close, reopen), each a comma separated list of roles; an
++ *  action not listed keeps the standing rule. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+-        java.util.Map<String, List<DatedValue>> dated) {
++        java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+index f266adc80..324e889f1 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+@@ -6,10 +6,11 @@ import java.time.LocalDate;
+ /** A validated settings form: which settings it saves, the clerk limit scaled to two decimals (null for
+  *  no limit), the floor scaled to two decimals the terms in days and the late percent scaled to two decimals and the policy date (null when blank), and the period numbering from-date (null when blank: off), and the grade terms entered, by grade (in grade order; null
+  *  when blank: the grade then uses the sheet's terms), and the cap scaled to two decimals (null for no cap), and the
+- *  from-date given for each dated setting saved, by key (one not listed has none: it is saved from the sheet's today), and the proof threshold scaled to two decimals (null for none). */
++ *  from-date given for each dated setting saved, by key (one not listed has none: it is saved from the sheet's today), and the proof threshold scaled to two decimals (null for none), and the
++ *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule). */
+ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boolean setsFloor, BigDecimal floor, boolean setsTerms,
+         Integer terms, boolean setsLatePct, BigDecimal latePct,
+         boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
+         java.util.Map<String, Integer> gradeTerms, boolean setsCap, BigDecimal cap, java.util.Map<String, LocalDate> from,
+-        boolean setsProofThreshold, BigDecimal proofThreshold) {
++        boolean setsProofThreshold, BigDecimal proofThreshold, java.util.Map<String, String> permissions) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 77398f31a..c0ae8b000 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
+ public class SettingsRepository {
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    /** The actions the permission matrix covers, in the order shown. */
++    public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -38,7 +40,7 @@ public class SettingsRepository {
+         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
+                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
+                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
+-                cap == null ? null : money(cap), dated(sheetId));
++                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -200,6 +202,41 @@ public class SettingsRepository {
+                 sheetId, user, role);
+     }
+ 
++    /** The permission matrix entries set on the sheet, by action, each a comma separated list of roles; an
++     *  action not listed keeps the standing rule. */
++    public Map<String, String> permissions(String sheetId) {
++        Map<String, String> perms = new LinkedHashMap<>();
++        jdbc.query("SELECT action, roles FROM sheet_permission WHERE sheet_id = ?",
++                (org.springframework.jdbc.core.RowCallbackHandler) rs -> perms.put(rs.getString("action"), rs.getString("roles")),
++                sheetId);
++        Map<String, String> ordered = new LinkedHashMap<>();
++        for (String action : PERMISSION_ACTIONS) {
++            if (perms.containsKey(action)) ordered.put(action, perms.get(action));
++        }
++        return ordered;
++    }
++
++    /** Set the roles that may take an action (a comma separated list); null or blank restores the standing rule. */
++    public void setPermission(String sheetId, String action, String roles) {
++        if (roles == null || roles.isEmpty()) {
++            jdbc.update("DELETE FROM sheet_permission WHERE sheet_id = ? AND action = ?", sheetId, action);
++        } else {
++            jdbc.update("MERGE INTO sheet_permission (sheet_id, action, roles) KEY (sheet_id, action) VALUES (?, ?, ?)",
++                    sheetId, action, roles);
++        }
++    }
++
++    /** Whether a user may take an action on the sheet: by the sheet's permission matrix entry for it, else the
++     *  standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
++    public boolean allows(String sheetId, String action, String user) {
++        List<String> found = jdbc.query("SELECT roles FROM sheet_permission WHERE sheet_id = ? AND action = ?",
++                (rs, i) -> rs.getString("roles"), sheetId, action);
++        List<String> roles = found.isEmpty()
++                ? (action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : List.of(CLERK, STEWARD))
++                : List.of(found.get(0).split(","));
++        return roles.contains(role(sheetId, user));
++    }
++
+     /** A limit as shown: two decimals, a dot, no grouping. */
+     public static String money(BigDecimal v) {
+         return v.setScale(2).toPlainString();
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index 046889ce8..ff440b40a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -2,8 +2,9 @@ package net.officefloor.hq.app.settings;
+ 
+ /** The settings form: each setting given is saved; one left out (null) stays as it is. The grade terms are by grade.
+  *  {@code from} is the from-date given for a dated setting, by key (clerk-limit, floor, terms, terms-<grade>, late-pct,
+- *  cap, proof-threshold); blank or left out is the sheet's today. */
++ *  cap, proof-threshold); blank or left out is the sheet's today. {@code permissions} is the permission matrix entries
++ *  given, by action: a comma separated list of roles, blank keeping the standing rule. */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+-        String proofThreshold) {
++        String proofThreshold, java.util.Map<String, String> permissions) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 981dec2f7..79a326ae2 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
+  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
+  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold likewise. A from-date given for a
+- *  setting with a figure is a date; blank is the sheet's today. A setting left out is not changed. */
++ *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
++ *  list of roles (clerk, steward), blank keeping the standing rule. A setting left out is not changed. */
+ public class ValidateSettings {
+     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
+     private static final List<String> GRADES = List.of("A", "B", "C");
+@@ -81,6 +82,29 @@ public class ValidateSettings {
+                 throw new BadRequestException("period numbering from must be a date (yyyy-mm-dd)");
+             }
+         }
++        Map<String, String> permissions = new LinkedHashMap<>();
++        Map<String, String> perms = request == null || request.permissions() == null ? Map.of() : request.permissions();
++        for (String action : perms.keySet()) {
++            if (!SettingsRepository.PERMISSION_ACTIONS.contains(action)) {
++                throw new BadRequestException("permissions are for open, settle, void, reassign, close and reopen");
++            }
++        }
++        for (String action : SettingsRepository.PERMISSION_ACTIONS) {
++            String value = perms.get(action) == null ? null : perms.get(action).trim();
++            if (value == null) continue;
++            List<String> roles = new java.util.ArrayList<>();
++            if (!value.isEmpty()) {
++                for (String part : value.split(",", -1)) {
++                    String r = part.trim();
++                    if (!r.equals(SettingsRepository.CLERK) && !r.equals(SettingsRepository.STEWARD)) {
++                        throw new BadRequestException("permission for " + action
++                                + " must be a comma separated list of roles (clerk, steward)");
++                    }
++                    if (!roles.contains(r)) roles.add(r);
++                }
++            }
++            permissions.put(action, String.join(",", roles));
++        }
+         Map<String, LocalDate> from = new LinkedHashMap<>();
+         Map<String, String> froms = request == null || request.from() == null ? Map.of() : request.from();
+         for (Map.Entry<String, String> given : froms.entrySet()) {
+@@ -110,6 +134,6 @@ public class ValidateSettings {
+                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
+                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
+                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
+-                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2)));
++                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V38__permission.sql b/src/main/resources/db/migration/V38__permission.sql
+new file mode 100644
+index 000000000..604978c16
+--- /dev/null
++++ b/src/main/resources/db/migration/V38__permission.sql
+@@ -0,0 +1,9 @@
++-- A sheet's permission matrix: for an action (open, settle, void, reassign, close, reopen), the roles
++-- that may take it, a comma separated list (e.g. clerk,steward). An action with no row keeps the
++-- standing rule: open, settle, void and close by clerk and steward; reassign and reopen by steward.
++CREATE TABLE sheet_permission (
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    action    VARCHAR(20)  NOT NULL,
++    roles     VARCHAR(100) NOT NULL,
++    PRIMARY KEY (sheet_id, action)
++);
