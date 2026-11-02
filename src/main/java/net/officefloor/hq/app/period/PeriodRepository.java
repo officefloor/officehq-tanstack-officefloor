@@ -35,6 +35,12 @@ public class PeriodRepository {
         return !jdbc.queryForList("SELECT id FROM sheet WHERE id = ? FOR UPDATE", String.class, sheetId).isEmpty();
     }
 
+    /** The sheet's today (yyyy-MM-dd); null when the sheet has none. */
+    public String today(String sheetId) {
+        List<Date> found = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", Date.class, sheetId);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate().toString();
+    }
+
     /** The sheet's periods, by from-date. */
     public List<Period> list(String sheetId) {
         List<Period> periods = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? ORDER BY from_date",

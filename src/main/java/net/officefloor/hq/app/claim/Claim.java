@@ -35,6 +35,17 @@ public record Claim(long id, long personId, String amount, String date, String n
         return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
     }
 
+    /** Whether the claim counts toward a period ending on a day, given the status it had at the end of that
+     *  day (null when it did not exist then: it does not count) and its person's holds: the live rules
+     *  applied to that status (an open claim deferred until after the sheet's today does not count either). */
+    public boolean countsAs(String statusThen, List<Hold> holds, String today) {
+        if (statusThen == null) return false;
+        boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
+        Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
+                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs);
+        return then.counts(holds);
+    }
+
     /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it
      *  to — except while PENDING, when the statement does not bind it and its figure is live. */
     public boolean fixed() {

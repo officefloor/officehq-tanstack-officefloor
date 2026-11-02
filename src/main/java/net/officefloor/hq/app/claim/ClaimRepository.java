@@ -321,6 +321,17 @@ public class ClaimRepository {
         return logs;
     }
 
+    /** Each claim's status at the end of a day, by claim id, as its status log records it: the last line
+     *  dated on or before it. A claim with no such line (added after that day) is absent. */
+    public Map<Long, String> statusesOn(String sheetId, LocalDate day) {
+        Map<Long, String> statuses = new LinkedHashMap<>();
+        jdbc.query("SELECT claim_id, status FROM claim_log WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
+                rs -> {
+                    statuses.put(rs.getLong("claim_id"), rs.getString("status"));
+                }, sheetId, Date.valueOf(day));
+        return statuses;
+    }
+
     /** An amount as shown: two decimals, a dot, no grouping. */
     static String money(BigDecimal amount) {
         return amount.setScale(2).toPlainString();

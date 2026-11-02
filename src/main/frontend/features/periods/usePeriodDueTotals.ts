@@ -1,4 +1,4 @@
-import { counts, useClaims } from '../claims/useClaims';
+import { countsOn, useClaims } from '../claims/useClaims';
 import { claimDueNow } from '../overdue/useOverdue';
 import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { rateFor, sumDues, useRates } from '../rates/useRates';
@@ -7,7 +7,7 @@ import { useSheetToday } from '../today/useSheetToday';
 import { usePeriods } from './usePeriods';
 
 /** Each person's due-total for each period, by person id then period name: the figures of their claims
- *  that count whose date falls in it (a settled claim's frozen due, else the figure its last statement
+ *  whose date falls in it that count by the status they had at the end of its last day (see `countsOn`) (a settled claim's frozen due, else the figure its last statement
  *  bound it to, else its live due, with its late charge while overdue), skipping those with none — the
  *  one fixed when the period was closed while it is closed (0.00 for a person added since). */
 export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<string, string>> {
@@ -20,7 +20,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
   const holds = holdsById(people.data);
   const totals = new Map<number, Map<string, string>>();
   for (const person of people.data ?? []) {
-    const own = (claims.data ?? []).filter((c) => c.personId === person.id && counts(c, holds, today));
+    const own = (claims.data ?? []).filter((c) => c.personId === person.id);
     const byPeriod = new Map<string, string>();
     for (const p of periods.data ?? []) {
       byPeriod.set(
@@ -29,7 +29,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
           ? (p.personTotals[String(person.id)] ?? '0.00')
           : sumDues(
               own
-                .filter((c) => p.from <= c.date && c.date <= p.to)
+                .filter((c) => p.from <= c.date && c.date <= p.to && countsOn(c, p.to, holds, today))
                 .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today)),
             ),
       );

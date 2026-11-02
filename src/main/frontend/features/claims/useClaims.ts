@@ -65,6 +65,24 @@ export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: stri
     || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
 }
 
+/** A claim's status at the end of a day (yyyy-mm-dd), as its status log records it: the last line dated
+ *  on or before it; null when the claim did not yet exist then. */
+export function statusOn(c: Claim, day: string): ClaimStatus | null {
+  let status: ClaimStatus | null = null;
+  for (const line of c.log) {
+    const m = /^(\w+) by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(line);
+    if (m && m[2] <= day) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/** Whether a claim counts toward a period ending on a day: by the live rules (holds, deferral, binding),
+ *  applied to the status it had at the end of that day; not when it did not yet exist then. */
+export function countsOn(c: Claim, day: string, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
+  const status = statusOn(c, day);
+  return status !== null && counts({ ...c, status }, holds, today);
+}
+
 /** Whether its person's last statement binds a claim now: it was stated and is not PENDING. */
 export function isBound(c: Claim): boolean {
   return c.stated && c.status !== 'PENDING';
