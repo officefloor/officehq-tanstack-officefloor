@@ -14,6 +14,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class RetirePerson {
     public void retire(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
             @Val LocalDate from, People people, Audit audit, Rollup rollup) {
+        apply(sheet, user, person, from, people, audit, rollup);
+    }
+
+    /** Retires the person from the date, with its PERSON_RETIRED and rollup lines; the bulk retire uses it too. */
+    static void apply(String sheet, String user, Person person, LocalDate from, People people, Audit audit,
+            Rollup rollup) {
         Rollup.Snapshot before = rollup.take(sheet);
         people.retire(sheet, person.id(), from);
         audit.record("PERSON_RETIRED sheet=" + sheet + " by=" + user + " name=" + person.name() + " from=" + from);
