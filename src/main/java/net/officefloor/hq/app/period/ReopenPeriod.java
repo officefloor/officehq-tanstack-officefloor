@@ -31,6 +31,6 @@ public class ReopenPeriod {
         }
         repository.reopen(id, found.id());
         audit.record("PERIOD_REOPENED sheet=" + id + " by=" + by + " period=" + found.name());
-        period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null));
+        period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null, java.util.Map.of()));
     }
 }

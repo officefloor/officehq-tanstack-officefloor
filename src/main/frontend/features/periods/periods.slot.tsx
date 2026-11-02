@@ -2,8 +2,9 @@ import { useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
+import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { usePeriodDueTotals } from './usePeriodDueTotals';
+import { usePeriodDueTotals, usePersonPeriodDueTotals } from './usePeriodDueTotals';
 import { periodsKey, usePeriods, type Period } from './usePeriods';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
@@ -154,4 +155,35 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
   );
 }
 
-export const contribution = SheetBody.fill({ order: 6, Component: ({ sheetId }) => <Periods sheetId={sheetId} /> });
+/** A column per period on the people list. */
+function PeriodColumnHeads({ sheetId }: { sheetId: string }) {
+  const periods = usePeriods(sheetId);
+  return (
+    <>
+      {(periods.data ?? []).map((p) => (
+        <th key={p.id}>Due {p.name}</th>
+      ))}
+    </>
+  );
+}
+
+/** A person's due-total for each period on the sheet (fixed while the period is closed). */
+function PersonPeriodDueTotals({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const periods = usePeriods(sheetId);
+  const totals = usePersonPeriodDueTotals(sheetId).get(personId);
+  return (
+    <>
+      {(periods.data ?? []).map((p) => (
+        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
+          {totals?.get(p.name) ?? ''}
+        </td>
+      ))}
+    </>
+  );
+}
+
+export const contributions = [
+  SheetBody.fill({ order: 6, Component: ({ sheetId }) => <Periods sheetId={sheetId} /> }),
+  PersonColumnHead.fill({ order: 22, Component: PeriodColumnHeads }),
+  PersonCells.fill({ order: 22, Component: PersonPeriodDueTotals }),
+];
