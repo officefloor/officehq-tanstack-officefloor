@@ -251,11 +251,12 @@ public class ClaimStatusChanger {
                 }
             }
         }
-        // A clerk settles only a due at or below the sheet's clerk limit (a due of n/a is within any limit); above
+        // A clerk settles only a due at or below the clerk limit in force on the sheet's today (its person's grade's
+        // when it has one, else the sheet's; a due of n/a is within any limit); above
         // it the claim goes to PENDING for a steward to approve. A steward settles anything.
         if (requested == ClaimStatusChange.SETTLE && claim.status() == ClaimStatus.OPEN
                 && Role.CLERK.equals(roles.of(sheet, user))) {
-            BigDecimal limit = settings.clerkLimit(sheet);
+            BigDecimal limit = settings.clerkLimit(sheet, person.gradeOn(claim.date()));
             BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));
             if (limit != null && due != null && due.compareTo(limit) > 0) {

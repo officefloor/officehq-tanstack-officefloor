@@ -68,6 +68,7 @@ public class ValidateSetting {
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
+                && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeClerkLimit(g).equals(key))
                 && Settings.PERMISSIONS.stream().noneMatch((a) -> Settings.perm(a).equals(key))) {
             throw new InvalidSettingException("No such setting: " + key);
         }

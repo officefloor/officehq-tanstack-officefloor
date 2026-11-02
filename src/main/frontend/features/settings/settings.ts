@@ -36,7 +36,8 @@ import { hundredths } from '../rates/rates';
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
-  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; proofKinds: string; defaultGrade: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; proofKinds: string; defaultGrade: string;
+  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -65,7 +66,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
 
 /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
 export const PERMISSIONS = [
@@ -91,6 +92,13 @@ export const GRADE_GRACE = [
   { grade: 'A', key: 'grace-A', field: 'graceA' },
   { grade: 'B', key: 'grace-B', field: 'graceB' },
   { grade: 'C', key: 'grace-C', field: 'graceC' },
+] as const;
+
+/** The grades that may have a clerk limit of their own, with the setting key and field of {@link Settings} of each. */
+export const GRADE_CLERK_LIMIT = [
+  { grade: 'A', key: 'clerk-limit-A', field: 'clerkLimitA' },
+  { grade: 'B', key: 'clerk-limit-B', field: 'clerkLimitB' },
+  { grade: 'C', key: 'clerk-limit-C', field: 'clerkLimitC' },
 ] as const;
 
 /** The grades that may have a proof threshold of their own, with the setting key and field of {@link Settings} of each. */

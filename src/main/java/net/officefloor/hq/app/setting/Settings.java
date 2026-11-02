@@ -23,6 +23,11 @@ public class Settings {
     /** The due a clerk may settle at most (two decimals); blank: no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The key of a grade's own clerk limit (two decimals); blank: none, so the grade takes the sheet's. */
+    public static String gradeClerkLimit(String grade) {
+        return CLERK_LIMIT + "-" + grade;
+    }
+
     /** The most a person's due-total is (two decimals); blank: no cap. */
     public static final String CAP = "cap";
 
@@ -217,6 +222,15 @@ public class Settings {
     public BigDecimal clerkLimit(String sheet) {
         String limit = on(sheet, CLERK_LIMIT, clock.today(sheet));
         return limit.isEmpty() ? null : new BigDecimal(limit);
+    }
+
+    /**
+     * The clerk limit of the grade in force on the sheet's today: its own when it has one then, else the sheet's (a
+     * null grade takes the sheet's); null when there is none.
+     */
+    public BigDecimal clerkLimit(String sheet, String grade) {
+        String own = grade == null ? "" : on(sheet, gradeClerkLimit(grade), clock.today(sheet));
+        return own.isEmpty() ? clerkLimit(sheet) : new BigDecimal(own);
     }
 
     /** The sheet's cap in force on its today: the most a person's due-total is, or null when there is none. */
@@ -439,7 +453,7 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
-        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD, REVIEW_THRESHOLD, ROUNDING)) {
+        for (String key : List.of(CLERK_LIMIT, gradeClerkLimit("A"), gradeClerkLimit("B"), gradeClerkLimit("C"), CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD, REVIEW_THRESHOLD, ROUNDING)) {
             dated.put(key, history(sheet, key));
         }
         Map<String, String> perms = new LinkedHashMap<>();
@@ -456,6 +470,7 @@ public class Settings {
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
                 on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
-                get(sheet, DEFAULT_GRADE));
+                get(sheet, DEFAULT_GRADE), on(sheet, gradeClerkLimit("A"), today), on(sheet, gradeClerkLimit("B"), today),
+                on(sheet, gradeClerkLimit("C"), today));
     }
 }

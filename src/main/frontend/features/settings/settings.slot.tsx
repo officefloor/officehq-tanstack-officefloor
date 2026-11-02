@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { poolsKey } from '../pools/pools';
-import { GRADE_GRACE, GRADE_PROOF_THRESHOLD, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
+import { GRADE_CLERK_LIMIT, GRADE_GRACE, GRADE_PROOF_THRESHOLD, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
 import type { PermAction, SettingKey, Settings as SheetSettings } from './settings';
 import { Fig } from '../locale/Fig';
 
@@ -18,7 +18,8 @@ import { Fig } from '../locale/Fig';
 // or after it half to even; blank makes it the sheet's today. While the sheet's today is on or after the period
 // numbering from-date, a claim opened is numbered within its period; blank turns that off. A grade's own terms (whole
 // days) fix the due-by of a claim added for a person of that grade; blank makes the grade take the sheet's terms. Saving sends each setting whose field was changed; with none changed it
-// sends the clerk limit, so saving a blank form clears the limit. The cap is the most a person's due-total is (two
+// sends the clerk limit, so saving a blank form clears the limit. A grade's own clerk limit (two decimals, dated; blank
+// means none) in force on the sheet's today takes the place of the sheet's for a claim whose person has that grade. The cap is the most a person's due-total is (two
 // decimals); blank means no cap. A claim whose due is above the proof threshold in force on its date (two decimals;
 // blank means none) needs a proof before it is settled or approved; a grade's own proof threshold (two decimals, dated;
 // blank means none) in force on a claim's date takes the place of the sheet's for a claim whose person has that grade then. A claim whose due is above the note threshold in force on its date (two decimals;
@@ -70,6 +71,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
+  const [gradeClerkLimit, setGradeClerkLimit] = useState<Record<string, string>>({});
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [changed, setChanged] = useState<SettingKey[]>([]);
   const [froms, setFroms] = useState<Partial<Record<SettingKey, string>>>({});
@@ -116,6 +118,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setGradeTerms({});
       setGradeGrace({});
       setGradeProofThreshold({});
+      setGradeClerkLimit({});
       setPerms({});
       setFroms({});
       setChanged([]);
@@ -156,7 +159,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
       'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
-      'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
+      'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '',
+      'clerk-limit-A': gradeClerkLimit.A ?? '', 'clerk-limit-B': gradeClerkLimit.B ?? '', 'clerk-limit-C': gradeClerkLimit.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
     send(keys.map((key) => (isDated(key) ? { key, value: values[key], from: froms[key] ?? '' } : { key, value: values[key] })));
   };
@@ -179,6 +183,27 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </label>{' '}
         {from('clerk-limit')}
         now <span data-testid="setting-clerk-limit-current"><Fig>{data?.clerkLimit ?? ''}</Fig></span>{' '}
+        {GRADE_CLERK_LIMIT.map(({ grade, key, field }) => (
+          <span key={key}>
+            <label>
+              Clerk limit for grade {grade}{' '}
+              <input
+                data-testid={`setting-${key}`}
+                placeholder="0.00 (blank: the sheet's)"
+                value={gradeClerkLimit[grade] ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setGradeClerkLimit((limits) => ({ ...limits, [grade]: value }));
+                  touch(key);
+                }}
+                // As the policy date: clearing an already blank field must still send the blank.
+                onFocus={() => touch(key)}
+              />
+            </label>{' '}
+            {from(key)}
+            now <span data-testid={`setting-${key}-current`}><Fig>{data?.[field] ?? ''}</Fig></span>{' '}
+          </span>
+        ))}
         <label>
           Cap{' '}
           <input
