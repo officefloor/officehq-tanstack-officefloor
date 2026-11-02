@@ -17,8 +17,9 @@ public class SaveRate {
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
-        Rate saved = repository.set(id, input.grade(), input.pct());
-        audit.record("RATE_SET sheet=" + id + " by=" + by + " grade=" + saved.grade() + " rate=" + saved.pct());
+        Rate saved = repository.set(id, input.grade(), input.pct(), input.from());
+        audit.record("RATE_SET sheet=" + id + " by=" + by + " grade=" + saved.grade() + " rate=" + saved.pct()
+                + (saved.from() == null ? "" : " from=" + saved.from()));
         rate.set(saved);
     }
 }

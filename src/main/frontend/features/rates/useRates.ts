@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A grade's rate: a percent with two decimals. */
-export type Rate = { grade: string; pct: string };
+/** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-mm-dd; null when it
+ *  applies from the beginning of time). */
+export type Rate = { grade: string; pct: string; from: string | null };
 
 export function ratesKey(sheetId: string) {
   return ['sheet', sheetId, 'rates'];
 }
 
-/** The sheet's rates, by grade; a grade with no rate is not listed. */
+/** The sheet's rates, by grade then from-date (an undated rate first); a grade with no rate is not
+ *  listed. */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -17,9 +19,17 @@ export function useRates(sheetId: string) {
   });
 }
 
-/** The rate (a two-decimal percent) for a grade, or undefined when the grade has none. */
-export function rateFor(rates: Rate[] | undefined, grade: string | undefined): string | undefined {
-  return (rates ?? []).find((r) => r.grade === grade)?.pct;
+/** The rate (a two-decimal percent) for a grade in force on a date (yyyy-mm-dd): the one with the
+ *  latest from-date on or before it, an undated rate applying from the beginning of time; undefined
+ *  when none applies. */
+export function rateFor(rates: Rate[] | undefined, grade: string | undefined, on: string | undefined): string | undefined {
+  if (on === undefined) return undefined;
+  let found: Rate | undefined;
+  for (const r of rates ?? []) {
+    if (r.grade !== grade || (r.from !== null && r.from > on)) continue;
+    if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+  }
+  return found?.pct;
 }
 
 /** A two-decimal number as a whole count of hundredths ("12.50" -> 1250). */

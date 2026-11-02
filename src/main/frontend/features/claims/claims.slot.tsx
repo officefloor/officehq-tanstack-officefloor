@@ -88,8 +88,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   // A claim's due: the one fixed when it was settled, else its amount at the rate for its person's
-  // grade ('n/a' when the grade has none).
-  const pct = rateFor(rates.data, people.data?.find((p) => p.id === personId)?.grade);
+  // grade in force on its date ('n/a' when none applies).
+  const grade = people.data?.find((p) => p.id === personId)?.grade;
 
   return (
     <tr>
@@ -131,7 +131,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-amount">{c.amount}</td>
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-note">{c.note}</td>
-                <td data-testid="claim-due">{c.due ?? due(c.amount, pct)}</td>
+                <td data-testid="claim-due">{c.due ?? due(c.amount, rateFor(rates.data, grade, c.date))}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td>
                   {ACTIONS.map(([a, label]) => (

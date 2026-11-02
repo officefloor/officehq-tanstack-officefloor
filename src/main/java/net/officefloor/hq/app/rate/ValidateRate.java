@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.BadRequestException;
@@ -8,7 +10,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the rate form: the grade must be A, B or C; the percent is required, 0.00 or more with up
- *  to two decimals (below 100000). */
+ *  to two decimals (below 100000); a from-date is yyyy-mm-dd, and blank means from the beginning of time. */
 public class ValidateRate {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
@@ -16,6 +18,7 @@ public class ValidateRate {
     public void validate(@RequestBody RateRequest request, Out<RateInput> rate) throws BadRequestException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
+        String from = request == null || request.from() == null ? "" : request.from().trim();
         if (!GRADES.contains(grade)) {
             throw new BadRequestException("grade must be A, B or C");
         }
@@ -25,6 +28,14 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new BadRequestException("rate must be a percent of 0.00 or more with up to two decimals");
         }
-        rate.set(new RateInput(grade, new BigDecimal(pct).setScale(2)));
+        LocalDate on = null;
+        if (!from.isEmpty()) {
+            try {
+                on = LocalDate.parse(from);
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("from-date must be yyyy-mm-dd");
+            }
+        }
+        rate.set(new RateInput(grade, new BigDecimal(pct).setScale(2), on));
     }
 }
