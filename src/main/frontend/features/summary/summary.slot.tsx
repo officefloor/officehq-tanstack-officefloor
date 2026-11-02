@@ -2,8 +2,8 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES, isRetired, usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { hundredths, twoDecimals, useRates } from '../rates/rates';
-import { useCapCents, useFloorCents } from '../settings/settings';
-import { CLAIM_STATUSES, isActive, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
+import { useCapCents, useFloorCents, useReviewSla } from '../settings/settings';
+import { CLAIM_STATUSES, isActive, personDueCents, reviewLate, statusCount, useClaims, useLate } from '../claims/claims';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { classicPeriodDueCents, periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
 import { Fig } from '../locale/Fig';
@@ -11,7 +11,7 @@ import { Fig } from '../locale/Fig';
 // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
 // excluded), their due-totals added up (an n/a due-total adds nothing) and how many of them are active. Per period: its due-total, as its row shows
 // it, and its change from the period before it by from-date (none for the earliest). Per status: how many of the sheet's claims have it (every claim, whoever's). Per void reason on the list: how
-// many VOID claims were voided with it.
+// many VOID claims were voided with it. And how many REVIEW claims are late for review.
 // Beside it, the classic summary: per period, its due-total counting each claim by its status now (a closed period shows
 // the figure fixed when it closed), and the sheet's due-total untrimmed (everyone's due-total added up, n/a adding nothing).
 function Summary({ sheet }: { sheet: string; user: string }) {
@@ -23,6 +23,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
   const floor = useFloorCents(sheet);
   const cap = useCapCents(sheet);
   const late = useLate(sheet);
+  const reviewSla = useReviewSla(sheet);
   const { data: voidReasons = [] } = useVoidReasons(sheet);
 
   const current = people.filter((p) => !isRetired(p));
@@ -100,6 +101,9 @@ function Summary({ sheet }: { sheet: string; user: string }) {
           ))}
         </tbody>
       </table>
+      <p>
+        Late for review: <strong data-testid="summary-review-late-count">{claims.filter((c) => reviewLate(c, reviewSla, today)).length}</strong>
+      </p>
       <h3>Classic summary</h3>
       <table>
         <thead>

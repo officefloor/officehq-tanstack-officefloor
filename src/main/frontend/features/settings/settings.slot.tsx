@@ -23,7 +23,8 @@ import { Fig } from '../locale/Fig';
 // blank means none) needs a proof before it is settled or approved; a grade's own proof threshold (two decimals, dated;
 // blank means none) in force on a claim's date takes the place of the sheet's for a claim whose person has that grade then. A claim whose due is above the note threshold in force on its date (two decimals;
 // blank means none) cannot be opened with an empty note. A claim whose due is above the review threshold in force on its
-// date (two decimals; blank means none) goes to REVIEW when opened, for a steward to review. Each setting that carries a figure (all but the policy date and the period numbering
+// date (two decimals; blank means none) goes to REVIEW when opened, for a steward to review; one still in REVIEW once its review day (the sheet's today
+// when it went to REVIEW) plus the review SLA (whole days, not dated; blank means none) is before the sheet's today is late for review. Each setting that carries a figure (all but the policy date and the period numbering
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
 // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
 // for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
@@ -53,6 +54,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [graceDays, setGraceDays] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
+  const [reviewSla, setReviewSla] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
@@ -96,6 +98,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setPeriodNumberingFrom('');
       setGraceDays('');
       setEscalateAfter('');
+      setReviewSla('');
       setEntryDate('');
       setPot('');
       setParent('');
@@ -143,7 +146,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -415,6 +418,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </label>{' '}
         now <span data-testid="setting-escalate-after-current"><Fig>{data?.escalateAfter ?? ''}</Fig></span>{' '}
         <label>
+          Review SLA{' '}
+          <input
+            data-testid="setting-review-sla"
+            placeholder="whole days (blank: none)"
+            value={reviewSla}
+            onChange={(e) => {
+              setReviewSla(e.target.value);
+              touch('review-sla');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('review-sla')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-review-sla-current"><Fig>{data?.reviewSla ?? ''}</Fig></span>{' '}
+        <label>
           Entry date{' '}
           <input
             data-testid="setting-entry-date"
@@ -513,7 +531,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank.
           </span>
         )}
       </form>

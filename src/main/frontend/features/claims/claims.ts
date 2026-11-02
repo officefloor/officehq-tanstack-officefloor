@@ -21,6 +21,22 @@ export function statusCount(claims: Claim[], status: ClaimStatus): number {
   return claims.filter((c) => c.status === status).length;
 }
 
+/** A REVIEW claim's review day: the sheet's today when it last went to REVIEW, as its status log records it
+ *  (undefined when the log has none). */
+export function reviewDay(claim: Claim): string | undefined {
+  let on: string | undefined;
+  for (const line of claim.log) if (line.status === 'REVIEW') on = line.on;
+  return on;
+}
+
+/** Whether a claim is late for review: REVIEW, with its review day plus the review SLA (null: none) before the
+ *  sheet's today (not yet known: no). */
+export function reviewLate(claim: Claim, sla: number | null, today: string | undefined): boolean {
+  if (claim.status !== 'REVIEW' || sla === null || today === undefined) return false;
+  const day = reviewDay(claim);
+  return day !== undefined && plusDays(day, sla) < today;
+}
+
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
 export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review';
 

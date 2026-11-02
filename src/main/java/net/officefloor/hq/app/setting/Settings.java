@@ -83,6 +83,10 @@ public class Settings {
      *  escalate it, once per claim ever (a whole number, not dated); blank: off. */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** The days a REVIEW claim may wait from its review day (the sheet's today when it went to REVIEW) before it is
+     *  late for review (a whole number, not dated); blank: none. */
+    public static final String REVIEW_SLA = "review-sla";
+
     /** The default date of a new claim in place of the sheet's today (yyyy-MM-dd); blank: off. */
     public static final String ENTRY_DATE = "entry-date";
 
@@ -127,7 +131,7 @@ public class Settings {
 
     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith("perm-");
     }
@@ -314,6 +318,12 @@ public class Settings {
         return days.isEmpty() ? null : Integer.valueOf(days);
     }
 
+    /** The sheet's review SLA in days, or null when there is none. */
+    public Integer reviewSla(String sheet) {
+        String days = get(sheet, REVIEW_SLA);
+        return days.isEmpty() ? null : Integer.valueOf(days);
+    }
+
     /** The default date of a new claim: the sheet's entry date while it is set, else the sheet's today. */
     public LocalDate entryDay(String sheet) {
         String entry = get(sheet, ENTRY_DATE);
@@ -407,6 +417,6 @@ public class Settings {
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
-                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER));
+                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA));
     }
 }
