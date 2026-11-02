@@ -1,0 +1,212 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+index b5321a34..7dc70a30 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+@@ -6,17 +6,19 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.statement.Statements;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Service;
+ 
+ /**
+  * Merges a person into another on the sheet; only a steward may, neither may be retired, and a person is not merged
+- * into themselves. The merged person's claims move to the other, keeping their numbers and dates, each unbound from
+- * any statement and listed after the other's claims in the order they were added. Their name and aliases become
+- * aliases of the other; their patrons are added to the other's (not the other themselves, no repeats); anyone naming
+- * them as patron names the other instead (no repeats); their pool memberships move to the other, the shares added
+- * when the other is already a member, and so do their closed periods' totals. Their statements, holds, watchers and
+- * contact are dropped, and they leave the sheet.
++ * into themselves. The merged person's claims move to the other, keeping their numbers, dates and any figure a
++ * statement bound them to, listed after the other's claims in the order they were added. Their statements count as
++ * the other's too; the other's last statement stays theirs (or, having none, becomes the merged person's). Their
++ * name and aliases become aliases of the other; their patrons are added to the other's (not the other themselves, no
++ * repeats); anyone naming them as patron names the other instead (no repeats); their pool memberships move to the
++ * other, the shares added when the other is already a member, and so do their closed periods' totals. Their holds,
++ * watchers and contact are dropped, and they leave the sheet.
+  */
+ @Service
+ public class PersonMerger {
+@@ -26,13 +28,16 @@ public class PersonMerger {
+     private final Roles roles;
+     private final Audit audit;
+     private final Rollup rollup;
++    private final Statements statements;
+ 
+-    public PersonMerger(JdbcTemplate jdbc, People people, Roles roles, Audit audit, Rollup rollup) {
++    public PersonMerger(JdbcTemplate jdbc, People people, Roles roles, Audit audit, Rollup rollup,
++            Statements statements) {
+         this.jdbc = jdbc;
+         this.people = people;
+         this.roles = roles;
+         this.audit = audit;
+         this.rollup = rollup;
++        this.statements = statements;
+     }
+ 
+     /** Merges the person into the one with id {@code intoId}, writing nothing when it is refused. */
+@@ -54,7 +59,7 @@ public class PersonMerger {
+         // Claims, in the order they were added, each listed as the sheet's newest so they follow the other's.
+         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE sheet = ? AND person = ? ORDER BY id",
+                 Long.class, sheet, f)) {
+-            jdbc.update("UPDATE claim SET person = ?, stated = FALSE, stated_due = NULL, listed ="
++            jdbc.update("UPDATE claim SET person = ?, listed ="
+                     + " (SELECT COALESCE(MAX(l.listed), 0) + 1 FROM claim l WHERE l.sheet = ?) WHERE sheet = ? AND id = ?",
+                     t, sheet, sheet, claim);
+         }
+@@ -100,8 +105,10 @@ public class PersonMerger {
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
+ 
+-        // Dropped with the person: statements, holds, watchers, grades and contact.
+-        jdbc.update("DELETE FROM statement WHERE sheet = ? AND person = ?", sheet, f);
++        // Statements count as the other's, the other's last staying theirs.
++        statements.move(sheet, f, sheet, t);
++
++        // Dropped with the person: holds, watchers, grades and contact.
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index 156e3c0a..7f4fa4c4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -14,6 +14,7 @@ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.SheetArchive;
++import net.officefloor.hq.app.statement.Statements;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Service;
+@@ -28,9 +29,11 @@ import org.springframework.stereotype.Service;
+  * contact and aliases, and their claims with their status, dates, notes, frozen figures, logs and comments, listed in
+  * the order they were. Each claim that had a number takes the other sheet's next one, in the order the claims were
+  * opened (by the sheet's today when each was opened, then the order they were added); a correction or split names its
+- * claim's new number when that claim came along (none otherwise). Statement bindings are lost (the statement count
+- * starts at 0) and references, locks and settle batches are not carried. They leave this sheet entirely: patron links,
+- * pool memberships, holds, closed periods' totals, statements and watches are dropped.
++ * claim's new number when that claim came along (none otherwise). Each claim keeps any figure a statement bound it to,
++ * and their statements go with them: the receiving person's statement count is their own plus these, and their last
++ * statement stays theirs (or, having none, becomes the transferred person's). References, locks and settle batches are
++ * not carried. They leave this sheet entirely: patron links, pool memberships, holds, closed periods' totals and
++ * watches are dropped.
+  */
+ @Service
+ public class PersonTransferrer {
+@@ -44,9 +47,11 @@ public class PersonTransferrer {
+     private final SheetArchive archive;
+     private final Audit audit;
+     private final Rollup rollup;
++    private final Statements statements;
+ 
+     public PersonTransferrer(JdbcTemplate jdbc, People people, Aliases aliases, Claims claims,
+-            ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup) {
++            ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup,
++            Statements statements) {
+         this.jdbc = jdbc;
+         this.people = people;
+         this.aliases = aliases;
+@@ -56,6 +61,7 @@ public class PersonTransferrer {
+         this.archive = archive;
+         this.audit = audit;
+         this.rollup = rollup;
++        this.statements = statements;
+     }
+ 
+     /** Transfers the person to the sheet {@code to}, writing nothing when it is refused. */
+@@ -160,6 +166,9 @@ public class PersonTransferrer {
+             }
+         }
+ 
++        // Statements go with them, the receiving person's last staying theirs.
++        statements.move(sheet, f, to, t);
++
+         // They leave this sheet entirely.
+         if (!moved.isEmpty()) {
+             String in = moved.keySet().stream().map(String::valueOf).collect(Collectors.joining(","));
+@@ -172,7 +181,6 @@ public class PersonTransferrer {
+         jdbc.update("DELETE FROM patron WHERE sheet = ? AND (person_id = ? OR patron_id = ?)", sheet, f, f);
+         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
+-        jdbc.update("DELETE FROM statement WHERE sheet = ? AND person = ?", sheet, f);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
+@@ -219,12 +227,11 @@ public class PersonTransferrer {
+     }
+ 
+     /**
+-     * Copies the claim to the person on the other sheet, listed as its newest, unbound from any statement, unnumbered
+-     * and with no reference, lock or settle batch; returns the copy's id.
++     * Copies the claim to the person on the other sheet, listed as its newest, keeping any figure a statement bound it
++     * to, unnumbered and with no reference, lock or settle batch; returns the copy's id.
+      */
+     private long copyClaim(List<String> columns, String sheet, long claim, String to, long person) {
+-        Map<String, String> set = Map.of("SHEET", "?", "PERSON", "?", "STATED", "FALSE", "STATED_DUE", "NULL",
+-                "NUMBER_ON_SHEET", "NULL", "PERIOD_NUMBER", "NULL", "REF", "NULL", "LOCKED_BY", "NULL", "BATCH", "NULL",
++        Map<String, String> set = Map.of("SHEET", "?", "PERSON", "?", "NUMBER_ON_SHEET", "NULL", "PERIOD_NUMBER", "NULL", "REF", "NULL", "LOCKED_BY", "NULL", "BATCH", "NULL",
+                 "LISTED", "(SELECT COALESCE(MAX(l.listed), 0) + 1 FROM claim l WHERE l.sheet = ?)");
+         String select = columns.stream().map((c) -> set.getOrDefault(c, "c." + c)).collect(Collectors.joining(", "));
+         List<Object> args = new ArrayList<>();
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statements.java b/src/main/java/net/officefloor/hq/app/statement/Statements.java
+index 330da632..88913b16 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Statements.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Statements.java
+@@ -22,9 +22,10 @@ public class Statements {
+     /** Per person on the sheet with a statement: the count, and the last one's due-total and date (the date it was taken as of, else the sheet's today then). */
+     public List<StatementSummary> list(String sheet) {
+         return jdbc.query("""
+-                SELECT s.person, c.taken, s.due_total, COALESCE(s.as_of, s.taken_on) AS stated_on FROM statement s
+-                JOIN (SELECT person, COUNT(*) AS taken, MAX(id) AS last FROM statement WHERE sheet = ? GROUP BY person) c
+-                  ON s.id = c.last
++                SELECT s.person, (SELECT COUNT(*) FROM statement c WHERE c.sheet = s.sheet AND c.person = s.person)
++                  AS taken, s.due_total, COALESCE(s.as_of, s.taken_on) AS stated_on FROM statement s
++                WHERE s.sheet = ? AND NOT EXISTS (SELECT 1 FROM statement o WHERE o.sheet = s.sheet
++                  AND o.person = s.person AND (o.seq > s.seq OR (o.seq = s.seq AND o.id > s.id)))
+                 ORDER BY s.person""", (rs, i) -> {
+             BigDecimal due = rs.getBigDecimal("due_total");
+             return new StatementSummary(rs.getLong("person"), rs.getInt("taken"),
+@@ -38,13 +39,26 @@ public class Statements {
+      * taken now).
+      */
+     public void add(String sheet, long person, BigDecimal dueTotal, LocalDate takenOn, LocalDate asOf) {
+-        jdbc.update("INSERT INTO statement (sheet, person, due_total, taken_on, as_of) VALUES (?, ?, ?, ?, ?)", sheet,
+-                person, dueTotal, Date.valueOf(takenOn), asOf == null ? null : Date.valueOf(asOf));
++        jdbc.update("INSERT INTO statement (sheet, person, due_total, taken_on, as_of, seq) VALUES (?, ?, ?, ?, ?,"
++                + " (SELECT COALESCE(MAX(s.seq), 0) + 1 FROM statement s WHERE s.sheet = ? AND s.person = ?))", sheet,
++                person, dueTotal, Date.valueOf(takenOn), asOf == null ? null : Date.valueOf(asOf), sheet, person);
++    }
++
++    /**
++     * Moves the person's statements to the person {@code into} on the sheet {@code to}, keeping their order. When
++     * that person has statements of their own, the moved ones are placed before them, so their last stays theirs.
++     */
++    public void move(String sheet, long person, String to, long into) {
++        Long shift = jdbc.queryForObject("SELECT (SELECT MIN(seq) FROM statement WHERE sheet = ? AND person = ?)"
++                + " - (SELECT MAX(seq) FROM statement WHERE sheet = ? AND person = ?) - 1", Long.class, to, into, sheet,
++                person);
++        jdbc.update("UPDATE statement SET sheet = ?, person = ?, seq = seq + ? WHERE sheet = ? AND person = ?", to, into,
++                shift == null ? 0L : shift, sheet, person);
+     }
+ 
+     /** The person's last statement, if they have one. */
+     public Optional<Taken> last(String sheet, long person) {
+-        return jdbc.query("SELECT id, due_total FROM statement WHERE sheet = ? AND person = ? ORDER BY id DESC LIMIT 1",
++        return jdbc.query("SELECT id, due_total FROM statement WHERE sheet = ? AND person = ? ORDER BY seq DESC, id DESC LIMIT 1",
+                 (rs, i) -> new Taken(rs.getLong("id"), rs.getBigDecimal("due_total")), sheet, person)
+                 .stream().findFirst();
+     }
+diff --git a/src/main/resources/db/migration/V65__statement_seq.sql b/src/main/resources/db/migration/V65__statement_seq.sql
+new file mode 100644
+index 00000000..10f8de74
+--- /dev/null
++++ b/src/main/resources/db/migration/V65__statement_seq.sql
+@@ -0,0 +1,6 @@
++-- The order of a person's statements: the one with the highest seq is their last. A statement taken is placed after
++-- the person's others; statements that move with a merge or transfer onto a person who has their own are placed
++-- before them, so the receiving person's last statement stays theirs.
++ALTER TABLE statement ADD COLUMN seq BIGINT;
++UPDATE statement SET seq = id;
++ALTER TABLE statement ALTER COLUMN seq SET NOT NULL;
