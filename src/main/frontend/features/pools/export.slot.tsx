@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { poolsKey, poolsPath, type Pool } from './pools';
@@ -11,6 +11,10 @@ const csvValue = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}
 // re-read first, so a change elsewhere (a retirement, a setting) is reflected, and the list shows the same.
 function ExportPools({ sheet }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
+
+  // While the screen's reads are in flight (as after the as-of date changes) the figures are not yet the ones
+  // shown, so the export waits for them.
+  const reading = useIsFetching() > 0;
 
   const download = async () => {
     const pools = await queryClient.fetchQuery({
@@ -38,7 +42,7 @@ function ExportPools({ sheet }: { sheet: string; user: string }) {
 
   return (
     <p>
-      <button type="button" data-testid="export-pools" onClick={() => void download()}>
+      <button type="button" data-testid="export-pools" disabled={reading} onClick={() => void download()}>
         Export pools (CSV)
       </button>
     </p>

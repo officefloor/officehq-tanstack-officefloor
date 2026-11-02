@@ -1,3 +1,4 @@
+import { useIsFetching } from '@tanstack/react-query';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from './people';
 import { useSheetToday } from '../sheet/sheet';
@@ -18,6 +19,10 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
   const floor = useFloorCents(sheet);
   const cap = useCapCents(sheet);
   const late = useLate(sheet);
+
+  // While the screen's reads are in flight (as after the as-of date changes) the figures are not yet the ones
+  // shown, so the export waits for them.
+  const reading = useIsFetching() > 0;
 
   const download = () => {
     const lines = [
@@ -40,7 +45,7 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
 
   return (
     <p>
-      <button type="button" data-testid="export-people" onClick={download}>
+      <button type="button" data-testid="export-people" disabled={reading} onClick={download}>
         Export people (CSV)
       </button>
     </p>
