@@ -9,6 +9,7 @@ import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.period.PeriodGuard;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, ServerHttpConnection connection, ClaimRepository repository,
-            PeriodRepository periods, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long cid;
@@ -43,6 +44,17 @@ public class ChangeClaimStatus {
         // Four eyes: whoever opened a claim cannot settle it.
         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
             throw new BadRequestException("the user who opened a claim cannot settle it");
+        }
+        // A clerk settles only a claim whose due is within the sheet's clerk limit ('n/a' is within any);
+        // a steward settles anything.
+        if (to.equals("SETTLED") && found.status().equals("OPEN")
+                && settings.role(id, by).equals(SettingsRepository.CLERK)) {
+            BigDecimal limit = settings.clerkLimit(id);
+            BigDecimal now = repository.figure(id, found);
+            if (limit != null && now != null && now.compareTo(limit) > 0) {
+                throw new BadRequestException("a clerk cannot settle a claim whose due is above the clerk limit of "
+                        + SettingsRepository.money(limit));
+            }
         }
         Rollup.Snapshot before = rollup.take(id);
         if (!repository.changeStatus(id, cid, from, to)) {
