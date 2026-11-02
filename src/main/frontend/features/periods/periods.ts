@@ -11,7 +11,8 @@ import type { DatedCents } from '../settings/settings';
 /** A period on the sheet: its name (unique on the sheet) and its from and to date (yyyy-MM-dd), inclusive;
  *  whether it is closed, its due-total fixed when closed (two decimals; null while open), and each person's due-total
  *  for it fixed then (by person id; empty while open, and a person added since has none); and whether it is
- *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change. */
+ *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change; and the most OPEN or
+ *  PENDING claims a person may have in it (null for no cap). */
 export type Period = {
   name: string;
   from: string;
@@ -20,6 +21,7 @@ export type Period = {
   closedTotal: string | null;
   closedPeople: Record<string, string>;
   soft: boolean;
+  cap: number | null;
 };
 
 export const periodsKey = (sheet: string) => ['periods', sheet] as const;

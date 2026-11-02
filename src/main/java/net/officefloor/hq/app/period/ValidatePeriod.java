@@ -34,6 +34,14 @@ public class ValidatePeriod {
         if (end.isBefore(start)) {
             throw new InvalidPeriodException("A period's to-date may not be before its from-date");
         }
-        body.set(new PeriodInput(name, start, end));
+        String capText = request == null || request.cap() == null ? "" : request.cap().trim();
+        Integer cap = null;
+        if (!capText.isEmpty()) {
+            if (!capText.matches("[0-9]{1,9}") || Integer.parseInt(capText) < 1) {
+                throw new InvalidPeriodException("A period's cap is a whole number of at least 1: " + capText);
+            }
+            cap = Integer.parseInt(capText);
+        }
+        body.set(new PeriodInput(name, start, end, cap));
     }
 }

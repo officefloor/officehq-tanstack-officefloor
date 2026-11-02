@@ -56,6 +56,7 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
       <td data-testid="period-due-total">{shownDueTotal(period, dueCents)}</td>
       <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
+      <td data-testid="period-cap">{period.cap ?? ''}</td>
       <td>
         <button
           type="button"
@@ -113,8 +114,8 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
   );
 }
 
-type Draft = { name: string; from: string; to: string };
-const EMPTY: Draft = { name: '', from: '', to: '' };
+type Draft = { name: string; from: string; to: string; cap: string };
+const EMPTY: Draft = { name: '', from: '', to: '', cap: '' };
 
 type Range = { from: string; to: string };
 const NO_RANGE: Range = { from: '', to: '' };
@@ -215,7 +216,8 @@ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
 
 // The sheet's periods, each with its due-total: the due now of the claims that counted at the end of its last day (see countedOn) whose date
 // falls in it (a claim with no rate adds nothing), fixed when the period is closed. The form adds one; the server refuses a name already on
-// the sheet, a bad date, a to-date before the from-date, or dates that overlap another period.
+// the sheet, a bad date, a to-date before the from-date, dates that overlap another period, or a cap (open claims per
+// person, blank for none) that is not a whole number of at least 1.
 function Periods({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: periods = [] } = usePeriods(sheet);
@@ -274,12 +276,21 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
             onChange={(e) => change({ to: e.target.value })}
           />
         </label>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="period-form-cap"
+            placeholder="open claims per person (blank: none)"
+            value={draft.cap}
+            onChange={(e) => change({ cap: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
         </button>
         {save.isError && (
           <span data-testid="period-form-error" role="alert">
-            {' '}A period needs a name not already on the sheet and valid from and to dates, the to on or after the from, that overlap no other period.
+            {' '}A period needs a name not already on the sheet and valid from and to dates, the to on or after the from, that overlap no other period, and a cap that is blank or a whole number of at least 1.
           </span>
         )}
       </form>
@@ -293,6 +304,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
             <th>Due total</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th></th>
           </tr>
         </thead>

@@ -17,6 +17,6 @@ public class SavePeriod {
         }
         periods.add(sheet, input);
         audit.record("PERIOD_ADDED sheet=" + sheet + " by=" + user + " period=" + input.name() + " from="
-                + input.from() + " to=" + input.to());
+                + input.from() + " to=" + input.to() + (input.cap() == null ? "" : " cap=" + input.cap()));
     }
 }

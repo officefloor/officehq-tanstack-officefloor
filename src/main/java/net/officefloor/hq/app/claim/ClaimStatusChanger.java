@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import net.officefloor.hq.app.Audit;
 import java.time.LocalDate;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
@@ -221,6 +222,21 @@ public class ClaimStatusChanger {
         if (claim.status().after(requested) == null) {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+        }
+        // A period with a cap lets each person have at most that many OPEN or PENDING claims due inside it.
+        if (requested == ClaimStatusChange.OPEN) {
+            Period period = periods.on(sheet, LocalDate.parse(claim.dueBy()));
+            if (period != null && period.cap() != null) {
+                long held = claims.list(sheet).stream()
+                        .filter((c) -> c.person() == claim.person() && c.id() != claim.id())
+                        .filter((c) -> c.status() == ClaimStatus.OPEN || c.status() == ClaimStatus.PENDING)
+                        .filter((c) -> c.dueBy().compareTo(period.from()) >= 0 && c.dueBy().compareTo(period.to()) <= 0)
+                        .count();
+                if (held >= period.cap()) {
+                    throw new InvalidClaimStatusChangeException("A person may have at most " + period.cap()
+                            + " open claims in period " + period.name());
+                }
+            }
         }
         return requested;
     }
