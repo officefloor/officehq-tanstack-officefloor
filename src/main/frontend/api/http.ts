@@ -1,9 +1,28 @@
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
-// of a silent `if (res.ok)` that leaves the UI showing stale data.
+// of a silent `if (res.ok)` that leaves the UI showing stale data. The rejection's message is the
+// server's own `error` text when it sent one.
+//
+// Every request carries the signed-in name in X-User (the server records it as `by=<user>`).
+let signedInUser = '';
+
+/** Called by the session (features/session) whenever the signed-in name changes. */
+export function setSignedInUser(name: string): void {
+  signedInUser = name;
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const headers = new Headers(init?.headers);
+  if (signedInUser) headers.set('X-User', signedInUser);
+  const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+    let message = `${init?.method ?? 'GET'} ${path} -> ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      /* no JSON body: keep the status message */
+    }
+    throw new Error(message);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
