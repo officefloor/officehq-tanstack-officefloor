@@ -45,7 +45,8 @@ public class SaveClaim {
         }
         long pid = found.personId();
         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
-                found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects());
+                found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects(),
+                found.dueBy());
         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                 + " amount=" + saved.amount() + " date=" + saved.date() + Claim.auditNumber(saved.number()));
         rollup.record(id, by, before);

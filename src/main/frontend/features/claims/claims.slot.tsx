@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateFor, useRates } from '../rates/useRates';
-import { claimDueNow, dueBy, isOverdue } from '../overdue/useOverdue';
+import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
@@ -46,7 +46,6 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
   const floor = settings?.floor;
-  const terms = settings?.terms;
   const today = useSheetToday(sheetId).data?.today;
   const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
@@ -217,9 +216,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-due">
                   {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), floor, settings, today)}
                 </td>
-                <td data-testid="claim-due-by">{terms === undefined ? '' : dueBy(c.date, terms)}</td>
+                <td data-testid="claim-due-by">{c.dueBy}</td>
                 <td data-testid="claim-overdue">
-                  {terms === undefined || today === undefined ? '' : isOverdue(c, terms, today) ? 'yes' : 'no'}
+                  {today === undefined ? '' : isOverdue(c, today) ? 'yes' : 'no'}
                 </td>
                 <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>

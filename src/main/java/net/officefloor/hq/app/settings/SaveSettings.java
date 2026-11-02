@@ -33,6 +33,11 @@ public class SaveSettings {
             repository.setTerms(id, input.terms());
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=terms value=" + input.terms());
         }
+        input.gradeTerms().forEach((grade, terms) -> {
+            repository.setGradeTerms(id, grade, terms);
+            audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=terms-" + grade + " value="
+                    + (terms == null ? "" : terms));
+        });
         if (input.setsLatePct()) {
             repository.setLatePct(id, input.latePct());
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=late-pct value="

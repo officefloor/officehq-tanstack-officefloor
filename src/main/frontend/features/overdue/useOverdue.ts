@@ -4,16 +4,9 @@ import { due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../ra
 import { useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 
-/** A claim's due-by: its date (yyyy-mm-dd) plus the sheet's terms in days. */
-export function dueBy(date: string, terms: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
-}
-
 /** Whether a claim is overdue: it is open (OPEN or PENDING) and its due-by is before the sheet's today. */
-export function isOverdue(c: Claim, terms: number, today: string): boolean {
-  return isOpen(c) && dueBy(c.date, terms) < today;
+export function isOverdue(c: Claim, today: string): boolean {
+  return isOpen(c) && c.dueBy < today;
 }
 
 /** Whether a claim's live figures (its rate step and late charge) round half up: when the claim is
@@ -35,10 +28,10 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
  *  a statement: it follows the sheet's today until settling freezes it in. A correction (a negative
  *  amount) has no late charge. Just the figure until the settings and the sheet's today are loaded. */
 export function dueNow(c: Claim, figure: string, settings: Settings | undefined, today: string | undefined, halfUp: boolean): string {
-  if (settings === undefined || today === undefined || !isOverdue(c, settings.terms, today) || isCorrection(c.amount)) {
+  if (settings === undefined || today === undefined || !isOverdue(c, today) || isCorrection(c.amount)) {
     return figure;
   }
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueBy(c.date, settings.terms)}T00:00:00Z`)) / 86_400_000;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.dueBy}T00:00:00Z`)) / 86_400_000;
   return withCharge(figure, settings.latePct, Math.floor(days / 30), halfUp);
 }
 
@@ -66,7 +59,7 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
   if (settings === undefined || today === undefined) return figures;
   for (const p of people.data ?? []) {
     const overdue = (claims.data ?? []).filter(
-      (c) => c.personId === p.id && counts(c, held) && isOverdue(c, settings.terms, today),
+      (c) => c.personId === p.id && counts(c, held) && isOverdue(c, today),
     );
     figures.set(p.id, {
       count: overdue.length,

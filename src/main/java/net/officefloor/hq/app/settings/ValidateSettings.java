@@ -3,6 +3,9 @@ package net.officefloor.hq.app.settings;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.plugin.variable.Out;
@@ -12,9 +15,11 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  limit; the floor is 0.00 or more with up to two decimals; the terms are a whole number of days, 0 to
  *  3650; the late percent is 0.00 or more with up to two decimals; the policy date is a date
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
- *  numbering from-date is a date, blank meaning off. A setting left out is not changed. */
+ *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
+ *  meaning the grade uses the sheet's terms. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
+    private static final List<String> GRADES = List.of("A", "B", "C");
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> settings)
@@ -31,6 +36,19 @@ public class ValidateSettings {
         String latePct = request == null || request.latePct() == null ? null : request.latePct().trim();
         if (terms != null && (!TERMS.matcher(terms).matches() || Integer.parseInt(terms) > 3650)) {
             throw new BadRequestException("terms must be a whole number of days from 0 to 3650");
+        }
+        Map<String, Integer> gradeTerms = new LinkedHashMap<>();
+        Map<String, String> grades = request == null || request.gradeTerms() == null ? Map.of() : request.gradeTerms();
+        for (String grade : GRADES) {
+            String value = grades.get(grade) == null ? null : grades.get(grade).trim();
+            if (value == null) continue;
+            if (!value.isEmpty() && (!TERMS.matcher(value).matches() || Integer.parseInt(value) > 3650)) {
+                throw new BadRequestException("terms for grade " + grade + " must be a whole number of days from 0 to 3650");
+            }
+            gradeTerms.put(grade, value.isEmpty() ? null : Integer.parseInt(value));
+        }
+        for (String grade : grades.keySet()) {
+            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
         }
         if (latePct != null && !MONEY.matcher(latePct).matches()) {
             throw new BadRequestException("late percent must be 0.00 or more with up to two decimals");
@@ -59,6 +77,6 @@ public class ValidateSettings {
                 floor != null, floor == null ? null : new BigDecimal(floor).setScale(2),
                 terms != null, terms == null ? null : Integer.parseInt(terms),
                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
-                policy != null, policyDate, numbering != null, numberingFrom));
+                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms));
     }
 }

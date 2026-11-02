@@ -53,7 +53,7 @@ public class ReassignClaim {
             throw new BadRequestException("a " + found.status() + " claim cannot be reassigned");
         }
         Claim moved = new Claim(found.id(), to, found.amount(), found.date(), found.note(), found.status(),
-                found.number(), found.due(), found.openedBy(), false, null, found.corrects());
+                found.number(), found.due(), found.openedBy(), false, null, found.corrects(), found.dueBy());
         audit.record("CLAIM_REASSIGNED sheet=" + id + " by=" + by + " person=" + toName + " amount=" + moved.amount()
                 + " date=" + moved.date() + Claim.auditNumber(moved.number()) + " from=" + fromName + " to=" + toName);
         rollup.record(id, by, before);

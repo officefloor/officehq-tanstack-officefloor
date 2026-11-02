@@ -3,7 +3,9 @@ package net.officefloor.hq.app.settings;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -32,7 +34,7 @@ public class SettingsRepository {
         LocalDate numbering = periodNumberingFrom(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId),
                 money(latePct(sheetId)), roles, policy == null ? null : policy.toString(),
-                numbering == null ? null : numbering.toString());
+                numbering == null ? null : numbering.toString(), gradeTerms(sheetId));
     }
 
     /** The sheet's clerk limit; null when it has none. */
@@ -66,6 +68,25 @@ public class SettingsRepository {
 
     public void setTerms(String sheetId, int terms) {
         jdbc.update("UPDATE sheet SET terms = ? WHERE id = ?", terms, sheetId);
+    }
+
+    /** Each grade's own terms on the sheet, by grade, in grade order. */
+    public Map<String, Integer> gradeTerms(String sheetId) {
+        Map<String, Integer> terms = new LinkedHashMap<>();
+        jdbc.query("SELECT grade, terms FROM grade_terms WHERE sheet_id = ? ORDER BY grade",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> terms.put(rs.getString("grade"), rs.getInt("terms")),
+                sheetId);
+        return terms;
+    }
+
+    /** Set a grade's own terms; null removes them, the grade then using the sheet's terms. */
+    public void setGradeTerms(String sheetId, String grade, Integer terms) {
+        if (terms == null) {
+            jdbc.update("DELETE FROM grade_terms WHERE sheet_id = ? AND grade = ?", sheetId, grade);
+        } else {
+            jdbc.update("MERGE INTO grade_terms (sheet_id, grade, terms) KEY (sheet_id, grade) VALUES (?, ?, ?)",
+                    sheetId, grade, terms);
+        }
     }
 
     /** The sheet's late percent: what an overdue claim's due gains, of its figure, for every full 30 days

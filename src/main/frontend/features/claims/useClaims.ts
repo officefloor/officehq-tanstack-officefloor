@@ -11,7 +11,9 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  settled (null unless settled while its grade had a rate: its due is then live, from the rates), and
  *  who opened it (null until it is opened), whether its person's last statement bound it, and the figure
  *  it was bound to (null when not bound, or bound with no figure: its due then stays live), and, for a
- *  correction (a negative amount), the number of the settled claim of the same person it corrects. */
+ *  correction (a negative amount), the number of the settled claim of the same person it corrects, and
+ *  its due-by (yyyy-mm-dd), fixed when it was created from the terms of its person's grade then (else the
+ *  sheet's terms). */
 export type Claim = {
   id: number;
   personId: number;
@@ -25,6 +27,7 @@ export type Claim = {
   stated: boolean;
   statedDue: string | null;
   corrects: string | null;
+  dueBy: string;
 };
 
 /** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */

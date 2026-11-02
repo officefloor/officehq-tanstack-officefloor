@@ -16,14 +16,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
             rs.getString("claim_no"), dueOf(rs.getBigDecimal("settled_due")),
             rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")),
-            rs.getString("corrects"));
+            rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString());
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -155,8 +155,8 @@ public class ClaimRepository {
         return due(sheetId, claim);
     }
 
-    /** A claim's due now: its figure, plus, while it is overdue (OPEN or PENDING and its due-by — its date plus the
-     *  sheet's terms — before the sheet's today), the sheet's late percent of that figure for every full
+    /** A claim's due now: its figure, plus, while it is overdue (OPEN or PENDING and its due-by — fixed when it was
+     *  created — before the sheet's today), the sheet's late percent of that figure for every full
      *  30 days it is overdue, rounded to two decimals by the claim's rounding. A statement never binds the charge:
      *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
      *  has no late charge. Null when it has no figure. */
@@ -165,13 +165,12 @@ public class ClaimRepository {
         if (figure == null || !claim.open() || new BigDecimal(claim.amount()).signum() < 0) {
             return figure;
         }
-        List<Object[]> found = jdbc.query("SELECT today, terms, late_pct FROM sheet WHERE id = ?",
-                (rs, i) -> new Object[] { rs.getDate("today").toLocalDate(), rs.getInt("terms"),
-                        rs.getBigDecimal("late_pct") }, sheetId);
+        List<Object[]> found = jdbc.query("SELECT today, late_pct FROM sheet WHERE id = ?",
+                (rs, i) -> new Object[] { rs.getDate("today").toLocalDate(), rs.getBigDecimal("late_pct") }, sheetId);
         if (found.isEmpty()) return figure;
         LocalDate today = (LocalDate) found.get(0)[0];
-        LocalDate dueBy = LocalDate.parse(claim.date()).plusDays((Integer) found.get(0)[1]);
-        BigDecimal pct = (BigDecimal) found.get(0)[2];
+        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        BigDecimal pct = (BigDecimal) found.get(0)[1];
         long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
         if (periods == 0 || pct == null || pct.signum() == 0) return figure;
         BigDecimal charge = figure.multiply(pct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
@@ -225,11 +224,22 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
+    /** The due-by of a claim created now for a person with a date: the date plus the terms of the grade the
+     *  person has on it, else the sheet's terms. */
+    public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
+        List<Integer> own = jdbc.queryForList("SELECT t.terms FROM grade_terms t WHERE t.sheet_id = ? AND t.grade = "
+                + GRADE_ON, Integer.class, sheetId, sheetId, personId, date.toString());
+        if (!own.isEmpty()) return date.plusDays(own.get(0));
+        List<Integer> sheet = jdbc.queryForList("SELECT terms FROM sheet WHERE id = ?", Integer.class, sheetId);
+        return date.plusDays(sheet.isEmpty() ? 14 : sheet.get(0));
+    }
+
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+        LocalDate dueBy = dueBy(sheetId, personId, date);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -237,9 +247,11 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setString(6, corrects);
+            ps.setDate(7, Date.valueOf(dueBy));
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects);
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
+                dueBy.toString());
     }
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no

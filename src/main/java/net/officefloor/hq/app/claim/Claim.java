@@ -5,9 +5,11 @@ package net.officefloor.hq.app.claim;
  *  (null unless settled with a rate; its due is then worked out live from the rates), and who opened it
  *  (null until it is opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound with no figure: its due then stays live), and, for a correction (a negative
- *  amount), the number of the settled claim it corrects (null otherwise). */
+ *  amount), the number of the settled claim it corrects (null otherwise), and its due-by (yyyy-MM-dd: fixed when it was
+ *  created, its date then plus the terms of its person's grade on that date, else the sheet's terms). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
-        String number, String due, String openedBy, boolean stated, String statedDue, String corrects) {
+        String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
+        String dueBy) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {

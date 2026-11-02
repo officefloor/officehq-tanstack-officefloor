@@ -11,15 +11,20 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
  *  figure, for every full 30 days it is overdue), its policy date (a claim dated before it rounds half
  *  up, one on or after it half to even; blank is the sheet's today), its period numbering from-date
  *  (while set and the sheet's today is on or after it, a claim opened is numbered within its period,
- *  <period>-<n>, or X-<n> in no period; blank is off), and the role (clerk or steward)
+ *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
+ *  terms), and the role (clerk or steward)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. */
+/** The grades a person can have, each of which can have its own terms. */
+const GRADES = ['A', 'B', 'C'];
+
 function SettingsPanel({ sheetId }: { sheetId: string }) {
   const settings = useSettings(sheetId);
   const queryClient = useQueryClient();
   const [limit, setLimit] = useState<string | null>(null);
   const [floor, setFloor] = useState<string | null>(null);
   const [terms, setTerms] = useState<string | null>(null);
+  const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [latePct, setLatePct] = useState<string | null>(null);
   const [policyDate, setPolicyDate] = useState<string | null>(null);
   const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
@@ -28,12 +33,13 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string> }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
       setFloor(null);
       setTerms(null);
+      setGradeTerms({});
       setLatePct(null);
       setPolicyDate(null);
       setNumberingFrom(null);
@@ -60,7 +66,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms });
           });
         }}
       >
@@ -103,6 +109,21 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        {GRADES.map((g) => (
+          <label key={g}>
+            Terms {g} (days){' '}
+            <input
+              data-testid={`setting-terms-${g}`}
+              inputMode="numeric"
+              value={gradeTerms[g] ?? ''}
+              onFocus={() => setGradeTerms((v) => (g in v ? v : { ...v, [g]: '' }))}
+              onChange={(e) => {
+                setGradeTerms((v) => ({ ...v, [g]: e.target.value }));
+                save.reset();
+              }}
+            />{' '}
+          </label>
+        ))}
         <label>
           Late %{' '}
           <input
@@ -148,6 +169,11 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         Current: clerk limit <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>,
         floor <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>,
         terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>,
+        {GRADES.map((g) => (
+          <span key={g}>
+            terms {g} <strong data-testid={`setting-terms-${g}-current`}>{settings.data?.gradeTerms?.[g] ?? ''}</strong>,{' '}
+          </span>
+        ))}
         late % <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>,
         policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>,
         period numbering from{' '}
