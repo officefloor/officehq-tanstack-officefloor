@@ -1,0 +1,372 @@
+diff --git a/src/main/frontend/features/claims/bulk-reassign.slot.tsx b/src/main/frontend/features/claims/bulk-reassign.slot.tsx
+index c000f505..18871250 100644
+--- a/src/main/frontend/features/claims/bulk-reassign.slot.tsx
++++ b/src/main/frontend/features/claims/bulk-reassign.slot.tsx
+@@ -12,7 +12,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
+ type BulkReassigned = { reassigned: number; refused: number; claims: Claim[] };
+ 
+ // Moves the selected claims together to the person picked beside the button: the server moves each in list order
+-// (people in the order they were added, newest claim first) by the rules of reassigning one, and leaves the rest as
++// (people by their list positions, newest claim first) by the rules of reassigning one, and leaves the rest as
+ // they are. Shows how many of each.
+ function BulkReassign({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/claims/bulk-settle.slot.tsx b/src/main/frontend/features/claims/bulk-settle.slot.tsx
+index e4a2bdac..84d08dc6 100644
+--- a/src/main/frontend/features/claims/bulk-settle.slot.tsx
++++ b/src/main/frontend/features/claims/bulk-settle.slot.tsx
+@@ -12,7 +12,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
+ type BulkSettled = { settled: number; refused: number; claims: Claim[]; lastBatch: number | null };
+ 
+ // Settles the selected claims together as the signed-in user: the server settles each in list order (people in the
+-// order they were added, newest claim first) by the rules of settling one, counting one sent to PENDING as settled,
++// list positions, newest claim first) by the rules of settling one, counting one sent to PENDING as settled,
+ // all or nothing: when any one cannot be settled none is and all count refused. Shows how many of each, and the number of the sheet's last batch (a bulk settle
+ // that settled at least one claim).
+ function BulkSettle({ sheet, user }: { sheet: string; user: string }) {
+diff --git a/src/main/frontend/features/claims/bulk.slot.tsx b/src/main/frontend/features/claims/bulk.slot.tsx
+index 60f0a6f5..e1876fbe 100644
+--- a/src/main/frontend/features/claims/bulk.slot.tsx
++++ b/src/main/frontend/features/claims/bulk.slot.tsx
+@@ -9,8 +9,8 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
+ 
+ type BulkOpened = { opened: number; refused: number; claims: Claim[] };
+ 
+-// Opens the selected claims together: the server opens each that can be, numbering them in list order (people in
+-// the order they were added, newest claim first), and leaves the rest as they are. Shows how many of each.
++// Opens the selected claims together: the server opens each that can be, numbering them in list order (people by
++// their list positions, newest claim first), and leaves the rest as they are. Shows how many of each.
+ function BulkOpen({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+   const selected = useSelectedClaims(sheet);
+diff --git a/src/main/frontend/features/people/move.slot.tsx b/src/main/frontend/features/people/move.slot.tsx
+new file mode 100644
+index 00000000..721c95ef
+--- /dev/null
++++ b/src/main/frontend/features/people/move.slot.tsx
+@@ -0,0 +1,51 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useIsLatest } from '../../query/useIsLatest';
++import { byUser } from '../session/session';
++import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { peopleKey, peoplePath, personActionKey } from './people';
++import type { Person } from './people';
++
++type Direction = 'up' | 'down';
++
++function MoveHeader() {
++  return <th>Move</th>;
++}
++
++// The buttons that swap the person with the one above or below them in the list. The top row cannot move up nor
++// the bottom row down: the server refuses it and the row shows the error.
++function PersonMove({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const move = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
++    mutationFn: (direction: Direction) =>
++      postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/move`, user), { direction }),
++    onSuccess: (updated) => {
++      queryClient.setQueryData(peopleKey(sheet), updated);
++    },
++  });
++  const act = useSubmitOnce(move);
++  const latest = useIsLatest(personActionKey(sheet, person.id), move.submittedAt);
++
++  return (
++    <td>
++      <button type="button" data-testid="person-move-up" disabled={move.isPending} onClick={() => act('up')}>
++        Up
++      </button>{' '}
++      <button type="button" data-testid="person-move-down" disabled={move.isPending} onClick={() => act('down')}>
++        Down
++      </button>
++      {move.isError && latest && (
++        <span data-testid="person-error" role="alert">
++          {' '}That move was refused: the top row cannot move up nor the bottom row down.
++        </span>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeaders.fill({ order: 2, Component: MoveHeader }),
++  PersonColumns.fill({ order: 2, Component: PersonMove }),
++];
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index fa6ef0d0..4f736bc3 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -76,7 +76,7 @@ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
+   );
+ }
+ 
+-// The sheet's people: listed in the order they were added (retired ones only when shown), with one form that adds a person or,
++// The sheet's people: listed by position, new ones at the end (retired ones only when shown), with one form that adds a person or,
+ // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
+ // when someone else has saved them since, the save is refused and the form shows their current values.
+ function People({ sheet, user }: { sheet: string; user: string }) {
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 6a42377c..3deb9f82 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -65,7 +65,7 @@ export const personActionKey = (sheet: string, person: number) => ['person-actio
+ 
+ export const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
+ 
+-/** Everyone on the sheet, in the order they were added. */
++/** Everyone on the sheet, in list order (by position; new people go to the end). */
+ export function usePeople(sheet: string) {
+   const read = useReadScope(peopleKey(sheet));
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index bd89d553..dbc971f2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Opens each selected claim in list order (people in the order they were added, newest claim first within a
++ * Opens each selected claim in list order (people by their list positions, newest claim first within a
+  * person), so they are numbered in that order; one that cannot be opened is left as it is and counted refused.
+  */
+ public class BulkOpenClaims {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+index d7ce4efc..e6f3c1da 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkReassignClaims.java
+@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Moves each selected claim to the one person in list order (people in the order they were added, newest claim first
++ * Moves each selected claim to the one person in list order (people by their list positions, newest claim first
+  * within a person) by the rules of reassigning one claim, as the signed-in user; one that cannot be moved is left as
+  * it is and counted refused.
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index 4e470bad..512d4e2a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Settles each selected claim in list order (people in the order they were added, newest claim first within a
++ * Settles each selected claim in list order (people by their list positions, newest claim first within a
+  * person) by the rules of settling one claim, as the signed-in user; one a clerk's settle sends to PENDING counts as
+  * settled. It is all or nothing: when any selected claim cannot be settled none is, every one counts refused and
+  * nothing is written. Otherwise the bulk settle is the sheet's next batch, each claim it settled carries the batch's
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java b/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
+index 23562af7..3f1bdb1b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
+@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Gives each selected person, in list order (the order they were added), the grade from the from-date exactly as
++ * Gives each selected person, in list order (by position), the grade from the from-date exactly as
+  * the person form would, each with its own PERSON_EDITED and rollup lines. A bad grade or date, or a selected
+  * person not on the sheet, refuses the whole action before anything is written. A viewer grades no one: it reports 0
+  * and writes nothing.
+diff --git a/src/main/java/net/officefloor/hq/app/person/MovePerson.java b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+new file mode 100644
+index 00000000..ace66159
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Swaps the person with the one above or below them in the list; the top cannot move up nor the bottom down. */
++public class MovePerson {
++    public void move(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
++            @Val Boolean up, People people, Audit audit) throws InvalidPersonException {
++        List<Person> everyone = people.list(sheet);
++        int at = -1;
++        for (int i = 0; i < everyone.size(); i++) {
++            if (everyone.get(i).id() == person.id()) {
++                at = i;
++            }
++        }
++        int to = up ? at - 1 : at + 1;
++        if (at < 0 || to < 0 || to >= everyone.size()) {
++            throw new InvalidPersonException(person.name() + " is already at the " + (up ? "top" : "bottom"));
++        }
++        people.swapPositions(sheet, person.id(), everyone.get(to).id());
++        audit.record("PERSON_MOVED sheet=" + sheet + " by=" + user + " name=" + person.name() + " position=" + (to + 1));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MoveRequest.java b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+new file mode 100644
+index 00000000..10f5168e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of POST /api/sheets/{sheet}/people/{person}/move: the direction, up or down. */
++public record MoveRequest(String direction) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 632c96a3..169a1e4b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -100,9 +100,20 @@ public class People {
+         return people;
+     }
+ 
+-    /** Everyone on the sheet, in the order they were added. */
++    /** Everyone on the sheet, in list order (by position; new people go to the end). */
+     public List<Person> list(String sheet) {
+-        return query(sheet, "WHERE sheet = ? ORDER BY id", sheet);
++        return query(sheet, "WHERE sheet = ? ORDER BY list_position, id", sheet);
++    }
++
++    /** The position after the sheet's last, where a new person goes. */
++    public static final String NEXT_POSITION = "(SELECT COALESCE(MAX(n.list_position), 0) + 1 FROM person n WHERE n.sheet = ?)";
++
++    /** Swaps the list positions of two people on the sheet. */
++    public void swapPositions(String sheet, long a, long b) {
++        Long pa = jdbc.queryForObject("SELECT list_position FROM person WHERE sheet = ? AND id = ?", Long.class, sheet, a);
++        Long pb = jdbc.queryForObject("SELECT list_position FROM person WHERE sheet = ? AND id = ?", Long.class, sheet, b);
++        jdbc.update("UPDATE person SET list_position = ? WHERE sheet = ? AND id = ?", pb, sheet, a);
++        jdbc.update("UPDATE person SET list_position = ? WHERE sheet = ? AND id = ?", pa, sheet, b);
+     }
+ 
+     public Person find(String sheet, long id) {
+@@ -154,9 +165,11 @@ public class People {
+ 
+     private void insert(String sheet, String name, GeneratedKeyHolder keys) {
+         jdbc.update(con -> {
+-            var ps = con.prepareStatement("INSERT INTO person (sheet, name) VALUES (?, ?)", new String[] { "id" });
++            var ps = con.prepareStatement("INSERT INTO person (sheet, name, list_position) VALUES (?, ?, "
++                    + NEXT_POSITION + ")", new String[] { "id" });
+             ps.setString(1, sheet);
+             ps.setString(2, name);
++            ps.setString(3, sheet);
+             return ps;
+         }, keys);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index 400d3e5a..1e615fc4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -90,11 +90,13 @@ public class PersonTransferrer {
+         // The person, as the other sheet's newest, with their grades, terms, contact and aliases.
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact) SELECT ?, name, terms, contact"
+-                    + " FROM person WHERE sheet = ? AND id = ?", new String[] { "id" });
++            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position) SELECT ?, name,"
++                    + " terms, contact, " + People.NEXT_POSITION + " FROM person WHERE sheet = ? AND id = ?",
++                    new String[] { "id" });
+             ps.setString(1, to);
+-            ps.setString(2, sheet);
+-            ps.setLong(3, f);
++            ps.setString(2, to);
++            ps.setString(3, sheet);
++            ps.setLong(4, f);
+             return ps;
+         }, keys);
+         long t = keys.getKey().longValue();
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 598d9d0e..49dbc7b1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -4,7 +4,7 @@ import java.util.List;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Responds with everyone on the sheet, in the order they were added. */
++/** Responds with everyone on the sheet, in list order (by position). */
+ public class RespondWithPeople {
+     public void respond(@PathVariable("sheet") String sheet, People people, ObjectResponse<List<Person>> response) {
+         response.send(people.list(sheet));
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateMove.java b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+new file mode 100644
+index 00000000..02777c9c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** The direction to move: up (towards the top of the list) or down. */
++public class ValidateMove {
++    public void validate(@RequestBody MoveRequest request, Out<Boolean> up) throws InvalidPersonException {
++        String direction = request == null || request.direction() == null ? "" : request.direction().trim();
++        switch (direction) {
++            case "up" -> up.set(true);
++            case "down" -> up.set(false);
++            default -> throw new InvalidPersonException("A person moves up or down, not: " + direction);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 9ac78507..9ab12c8e 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
+  * The sheet's figures as the screen shows them: each person's claimed, due-total and overdue-total, and the sheet's
+  * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
+  * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
+- * per person whose figures changed (in the order they were added; a new person counts as changed), then a TOTALS
++ * per person whose figures changed (in list order, by position; a new person counts as changed), then a TOTALS
+  * line when the sheet's totals changed.
+  */
+ @Service
+@@ -38,7 +38,7 @@ public class Rollup {
+     public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
+     }
+ 
+-    /** The sheet's figures at one moment: per person id, in the order they were added, and the totals. */
++    /** The sheet's figures at one moment: per person id, in list order, and the totals. */
+     public record Snapshot(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+     }
+ 
+diff --git a/src/main/resources/db/migration/V58__person_position.sql b/src/main/resources/db/migration/V58__person_position.sql
+new file mode 100644
+index 00000000..861f9994
+--- /dev/null
++++ b/src/main/resources/db/migration/V58__person_position.sql
+@@ -0,0 +1,6 @@
++-- A person's place in the sheet's list: people are listed by it, lowest first. New people go to the end (the
++-- sheet's highest plus one); moving a person up or down swaps their position with the neighbour's.
++ALTER TABLE person ADD COLUMN list_position BIGINT;
++UPDATE person SET list_position = id;
++ALTER TABLE person ALTER COLUMN list_position SET NOT NULL;
++CREATE INDEX person_sheet_position ON person (sheet, list_position);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/move.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/move.POST.yml
+new file mode 100644
+index 00000000..e59447b3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/move.POST.yml
+@@ -0,0 +1,15 @@
++# Moves the person up or down the list, swapping them with their neighbour. Responds with the sheet's people.
++validate:
++  class: net.officefloor.hq.app.person.ValidateMove
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: move
++move:
++  class: net.officefloor.hq.app.person.MovePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPeople
++  govern: [ transaction ]
