@@ -1,0 +1,537 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index fa459f8c..9fcb7974 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -12,7 +12,7 @@ import { useSheetToday } from '../sheet/sheet';
+ import { claimRateOf, showDue, twoDecimals, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+ import { periodOf, usePeriods } from '../periods/periods';
+-import { useCapCents, useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
++import { useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
+ import {
+   claimDueCents,
+   claimed,
+@@ -36,6 +36,7 @@ import { selectClaim, useSelectedClaims } from './selection';
+ import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
+ import { useTemplates } from '../templates/templates';
+ import { Fig } from '../locale/Fig';
++import { useCapCentsOf } from '../pools/pools';
+ 
+ type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+ const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+@@ -1133,12 +1134,13 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const claims = all.filter((c) => c.person === person.id);
+   const { data: rates = [] } = useRates(sheet);
+   const floor = useFloorCents(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const bandOf = useScoreBand(sheet);
+   const today = useSheetToday(sheet);
+   const late = useLate(sheet);
+   const { data: people = [] } = usePeople(sheet);
+-  // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
++  // The excess: how far the sum of their figures is above the cap less their cut total (0.00 when it is not, or is n/a).
++  const cap = capOf(person);
+   const uncapped = uncappedPersonDueCents(all, rates, person, today, floor, late, people);
+   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
+   const lateClaims = overdueCents(claims, [person], rates, late, floor);
+@@ -1219,7 +1221,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   return (
+     <>
+       {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(claimedCounted(claims, [person]))}</Fig></td>}
+-      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(all, rates, person, today, floor, late, cap, people))}</Fig></td>}
++      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(all, rates, person, today, floor, late, capOf(person), people))}</Fig></td>}
+       {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
+       {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
+       {shown('overdue-total') && <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 1ceefac8..56713851 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -4,7 +4,8 @@ import { gradeOn, setAsideOn, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { dueCents, hundredths, claimRateOf, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
+ import { useSheet, useSheetToday } from '../sheet/sheet';
+-import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
++import { useCapCentsOf } from '../pools/pools';
++import { useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
+ 
+ /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
+  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
+@@ -336,7 +337,7 @@ export function claimDueCents(claim: Claim, pct: string | undefined, floor: Date
+ /** A person's due-total: the sum of their counted claims' rounded figures (the claims of others are skipped). n/a (undefined) when their grade
+  *  has no rate on the sheet's today, unless a claim has a figure apart from it (settled, stated, at another grade
+  *  in force on its date, or from a rate that ended by today on a claim not dated after it): then the figures there are.
+- *  With a cap, a due-total above it is the cap (an n/a one is not capped). */
++ *  With a cap (the person's: the sheet's cap less their cut total), a due-total above it is the cap (an n/a one is not capped). */
+ export function personDueCents(
+   claims: Claim[],
+   rates: Rate[],
+@@ -512,9 +513,9 @@ export function useSheetTotals(sheet: string): {
+   const today = useSheetToday(sheet);
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const dues = people
+-    .map((p) => personDueCents(all, rates, p, today, floor, late, cap, people))
++    .map((p) => personDueCents(all, rates, p, today, floor, late, capOf(p), people))
+     .filter((cents): cents is bigint => cents !== undefined);
+   const due = trimmedSum(dues);
+   const overdue = overdueCents(all, people, rates, late, floor);
+@@ -596,7 +597,7 @@ export function usePersonDueCentsOf(sheet: string): (person: Person) => bigint |
+   const today = useSheetToday(sheet);
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const { data: people = [] } = usePeople(sheet);
+-  return (person) => personDueCents(all, rates, person, today, floor, late, cap, people);
++  return (person) => personDueCents(all, rates, person, today, floor, late, capOf(person), people);
+ }
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 1cd5fe60..aa654d37 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -5,9 +5,10 @@ import { twoDecimals, useRates } from '../rates/rates';
+ import { CLAIM_STATUSES, personDueCents, statusCount, trimmedSum, useClaims, useLate, useSheetTotals, type ClaimStatus } from '../claims/claims';
+ import { useAliases } from '../aliases/aliases';
+ import { useSheetToday } from '../sheet/sheet';
+-import { useCapCents, useFloorCents } from '../settings/settings';
++import { useFloorCents } from '../settings/settings';
+ import { useFamily } from './consolidated';
+ import { Fig } from '../locale/Fig';
++import { useCapCentsOf } from '../pools/pools';
+ 
+ type Figures = {
+   /** Each person's names as names are compared (lower-cased): their name, then their aliases. */
+@@ -29,7 +30,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
+   const today = useSheetToday(sheet);
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const { data: aliases = [] } = useAliases(sheet);
+   const { figures } = useSheetTotals(sheet);
+   const names = people.map((p) => [
+@@ -42,7 +43,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
+       g,
+       current
+         .filter((p) => p.grade === g)
+-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
++        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n),
+     ]),
+   ) as Record<Grade, bigint>;
+   const statuses = Object.fromEntries(CLAIM_STATUSES.map((s) => [s, statusCount(claims, s)])) as Record<ClaimStatus, number>;
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index 08fb12ee..9abb77f9 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -4,7 +4,7 @@ import { crewDueCents, useCrews } from '../crews/crews';
+ import { showDue, twoDecimals, useRates } from '../rates/rates';
+ import { useAliases } from '../aliases/aliases';
+ import { useSheetToday } from '../sheet/sheet';
+-import { useCapCents, useFloorCents } from '../settings/settings';
++import { useFloorCents } from '../settings/settings';
+ import {
+   CLAIM_STATUSES,
+   overdueCents,
+@@ -17,6 +17,7 @@ import {
+ } from '../claims/claims';
+ import { Fig } from '../locale/Fig';
+ import { useWatches } from '../watches/watches';
++import { useCapCentsOf } from '../pools/pools';
+ 
+ // The person who is the signed-in user: the one whose name or an alias is the user's name (as names are compared:
+ // without regard to case); none when there is none.
+@@ -37,14 +38,14 @@ function useMyTotals(sheet: string, user: string): { due: string; overdue: strin
+   const { data: claims = [] } = useClaims(sheet);
+   const { data: rates = [] } = useRates(sheet);
+   const floor = useFloorCents(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const today = useSheetToday(sheet);
+   const late = useLate(sheet);
+   const { data: people = [] } = usePeople(sheet);
+   if (person === undefined) return { due: '', overdue: '' };
+   const mine = claims.filter((c) => c.person === person.id);
+   return {
+-    due: showDue(personDueCents(claims, rates, person, today, floor, late, cap, people)),
++    due: showDue(personDueCents(claims, rates, person, today, floor, late, capOf(person), people)),
+     overdue: twoDecimals(overdueCents(mine, [person], rates, late, floor).cents),
+   };
+ }
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index 0a40f2c8..d36895b6 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -3,8 +3,9 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { usePeople } from './people';
+ import { useSheetToday } from '../sheet/sheet';
+ import { showDue, useRates } from '../rates/rates';
+-import { useCapCents, useFloorCents } from '../settings/settings';
++import { useFloorCents } from '../settings/settings';
+ import { personDueCents, useClaims, useLate } from '../claims/claims';
++import { useCapCentsOf } from '../pools/pools';
+ 
+ // A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote or a line break.
+ const csvValue = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+@@ -17,7 +18,7 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
+   const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const floor = useFloorCents(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const late = useLate(sheet);
+ 
+   // While the screen's reads are in flight (as after the as-of date changes) the figures are not yet the ones
+@@ -28,7 +29,7 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
+     const lines = [
+       'name,grade,retired-from,due-total',
+       ...people.map((p) =>
+-        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, cap, people))]
++        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, capOf(p), people))]
+           .map(csvValue)
+           .join(','),
+       ),
+diff --git a/src/main/frontend/features/pools/cut-total.slot.tsx b/src/main/frontend/features/pools/cut-total.slot.tsx
+index 963aee30..7af82904 100644
+--- a/src/main/frontend/features/pools/cut-total.slot.tsx
++++ b/src/main/frontend/features/pools/cut-total.slot.tsx
+@@ -2,21 +2,9 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import type { Person } from '../people/people';
+ import { hundredths, twoDecimals } from '../rates/rates';
+-import { usePools, type Pool } from './pools';
++import { personCutCents, usePools, type Pool } from './pools';
+ import { Fig } from '../locale/Fig';
+ 
+-/** A person's cut total in hundredths: their cuts across every pool they are a member of, a pool that shows no cut
+- *  adding nothing. */
+-function personCutCents(pools: Pool[], personId: number): bigint {
+-  let cents = 0n;
+-  for (const pool of pools) {
+-    for (const m of pool.members) {
+-      if (m.memberPool === null && m.person === personId && m.cut !== '') cents += hundredths(m.cut);
+-    }
+-  }
+-  return cents;
+-}
+-
+ /** The sheet's cut total in hundredths: every person's cut total added up. */
+ function sheetCutCents(pools: Pool[]): bigint {
+   let cents = 0n;
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 312f711f..1790a4ad 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -1,5 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { hundredths } from '../rates/rates';
++import { useCapCents } from '../settings/settings';
+ 
+ /** A member of a pool with their share percent (two decimals): a person (memberPool null), retired when the person has
+  *  a retirement date set, or another pool (memberPool its name, person 0); the membership's from-date and to-date (''
+@@ -38,3 +40,27 @@ export function usePools(sheet: string) {
+     queryFn: () => getJson<Pool[]>(poolsPath(sheet)),
+   });
+ }
++
++/** A person's cut total in hundredths: their cuts across every pool they are a member of, a pool that shows no cut
++ *  adding nothing. */
++export function personCutCents(pools: Pool[], personId: number): bigint {
++  let cents = 0n;
++  for (const pool of pools) {
++    for (const m of pool.members) {
++      if (m.memberPool === null && m.person === personId && m.cut !== '') cents += hundredths(m.cut);
++    }
++  }
++  return cents;
++}
++
++/** Each person's cap in hundredths: the cap covers their due-total plus their cut total, so their due-total is held
++ *  to the cap less their cut total, not below 0.00; undefined when there is no cap. */
++export function useCapCentsOf(sheet: string): (person: { id: number }) => bigint | undefined {
++  const cap = useCapCents(sheet);
++  const { data: pools = [] } = usePools(sheet);
++  return (person) => {
++    if (cap === undefined) return undefined;
++    const left = cap - personCutCents(pools, person.id);
++    return left > 0n ? left : 0n;
++  };
++}
+diff --git a/src/main/frontend/features/sheetcompare/sheetcompare.ts b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+index 08c187d0..1321e2cb 100644
+--- a/src/main/frontend/features/sheetcompare/sheetcompare.ts
++++ b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+@@ -3,8 +3,9 @@ import { getJson } from '../../api/http';
+ import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
+ import { useSheet } from '../sheet/sheet';
+ import { useRates } from '../rates/rates';
+-import { useCapCents, useFloorCents, useSettings } from '../settings/settings';
++import { useFloorCents, useSettings } from '../settings/settings';
+ import { personDueCents, useClaims, useLate } from '../claims/claims';
++import { useCapCentsOf } from '../pools/pools';
+ 
+ export const sheetExistsKey = (sheet: string) => ['sheet-exists', sheet] as const;
+ 
+@@ -27,7 +28,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
+   const settingsQ = useSettings(sheet);
+   const today = sheetQ.data?.today;
+   const floor = useFloorCents(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const late = useLate(sheet);
+   const people = peopleQ.data ?? [];
+   const claims = claimsQ.data ?? [];
+@@ -38,7 +39,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
+       g,
+       current
+         .filter((p) => p.grade === g)
+-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
++        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n),
+     ]),
+   ) as Record<Grade, bigint>;
+   const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ].every((q) => q.isSuccess && !q.isFetching);
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 5c39a0a7..36bfbe31 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -2,11 +2,12 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { GRADES, isRetired, usePeople } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+ import { hundredths, twoDecimals, useRates } from '../rates/rates';
+-import { useCapCents, useFloorCents, useReviewSla } from '../settings/settings';
++import { useFloorCents, useReviewSla } from '../settings/settings';
+ import { CLAIM_STATUSES, isActive, personDueCents, reviewLate, statusCount, useClaims, useLate } from '../claims/claims';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ import { classicPeriodDueCents, periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
+ import { Fig } from '../locale/Fig';
++import { useCapCentsOf } from '../pools/pools';
+ 
+ // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
+ // excluded), their due-totals added up (an n/a due-total adds nothing) and how many of them are active. Per period: its due-total, as its row shows
+@@ -21,7 +22,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+   const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const floor = useFloorCents(sheet);
+-  const cap = useCapCents(sheet);
++  const capOf = useCapCentsOf(sheet);
+   const late = useLate(sheet);
+   const reviewSla = useReviewSla(sheet);
+   const { data: voidReasons = [] } = useVoidReasons(sheet);
+@@ -32,7 +33,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+     .sort((a, b) => a.from.localeCompare(b.from))
+     .map((p) => ({ period: p, shown: shownDueTotal(p, periodTotals.get(p.name) ?? 0n) }));
+   const classicTotals = classicPeriodDueCents(periods, claims, people, rates, floor, late);
+-  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
++  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n);
+   const periodChanges = new Map(
+     shownTotals.map(({ period, shown }, i) => [
+       period.name,
+@@ -55,7 +56,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+         <tbody>
+           {GRADES.map((g) => {
+             const onGrade = current.filter((p) => p.grade === g);
+-            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
++            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n);
+             return (
+               <tr key={g}>
+                 <td>{g}</td>
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AddCrew.java b/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
+index 5053b66d..81bcff04 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/AddCrew.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.crew;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.pool.Pools;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class AddCrew {
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+             @RequestBody CrewRequest request, Crews crews, Pools pools, People people,
+-            Audit audit) throws InvalidCrewException {
++            Audit audit, Rollup rollup) throws InvalidCrewException {
+         String name = request == null || request.name() == null ? "" : request.name().trim();
+         if (name.isEmpty()) {
+             throw new InvalidCrewException("A crew's name must not be blank");
+@@ -27,7 +28,9 @@ public class AddCrew {
+         if (lead == null) {
+             throw new InvalidCrewException("Choose the crew's lead");
+         }
++        Rollup.Snapshot before = rollup.take(sheet);
+         crews.add(sheet, name, lead.id());
+         audit.record("CREW_ADDED sheet=" + sheet + " by=" + user + " name=" + name + " lead=" + lead.name());
++        rollup.record(sheet, user, before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java b/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java
+index 6751f693..c0e3ee5f 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java
++++ b/src/main/java/net/officefloor/hq/app/crew/AddCrewMember.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.crew;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -10,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** Adds a person to a crew; refused for an unknown crew or person, the crew's lead, or a person already in the crew. */
+ public class AddCrewMember {
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+-            @RequestBody CrewMemberRequest request, Crews crews, People people, Audit audit)
++            @RequestBody CrewMemberRequest request, Crews crews, People people, Audit audit, Rollup rollup)
+             throws InvalidCrewException {
+         Long lead = request == null || request.crew() == null ? null : crews.leadOf(sheet, request.crew());
+         if (lead == null) {
+@@ -26,8 +27,10 @@ public class AddCrewMember {
+         if (crews.isMember(sheet, request.crew(), person.id())) {
+             throw new InvalidCrewException(person.name() + " is already in " + request.crew());
+         }
++        Rollup.Snapshot before = rollup.take(sheet);
+         crews.addMember(sheet, request.crew(), person.id());
+         audit.record("CREW_MEMBER_ADDED sheet=" + sheet + " by=" + user + " crew=" + request.crew() + " name="
+                 + person.name());
++        rollup.record(sheet, user, before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java b/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java
+index ef3f4dc1..ace59086 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/AddPoolMember.java
+@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -27,8 +28,8 @@ public class AddPoolMember {
+     private static final BigDecimal FULL = new BigDecimal("100.00");
+ 
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+-            @RequestBody PoolMemberRequest request, Pools pools, People people, Audit audit)
+-            throws InvalidPoolException {
++            @RequestBody PoolMemberRequest request, Pools pools, People people, Audit audit,
++            Rollup rollup) throws InvalidPoolException {
+         if (request == null || request.pool() == null || !pools.has(sheet, request.pool())) {
+             throw new InvalidPoolException("No such pool");
+         }
+@@ -56,17 +57,22 @@ public class AddPoolMember {
+         String dates = (from == null ? "" : " from=" + from) + (to == null ? "" : " to=" + to);
+         if (sub != null) {
+             checkSubPool(sheet, request.pool(), sub, pools);
++            Rollup.Snapshot before = rollup.take(sheet);
+             pools.addSubPool(sheet, request.pool(), sub, share, from, to);
+             audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
+                     + sub + " share=" + share.toPlainString() + dates);
++            // The cuts it moves move the capped due-totals.
++            rollup.record(sheet, user, before);
+             return;
+         }
+         if (pools.isMember(sheet, request.pool(), person.id())) {
+             throw new InvalidPoolException(person.name() + " is already in " + request.pool());
+         }
++        Rollup.Snapshot before = rollup.take(sheet);
+         pools.addMember(sheet, request.pool(), person.id(), share, from, to);
+         audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
+                 + person.name() + " share=" + share.toPlainString() + dates);
++        rollup.record(sheet, user, before);
+     }
+ 
+     /** The date given, or null when blank. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 4b94a377..81556d7f 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -16,6 +16,9 @@ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.claim.Late;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.pool.Pool;
++import net.officefloor.hq.app.pool.PoolMember;
++import net.officefloor.hq.app.pool.Pools;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.setting.Dated;
+@@ -51,14 +54,17 @@ public class Rollup {
+     private final Rates rates;
+     private final SheetClock clock;
+     private final Settings settings;
++    private final Pools pools;
+     private final Audit audit;
+ 
+-    public Rollup(People people, Claims claims, Rates rates, SheetClock clock, Settings settings, Audit audit) {
++    public Rollup(People people, Claims claims, Rates rates, SheetClock clock, Settings settings, Pools pools,
++            Audit audit) {
+         this.people = people;
+         this.claims = claims;
+         this.rates = rates;
+         this.clock = clock;
+         this.settings = settings;
++        this.pools = pools;
+         this.audit = audit;
+     }
+ 
+@@ -68,6 +74,7 @@ public class Rollup {
+         List<Rate> sheetRates = rates.list(sheet);
+         Dated floor = settings.floor(sheet);
+         BigDecimal cap = settings.cap(sheet);
++        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : cutTotals(sheet);
+         Late late = settings.late(sheet, today);
+         List<Claim> all = claims.list(sheet);
+         Map<Long, Figures> figures = new LinkedHashMap<>();
+@@ -131,7 +138,8 @@ public class Rollup {
+             // hold a part of a claim shared with them.
+             boolean na = !holdsPart && Rate.on(sheetRates, person.grade(), today) == null
+                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
+-            due = Settings.capped(due, cap);
++            // The cap covers the due-total plus the person's cut total.
++            due = Settings.capped(due, Settings.capLess(cap, cuts.get(person.id())));
+             claimedTotal = claimedTotal.add(claimed);
+             overdueFigures.add(overdue);
+             if (!na) {
+@@ -144,6 +152,19 @@ public class Rollup {
+                 trimmedSum(overdueFigures).toPlainString());
+     }
+ 
++    /** Each person's cut total: their cuts across every pool they are a member of (a pool showing no cut adds nothing). */
++    private Map<Long, BigDecimal> cutTotals(String sheet) {
++        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
++        for (Pool pool : pools.list(sheet)) {
++            for (PoolMember m : pool.members()) {
++                if (m.memberPool() == null && !m.cut().isEmpty()) {
++                    totals.merge(m.person(), new BigDecimal(m.cut()), BigDecimal::add);
++                }
++            }
++        }
++        return totals;
++    }
++
+     /** A person's score: the settled figure of their SETTLED claims that correct nothing, divided by 100, minus 5 for every overdue claim of theirs that counts,
+      *  rounded half to even to a whole number. */
+     static long score(BigDecimal settled, int overdueCount) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 4435333e..7fdba92d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -270,6 +270,11 @@ public class Settings {
+         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+     }
+ 
++    /** The cap less a person's cut total, not below 0.00 (none: none; no cut total: the cap). */
++    public static BigDecimal capLess(BigDecimal cap, BigDecimal cutTotal) {
++        return cap == null || cutTotal == null ? cap : cap.subtract(cutTotal).max(BigDecimal.ZERO.setScale(2));
++    }
++
+     /** The sheet's proof threshold in force on the date, or null when there is none. */
+     public BigDecimal proofThreshold(String sheet, LocalDate date) {
+         String threshold = on(sheet, PROOF_THRESHOLD, date);
