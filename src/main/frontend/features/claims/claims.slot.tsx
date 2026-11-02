@@ -1232,8 +1232,16 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
       queryClient.setQueryData(claimsKey(sheet), updated);
       setDraft(EMPTY);
     },
+    // A refused save of the editor closes it: the user's lock is released and the form goes back to adding, the
+    // refusal still showing until the form is changed or submitted again.
+    onError: (_error, { id }) => {
+      if (id === null) return;
+      closedRefused.current = true;
+      unlock.mutate(id);
+    },
   });
   const send = useSubmitOnce(save);
+  const closedRefused = useRef(false);
   // A DRAFT claim from a template: its amount and note as they are now, dated like a claim with no date; refused,
   // like the form, through claim-form-error.
   const { data: templates = [] } = useTemplates(sheet);
@@ -1258,13 +1266,15 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
         ? EMPTY
         : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '', ref: locked.ref ?? '', tags: locked.tags.join(', ') },
     );
-    save.reset();
+    if (closedRefused.current) closedRefused.current = false;
+    else save.reset();
     // Only a move to another claim (or none) refills the form; the draft typed meanwhile is the user's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
   const change = (next: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...next }));
+    closedRefused.current = false;
     save.reset();
     fromTemplate.reset();
   };
@@ -1282,6 +1292,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    closedRefused.current = false;
     // The server refuses an amount that is not a number with up to two decimals, a bad date, or a negative amount
     // (a correction) that does not name a SETTLED claim of this person by number, or a
     // reference already used on the sheet (ignoring case).
