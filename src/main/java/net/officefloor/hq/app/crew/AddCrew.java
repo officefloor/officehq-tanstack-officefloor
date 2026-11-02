@@ -3,6 +3,7 @@ package net.officefloor.hq.app.crew;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.pool.Pools;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class AddCrew {
     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @RequestBody CrewRequest request, Crews crews, Pools pools, People people,
-            Audit audit) throws InvalidCrewException {
+            Audit audit, Rollup rollup) throws InvalidCrewException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
         if (name.isEmpty()) {
             throw new InvalidCrewException("A crew's name must not be blank");
@@ -27,7 +28,9 @@ public class AddCrew {
         if (lead == null) {
             throw new InvalidCrewException("Choose the crew's lead");
         }
+        Rollup.Snapshot before = rollup.take(sheet);
         crews.add(sheet, name, lead.id());
         audit.record("CREW_ADDED sheet=" + sheet + " by=" + user + " name=" + name + " lead=" + lead.name());
+        rollup.record(sheet, user, before);
     }
 }

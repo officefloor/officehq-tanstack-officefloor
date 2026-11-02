@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.rollup.Rollup;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,8 +28,8 @@ public class AddPoolMember {
     private static final BigDecimal FULL = new BigDecimal("100.00");
 
     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
-            @RequestBody PoolMemberRequest request, Pools pools, People people, Audit audit)
-            throws InvalidPoolException {
+            @RequestBody PoolMemberRequest request, Pools pools, People people, Audit audit,
+            Rollup rollup) throws InvalidPoolException {
         if (request == null || request.pool() == null || !pools.has(sheet, request.pool())) {
             throw new InvalidPoolException("No such pool");
         }
@@ -56,17 +57,22 @@ public class AddPoolMember {
         String dates = (from == null ? "" : " from=" + from) + (to == null ? "" : " to=" + to);
         if (sub != null) {
             checkSubPool(sheet, request.pool(), sub, pools);
+            Rollup.Snapshot before = rollup.take(sheet);
             pools.addSubPool(sheet, request.pool(), sub, share, from, to);
             audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
                     + sub + " share=" + share.toPlainString() + dates);
+            // The cuts it moves move the capped due-totals.
+            rollup.record(sheet, user, before);
             return;
         }
         if (pools.isMember(sheet, request.pool(), person.id())) {
             throw new InvalidPoolException(person.name() + " is already in " + request.pool());
         }
+        Rollup.Snapshot before = rollup.take(sheet);
         pools.addMember(sheet, request.pool(), person.id(), share, from, to);
         audit.record("POOL_MEMBER_ADDED sheet=" + sheet + " by=" + user + " pool=" + request.pool() + " name="
                 + person.name() + " share=" + share.toPlainString() + dates);
+        rollup.record(sheet, user, before);
     }
 
     /** The date given, or null when blank. */

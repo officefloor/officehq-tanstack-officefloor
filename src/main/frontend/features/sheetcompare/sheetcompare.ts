@@ -3,8 +3,9 @@ import { getJson } from '../../api/http';
 import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
 import { useSheet } from '../sheet/sheet';
 import { useRates } from '../rates/rates';
-import { useCapCents, useFloorCents, useSettings } from '../settings/settings';
+import { useFloorCents, useSettings } from '../settings/settings';
 import { personDueCents, useClaims, useLate } from '../claims/claims';
+import { useCapCentsOf } from '../pools/pools';
 
 export const sheetExistsKey = (sheet: string) => ['sheet-exists', sheet] as const;
 
@@ -27,7 +28,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
   const settingsQ = useSettings(sheet);
   const today = sheetQ.data?.today;
   const floor = useFloorCents(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const late = useLate(sheet);
   const people = peopleQ.data ?? [];
   const claims = claimsQ.data ?? [];
@@ -38,7 +39,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
       g,
       current
         .filter((p) => p.grade === g)
-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
+        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n),
     ]),
   ) as Record<Grade, bigint>;
   const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ].every((q) => q.isSuccess && !q.isFetching);

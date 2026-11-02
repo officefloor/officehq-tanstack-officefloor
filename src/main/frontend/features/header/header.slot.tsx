@@ -4,7 +4,7 @@ import { crewDueCents, useCrews } from '../crews/crews';
 import { showDue, twoDecimals, useRates } from '../rates/rates';
 import { useAliases } from '../aliases/aliases';
 import { useSheetToday } from '../sheet/sheet';
-import { useCapCents, useFloorCents } from '../settings/settings';
+import { useFloorCents } from '../settings/settings';
 import {
   CLAIM_STATUSES,
   overdueCents,
@@ -17,6 +17,7 @@ import {
 } from '../claims/claims';
 import { Fig } from '../locale/Fig';
 import { useWatches } from '../watches/watches';
+import { useCapCentsOf } from '../pools/pools';
 
 // The person who is the signed-in user: the one whose name or an alias is the user's name (as names are compared:
 // without regard to case); none when there is none.
@@ -37,14 +38,14 @@ function useMyTotals(sheet: string, user: string): { due: string; overdue: strin
   const { data: claims = [] } = useClaims(sheet);
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
   const { data: people = [] } = usePeople(sheet);
   if (person === undefined) return { due: '', overdue: '' };
   const mine = claims.filter((c) => c.person === person.id);
   return {
-    due: showDue(personDueCents(claims, rates, person, today, floor, late, cap, people)),
+    due: showDue(personDueCents(claims, rates, person, today, floor, late, capOf(person), people)),
     overdue: twoDecimals(overdueCents(mine, [person], rates, late, floor).cents),
   };
 }

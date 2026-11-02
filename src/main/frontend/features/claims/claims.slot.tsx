@@ -12,7 +12,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { claimRateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useCapCents, useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
+import { useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
 import {
   claimDueCents,
   claimed,
@@ -36,6 +36,7 @@ import { selectClaim, useSelectedClaims } from './selection';
 import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
 import { Fig } from '../locale/Fig';
+import { useCapCentsOf } from '../pools/pools';
 
 type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -1133,12 +1134,13 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const claims = all.filter((c) => c.person === person.id);
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const bandOf = useScoreBand(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
   const { data: people = [] } = usePeople(sheet);
-  // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
+  // The excess: how far the sum of their figures is above the cap less their cut total (0.00 when it is not, or is n/a).
+  const cap = capOf(person);
   const uncapped = uncappedPersonDueCents(all, rates, person, today, floor, late, people);
   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
@@ -1219,7 +1221,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(claimedCounted(claims, [person]))}</Fig></td>}
-      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(all, rates, person, today, floor, late, cap, people))}</Fig></td>}
+      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(all, rates, person, today, floor, late, capOf(person), people))}</Fig></td>}
       {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
       {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
       {shown('overdue-total') && <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>}

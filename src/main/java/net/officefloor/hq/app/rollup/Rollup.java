@@ -16,6 +16,9 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.pool.Pool;
+import net.officefloor.hq.app.pool.PoolMember;
+import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Dated;
@@ -51,14 +54,17 @@ public class Rollup {
     private final Rates rates;
     private final SheetClock clock;
     private final Settings settings;
+    private final Pools pools;
     private final Audit audit;
 
-    public Rollup(People people, Claims claims, Rates rates, SheetClock clock, Settings settings, Audit audit) {
+    public Rollup(People people, Claims claims, Rates rates, SheetClock clock, Settings settings, Pools pools,
+            Audit audit) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.clock = clock;
         this.settings = settings;
+        this.pools = pools;
         this.audit = audit;
     }
 
@@ -68,6 +74,7 @@ public class Rollup {
         List<Rate> sheetRates = rates.list(sheet);
         Dated floor = settings.floor(sheet);
         BigDecimal cap = settings.cap(sheet);
+        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : cutTotals(sheet);
         Late late = settings.late(sheet, today);
         List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -131,7 +138,8 @@ public class Rollup {
             // hold a part of a claim shared with them.
             boolean na = !holdsPart && Rate.on(sheetRates, person.grade(), today) == null
                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
-            due = Settings.capped(due, cap);
+            // The cap covers the due-total plus the person's cut total.
+            due = Settings.capped(due, Settings.capLess(cap, cuts.get(person.id())));
             claimedTotal = claimedTotal.add(claimed);
             overdueFigures.add(overdue);
             if (!na) {
@@ -142,6 +150,19 @@ public class Rollup {
         }
         return new Snapshot(figures, claimedTotal.toPlainString(), trimmedSum(dueFigures).toPlainString(),
                 trimmedSum(overdueFigures).toPlainString());
+    }
+
+    /** Each person's cut total: their cuts across every pool they are a member of (a pool showing no cut adds nothing). */
+    private Map<Long, BigDecimal> cutTotals(String sheet) {
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        for (Pool pool : pools.list(sheet)) {
+            for (PoolMember m : pool.members()) {
+                if (m.memberPool() == null && !m.cut().isEmpty()) {
+                    totals.merge(m.person(), new BigDecimal(m.cut()), BigDecimal::add);
+                }
+            }
+        }
+        return totals;
     }
 
     /** A person's score: the settled figure of their SETTLED claims that correct nothing, divided by 100, minus 5 for every overdue claim of theirs that counts,

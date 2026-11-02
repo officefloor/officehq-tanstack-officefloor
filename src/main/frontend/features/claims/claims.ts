@@ -4,7 +4,8 @@ import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, claimRateOf, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheet, useSheetToday } from '../sheet/sheet';
-import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
+import { useCapCentsOf } from '../pools/pools';
+import { useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
@@ -336,7 +337,7 @@ export function claimDueCents(claim: Claim, pct: string | undefined, floor: Date
 /** A person's due-total: the sum of their counted claims' rounded figures (the claims of others are skipped). n/a (undefined) when their grade
  *  has no rate on the sheet's today, unless a claim has a figure apart from it (settled, stated, at another grade
  *  in force on its date, or from a rate that ended by today on a claim not dated after it): then the figures there are.
- *  With a cap, a due-total above it is the cap (an n/a one is not capped). */
+ *  With a cap (the person's: the sheet's cap less their cut total), a due-total above it is the cap (an n/a one is not capped). */
 export function personDueCents(
   claims: Claim[],
   rates: Rate[],
@@ -512,9 +513,9 @@ export function useSheetTotals(sheet: string): {
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const dues = people
-    .map((p) => personDueCents(all, rates, p, today, floor, late, cap, people))
+    .map((p) => personDueCents(all, rates, p, today, floor, late, capOf(p), people))
     .filter((cents): cents is bigint => cents !== undefined);
   const due = trimmedSum(dues);
   const overdue = overdueCents(all, people, rates, late, floor);
@@ -596,7 +597,7 @@ export function usePersonDueCentsOf(sheet: string): (person: Person) => bigint |
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const { data: people = [] } = usePeople(sheet);
-  return (person) => personDueCents(all, rates, person, today, floor, late, cap, people);
+  return (person) => personDueCents(all, rates, person, today, floor, late, capOf(person), people);
 }

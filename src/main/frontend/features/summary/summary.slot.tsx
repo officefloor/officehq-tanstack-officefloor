@@ -2,11 +2,12 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES, isRetired, usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { hundredths, twoDecimals, useRates } from '../rates/rates';
-import { useCapCents, useFloorCents, useReviewSla } from '../settings/settings';
+import { useFloorCents, useReviewSla } from '../settings/settings';
 import { CLAIM_STATUSES, isActive, personDueCents, reviewLate, statusCount, useClaims, useLate } from '../claims/claims';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { classicPeriodDueCents, periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
 import { Fig } from '../locale/Fig';
+import { useCapCentsOf } from '../pools/pools';
 
 // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
 // excluded), their due-totals added up (an n/a due-total adds nothing) and how many of them are active. Per period: its due-total, as its row shows
@@ -21,7 +22,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const late = useLate(sheet);
   const reviewSla = useReviewSla(sheet);
   const { data: voidReasons = [] } = useVoidReasons(sheet);
@@ -32,7 +33,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
     .sort((a, b) => a.from.localeCompare(b.from))
     .map((p) => ({ period: p, shown: shownDueTotal(p, periodTotals.get(p.name) ?? 0n) }));
   const classicTotals = classicPeriodDueCents(periods, claims, people, rates, floor, late);
-  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
+  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n);
   const periodChanges = new Map(
     shownTotals.map(({ period, shown }, i) => [
       period.name,
@@ -55,7 +56,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
         <tbody>
           {GRADES.map((g) => {
             const onGrade = current.filter((p) => p.grade === g);
-            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
+            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n);
             return (
               <tr key={g}>
                 <td>{g}</td>

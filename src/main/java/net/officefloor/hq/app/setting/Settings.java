@@ -270,6 +270,11 @@ public class Settings {
         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
     }
 
+    /** The cap less a person's cut total, not below 0.00 (none: none; no cut total: the cap). */
+    public static BigDecimal capLess(BigDecimal cap, BigDecimal cutTotal) {
+        return cap == null || cutTotal == null ? cap : cap.subtract(cutTotal).max(BigDecimal.ZERO.setScale(2));
+    }
+
     /** The sheet's proof threshold in force on the date, or null when there is none. */
     public BigDecimal proofThreshold(String sheet, LocalDate date) {
         String threshold = on(sheet, PROOF_THRESHOLD, date);

@@ -5,9 +5,10 @@ import { twoDecimals, useRates } from '../rates/rates';
 import { CLAIM_STATUSES, personDueCents, statusCount, trimmedSum, useClaims, useLate, useSheetTotals, type ClaimStatus } from '../claims/claims';
 import { useAliases } from '../aliases/aliases';
 import { useSheetToday } from '../sheet/sheet';
-import { useCapCents, useFloorCents } from '../settings/settings';
+import { useFloorCents } from '../settings/settings';
 import { useFamily } from './consolidated';
 import { Fig } from '../locale/Fig';
+import { useCapCentsOf } from '../pools/pools';
 
 type Figures = {
   /** Each person's names as names are compared (lower-cased): their name, then their aliases. */
@@ -29,7 +30,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
   const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
-  const cap = useCapCents(sheet);
+  const capOf = useCapCentsOf(sheet);
   const { data: aliases = [] } = useAliases(sheet);
   const { figures } = useSheetTotals(sheet);
   const names = people.map((p) => [
@@ -42,7 +43,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
       g,
       current
         .filter((p) => p.grade === g)
-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
+        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n),
     ]),
   ) as Record<Grade, bigint>;
   const statuses = Object.fromEntries(CLAIM_STATUSES.map((s) => [s, statusCount(claims, s)])) as Record<ClaimStatus, number>;

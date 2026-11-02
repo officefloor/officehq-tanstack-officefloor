@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { hundredths } from '../rates/rates';
+import { useCapCents } from '../settings/settings';
 
 /** A member of a pool with their share percent (two decimals): a person (memberPool null), retired when the person has
  *  a retirement date set, or another pool (memberPool its name, person 0); the membership's from-date and to-date (''
@@ -37,4 +39,28 @@ export function usePools(sheet: string) {
     queryKey: poolsKey(sheet),
     queryFn: () => getJson<Pool[]>(poolsPath(sheet)),
   });
+}
+
+/** A person's cut total in hundredths: their cuts across every pool they are a member of, a pool that shows no cut
+ *  adding nothing. */
+export function personCutCents(pools: Pool[], personId: number): bigint {
+  let cents = 0n;
+  for (const pool of pools) {
+    for (const m of pool.members) {
+      if (m.memberPool === null && m.person === personId && m.cut !== '') cents += hundredths(m.cut);
+    }
+  }
+  return cents;
+}
+
+/** Each person's cap in hundredths: the cap covers their due-total plus their cut total, so their due-total is held
+ *  to the cap less their cut total, not below 0.00; undefined when there is no cap. */
+export function useCapCentsOf(sheet: string): (person: { id: number }) => bigint | undefined {
+  const cap = useCapCents(sheet);
+  const { data: pools = [] } = usePools(sheet);
+  return (person) => {
+    if (cap === undefined) return undefined;
+    const left = cap - personCutCents(pools, person.id);
+    return left > 0n ? left : 0n;
+  };
 }

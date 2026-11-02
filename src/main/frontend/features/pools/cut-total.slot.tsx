@@ -2,20 +2,8 @@ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import type { Person } from '../people/people';
 import { hundredths, twoDecimals } from '../rates/rates';
-import { usePools, type Pool } from './pools';
+import { personCutCents, usePools, type Pool } from './pools';
 import { Fig } from '../locale/Fig';
-
-/** A person's cut total in hundredths: their cuts across every pool they are a member of, a pool that shows no cut
- *  adding nothing. */
-function personCutCents(pools: Pool[], personId: number): bigint {
-  let cents = 0n;
-  for (const pool of pools) {
-    for (const m of pool.members) {
-      if (m.memberPool === null && m.person === personId && m.cut !== '') cents += hundredths(m.cut);
-    }
-  }
-  return cents;
-}
 
 /** The sheet's cut total in hundredths: every person's cut total added up. */
 function sheetCutCents(pools: Pool[]): bigint {
