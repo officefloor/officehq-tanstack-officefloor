@@ -32,8 +32,9 @@ public class AddClaim {
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         PeriodGuard.open(periods, id, date);
         people.claimAllowed(id, pid, date);
+        input.checkCorrection(repository, id, pid);
         Rollup.Snapshot before = rollup.take(id);
-        Claim added = repository.add(id, pid, input.amount(), date, input.note());
+        Claim added = repository.add(id, pid, input.amount(), date, input.note(), input.corrects());
         audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                 + " amount=" + added.amount() + " date=" + added.date());
         rollup.record(id, by, before);

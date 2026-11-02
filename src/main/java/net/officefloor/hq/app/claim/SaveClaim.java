@@ -38,13 +38,14 @@ public class SaveClaim {
         PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
         PeriodGuard.open(periods, id, date);
         people.claimAllowed(id, found.personId(), date);
+        input.checkCorrection(repository, id, found.personId());
         Rollup.Snapshot before = rollup.take(id);
-        if (!repository.update(id, cid, input.amount(), date, input.note())) {
+        if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects())) {
             throw new BadRequestException("only a DRAFT claim can be edited");
         }
         long pid = found.personId();
         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
-                found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue());
+                found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects());
         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                 + " amount=" + saved.amount() + " date=" + saved.date() + Claim.auditNumber(saved.number()));
         rollup.record(id, by, before);

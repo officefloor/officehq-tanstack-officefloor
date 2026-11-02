@@ -48,7 +48,7 @@ public class QuickAdd {
             rollup.record(id, by, before);
         }
         Rollup.Snapshot before = rollup.take(id);
-        Claim added = claims.add(id, person.id(), input.amount(), date, "");
+        Claim added = claims.add(id, person.id(), input.amount(), date, "", null);
         audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + person.name()
                 + " amount=" + added.amount() + " date=" + added.date());
         rollup.record(id, by, before);

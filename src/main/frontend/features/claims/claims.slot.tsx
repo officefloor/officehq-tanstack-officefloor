@@ -34,7 +34,8 @@ const ACTIONS: [ClaimAction, string][] = [
 ];
 
 /** A person's claims, newest first, under their row, with a form that adds a claim, or edits one
- *  when its editor is open. A blank date takes the sheet's today. */
+ *  when its editor is open. A blank date takes the sheet's today. A negative amount is a correction:
+ *  the form names, by number, the settled claim of the same person it corrects. */
 function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
@@ -50,20 +51,22 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
+  const [corrects, setCorrects] = useState('');
 
   const clearForm = () => {
     setEditing(null);
     setAmount('');
     setDate('');
     setNote('');
+    setCorrects('');
   };
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; amount: string; date: string; note: string }) => {
+    mutationFn: (f: { id: number | null; amount: string; date: string; note: string; corrects: string }) => {
       const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
       const path = f.id === null ? `${sheet}/people/${personId}/claims` : `${sheet}/claims/${f.id}`;
-      return postJson<Claim>(path, { amount: f.amount, date: f.date, note: f.note });
+      return postJson<Claim>(path, { amount: f.amount, date: f.date, note: f.note, corrects: f.corrects });
     },
     onSuccess: async () => {
       clearForm();
@@ -100,6 +103,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     setAmount(c.amount);
     setDate(c.date);
     setNote(c.note);
+    setCorrects(c.corrects === null ? '' : String(c.corrects));
   };
 
   const cancel = () => {
@@ -128,7 +132,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
             setRefused(null);
             submitOnce(() => {
               save.reset();
-              return save.mutateAsync({ id: editing, amount, date, note });
+              return save.mutateAsync({ id: editing, amount, date, note, corrects });
             });
           }}
         >
@@ -147,6 +151,16 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           </label>{' '}
           <label>
             Note <input data-testid="claim-form-note" value={note} onChange={field(setNote)} />
+          </label>{' '}
+          <label>
+            Corrects{' '}
+            <input
+              data-testid="claim-form-corrects"
+              inputMode="numeric"
+              placeholder="claim no."
+              value={corrects}
+              onChange={field(setCorrects)}
+            />
           </label>{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
@@ -169,6 +183,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-overdue">
                   {terms === undefined || today === undefined ? '' : isOverdue(c, terms, today) ? 'yes' : 'no'}
                 </td>
+                <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>

@@ -6,13 +6,23 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Bind the claim form: an amount is required (a number with up to two decimals, 0.00 or more), a
- *  blank date takes the sheet's today, the note may be empty. */
+/** Bind the claim form: an amount is required (a number with up to two decimals; a negative one is a
+ *  correction), a blank date takes the sheet's today, the note may be empty, and corrects is blank or
+ *  the number of the claim a correction corrects. */
 public class ValidateClaim {
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> claim) throws BadRequestException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
+        String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
+        Long number = null;
+        if (!corrects.isEmpty()) {
+            try {
+                number = Long.parseLong(corrects);
+            } catch (NumberFormatException e) {
+                throw new BadRequestException("corrects must be a claim number");
+            }
+        }
         LocalDate on = null;
         if (!date.isEmpty()) {
             try {
@@ -21,6 +31,6 @@ public class ValidateClaim {
                 throw new BadRequestException("date must be yyyy-mm-dd");
             }
         }
-        claim.set(new ClaimInput(ClaimInput.amount(amount), on, note));
+        claim.set(new ClaimInput(ClaimInput.signedAmount(amount), on, note, number));
     }
 }

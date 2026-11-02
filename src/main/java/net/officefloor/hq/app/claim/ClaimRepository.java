@@ -16,13 +16,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
             rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")),
-            rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")));
+            rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")),
+            rs.getObject("corrects", Long.class));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -79,8 +80,8 @@ public class ClaimRepository {
     /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
      *  had on that date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time), rounded half to even to two decimals, and at least the sheet's floor; null when no
-     *  rate applies. */
+     *  of time), rounded half to even to two decimals, and at least the sheet's floor (a correction's, a
+     *  negative amount's, has no floor); null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r WHERE r.sheet_id = ? AND r.grade = "
                 + GRADE_ON + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
@@ -89,7 +90,7 @@ public class ClaimRepository {
         if (pct.isEmpty()) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
                 .setScale(2, RoundingMode.HALF_EVEN);
-        return due.max(floor(sheetId));
+        return new BigDecimal(claim.amount()).signum() < 0 ? due : due.max(floor(sheetId));
     }
 
     /** The sheet's floor: the least a live due can be (two decimals). */
@@ -109,10 +110,13 @@ public class ClaimRepository {
     /** A claim's due now: its figure, plus, while it is overdue (OPEN and its due-by — its date plus the
      *  sheet's terms — before the sheet's today), the sheet's late percent of that figure for every full
      *  30 days it is overdue, rounded half to even to two decimals. A statement never binds the charge:
-     *  it keeps following the sheet's today until settling freezes it in. Null when it has no figure. */
+     *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
+     *  has no late charge. Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
         BigDecimal figure = figure(sheetId, claim);
-        if (figure == null || !claim.status().equals("OPEN")) return figure;
+        if (figure == null || !claim.status().equals("OPEN") || new BigDecimal(claim.amount()).signum() < 0) {
+            return figure;
+        }
         List<Object[]> found = jdbc.query("SELECT today, terms, late_pct FROM sheet WHERE id = ?",
                 (rs, i) -> new Object[] { rs.getDate("today").toLocalDate(), rs.getInt("terms"),
                         rs.getBigDecimal("late_pct") }, sheetId);
@@ -158,27 +162,36 @@ public class ClaimRepository {
                 String.class, sheetId, personId);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+    /** Whether the person has a SETTLED claim with this number on the sheet. */
+    public boolean settledOf(String sheetId, long personId, long number) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND claim_no = ? AND status = 'SETTLED'", Integer.class, sheetId, personId, number);
+        return n != null && n > 0;
+    }
+
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
+            ps.setObject(6, corrects);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null);
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects);
     }
 
-    /** Change a DRAFT claim's amount, date and note; false when the sheet has no such draft claim. */
-    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ? AND sheet_id = ?"
-                + " AND status = 'DRAFT'",
-                amount, Date.valueOf(date), note, claimId, sheetId) > 0;
+    /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
+     *  such draft claim. */
+    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
+                + " AND sheet_id = ? AND status = 'DRAFT'",
+                amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0;
     }
 
     /** An amount as shown: two decimals, a dot, no grouping. */

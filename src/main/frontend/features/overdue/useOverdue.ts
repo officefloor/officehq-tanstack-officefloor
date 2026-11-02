@@ -1,6 +1,6 @@
 import { counts, fixedDue, useClaims, type Claim } from '../claims/useClaims';
 import { gradeOn, heldIds, usePeople } from '../people/usePeople';
-import { due, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
+import { due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
 import { useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 
@@ -19,10 +19,12 @@ export function isOverdue(c: Claim, terms: number, today: string): boolean {
 /** A claim's due now: its figure (a settled claim's frozen due, else the one its last statement
  *  bound it to, else its floored live due), plus, while it is overdue, the sheet's late percent of
  *  that figure for every full 30 days it is overdue, rounded like a due. The charge is never bound by
- *  a statement: it follows the sheet's today until settling freezes it in. Just the figure until the
- *  settings and the sheet's today are loaded. */
+ *  a statement: it follows the sheet's today until settling freezes it in. A correction (a negative
+ *  amount) has no late charge. Just the figure until the settings and the sheet's today are loaded. */
 export function dueNow(c: Claim, figure: string, settings: Settings | undefined, today: string | undefined): string {
-  if (settings === undefined || today === undefined || !isOverdue(c, settings.terms, today)) return figure;
+  if (settings === undefined || today === undefined || !isOverdue(c, settings.terms, today) || isCorrection(c.amount)) {
+    return figure;
+  }
   const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueBy(c.date, settings.terms)}T00:00:00Z`)) / 86_400_000;
   return withCharge(figure, settings.latePct, Math.floor(days / 30));
 }
