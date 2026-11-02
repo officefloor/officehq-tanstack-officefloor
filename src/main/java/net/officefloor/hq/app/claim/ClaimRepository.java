@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
@@ -14,12 +15,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
-            rs.getObject("claim_no", Long.class));
+            rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")));
 
     private final JdbcTemplate jdbc;
 
@@ -68,6 +69,21 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET claim_no = NULL WHERE id = ? AND sheet_id = ?", claimId, sheetId);
     }
 
+    /** A claim's due now: its amount at the rate for its person's grade, rounded half up to two decimals;
+     *  null when the grade has no rate. */
+    public BigDecimal due(String sheetId, Claim claim) {
+        List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
+                + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?", BigDecimal.class, sheetId,
+                claim.personId());
+        return pct.isEmpty() ? null
+                : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Fix a settled claim's due. */
+    public void settleDue(String sheetId, long claimId, BigDecimal due) {
+        jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId);
+    }
+
     /** The name of a person on the sheet. */
     public String personName(String sheetId, long personId) {
         return jdbc.queryForObject("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
@@ -87,7 +103,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null);
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null);
     }
 
     /** Change a claim's amount, date and note; false when the sheet has no such claim. */
@@ -99,5 +115,10 @@ public class ClaimRepository {
     /** An amount as shown: two decimals, a dot, no grouping. */
     static String money(BigDecimal amount) {
         return amount.setScale(2).toPlainString();
+    }
+
+    /** A fixed due as shown, or null when there is none. */
+    static String dueOf(BigDecimal due) {
+        return due == null ? null : money(due);
     }
 }
