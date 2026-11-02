@@ -1,0 +1,144 @@
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 3d42d02d..5119be6b 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -29,7 +29,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
+  * always rolled back, so every figure the endpoints make is made from that state, with the date for the sheet's
+  * today, and nothing is ever written. The sheet's parents whose rates it takes (see Rates) are put as they stood at
+  * the end of that date too, bar a parent whose today was never set: it has no dated history, so it is taken as it
+- * stands now. Every change sent while the as-of date is set is refused (see ViewerGuard).
++ * stands now — unless the sheet itself had nothing then (the date is before its history), when no parent is taken.
++ * Every change sent while the as-of date is set is refused (see ViewerGuard).
+  */
+ @Component
+ @Order(Ordered.HIGHEST_PRECEDENCE + 1)
+@@ -72,11 +73,11 @@ public class AsOfView extends OncePerRequestFilter {
+         try {
+             transaction.executeWithoutResult((status) -> {
+                 status.setRollbackOnly();
+-                snapshots.show(sheet, date);
++                boolean had = snapshots.show(sheet, date);
+                 Set<String> shown = new HashSet<>(Set.of(sheet));
+                 String parent = settings.parent(sheet);
+                 for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
+-                    if (clock.isSet(parent)) {
++                    if (clock.isSet(parent) || !had) {
+                         snapshots.show(parent, date);
+                     }
+                     parent = settings.parent(parent);
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java b/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
+index 3c6b77aa..c0e9ffcb 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
+@@ -138,9 +138,9 @@ public class SheetSnapshots {
+      * Puts the sheet, inside the caller's transaction, as it stood at the end of the date: the rows kept when its today
+      * first moved from on or before the date to after it; what it holds now when its today has never moved past the
+      * date; nothing when its today was never on or before it. The date then stands in for its today. The caller must
+-     * roll back.
++     * roll back. Returns whether the sheet had anything to show then (false when it was put as nothing).
+      */
+-    public void show(String sheet, LocalDate date) {
++    public boolean show(String sheet, LocalDate date) {
+         List<Long> found = jdbc.queryForList("SELECT id FROM sheet_snapshot WHERE sheet = ? AND from_today <= ?"
+                 + " AND to_today > ? ORDER BY id LIMIT 1", Long.class, sheet, Date.valueOf(date), Date.valueOf(date));
+         boolean now = found.isEmpty() && !clock.today(sheet).isAfter(date);
+@@ -163,5 +163,6 @@ public class SheetSnapshots {
+             }
+         }
+         clock.setToday(sheet, date);
++        return now || !found.isEmpty();
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index e94c3fe0..d03a9390 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -24,7 +24,7 @@ public class BuildClaim {
+         if (person.retiredBefore(input.date())) {
+             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
+         }
+-        input.checkCorrects(sheet, person.id(), claims);
++        input.checkCorrects(sheet, person.id(), null, claims);
+         input.checkRef(sheet, null, claims);
+         Rollup.Snapshot before = rollup.take(sheet);
+         long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, input.date(), settings));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+index 7fa1e4d9..cec8283f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+@@ -51,8 +51,12 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String
+                 + " date=" + date;
+     }
+ 
+-    /** Refuses a correction unless the claim it names is a SETTLED claim of the same person. */
+-    public void checkCorrects(String sheet, long person, Claims claims) throws InvalidClaimException {
++    /**
++     * Refuses a correction unless the claim it names is a SETTLED claim of the same person, and one larger than what
++     * remains of that claim: its amount less the corrections already made against it (VOID and DELETED ones, and the
++     * one excluded — the claim being edited, null for none — left out).
++     */
++    public void checkCorrects(String sheet, long person, Long excluded, Claims claims) throws InvalidClaimException {
+         if (corrects == null) {
+             return;
+         }
+@@ -60,5 +64,10 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String
+         if (corrected == null || corrected.person() != person || corrected.status() != ClaimStatus.SETTLED) {
+             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person");
+         }
++        BigDecimal remains = new BigDecimal(corrected.amount()).subtract(claims.corrected(sheet, corrects, excluded));
++        if (amount.negate().compareTo(remains) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of the claim it corrects ("
++                    + remains.setScale(2, RoundingMode.HALF_UP).toPlainString() + ")");
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index aab6faff..e47b3ba9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -210,6 +210,16 @@ public class Claims {
+         }
+     }
+ 
++    /**
++     * How much the corrections made against the claim showing this number already take off it: the sum of their
++     * amounts as positive values, leaving out VOID and DELETED ones and the one excluded (null for none).
++     */
++    public BigDecimal corrected(String sheet, String number, Long excluded) {
++        BigDecimal sum = jdbc.queryForObject("SELECT COALESCE(SUM(-amount), 0) FROM claim WHERE sheet = ? AND corrects = ?"
++                + " AND status NOT IN ('VOID', 'DELETED') AND id <> ?", BigDecimal.class, sheet, number, excluded == null ? -1L : excluded);
++        return sum == null ? BigDecimal.ZERO : sum;
++    }
++
+     /** Whether a claim on the sheet other than the one excluded (null for none) has the reference, ignoring case. */
+     public boolean refUsed(String sheet, String ref, Long excluded) {
+         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 990d1b88..14172e37 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -31,7 +31,7 @@ public class SaveClaim {
+         if (owner.retiredBefore(input.date())) {
+             throw new InvalidClaimException("A claim may not be dated after the person's retirement date");
+         }
+-        input.checkCorrects(sheet, owner.id(), claims);
++        input.checkCorrects(sheet, owner.id(), claim.id(), claims);
+         input.checkRef(sheet, claim.id(), claims);
+         Rollup.Snapshot before = rollup.take(sheet);
+         if (claim.lockedBy() != null && !claim.lockedBy().equals(user)) {
+diff --git a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+index f4a77aed..197f1f81 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+@@ -142,6 +142,11 @@ public class AddPastedClaims {
+         }
+         ClaimInput input = new ClaimInput(amount, line.input().date(), line.input().note(), draft.corrects(),
+                 line.input().ref() != null ? line.input().ref() : draft.ref(), draft.tags());
++        try {
++            input.checkCorrects(sheet, draft.person(), draft.id(), claims);
++        } catch (InvalidClaimException e) {
++            throw new InvalidClaimException("Line " + line.at() + ": " + e.getMessage());
++        }
+         Rollup.Snapshot before = rollup.take(sheet);
+         if (!claims.update(sheet, draft.id(), input, draft.tagsEver(), user)) {
+             throw new InvalidClaimException("Line " + line.at() + ": the claim is no longer a DRAFT, or another user is editing it");
