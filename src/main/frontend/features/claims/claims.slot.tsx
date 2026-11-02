@@ -66,7 +66,7 @@ const CHANGES: { change: ClaimStatusChange; label: string }[] = [
   // A DRAFT outside a closed period is deleted (it then counts nowhere); restored to a DRAFT only on the sheet's today it was deleted.
   { change: 'delete', label: 'Delete' },
   { change: 'restore', label: 'Restore' },
-  // A steward's review opens a REVIEW claim (numbering it then).
+  // A steward's review opens a REVIEW claim (it is numbered only when settled).
   { change: 'review', label: 'Review' },
 ];
 

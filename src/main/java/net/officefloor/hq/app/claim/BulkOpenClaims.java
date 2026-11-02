@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Opens each selected claim in list order (people by their list positions, newest claim first within a
- * person), so they are numbered in that order; one that cannot be opened is left as it is and counted refused.
+ * person); one that cannot be opened is left as it is and counted refused.
  */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheet") String sheet, @RequestParam("user") String user,

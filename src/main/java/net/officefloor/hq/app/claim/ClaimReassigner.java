@@ -13,8 +13,8 @@ import org.springframework.stereotype.Service;
 /**
  * Moves a DRAFT, OPEN or PENDING claim dated outside a closed period (which may not be edited) to another person on
  * the sheet, on or before that person's retirement; only a role the permission matrix lets (by default a steward) may.
- * The claim keeps its date but takes the next number in the sequence it would be opened in (its old number is never
- * used again; a draft has none to take), loses any figure a statement bound it to, and lists as its new person's newest
+ * The claim keeps its date; one numbered before numbers moved to settlement takes the next number in its sequence (its
+ * old number is never used again), while one not yet settled has none to take. It loses any figure a statement bound it to, and lists as its new person's newest
  * claim. Shared by a claim's own Reassign button and the bulk reassign.
  */
 @Service
@@ -70,9 +70,10 @@ public class ClaimReassigner {
         if (!claims.reassign(sheet, claim.id(), claim.person(), claim.status(), to.id())) {
             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
         }
-        // A numbered claim is renumbered as if opened now; the number it showed before is dropped.
+        // A numbered claim is renumbered as if numbered now; the number it showed before is dropped. A claim not yet
+        // settled has no number, so it moves with none.
         Claim moved = claim;
-        if (claim.status() != ClaimStatus.DRAFT) {
+        if (claim.status() != ClaimStatus.DRAFT && claim.shownNumber() != null) {
             if (claim.periodNumber() != null) {
                 claims.setPeriodNumber(sheet, claim.id(), null);
             }

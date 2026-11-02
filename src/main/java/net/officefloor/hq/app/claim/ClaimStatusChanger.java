@@ -98,11 +98,13 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
-        // Opening gives the next number (FY<yyyy>-<n>) of its fiscal year its sheet's tree shares, or, while the sheet numbers by period from on or
-        // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
-        // had (never reused).
+        // Settling (or approving) gives the next number (FY<yyyy>-<n>) of its fiscal year its sheet's tree shares, or,
+        // while the sheet numbers by period from on or before its today, the next number in the claim's period (X for
+        // none); an OPEN, PENDING or REVIEW claim has none. A claim numbered already keeps its number, and a voided
+        // claim keeps the number it had (never reused).
         Claim changed = claim;
-        if (requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.REVIEW) {
+        if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
+                && claim.shownNumber() == null) {
             changed = number(sheet, claim);
         }
         // Who opened it is the user who pressed open, also when it went to REVIEW first (not the reviewing steward).
@@ -135,7 +137,7 @@ public class ClaimStatusChanger {
             fields += " reason=" + voidReason;
         }
         log.record(sheet, user, claim.id());
-        // A review is written (naming the claim, before its number) then the open it makes, with its number.
+        // A review is written (naming the claim) then the open it makes.
         if (requested == ClaimStatusChange.REVIEW) {
             audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name()));
             audit.record(ClaimStatusChange.OPEN.event() + " sheet=" + sheet + " by=" + user + " " + fields);
@@ -316,7 +318,7 @@ public class ClaimStatusChanger {
     }
 
     /**
-     * Gives an opening claim the next number (FY<yyyy>-<n>) of its due-by's fiscal year in the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
+     * Gives a settling claim the next number (FY<yyyy>-<n>) of its due-by's fiscal year in the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
      * today, the next number in the claim's period (X for none); returns the claim so numbered.
      */
     public Claim number(String sheet, Claim claim) {

@@ -9,7 +9,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
 
 type BulkOpened = { opened: number; refused: number; claims: Claim[] };
 
-// Opens the selected claims together: the server opens each that can be, numbering them in list order (people by
+// Opens the selected claims together: the server opens each that can be, in list order (people by
 // their list positions, newest claim first), and leaves the rest as they are. Shows how many of each.
 function BulkOpen({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
