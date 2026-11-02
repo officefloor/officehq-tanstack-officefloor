@@ -14,12 +14,15 @@ function RetireHeader() {
       <th>Retired</th>
       <th>Retired from</th>
       <th />
+      <th>Past retirements</th>
     </>
   );
 }
 
 // Whether the person is retired and from when, and the date and button that retire them (a blank date is the
-// sheet's today). Once retired, a claim dated after that date is refused.
+// sheet's today), and the button that unretires them on the sheet's today (anyone not retired is refused). Once
+// retired, a claim dated after that date is refused; each past retirement is kept, one line each, and a claim dated
+// after its from and before its to is refused too.
 function PersonRetire({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
@@ -34,6 +37,13 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
   });
   const act = useSubmitOnce(retire);
   const latest = useIsLatest(personActionKey(sheet, person.id), retire.submittedAt);
+  const unretire = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () => postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/unretire`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(peopleKey(sheet), updated),
+  });
+  const actUnretire = useSubmitOnce(unretire);
+  const latestUnretire = useIsLatest(personActionKey(sheet, person.id), unretire.submittedAt);
 
   return (
     <>
@@ -57,7 +67,27 @@ function PersonRetire({ sheet, user, person }: { sheet: string; user: string; pe
           <span data-testid="person-error" role="alert">
             {' '}That retirement date was refused.
           </span>
+        )}{' '}
+        <button
+          type="button"
+          data-testid="person-unretire"
+          disabled={unretire.isPending}
+          onClick={() => actUnretire(undefined)}
+        >
+          Unretire
+        </button>
+        {unretire.isError && latestUnretire && (
+          <span data-testid="person-error" role="alert">
+            {' '}Only a retired person can be unretired.
+          </span>
         )}
+      </td>
+      <td>
+        {person.retirements.map((r, i) => (
+          <div key={i} data-testid="person-retirement-line">
+            {r.from} to {r.to}
+          </div>
+        ))}
       </td>
     </>
   );

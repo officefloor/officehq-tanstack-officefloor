@@ -36,7 +36,7 @@ public class SavePerson {
         Rollup.Snapshot before = rollup.take(sheet);
         people.update(sheet, new Person(person.id(), request.name(), person.grade(), loaded, person.retiredFrom(),
                 person.holds(), person.grades(), person.terms(), person.retiredNow(), person.contact(), person.clashing(),
-                person.origin()));
+                person.origin(), person.retirements()));
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the ones already
         // recorded; leaving the grade as the row showed it, with the from-date blank, records nothing.
         if (request.gradeFrom() != null || !request.grade().equals(person.grade())) {

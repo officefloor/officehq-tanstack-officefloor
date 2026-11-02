@@ -13,6 +13,9 @@ export type GradeFrom = { grade: Grade; from: string | null };
 /** One of a person's holds: from its from-date to its to-date, both included (yyyy-MM-dd; to is null when it never ends). */
 export type Hold = { from: string; to: string | null };
 
+/** One of a person's past retirements: from its retired-from date to the day they were unretired (yyyy-MM-dd). */
+export type Retirement = { from: string; to: string };
+
 // holds are every one added, in that order; their OPEN claims dated within a hold count in no live total, unless
 // bound by a statement; their other claims still do.
 export type Person = {
@@ -35,6 +38,8 @@ export type Person = {
   clashing: boolean;
   /** The sheet they were transferred from; null for anyone not transferred. */
   origin: string | null;
+  /** Their past retirements, each ended by unretiring them, in the order they were unretired. */
+  retirements: Retirement[];
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */

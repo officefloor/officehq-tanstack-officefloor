@@ -19,10 +19,12 @@ import net.officefloor.hq.app.setting.Settings;
  * statement, count in no live total. Their contact (trimmed, lower-cased, not another's on the sheet) is null when they
  * have none. clashing is whether their name or one of their aliases is already a name or alias on another sheet of
  * the sheet's tree (its ancestors and descendants): every edit of them is refused until it renames them out of it.
- * Their origin is the sheet they were transferred from, null for anyone not transferred.
+ * Their origin is the sheet they were transferred from, null for anyone not transferred. Their retirements are the
+ * past ones (each ended by unretiring them), in the order they were unretired.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
-        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing, String origin) {
+        List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing, String origin,
+        List<Retirement> retirements) {
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
@@ -41,7 +43,7 @@ public record Person(long id, String name, String grade, long version, String re
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
     public Person on(LocalDate today) {
         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
-                retiredOn(retiredFrom, today), contact, clashing, origin);
+                retiredOn(retiredFrom, today), contact, clashing, origin, retirements);
     }
 
     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */
@@ -69,9 +71,13 @@ public record Person(long id, String name, String grade, long version, String re
                 || (!retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date())));
     }
 
-    /** Whether a claim dated {@code date} is after this person's retirement, and so refused. */
+    /**
+     * Whether a claim dated {@code date} is after this person's retirement, or after the from and before the to of a
+     * past one, and so refused.
+     */
     public boolean retiredBefore(LocalDate date) {
-        return retiredFrom != null && date.isAfter(LocalDate.parse(retiredFrom));
+        return (retiredFrom != null && date.isAfter(LocalDate.parse(retiredFrom)))
+                || retirements.stream().anyMatch((r) -> r.within(date.toString()));
     }
 
     /** The grade in force on the date: the one whose from-date is the latest on or before it (null when none). */

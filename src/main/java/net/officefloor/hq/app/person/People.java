@@ -82,6 +82,13 @@ public class People {
                             .add(new Hold(rs.getDate("from_date").toLocalDate().toString(),
                                     rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString()));
                 }, sheet);
+        Map<Long, List<Retirement>> retirements = new HashMap<>();
+        jdbc.query("SELECT r.person_id, r.from_date, r.to_date FROM person_retirement r JOIN person p ON p.id = r.person_id"
+                + " WHERE p.sheet = ? ORDER BY r.person_id, r.id", (rs) -> {
+                    retirements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new Retirement(rs.getDate("from_date").toLocalDate().toString(),
+                                    rs.getDate("to_date").toLocalDate().toString()));
+                }, sheet);
         Set<String> tree = treeNames(sheet);
         Map<Long, List<String>> aliasKeys = new HashMap<>();
         jdbc.query("SELECT person_id, alias_key FROM person_alias WHERE sheet = ?", (rs) -> {
@@ -95,7 +102,8 @@ public class People {
                     List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms(),
                     Person.retiredOn(r.retiredFrom(), today), r.contact(),
                     tree.contains(r.name().toLowerCase(Locale.ROOT))
-                            || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains), r.origin()));
+                            || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains), r.origin(),
+                    List.copyOf(retirements.getOrDefault(r.id(), List.of()))));
         }
         return people;
     }
@@ -204,6 +212,13 @@ public class People {
     /** Retire the person from the date. */
     public void retire(String sheet, long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet = ? AND id = ?", Date.valueOf(from), sheet, id);
+    }
+
+    /** Unretire the person on the date, keeping the retirement from its from-date to that date as a past one. */
+    public void unretire(String sheet, long id, LocalDate from, LocalDate on) {
+        jdbc.update("INSERT INTO person_retirement (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
+                Date.valueOf(from), Date.valueOf(on));
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE sheet = ? AND id = ?", sheet, id);
     }
 
     /** Adds a hold to the person. */

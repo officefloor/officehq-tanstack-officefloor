@@ -103,6 +103,7 @@ public class PersonMerger {
         // Dropped with the person: statements, holds, watchers, grades and contact.
         jdbc.update("DELETE FROM statement WHERE sheet = ? AND person = ?", sheet, f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE sheet = ? AND id = ?", sheet, f);
