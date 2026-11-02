@@ -66,6 +66,22 @@ public class Periods {
         }
     }
 
+    /** Takes the amount back off the person's opening balance for the period, dropping it when nothing is left. */
+    public void takeOpening(String sheet, String name, long person, BigDecimal amount) {
+        jdbc.update("UPDATE period_opening SET amount = amount - ? WHERE sheet = ? AND period = ? AND person = ?",
+                amount, sheet, name, person);
+        jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND period = ? AND person = ? AND amount = 0", sheet,
+                name, person);
+    }
+
+    /** Removes the period with its openings, fixed figures and pool cuts. */
+    public void remove(String sheet, String name) {
+        jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND period = ?", sheet, name);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND period = ?", sheet, name);
+        jdbc.update("DELETE FROM period WHERE sheet = ? AND name = ?", sheet, name);
+    }
+
     /** The period with its people's due-totals and carried figures fixed when it was closed. */
     private Period withPeople(String sheet, Period period) {
         if (!period.fixed()) {

@@ -43,6 +43,9 @@ export const generateFiscalYearPath = (sheet: string) => `${periodsPath(sheet)}/
 /** Where a fiscal year is rolled over into the next. */
 export const rolloverPath = (sheet: string) => `${periodsPath(sheet)}/rollover`;
 
+/** Where the last rollover is undone. */
+export const rolloverUndoPath = (sheet: string) => `${periodsPath(sheet)}/rollover-undo`;
+
 /** Where a calendar year's four quarterly periods are generated. */
 export const generateQuartersPath = (sheet: string) => `${periodsPath(sheet)}/generate-quarters`;
 

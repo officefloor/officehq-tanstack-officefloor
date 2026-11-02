@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.setting.Settings;
@@ -37,7 +38,8 @@ public class ValidateRollover {
             throw new InvalidPeriodException("The fiscal year FY" + year + " has no periods");
         }
         YearMonth next = first.plusMonths(12);
-        rollover.set(new RolloverYear("FY" + year, from, to, next.atDay(1)));
+        rollover.set(new RolloverYear("FY" + year, from, to, next.atDay(1),
+                periods.list(sheet).stream().map(Period::name).collect(Collectors.toSet())));
         body.set(new GeneratePeriodsInput(next.atDay(1), next.plusMonths(11).atEndOfMonth()));
     }
 }
