@@ -1,0 +1,294 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index c6898448c..6511f4c2c 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -21,7 +21,7 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
+  *  quick-add bar, a pasted line with a blank date and a correction — instead of the sheet's today; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
+  *  assigned to each user name, and the delegations of the steward role (a steward delegates it to a user from a
+  *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
+- *  as a steward). Saving saves each setting whose field was entered (focused or typed
++ *  as a steward), and the sheet's holidays (a date already on the list is refused). Saving saves each setting whose field was entered (focused or typed
+  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
+  *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold and the note threshold) is saved from its from-date, blank
+  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
+@@ -76,6 +76,8 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+   const [delegateFrom, setDelegateFrom] = useState('');
+   const [delegateTo, setDelegateTo] = useState('');
+ 
++  const [holidayDate, setHolidayDate] = useState('');
++
+   const saveOnce = useSingleFlight();
+   const save = useMutation({
+     mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null }) =>
+@@ -122,6 +124,16 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+     },
+   });
+ 
++  const holidayOnce = useSingleFlight();
++  const addHoliday = useMutation({
++    mutationFn: (f: { date: string }) =>
++      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, f),
++    onSuccess: (saved) => {
++      setHolidayDate('');
++      queryClient.setQueryData(settingsKey(sheetId), saved);
++    },
++  });
++
+   return (
+     <section data-testid="settings">
+       <form
+@@ -453,6 +465,40 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           </li>
+         ))}
+       </ul>
++      <form
++        data-testid="holiday-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          holidayOnce(() => {
++            addHoliday.reset();
++            return addHoliday.mutateAsync({ date: holidayDate });
++          });
++        }}
++      >
++        <label>
++          Holiday{' '}
++          <input
++            data-testid="holiday-date"
++            placeholder="yyyy-mm-dd"
++            value={holidayDate}
++            onChange={(e) => {
++              setHolidayDate(e.target.value);
++              addHoliday.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="holiday-add" disabled={addHoliday.isPending}>
++          Add holiday
++        </button>
++        {addHoliday.isError && <p data-testid="holiday-error">{addHoliday.error.message}</p>}
++      </form>
++      <ul data-testid="holidays-list">
++        {(settings.data?.holidays ?? []).map((d) => (
++          <li key={d} data-testid={`holiday-row-${d}`}>
++            {d}
++          </li>
++        ))}
++      </ul>
+       {settings.isError && <p data-testid="settings-load-error">{settings.error.message}</p>}
+     </section>
+   );
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index a603b2f76..7bcad8b91 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -21,11 +21,13 @@ export type Role = { user: string; role: string };
+  *  `graceDays` is the days after a period's to-date it is left open (null when blank: off; not dated): changing the
+  *  sheet's today closes each open period lapsed past them. `delegations` is each delegation of the steward role
+  *  made on the sheet, oldest first. `entryDate` is the entry date (yyyy-mm-dd; null when blank: off; not dated): while
+- *  set, it is the default date of a new claim instead of the sheet's today. */
++ *  set, it is the default date of a new claim instead of the sheet's today. `holidays` is the sheet's holidays
++ *  (yyyy-mm-dd), earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next
++ *  day that is not one. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
+-  entryDate: string | null };
++  entryDate: string | null; holidays: string[] };
+ 
+ /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
+  *  while the sheet's today is inside it the user acts as a steward. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 26c578cc8..6219c5b41 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -309,12 +309,13 @@ public class ClaimRepository {
+     }
+ 
+     /** The due-by of a claim created now for a person with a date: the date plus the person's own terms,
+-     *  else the terms, in force on it, of the grade the person has on it, else the sheet's terms in force on it. */
++     *  else the terms, in force on it, of the grade the person has on it, else the sheet's terms in force on it;
++     *  moved past the sheet's holidays (to the next day that is not one). */
+     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
+         List<Integer> mine = jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
+                 sheetId, personId);
+         if (!mine.isEmpty() && mine.get(0) != null) {
+-            return date.plusDays(mine.get(0));
++            return settings.pastHolidays(sheetId, date.plusDays(mine.get(0)));
+         }
+         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
+                 date.toString());
+@@ -322,10 +323,11 @@ public class ClaimRepository {
+     }
+ 
+     /** The due-by of a claim created now with a date for a person of a grade (null when none) with no terms of their
+-     *  own: the date plus the grade's terms in force on it, else the sheet's terms in force on it. */
++     *  own: the date plus the grade's terms in force on it, else the sheet's terms in force on it; moved past the
++     *  sheet's holidays (to the next day that is not one). */
+     public LocalDate dueByOfGrade(String sheetId, String grade, LocalDate date) {
+         Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, date);
+-        return date.plusDays(own != null ? own : settings.terms(sheetId, date));
++        return settings.pastHolidays(sheetId, date.plusDays(own != null ? own : settings.terms(sheetId, date)));
+     }
+ 
+     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+diff --git a/src/main/java/net/officefloor/hq/app/settings/HolidayRequest.java b/src/main/java/net/officefloor/hq/app/settings/HolidayRequest.java
+new file mode 100644
+index 000000000..bfcb271da
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/HolidayRequest.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.settings;
++
++public record HolidayRequest(String date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveHoliday.java b/src/main/java/net/officefloor/hq/app/settings/SaveHoliday.java
+new file mode 100644
+index 000000000..3296e6dc0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveHoliday.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.settings;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Add a date to the sheet's holidays; one already on the list is refused. */
++public class SaveHoliday {
++    public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate holiday, ServerHttpConnection connection,
++            SettingsRepository repository, Audit audit, Out<Settings> settings) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (!repository.sheetExists(id)) {
++            throw new BadRequestException("no such sheet");
++        }
++        if (repository.holidays(id).contains(holiday.toString())) {
++            throw new BadRequestException(holiday + " is already a holiday");
++        }
++        repository.addHoliday(id, holiday);
++        audit.record("HOLIDAY_ADDED sheet=" + id + " by=" + by + " date=" + holiday);
++        settings.set(repository.load(id));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 7c7ee33e5..e9c41fb07 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -16,9 +16,10 @@ import java.util.List;
+  *  open (null when blank: off; not dated): changing the sheet's today closes each open period lapsed past them.
+  *  {@code delegations} is each delegation of the steward role made on the sheet, oldest first.
+  *  {@code entryDate} is the sheet's entry date (yyyy-MM-dd; null when blank: off; not dated): while set, it is the
+- *  default date of a new claim instead of the sheet's today. */
++ *  default date of a new claim instead of the sheet's today. {@code holidays} is the sheet's holidays (yyyy-MM-dd),
++ *  earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next day that is not one. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
+-        List<Delegation> delegations, String entryDate) {
++        List<Delegation> delegations, String entryDate, List<String> holidays) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 77b33a57d..3b69f76e3 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -53,7 +53,7 @@ public class SettingsRepository {
+                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
+                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
+                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
+-                delegations(sheetId), entry == null ? null : entry.toString());
++                delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -270,6 +270,25 @@ public class SettingsRepository {
+                 sheetId, user, by, Date.valueOf(from), Date.valueOf(to));
+     }
+ 
++    /** The sheet's holidays (yyyy-MM-dd), earliest first. */
++    public List<String> holidays(String sheetId) {
++        return jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? ORDER BY holiday_date",
++                (rs, i) -> rs.getDate("holiday_date").toLocalDate().toString(), sheetId);
++    }
++
++    public void addHoliday(String sheetId, LocalDate date) {
++        jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
++    }
++
++    /** The date, else the next day after it that is not one of the sheet's holidays. */
++    public LocalDate pastHolidays(String sheetId, LocalDate date) {
++        java.util.Set<String> holidays = new java.util.HashSet<>(holidays(sheetId));
++        while (holidays.contains(date.toString())) {
++            date = date.plusDays(1);
++        }
++        return date;
++    }
++
+     /** The delegations made on the sheet, oldest first. */
+     public List<Delegation> delegations(String sheetId) {
+         return jdbc.query("SELECT user_name, by_user, from_date, to_date FROM delegation WHERE sheet_id = ? ORDER BY id",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateHoliday.java b/src/main/java/net/officefloor/hq/app/settings/ValidateHoliday.java
+new file mode 100644
+index 000000000..cb4fc7b56
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateHoliday.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.settings;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the holiday form: a date (yyyy-MM-dd). */
++public class ValidateHoliday {
++    public void validate(@RequestBody HolidayRequest request, Out<LocalDate> holiday) throws BadRequestException {
++        String date = request == null || request.date() == null ? "" : request.date().trim();
++        if (date.isEmpty()) {
++            throw new BadRequestException("date is required");
++        }
++        try {
++            holiday.set(LocalDate.parse(date));
++        } catch (DateTimeParseException e) {
++            throw new BadRequestException("date must be yyyy-mm-dd");
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V52__holiday.sql b/src/main/resources/db/migration/V52__holiday.sql
+new file mode 100644
+index 000000000..e79eecb28
+--- /dev/null
++++ b/src/main/resources/db/migration/V52__holiday.sql
+@@ -0,0 +1,7 @@
++-- The sheet's holidays: a claim's due-by, fixed when it is created, that falls on one is moved to the next
++-- day that is not a holiday. Each date is on the sheet's list at most once.
++CREATE TABLE holiday (
++    sheet_id     VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    holiday_date DATE         NOT NULL,
++    PRIMARY KEY (sheet_id, holiday_date)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+new file mode 100644
+index 000000000..222490652
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+@@ -0,0 +1,13 @@
++# Add a date to the sheet's holidays; a date already on the list is refused.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.settings.ValidateHoliday
++  next: save
++save:
++  class: net.officefloor.hq.app.settings.SaveHoliday
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.settings.RespondWithSettings
