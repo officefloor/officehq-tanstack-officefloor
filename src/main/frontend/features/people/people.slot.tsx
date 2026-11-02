@@ -4,13 +4,15 @@ import { HttpError, postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
+import { claimsKey, type Claim } from '../claims/useClaims';
 import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
  *  list of everyone in the order they were added. The editor remembers the version of the person
  *  it loaded; when someone else has saved them since, the save is refused (409) and the editor
  *  shows their current values, at their current version. Each person is a <tbody> so features can add
- *  cells and rows of their own to it (slots/defs/personRow). */
+ *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
+ *  and adds a draft claim for that person (adding them with grade A when the name is new) in one change. */
 function People({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
@@ -47,6 +49,22 @@ function People({ sheetId }: { sheetId: string }) {
         setGrade(current.grade);
         setVersion(current.version);
       }
+    },
+  });
+
+  const [quickName, setQuickName] = useState('');
+  const [quickAmount, setQuickAmount] = useState('');
+  const quickOnce = useSingleFlight();
+  const quick = useMutation({
+    mutationFn: (f: { name: string; amount: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/quick`, f),
+    onSuccess: async () => {
+      setQuickName('');
+      setQuickAmount('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
     },
   });
 
@@ -118,6 +136,43 @@ function People({ sheetId }: { sheetId: string }) {
           </>
         )}
         {save.isError && <p data-testid="person-form-error">{save.error.message}</p>}
+      </form>
+      <form
+        data-testid="quick-add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          quickOnce(() => {
+            quick.reset();
+            return quick.mutateAsync({ name: quickName, amount: quickAmount });
+          });
+        }}
+      >
+        <label>
+          Quick add: name{' '}
+          <input
+            data-testid="quick-name"
+            value={quickName}
+            onChange={(e) => {
+              setQuickName(e.target.value);
+              quick.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          Amount{' '}
+          <input
+            data-testid="quick-amount"
+            value={quickAmount}
+            onChange={(e) => {
+              setQuickAmount(e.target.value);
+              quick.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="quick-submit" disabled={quick.isPending}>
+          Add draft claim
+        </button>
+        {quick.isError && <p data-testid="quick-error">{quick.error.message}</p>}
       </form>
       <table data-testid="people-list">
         <thead>

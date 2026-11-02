@@ -55,6 +55,13 @@ public class PersonRepository {
         return taken != null && taken > 0;
     }
 
+    /** The person on the sheet with this name, ignoring case; null when there is none. */
+    public Person findByName(String sheetId, String name) {
+        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND LOWER(name) = LOWER(?)",
+                ROW, sheetId, name);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     public Person add(String sheetId, String name, String grade) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
