@@ -38,6 +38,7 @@ export type Claim = {
   deferredUntil: string | null;
   proofs: number;
   splitFrom: string | null;
+  lateEntry: boolean;
   log: string[];
   lockedBy: string | null;
 };

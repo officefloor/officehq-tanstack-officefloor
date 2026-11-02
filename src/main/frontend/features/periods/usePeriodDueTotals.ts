@@ -9,7 +9,7 @@ import { usePeriods } from './usePeriods';
 /** Each person's due-total for each period, by person id then period name: the figures of their claims
  *  whose date falls in it that count by the status they had at the end of its last day (see `countsOn`) (a settled claim's frozen due, else the figure its last statement
  *  bound it to, else its live due, with its late charge while overdue), skipping those with none — the
- *  one fixed when the period was closed while it is closed (0.00 for a person added since). */
+ *  one fixed when the period was closed while it is closed or soft-closed (0.00 for a person added since). */
 export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<string, string>> {
   const periods = usePeriods(sheetId);
   const claims = useClaims(sheetId);
@@ -25,7 +25,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
     for (const p of periods.data ?? []) {
       byPeriod.set(
         p.name,
-        p.closed
+        p.closed || p.softClosed
           ? (p.personTotals[String(person.id)] ?? '0.00')
           : sumDues(
               own

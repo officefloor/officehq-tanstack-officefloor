@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -30,7 +30,8 @@ public class ClaimRepository {
             rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString(),
             rs.getBoolean("stated_na"),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
-            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"));
+            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
+            rs.getBoolean("late_entry"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -308,10 +309,11 @@ public class ClaimRepository {
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         LocalDate dueBy = dueBy(sheetId, personId, date);
+        boolean late = lateEntry(sheetId, date);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -320,10 +322,18 @@ public class ClaimRepository {
             ps.setString(5, note);
             ps.setString(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
+            ps.setBoolean(8, late);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null);
+                dueBy.toString(), false, null, false, 0, null, late);
+    }
+
+    /** Whether a claim added now on a date is a late entry: the date falls in a soft-closed period of the sheet. */
+    private boolean lateEntry(String sheetId, LocalDate date) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND soft_closed"
+                + " AND from_date <= ? AND to_date >= ?", Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return n != null && n > 0;
     }
 
     /** Split an amount off an OPEN claim: the claim keeps the rest of its amount and is unbound from its last

@@ -59,6 +59,10 @@ public class PasteClaims {
             claims.log(id, added.id(), by);
             audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + c.person().name()
                     + " amount=" + added.amount() + " date=" + added.date());
+            if (added.lateEntry()) {
+                audit.record("LATE_ENTRY sheet=" + id + " by=" + by + " person=" + c.person().name()
+                        + " amount=" + added.amount() + " date=" + added.date());
+            }
             rollup.record(id, by, before);
         }
         result.set(new PasteResult(checked.size()));

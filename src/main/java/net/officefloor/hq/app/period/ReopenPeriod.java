@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Reopen a closed period, by a role the sheet's permission matrix allows (by default a steward only): its fixed due-total is dropped, so it totals the
+/** Reopen a closed or soft-closed period, by a role the sheet's permission matrix allows (by default a steward only): its fixed due-total is dropped, so it totals the
  *  claims in it live again (bound ones at their bound figure). */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
@@ -26,11 +26,11 @@ public class ReopenPeriod {
         if (!settings.allows(id, "reopen", by)) {
             throw new BadRequestException("a " + settings.role(id, by) + " cannot reopen a period");
         }
-        if (!found.closed()) {
+        if (!found.closed() && !found.softClosed()) {
             throw new BadRequestException("the period " + found.name() + " is not closed");
         }
         repository.reopen(id, found.id());
         audit.record("PERIOD_REOPENED sheet=" + id + " by=" + by + " period=" + found.name());
-        period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null, java.util.Map.of()));
+        period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null, java.util.Map.of(), false));
     }
 }

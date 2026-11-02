@@ -11,7 +11,7 @@ import { periodsKey, usePeriods, type Period } from './usePeriods';
  *  inclusive, overlapping no other period), and each period with its due-total: the figures of the
  *  claims that count whose date falls in it (a settled claim's frozen due, else the figure its last
  *  statement bound it to, else its live due, with its late charge while overdue), skipping those with none — fixed once it is closed —
- *  and whether it is closed, with a button that closes it. */
+ *  and whether it is closed (soft for a soft-closed one), with buttons that close and soft-close it. */
 function Periods({ sheetId }: { sheetId: string }) {
   const periods = usePeriods(sheetId);
   const dueTotals = usePeriodDueTotals(sheetId);
@@ -141,7 +141,8 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
   );
 }
 
-/** One period's row; closing it fixes its due-total, reopening it (a steward only) makes it live again.
+/** One period's row; closing it fixes its due-total, soft-closing it fixes its figures while its claims can still be
+ *  changed, reopening it (a steward only) makes it live again.
  *  A refused close or reopen shows its error, cleared when the next action on the row is taken. */
 function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
@@ -166,7 +167,24 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
   });
-  const error = close.error ?? reopen.error;
+  const softClose = useMutation({
+    mutationFn: () =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(p.name)}/soft-close`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const error = close.error ?? softClose.error ?? reopen.error;
+  const act = (m: { mutateAsync: () => Promise<Period> }) =>
+    closeOnce(() => {
+      close.reset();
+      softClose.reset();
+      reopen.reset();
+      return m.mutateAsync();
+    });
 
   return (
     <tr data-testid={`period-row-${p.name}`}>
@@ -174,33 +192,29 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       <td data-testid="period-from">{p.from}</td>
       <td data-testid="period-to">{p.to}</td>
       <td data-testid="period-due-total">{dueTotal}</td>
-      <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+      <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
       <td>
         <button
           type="button"
           data-testid="period-close"
           disabled={close.isPending}
-          onClick={() =>
-            closeOnce(() => {
-              close.reset();
-              reopen.reset();
-              return close.mutateAsync();
-            })
-          }
+          onClick={() => act(close)}
         >
           Close
         </button>{' '}
         <button
           type="button"
+          data-testid="period-soft-close"
+          disabled={softClose.isPending}
+          onClick={() => act(softClose)}
+        >
+          Soft close
+        </button>{' '}
+        <button
+          type="button"
           data-testid="period-reopen"
           disabled={reopen.isPending}
-          onClick={() =>
-            closeOnce(() => {
-              close.reset();
-              reopen.reset();
-              return reopen.mutateAsync();
-            })
-          }
+          onClick={() => act(reopen)}
         >
           Reopen
         </button>

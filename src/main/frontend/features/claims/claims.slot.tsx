@@ -305,6 +305,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                   {today === undefined ? '' : isOverdue(c, today) ? 'yes' : 'no'}
                 </td>
                 <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
+                <td data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>

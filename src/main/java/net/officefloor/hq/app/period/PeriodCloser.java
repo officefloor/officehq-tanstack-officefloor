@@ -40,6 +40,12 @@ public class PeriodCloser {
     }
 
     public Period close(String sheetId, String by, Period found, boolean auto) {
+        return close(sheetId, by, found, auto, false);
+    }
+
+    /** Close, or soft-close, a period (open or soft-closed), fixing its figures afresh. A soft close writes
+     *  PERIOD_SOFT_CLOSED instead of PERIOD_CLOSED. */
+    public Period close(String sheetId, String by, Period found, boolean auto, boolean soft) {
         LocalDate from = LocalDate.parse(found.from());
         LocalDate to = LocalDate.parse(found.to());
         Map<Long, List<Hold>> holds = people.holds(sheetId);
@@ -59,11 +65,11 @@ public class PeriodCloser {
             }
         }
         String shown = total.setScale(2).toPlainString();
-        periods.close(sheetId, found.id(), total, personTotals);
-        audit.record("PERIOD_CLOSED sheet=" + sheetId + " by=" + by + " period=" + found.name() + " total=" + shown
+        periods.close(sheetId, found.id(), total, personTotals, soft);
+        audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + by + " period=" + found.name() + " total=" + shown
                 + (auto ? " auto=yes" : ""));
-        return new Period(found.id(), found.name(), found.from(), found.to(), true, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
-                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)));
+        return new Period(found.id(), found.name(), found.from(), found.to(), !soft, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
+                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), soft);
     }
 
     /** Close, by the sheet's grace days (none when blank), every open period whose to-date plus the grace days is

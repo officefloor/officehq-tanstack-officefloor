@@ -52,6 +52,10 @@ public class QuickAdd {
         claims.log(id, added.id(), by);
         audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + person.name()
                 + " amount=" + added.amount() + " date=" + added.date());
+        if (added.lateEntry()) {
+            audit.record("LATE_ENTRY sheet=" + id + " by=" + by + " person=" + person.name()
+                    + " amount=" + added.amount() + " date=" + added.date());
+        }
         rollup.record(id, by, before);
         claim.set(added);
     }
