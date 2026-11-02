@@ -1,0 +1,420 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 3d2554abf..aafad31d5 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -15,7 +15,8 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
+  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
+  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
+  *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
+- *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
++ *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
++ *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
+  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
+  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
+  *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
+@@ -60,13 +61,14 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+   const [proofThreshold, setProofThreshold] = useState<string | null>(null);
+   const [from, setFrom] = useState<Record<string, string>>({});
+   const [permissions, setPermissions] = useState<Record<string, string>>({});
++  const [graceDays, setGraceDays] = useState<string | null>(null);
+   const today = useSheetToday(sheetId).data?.today;
+   const [user, setUser] = useState('');
+   const [role, setRole] = useState('');
+ 
+   const saveOnce = useSingleFlight();
+   const save = useMutation({
+-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string> }) =>
++    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string>; graceDays: string | null }) =>
+       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
+     onSuccess: (saved) => {
+       setLimit(null);
+@@ -80,6 +82,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+       setProofThreshold(null);
+       setFrom({});
+       setPermissions({});
++      setGraceDays(null);
+       queryClient.setQueryData(settingsKey(sheetId), saved);
+     },
+   });
+@@ -103,7 +106,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           e.preventDefault();
+           saveOnce(() => {
+             save.reset();
+-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, permissions });
++            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, permissions, graceDays });
+           });
+         }}
+       >
+@@ -248,6 +251,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+             />{' '}
+           </label>
+         ))}
++        <label>
++          Grace days{' '}
++          <input
++            data-testid="setting-grace-days"
++            inputMode="numeric"
++            value={graceDays ?? ''}
++            onFocus={() => setGraceDays((v) => v ?? '')}
++            onChange={(e) => {
++              setGraceDays(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+         </button>{' '}
+@@ -270,6 +286,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+             , may {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.permissions?.[a] ?? ''}</strong>
+           </span>
+         ))}
++        , grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>
+         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
+       </form>
+       <form
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 70d28a14f..314ec5ff6 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -17,10 +17,12 @@ export type Role = { user: string; role: string };
+  *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
+  *  approved without a proof), oldest from-date first. `permissions` is the permission matrix entries set, by action
+  *  (open, settle, void, reassign, close, reopen): the roles that may take it, comma separated; an action not listed
+- *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
++ *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward).
++ *  `graceDays` is the days after a period's to-date it is left open (null when blank: off; not dated): changing the
++ *  sheet's today closes each open period lapsed past them. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+-  permissions: Record<string, string> };
++  permissions: Record<string, string>; graceDays: number | null };
+ 
+ /** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */
+ export type DatedValue = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 2ec35f748..d2feacf6e 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -1,33 +1,22 @@
+ package net.officefloor.hq.app.period;
+ 
+-import java.math.BigDecimal;
+-import java.time.LocalDate;
+-import java.util.LinkedHashMap;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.stream.Collectors;
+-import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+-import net.officefloor.hq.app.claim.Claim;
+-import net.officefloor.hq.app.claim.ClaimRepository;
+-import net.officefloor.hq.app.person.Hold;
+-import net.officefloor.hq.app.person.Person;
+-import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.settings.SettingsRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Close a period, by a role the sheet's permission matrix allows (by default a clerk or a steward): fix its due-total as shown now (the dues now, late charges included, of the claims dated in it that count by
++/** Close a period, by a role the sheet's permission matrix allows (by default a clerk or a steward), with
++ *  {@link PeriodCloser}: fix its due-total as shown now (the dues now, late charges included, of the claims dated in it that count by
+  *  the status they had at the end of its last day, a person's
+  *  open (OPEN or PENDING) claims dated within one of their holds left out unless bound by a statement,
+  *  skipping those with none), so later changes to rates do not alter it; and each person's due-total for it
+  *  likewise, for every person on the sheet (0.00 for one with nothing in it). */
+ public class ClosePeriod {
+     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
+-            ServerHttpConnection connection, PeriodRepository repository, ClaimRepository claims, PersonRepository people, SettingsRepository settings,
+-            Audit audit, Out<Period> period) throws BadRequestException {
++            ServerHttpConnection connection, PeriodRepository repository, SettingsRepository settings,
++            PeriodCloser closer, Out<Period> period) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         if (!repository.lockSheet(id)) {
+@@ -43,28 +32,6 @@ public class ClosePeriod {
+         if (found.closed()) {
+             throw new BadRequestException("the period " + found.name() + " is already closed");
+         }
+-        LocalDate from = LocalDate.parse(found.from());
+-        LocalDate to = LocalDate.parse(found.to());
+-        Map<Long, List<Hold>> holds = people.holds(id);
+-        BigDecimal total = BigDecimal.ZERO.setScale(2);
+-        Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+-        for (Person p : people.list(id)) personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
+-        Map<Long, String> statusesThen = claims.statusesOn(id, to);
+-        String today = repository.today(id);
+-        for (Claim c : claims.list(id)) {
+-            LocalDate on = LocalDate.parse(c.date());
+-            if (on.isBefore(from) || on.isAfter(to)
+-                    || !c.countsAs(statusesThen.get(c.id()), holds.getOrDefault(c.personId(), List.of()), today)) continue;
+-            BigDecimal now = claims.dueNow(id, c);
+-            if (now != null) {
+-                total = total.add(now);
+-                personTotals.merge(c.personId(), now, BigDecimal::add);
+-            }
+-        }
+-        String shown = total.setScale(2).toPlainString();
+-        repository.close(id, found.id(), total, personTotals);
+-        audit.record("PERIOD_CLOSED sheet=" + id + " by=" + by + " period=" + found.name() + " total=" + shown);
+-        period.set(new Period(found.id(), found.name(), found.from(), found.to(), true, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
+-                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new))));
++        period.set(closer.close(id, by, found, false));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+new file mode 100644
+index 000000000..0c1978fef
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -0,0 +1,79 @@
++package net.officefloor.hq.app.period;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.Comparator;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.Hold;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.settings.SettingsRepository;
++import org.springframework.stereotype.Service;
++
++/** Close an open period: fix its due-total as shown now (the dues now, late charges included, of the claims dated in
++ *  it that count by the status they had at the end of its last day, a person's open (OPEN or PENDING) claims dated
++ *  within one of their holds left out unless bound by a statement, skipping those with none), so later changes to
++ *  rates do not alter it; and each person's due-total for it likewise, for every person on the sheet (0.00 for one
++ *  with nothing in it). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
++@Service
++public class PeriodCloser {
++
++    private final PeriodRepository periods;
++    private final ClaimRepository claims;
++    private final PersonRepository people;
++    private final SettingsRepository settings;
++    private final Audit audit;
++
++    public PeriodCloser(PeriodRepository periods, ClaimRepository claims, PersonRepository people,
++            SettingsRepository settings, Audit audit) {
++        this.periods = periods;
++        this.claims = claims;
++        this.people = people;
++        this.settings = settings;
++        this.audit = audit;
++    }
++
++    public Period close(String sheetId, String by, Period found, boolean auto) {
++        LocalDate from = LocalDate.parse(found.from());
++        LocalDate to = LocalDate.parse(found.to());
++        Map<Long, List<Hold>> holds = people.holds(sheetId);
++        BigDecimal total = BigDecimal.ZERO.setScale(2);
++        Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
++        for (Person p : people.list(sheetId)) personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
++        Map<Long, String> statusesThen = claims.statusesOn(sheetId, to);
++        String today = periods.today(sheetId);
++        for (Claim c : claims.list(sheetId)) {
++            LocalDate on = LocalDate.parse(c.date());
++            if (on.isBefore(from) || on.isAfter(to)
++                    || !c.countsAs(statusesThen.get(c.id()), holds.getOrDefault(c.personId(), List.of()), today)) continue;
++            BigDecimal now = claims.dueNow(sheetId, c);
++            if (now != null) {
++                total = total.add(now);
++                personTotals.merge(c.personId(), now, BigDecimal::add);
++            }
++        }
++        String shown = total.setScale(2).toPlainString();
++        periods.close(sheetId, found.id(), total, personTotals);
++        audit.record("PERIOD_CLOSED sheet=" + sheetId + " by=" + by + " period=" + found.name() + " total=" + shown
++                + (auto ? " auto=yes" : ""));
++        return new Period(found.id(), found.name(), found.from(), found.to(), true, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
++                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)));
++    }
++
++    /** Close, by the sheet's grace days (none when blank), every open period whose to-date plus the grace days is
++     *  before the sheet's today, in order of their to-dates. */
++    public void closeLapsed(String sheetId, String by, LocalDate today) {
++        Integer grace = settings.graceDays(sheetId);
++        if (grace == null) return;
++        List<Period> lapsed = periods.list(sheetId).stream()
++                .filter(p -> !p.closed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
++                .sorted(Comparator.comparing(Period::to)).toList();
++        for (Period p : lapsed) close(sheetId, by, p, true);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index b016cdd2a..088a52dec 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -68,6 +68,10 @@ public class SaveSettings {
+                     + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
+                     + given(input, "proof-threshold"));
+         }
++        if (input.setsGraceDays()) {
++            repository.setGraceDays(id, input.graceDays());
++            audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
++        }
+         input.permissions().forEach((action, roles) -> {
+             repository.setPermission(id, action, roles);
+             audit.record(prefix + "perm-" + action + " value=" + roles);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 5ae369df6..eaa81768c 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -12,8 +12,9 @@ import java.util.List;
+  *  force on the sheet's today; {@code dated} is every value recorded for each of them, by key (clerk-limit, floor,
+  *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first. {@code permissions} is the permission
+  *  matrix entries set, by action (open, settle, void, reassign, close, reopen), each a comma separated list of roles; an
+- *  action not listed keeps the standing rule. */
++ *  action not listed keeps the standing rule. {@code graceDays} is the days after a period's to-date it is left
++ *  open (null when blank: off; not dated): changing the sheet's today closes each open period lapsed past them. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+-        java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions) {
++        java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+index 324e889f1..bf5a0435e 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+@@ -7,10 +7,11 @@ import java.time.LocalDate;
+  *  no limit), the floor scaled to two decimals the terms in days and the late percent scaled to two decimals and the policy date (null when blank), and the period numbering from-date (null when blank: off), and the grade terms entered, by grade (in grade order; null
+  *  when blank: the grade then uses the sheet's terms), and the cap scaled to two decimals (null for no cap), and the
+  *  from-date given for each dated setting saved, by key (one not listed has none: it is saved from the sheet's today), and the proof threshold scaled to two decimals (null for none), and the
+- *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule). */
++ *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule), and the grace days (null when blank: off). */
+ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boolean setsFloor, BigDecimal floor, boolean setsTerms,
+         Integer terms, boolean setsLatePct, BigDecimal latePct,
+         boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
+         java.util.Map<String, Integer> gradeTerms, boolean setsCap, BigDecimal cap, java.util.Map<String, LocalDate> from,
+-        boolean setsProofThreshold, BigDecimal proofThreshold, java.util.Map<String, String> permissions) {
++        boolean setsProofThreshold, BigDecimal proofThreshold, java.util.Map<String, String> permissions,
++        boolean setsGraceDays, Integer graceDays) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index b0dab5357..8bd810512 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -42,7 +42,7 @@ public class SettingsRepository {
+         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
+                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
+                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
+-                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId));
++                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -192,6 +192,17 @@ public class SettingsRepository {
+                 sheetId);
+     }
+ 
++    /** The sheet's grace days; null when blank (off). */
++    public Integer graceDays(String sheetId) {
++        List<Integer> found = jdbc.query("SELECT grace_days FROM sheet WHERE id = ?",
++                (rs, i) -> (Integer) rs.getObject("grace_days", Integer.class), sheetId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    public void setGraceDays(String sheetId, Integer days) {
++        jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
++    }
++
+     /** The role a user name holds on the sheet: clerk unless set otherwise. */
+     public String role(String sheetId, String user) {
+         List<String> found = jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index ff440b40a..8f16ba48f 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -3,8 +3,8 @@ package net.officefloor.hq.app.settings;
+ /** The settings form: each setting given is saved; one left out (null) stays as it is. The grade terms are by grade.
+  *  {@code from} is the from-date given for a dated setting, by key (clerk-limit, floor, terms, terms-<grade>, late-pct,
+  *  cap, proof-threshold); blank or left out is the sheet's today. {@code permissions} is the permission matrix entries
+- *  given, by action: a comma separated list of roles, blank keeping the standing rule. */
++ *  given, by action: a comma separated list of roles, blank keeping the standing rule. {@code graceDays} is the grace days, blank meaning off. */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+-        String proofThreshold, java.util.Map<String, String> permissions) {
++        String proofThreshold, java.util.Map<String, String> permissions, String graceDays) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 79a326ae2..52681b1e5 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
+  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold likewise. A from-date given for a
+  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
+- *  list of roles (clerk, steward), blank keeping the standing rule. A setting left out is not changed. */
++ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
+ public class ValidateSettings {
+     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
+     private static final List<String> GRADES = List.of("A", "B", "C");
+@@ -63,6 +63,10 @@ public class ValidateSettings {
+         if (proof != null && !proof.isEmpty() && !MONEY.matcher(proof).matches()) {
+             throw new BadRequestException("proof threshold must be 0.00 or more with up to two decimals");
+         }
++        String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
++        if (grace != null && !grace.isEmpty() && (!TERMS.matcher(grace).matches() || Integer.parseInt(grace) > 3650)) {
++            throw new BadRequestException("grace days must be a whole number of days from 0 to 3650");
++        }
+         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
+         LocalDate policyDate = null;
+         if (policy != null && !policy.isEmpty()) {
+@@ -134,6 +138,7 @@ public class ValidateSettings {
+                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
+                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
+                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
+-                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions));
++                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
++                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index bf911c3a1..4726b2229 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -3,15 +3,18 @@ package net.officefloor.hq.app.sheet;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.period.PeriodCloser;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
++/** Set the sheet's today, then close each open period lapsed past the sheet's grace days. */
+ public class SaveSheetToday {
+     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today,
+-            ServerHttpConnection connection, SheetRepository repository, Rollup rollup, Out<Sheet> sheet)
++            ServerHttpConnection connection, SheetRepository repository, Rollup rollup, PeriodCloser closer,
++            Out<Sheet> sheet)
+             throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+@@ -19,6 +22,7 @@ public class SaveSheetToday {
+         if (!repository.setToday(id, today)) {
+             throw new BadRequestException("no such sheet");
+         }
++        closer.closeLapsed(id, by, today);
+         rollup.record(id, by, before);
+         sheet.set(new Sheet(id, today.toString()));
+     }
+diff --git a/src/main/resources/db/migration/V39__grace_days.sql b/src/main/resources/db/migration/V39__grace_days.sql
+new file mode 100644
+index 000000000..acee3c830
+--- /dev/null
++++ b/src/main/resources/db/migration/V39__grace_days.sql
+@@ -0,0 +1,3 @@
++-- A sheet's grace days (null means off; not dated): when the sheet's today is changed, every open period
++-- whose to-date plus the grace days is before the new today is closed.
++ALTER TABLE sheet ADD COLUMN grace_days INT;
