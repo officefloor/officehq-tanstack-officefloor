@@ -1,6 +1,6 @@
 import { counts, useClaims } from '../claims/useClaims';
 import { claimDueNow } from '../overdue/useOverdue';
-import { gradeOn, heldIds, usePeople } from '../people/usePeople';
+import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { rateFor, sumDues, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
@@ -18,7 +18,7 @@ export function usePeriodDueTotals(sheetId: string): Map<string, string> {
   const floor = settings?.floor;
   const today = useSheetToday(sheetId).data?.today;
   const byId = new Map((people.data ?? []).map((person) => [person.id, person]));
-  const held = heldIds(people.data);
+  const holds = holdsById(people.data);
   const totals = new Map<string, string>();
   for (const p of periods.data ?? []) {
     totals.set(
@@ -27,7 +27,7 @@ export function usePeriodDueTotals(sheetId: string): Map<string, string> {
         ? p.closedTotal
         : sumDues(
             (claims.data ?? [])
-              .filter((c) => counts(c, held) && periodOf([p], c.date) !== undefined)
+              .filter((c) => counts(c, holds) && periodOf([p], c.date) !== undefined)
               .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(byId.get(c.personId), c.date), c.date), floor, settings, today)),
           ),
     );

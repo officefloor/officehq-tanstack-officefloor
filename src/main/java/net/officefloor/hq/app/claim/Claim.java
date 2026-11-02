@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.claim;
 
+import java.util.List;
+import net.officefloor.hq.app.person.Hold;
+
 /** A claim of a person on a sheet: its amount with two decimals, its date (ISO yyyy-MM-dd), note and status
  *  (DRAFT, OPEN, PENDING — a clerk's settle above the clerk limit, awaiting a steward — SETTLED or VOID), its number on the sheet (a sheet-wide 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft; a voided claim keeps the one it had), and the due fixed when it was settled
  *  (null unless settled with a rate; its due is then worked out live from the rates), and who opened it
@@ -21,10 +24,11 @@ public record Claim(long id, long personId, String amount, String date, String n
         return open() || status.equals("SETTLED");
     }
 
-    /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) when its
-     *  person is or is not on hold: a held person's open claims do not; SETTLED claims always do. */
-    public boolean counts(boolean held) {
-        return status.equals("SETTLED") || (!held && open());
+    /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) given its
+     *  person's holds: an open claim dated within a hold does not, unless a statement binds it; SETTLED
+     *  claims always do. */
+    public boolean counts(List<Hold> holds) {
+        return status.equals("SETTLED") || (open() && (bound() || !Hold.anyCovers(holds, date)));
     }
 
     /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it

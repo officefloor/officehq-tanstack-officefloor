@@ -5,10 +5,8 @@ import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import net.officefloor.hq.app.BadRequestException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -23,13 +21,13 @@ public class PersonRepository {
             + " AND (g.from_date IS NULL OR g.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade";
 
-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, held";
+    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from";
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
-            rs.getBoolean("held"), List.of());
+            false, List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -50,7 +48,30 @@ public class PersonRepository {
                 rs -> {
                     grades.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(gradeFrom(rs));
                 }, sheetId);
-        return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))).toList();
+        Map<Long, List<Hold>> holds = holds(sheetId);
+        return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))
+                .withHolds(holds.getOrDefault(p.id(), List.of()))).toList();
+    }
+
+    private static Hold hold(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Hold(rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(),
+                rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString());
+    }
+
+    /** The holds of the sheet's people, by person id, each person's oldest first. */
+    public Map<Long, List<Hold>> holds(String sheetId) {
+        Map<Long, List<Hold>> holds = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(hold(rs));
+                }, sheetId);
+        return holds;
+    }
+
+    /** A person's holds, oldest first. */
+    public List<Hold> holds(String sheetId, long id) {
+        return jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (rs, i) -> hold(rs), sheetId, id);
     }
 
     private static GradeFrom gradeFrom(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -78,7 +99,7 @@ public class PersonRepository {
     public Person find(String sheetId, long id) {
         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
                 sheetId, id);
-        return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id));
+        return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id));
     }
 
     /** Record a statement taken of a person: one more, with its due-total and date. */
@@ -92,14 +113,10 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), id, sheetId);
     }
 
-    /** Put a person on hold, or take them off it. */
-    public void hold(String sheetId, long id, boolean held) {
-        jdbc.update("UPDATE person SET held = ? WHERE id = ? AND sheet_id = ?", held, id, sheetId);
-    }
-
-    /** The ids of the sheet's people who are on hold. */
-    public Set<Long> heldIds(String sheetId) {
-        return new HashSet<>(jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? AND held", Long.class, sheetId));
+    /** Put a person on hold from a from-date to a to-date (null: open-ended). */
+    public void hold(String sheetId, long id, LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to));
     }
 
     /** Refuse a claim of the person dated after the date they are retired from. */
@@ -137,7 +154,7 @@ public class PersonRepository {
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)));
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of());
     }
 
     /** Whether the sheet has this person. */

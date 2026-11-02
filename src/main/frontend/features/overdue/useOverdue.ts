@@ -1,5 +1,5 @@
 import { counts, fixedDue, isOpen, useClaims, type Claim } from '../claims/useClaims';
-import { gradeOn, heldIds, usePeople } from '../people/usePeople';
+import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
 import { useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
@@ -54,12 +54,12 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
   const today = useSheetToday(sheetId).data?.today;
-  const held = heldIds(people.data);
+  const holds = holdsById(people.data);
   const figures = new Map<number, { count: number; total: string }>();
   if (settings === undefined || today === undefined) return figures;
   for (const p of people.data ?? []) {
     const overdue = (claims.data ?? []).filter(
-      (c) => c.personId === p.id && counts(c, held) && isOverdue(c, today),
+      (c) => c.personId === p.id && counts(c, holds) && isOverdue(c, today),
     );
     figures.set(p.id, {
       count: overdue.length,

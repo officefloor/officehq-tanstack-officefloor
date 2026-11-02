@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { gradeOn, heldIds, usePeople } from '../people/usePeople';
+import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateFor, useRates } from '../rates/useRates';
 import { claimDueNow, isOverdue } from '../overdue/useOverdue';
@@ -13,13 +13,13 @@ import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
-/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; only SETTLED while held) claims' amounts. */
+/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   return (
     <td data-testid="person-claimed">
-      {claimed((claims.data ?? []).filter((c) => c.personId === personId), heldIds(people.data))}
+      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data))}
     </td>
   );
 }
@@ -353,7 +353,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], heldIds(people.data))}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data))}</strong>
     </p>
   );
 }

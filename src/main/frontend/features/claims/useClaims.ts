@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { heldOn, type Hold } from '../people/usePeople';
 
 /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
  *  instead, which a steward approves (SETTLED) or rejects (OPEN again); a DRAFT, OPEN or PENDING claim
@@ -43,10 +44,16 @@ export function fixedDue(c: Claim): string | null {
   return c.due ?? (c.stated && c.status !== 'PENDING' ? c.statedDue : null);
 }
 
-/** Whether a claim counts toward claimed and every live total, given the ids of the people on hold:
- *  only open (OPEN or PENDING) and SETTLED claims do, and a held person's open claims do not. */
-export function counts(c: Claim, held: ReadonlySet<number>): boolean {
-  return c.status === 'SETTLED' || (isOpen(c) && !held.has(c.personId));
+/** Whether a claim counts toward claimed and every live total, given the people's holds by person id:
+ *  only open (OPEN or PENDING) and SETTLED claims do, and an open claim dated within one of its person's
+ *  holds does not, unless a statement binds it. */
+export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>): boolean {
+  return c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
+}
+
+/** Whether its person's last statement binds a claim now: it was stated and is not PENDING. */
+export function isBound(c: Claim): boolean {
+  return c.stated && c.status !== 'PENDING';
 }
 
 export function claimsKey(sheetId: string) {
@@ -66,9 +73,9 @@ export function useClaims(sheetId: string) {
   });
 }
 
-/** The sum of the amounts of those of these claims that count (given the ids of the people on hold),
+/** The sum of the amounts of those of these claims that count (given the people's holds by person id),
  *  with two decimals (added up in cents, so no rounding drift). */
-export function claimed(claims: Claim[], held: ReadonlySet<number>): string {
-  const cents = claims.filter((c) => counts(c, held)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>): string {
+  const cents = claims.filter((c) => counts(c, holds)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
