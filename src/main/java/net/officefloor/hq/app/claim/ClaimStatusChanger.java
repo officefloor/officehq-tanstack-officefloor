@@ -273,7 +273,7 @@ public class ClaimStatusChanger {
         // when it has one, else the sheet's; a due of n/a is within any limit); above
         // it the claim goes to PENDING for a steward to approve. A steward settles anything.
         if (requested == ClaimStatusChange.SETTLE && claim.status() == ClaimStatus.OPEN
-                && Role.CLERK.equals(roles.of(sheet, user))) {
+                && (Role.CLERK.equals(roles.of(sheet, user)) || Role.RESTRICTED.equals(roles.of(sheet, user)))) {
             BigDecimal limit = settings.clerkLimit(sheet, person.gradeOn(claim.date()));
             BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import net.officefloor.hq.app.claim.Late;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -446,7 +447,9 @@ public class Settings {
     /** Whether the permission matrix lets the role take the action (a blank entry: the standing rule). */
     public boolean permits(String sheet, String action, String role) {
         String roles = get(sheet, perm(action));
-        return List.of((roles.isEmpty() ? defaultPerm(action) : roles).split(",")).contains(role);
+        // A restricted user acts as a clerk; only their people list is narrowed.
+        String acting = Role.RESTRICTED.equals(role) ? Role.CLERK : role;
+        return List.of((roles.isEmpty() ? defaultPerm(action) : roles).split(",")).contains(acting);
     }
 
     /** The settings in force on the sheet's today, with every dated key's recorded values. */
