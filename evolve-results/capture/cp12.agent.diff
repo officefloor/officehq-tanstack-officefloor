@@ -1,0 +1,81 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index bb20775c7..37f5f78c8 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { claimed, useClaims } from '../claims/useClaims';
++import { counts, useClaims } from '../claims/useClaims';
+ import { GRADES, usePeople } from '../people/usePeople';
+ import { useSheetToday } from '../today/useSheetToday';
+ import { due, rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
+@@ -117,8 +117,9 @@ function Rates({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
+-/** Each person's due-total, by person id: their claimed times their grade's rate in force on the
+- *  sheet's today, divided by 100, rounded half up; 'n/a' when no rate for their grade is in force. */
++/** Each person's due-total, by person id: the sum of the figures of their claims that count (a
++ *  settled claim's frozen due, else its live due), skipping those with none; 'n/a' when no rate for
++ *  their grade is in force on the sheet's today and no settled claim of theirs keeps a figure. */
+ function useDueTotals(sheetId: string): Map<number, string> {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+@@ -126,8 +127,11 @@ function useDueTotals(sheetId: string): Map<number, string> {
+   const today = useSheetToday(sheetId);
+   const totals = new Map<number, string>();
+   for (const p of people.data ?? []) {
+-    const mine = (claims.data ?? []).filter((c) => c.personId === p.id);
+-    totals.set(p.id, due(claimed(mine), rateFor(rates.data, p.grade, today.data?.today)));
++    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c));
++    const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
++    totals.set(p.id, rated || counting.some((c) => c.due !== null)
++      ? sumDues(counting.map((c) => c.due ?? due(c.amount, rateFor(rates.data, p.grade, c.date))))
++      : 'n/a');
+   }
+   return totals;
+ }
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 5c599c103..406f3bc4f 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -39,11 +39,13 @@ function hundredths(v: string): bigint {
+ }
+ 
+ /** A due: an amount (two decimals) times a rate (a two-decimal percent), divided by 100, rounded
+- *  half up to two decimals; 'n/a' when there is no rate. Worked in whole numbers, so exact. */
++ *  half to even to two decimals; 'n/a' when there is no rate. Worked in whole numbers, so exact. */
+ export function due(amount: string, pct: string | undefined): string {
+   if (pct === undefined) return 'n/a';
+   const product = hundredths(amount) * hundredths(pct);       // in 1/1_000_000 of a unit
+-  const cents = (product + 5000n) / 10000n;                    // amounts are never negative
++  const rest = product % 10000n;                               // amounts are never negative
++  let cents = product / 10000n;
++  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+   return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
+ }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 8daa608c7..e54c5b192 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -71,7 +71,7 @@ public class ClaimRepository {
+ 
+     /** A claim's due now: its amount at the rate for its person's grade in force on the claim's date
+      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
+-     *  of time), rounded half up to two decimals; null when no rate applies. */
++     *  of time), rounded half to even to two decimals; null when no rate applies. */
+     public BigDecimal due(String sheetId, Claim claim) {
+         List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
+                 + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?"
+@@ -79,7 +79,7 @@ public class ClaimRepository {
+                 + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1", BigDecimal.class, sheetId,
+                 claim.personId(), claim.date());
+         return pct.isEmpty() ? null
+-                : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
++                : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+     }
+ 
+     /** Fix a settled claim's due. */
