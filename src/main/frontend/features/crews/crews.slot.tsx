@@ -8,7 +8,7 @@ import { usePeople } from '../people/people';
 import { usePersonDueCentsOf } from '../claims/claims';
 import { twoDecimals } from '../rates/rates';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { crewMembersPath, crewsKey, crewsPath, useCrews, type Crew } from './crews';
+import { crewDueCents, crewMembersPath, crewsKey, crewsPath, useCrews, type Crew } from './crews';
 import { Fig } from '../locale/Fig';
 
 // One crew's row: its lead, its members, its due-total (the lead's and the members' due-totals added up, an n/a one
@@ -35,12 +35,7 @@ function CrewRow({ sheet, user, crew }: { sheet: string; user: string; crew: Cre
     send({ crew: crew.name, person: member === '' ? null : Number(member) });
   };
 
-  let due = 0n;
-  for (const id of [crew.lead.person, ...crew.members.map((m) => m.person)]) {
-    const person = people.find((p) => p.id === id);
-    const cents = person ? dueOf(person) : undefined;
-    if (cents !== undefined) due += cents;
-  }
+  const due = crewDueCents(crew, people, dueOf);
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
