@@ -24,12 +24,13 @@ import net.officefloor.hq.app.setting.Settings;
  * past ones (each ended by unretiring them), in the order they were unretired. Their tags are lower-cased, repeats
  * dropped, sorted: a claim of theirs counts in the due-total of each. Their flag (a reason and an until-date, both null
  * when never flagged) is in force (flagged) while the sheet's today is on or before its until-date: then only a steward
- * may open a claim of theirs.
+ * may open a claim of theirs. Their approver (a user name, null when none) may approve or reject their PENDING claims
+ * as a steward may.
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
         List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing, String origin,
         List<Retirement> retirements, List<String> tags, List<TermsFrom> termsFrom, String flagReason, String flagUntil,
-        boolean flagged) {
+        boolean flagged, String approver) {
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
@@ -63,7 +64,7 @@ public record Person(long id, String name, String grade, long version, String re
     public Person on(LocalDate today) {
         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades,
                 termsOn(termsFrom, today), retiredOn(retiredFrom, today), contact, clashing, origin, retirements, tags,
-                termsFrom, flagReason, flagUntil, flaggedOn(flagUntil, today));
+                termsFrom, flagReason, flagUntil, flaggedOn(flagUntil, today), approver);
     }
 
     /** Whether the sheet's today is on or before the flag's until-date (null: never flagged). */

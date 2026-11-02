@@ -21,10 +21,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms, contact, origin, tags, flag_reason, flag_until FROM person";
+    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms, contact, origin, tags, flag_reason, flag_until, approver FROM person";
 
     private record Row(long id, String name, long version, String retiredFrom, Integer terms, String contact, String origin, String tags,
-            String flagReason, String flagUntil) {
+            String flagReason, String flagUntil, String approver) {
     }
 
     private final JdbcTemplate jdbc;
@@ -67,7 +67,8 @@ public class People {
                 rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
                 rs.getObject("terms", Integer.class), rs.getString("contact"), rs.getString("origin"), rs.getString("tags"),
                 rs.getString("flag_reason"),
-                rs.getDate("flag_until") == null ? null : rs.getDate("flag_until").toLocalDate().toString()), args);
+                rs.getDate("flag_until") == null ? null : rs.getDate("flag_until").toLocalDate().toString(),
+                rs.getString("approver")), args);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -118,7 +119,7 @@ public class People {
                             || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains), r.origin(),
                     List.copyOf(retirements.getOrDefault(r.id(), List.of())),
                     r.tags().isEmpty() ? List.of() : List.of(r.tags().split(",")), List.copyOf(terms),
-                    r.flagReason(), r.flagUntil(), Person.flaggedOn(r.flagUntil(), today)));
+                    r.flagReason(), r.flagUntil(), Person.flaggedOn(r.flagUntil(), today), r.approver()));
         }
         return people;
     }
@@ -259,6 +260,11 @@ public class People {
     /** Flags the person with the reason until the date, replacing any flag they had. */
     public void flag(long id, String reason, LocalDate until) {
         jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", reason, Date.valueOf(until), id);
+    }
+
+    /** Sets the person's approver (null: none), replacing any they had. */
+    public void setApprover(long id, String approver) {
+        jdbc.update("UPDATE person SET approver = ? WHERE id = ?", approver, id);
     }
 
     /** Save the person's name over the version it carries, raising the version; refused when it has moved on. */

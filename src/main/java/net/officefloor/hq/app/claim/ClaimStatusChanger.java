@@ -157,6 +157,12 @@ public class ClaimStatusChanger {
     }
 
     /** As {@link #vet}, judging the four-eyes rules and the proof rule on the claim only when ownRules. */
+    /** Whether the user is the approver of the claim's person. */
+    private boolean approverOf(String sheet, String user, Claim claim) {
+        Person person = people.find(sheet, claim.person());
+        return person != null && user.equals(person.approver());
+    }
+
     private ClaimStatusChange vet(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason,
             boolean ownRules) throws InvalidClaimStatusChangeException {
         // A viewer changes nothing.
@@ -216,9 +222,9 @@ public class ClaimStatusChanger {
                 && user.equals(claims.editedBy(sheet, claim.id()))) {
             throw new InvalidClaimStatusChangeException("The user who last edited a claim cannot settle or approve it");
         }
-        // Only a steward approves or rejects a PENDING claim; a reject gives a reason.
+        // Only a steward, or the approver of the claim's person, approves or rejects a PENDING claim; a reject gives a reason.
         if ((requested == ClaimStatusChange.APPROVE || requested == ClaimStatusChange.REJECT)
-                && !Role.STEWARD.equals(roles.of(sheet, user))) {
+                && !Role.STEWARD.equals(roles.of(sheet, user)) && !approverOf(sheet, user, claim)) {
             throw new InvalidClaimStatusChangeException("Only a steward approves or rejects a claim");
         }
         if (requested == ClaimStatusChange.REJECT && (reason == null || reason.isBlank())) {

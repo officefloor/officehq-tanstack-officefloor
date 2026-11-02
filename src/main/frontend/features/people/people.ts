@@ -52,6 +52,8 @@ export type Person = {
   flagUntil: string | null;
   /** Whether the sheet's today is on or before flagUntil: then only a steward may open a claim of theirs. */
   flagged: boolean;
+  /** Their approver's user name: they may approve or reject this person's PENDING claims as a steward may; null when none. */
+  approver: string | null;
 };
 
 /** A person's name as the screen shows it: "<name> (<grade in force on the sheet's today>)". Exports, audit lines,
