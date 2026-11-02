@@ -1,0 +1,55 @@
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftCloseOldYear.java b/src/main/java/net/officefloor/hq/app/period/SoftCloseOldYear.java
+new file mode 100644
+index 00000000..c983e5f4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/SoftCloseOldYear.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Soft-closes, in order of their from-dates, every period of the rolled-over year that is still open (neither closed
++ * nor soft-closed), each as a soft close does and audited after the rollover.
++ */
++public class SoftCloseOldYear {
++    public void softClose(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @Val RolloverYear year, Periods periods, PeriodCloser closer) {
++        List<Period> open = periods.list(sheet).stream()
++                .filter((p) -> !p.fixed() && !LocalDate.parse(p.from()).isBefore(year.from())
++                        && !LocalDate.parse(p.from()).isAfter(year.to()))
++                .sorted(Comparator.comparing(Period::from)).toList();
++        for (Period period : open) {
++            closer.close(sheet, user, period, false, true);
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/rollover.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/rollover.POST.yml
+index 5636de87..c6a8484a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/rollover.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/rollover.POST.yml
+@@ -1,6 +1,7 @@
+ # Validate first so anyone but a steward, a bad year or a year with no periods is a 400 and writes nothing; Generate
+ # adds the next fiscal year's months exactly as the fiscal year generator does; Carry adds each person's open figure at
+-# the old year's end to their opening for the new year's first period and audits the rollover. Responds with how many
++# the old year's end to their opening for the new year's first period and audits the rollover; SoftClose then soft-closes
++# each still open period of the old year in start-date order. Responds with how many
+ # periods were made and the sheet's periods.
+ validate:
+   class: net.officefloor.hq.app.period.ValidateRollover
+@@ -13,6 +14,10 @@ generate:
+ carry:
+   class: net.officefloor.hq.app.period.CarryOpenings
+   govern: [ transaction ]
++  next: softClose
++softClose:
++  class: net.officefloor.hq.app.period.SoftCloseOldYear
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
