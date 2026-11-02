@@ -1,0 +1,394 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+new file mode 100644
+index 000000000..7d1b824db
+--- /dev/null
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -0,0 +1,84 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
++import { patronsKey, usePatrons, usePeople, type Person } from '../people/usePeople';
++import { useDueTotals } from '../rates/useDueTotals';
++import { sumDues } from '../rates/useRates';
++
++/** A person's patrons: the other people on the sheet they have named (names sorted, comma and space
++ *  separated), their backing (their patrons' due-totals added up, skipping 'n/a'; 0.00 with none),
++ *  and a picker that names one more. Naming themselves, or a patron twice, is refused. */
++function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const people = usePeople(sheetId);
++  const patrons = usePatrons(sheetId);
++  const totals = useDueTotals(sheetId);
++  const queryClient = useQueryClient();
++  const [chosen, setChosen] = useState('');
++
++  const named = (patrons.data ?? [])
++    .filter((x) => x.personId === personId)
++    .map((x) => people.data?.find((p) => p.id === x.patronId))
++    .filter((p): p is Person => p !== undefined);
++  const names = named.map((p) => p.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  const backing = sumDues(named.map((p) => totals.get(p.id) ?? 'n/a'));
++
++  const add = useMutation({
++    mutationFn: (patronId: number) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/patrons`, { patronId }),
++    onSuccess: async () => {
++      setChosen('');
++      await queryClient.invalidateQueries({ queryKey: patronsKey(sheetId) });
++    },
++  });
++
++  return (
++    <>
++      <td data-testid="person-patrons">{names.join(', ')}</td>
++      <td data-testid="person-backing">{backing}</td>
++      <td>
++        <select
++          data-testid="person-patron-select"
++          value={chosen}
++          onChange={(e) => {
++            setChosen(e.target.value);
++            add.reset();
++          }}
++        >
++          <option value="">Patron…</option>
++          {(people.data ?? []).map((p) => (
++            <option key={p.id} value={String(p.id)}>
++              {p.name}
++            </option>
++          ))}
++        </select>{' '}
++        <button
++          type="button"
++          data-testid="person-patron-add"
++          disabled={add.isPending}
++          onClick={() => {
++            add.reset();
++            add.mutate(Number(chosen));
++          }}
++        >
++          Add patron
++        </button>
++        {add.isError && <span data-testid="person-patron-error">{add.error.message}</span>}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonColumnHead.fill({
++    order: 50,
++    Component: () => (
++      <>
++        <th>Patrons</th>
++        <th>Backing</th>
++        <th />
++      </>
++    ),
++  }),
++  PersonCells.fill({ order: 50, Component: PersonPatrons }),
++];
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index b3e554b70..6432cf426 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -17,15 +17,37 @@ export type Person = {
+   held: boolean;
+ };
+ 
++/** One of a person's patrons: another person on the same sheet, by id. */
++export type Patron = { personId: number; patronId: number };
++
+ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+ export function peopleKey(sheetId: string) {
+   return ['sheet', sheetId, 'people'];
+ }
+ 
++/** The sheet's people and the patrons they have named, as the store holds them. */
++type PeopleBody = { people: Person[]; patrons: Patron[] };
++
++function peopleBody(sheetId: string): Promise<PeopleBody> {
++  return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
++}
++
+ /** Read the sheet's people from the store. */
+ export async function fetchPeople(sheetId: string): Promise<Person[]> {
+-  return (await getJson<{ people: Person[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/people`)).people;
++  return (await peopleBody(sheetId)).people;
++}
++
++export function patronsKey(sheetId: string) {
++  return [...peopleKey(sheetId), 'patrons'];
++}
++
++/** Every patron named on the sheet, re-read from the store. */
++export function usePatrons(sheetId: string) {
++  return useQuery({
++    queryKey: patronsKey(sheetId),
++    queryFn: async () => (await peopleBody(sheetId)).patrons,
++  });
+ }
+ 
+ /** The ids of those of these people who are on hold. */
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 796cced5c..bffe5050b 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -4,12 +4,10 @@ import { postJson } from '../../api/http';
+ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { counts, fixedDue, useClaims } from '../claims/useClaims';
+-import { GRADES, heldIds, usePeople } from '../people/usePeople';
+-import { dueNow } from '../overdue/useOverdue';
+-import { useSettings } from '../settings/useSettings';
++import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../today/useSheetToday';
+-import { due, rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
++import { useDueTotals } from './useDueTotals';
++import { rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
+ 
+ /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
+  *  grade's rate from that date; blank is from the beginning of time), the rates set, and the rate in
+@@ -123,31 +121,6 @@ function Rates({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
+-/** Each person's due-total, by person id: the sum of the figures of their claims that count (a held
+- *  person's OPEN claims left out; a settled claim's frozen due, else the figure their last statement
+- *  bound it to, else its live due, with its late charge while overdue),
+- *  skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's today and
+- *  no counting claim of theirs keeps a fixed figure. */
+-function useDueTotals(sheetId: string): Map<number, string> {
+-  const people = usePeople(sheetId);
+-  const claims = useClaims(sheetId);
+-  const rates = useRates(sheetId);
+-  const today = useSheetToday(sheetId);
+-  const settings = useSettings(sheetId).data;
+-  const floor = settings?.floor;
+-  const held = heldIds(people.data);
+-  const totals = new Map<number, string>();
+-  for (const p of people.data ?? []) {
+-    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
+-    const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
+-    totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null)
+-      ? sumDues(counting.map((c) =>
+-          dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, p.grade, c.date), floor), settings, today.data?.today)))
+-      : 'n/a');
+-  }
+-  return totals;
+-}
+-
+ function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const totals = useDueTotals(sheetId);
+   return <td data-testid="person-due-total">{totals.get(personId) ?? ''}</td>;
+diff --git a/src/main/frontend/features/rates/useDueTotals.ts b/src/main/frontend/features/rates/useDueTotals.ts
+new file mode 100644
+index 000000000..9b2997e04
+--- /dev/null
++++ b/src/main/frontend/features/rates/useDueTotals.ts
+@@ -0,0 +1,31 @@
++import { counts, fixedDue, useClaims } from '../claims/useClaims';
++import { dueNow } from '../overdue/useOverdue';
++import { heldIds, usePeople } from '../people/usePeople';
++import { useSettings } from '../settings/useSettings';
++import { useSheetToday } from '../today/useSheetToday';
++import { due, rateFor, sumDues, useRates } from './useRates';
++
++/** Each person's due-total, by person id: the sum of the figures of their claims that count (a held
++ *  person's OPEN claims left out; a settled claim's frozen due, else the figure their last statement
++ *  bound it to, else its live due, with its late charge while overdue),
++ *  skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's today and
++ *  no counting claim of theirs keeps a fixed figure. */
++export function useDueTotals(sheetId: string): Map<number, string> {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const today = useSheetToday(sheetId);
++  const settings = useSettings(sheetId).data;
++  const floor = settings?.floor;
++  const held = heldIds(people.data);
++  const totals = new Map<number, string>();
++  for (const p of people.data ?? []) {
++    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
++    const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
++    totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null)
++      ? sumDues(counting.map((c) =>
++          dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, p.grade, c.date), floor), settings, today.data?.today)))
++      : 'n/a');
++  }
++  return totals;
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPatron.java b/src/main/java/net/officefloor/hq/app/person/AddPatron.java
+new file mode 100644
+index 000000000..8a1cda4f5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AddPatron.java
+@@ -0,0 +1,48 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.dao.DuplicateKeyException;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Name another person on the sheet as one of a person's patrons: not themselves, and not one they
++ *  have already named. */
++public class AddPatron {
++    public void add(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
++            @RequestBody PatronRequest request, ServerHttpConnection connection, PersonRepository repository,
++            PatronRepository patrons, Audit audit, Out<Person> person) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        long pid;
++        try {
++            pid = Long.parseLong(personId == null ? "" : personId.trim());
++        } catch (NumberFormatException e) {
++            throw new BadRequestException("no such person");
++        }
++        Person found = repository.find(id, pid);
++        if (found == null) {
++            throw new BadRequestException("no such person");
++        }
++        Person patron = request == null || request.patronId() == null ? null : repository.find(id, request.patronId());
++        if (patron == null) {
++            throw new BadRequestException("choose a person on the sheet as patron");
++        }
++        if (patron.id() == pid) {
++            throw new BadRequestException("a person cannot be their own patron");
++        }
++        if (patrons.named(id, pid, patron.id())) {
++            throw new BadRequestException(patron.name() + " is already a patron of " + found.name());
++        }
++        try {
++            patrons.add(id, pid, patron.id());
++        } catch (DuplicateKeyException e) {
++            throw new BadRequestException(patron.name() + " is already a patron of " + found.name());
++        }
++        audit.record("PATRON_ADDED sheet=" + id + " by=" + by + " name=" + found.name() + " patron=" + patron.name());
++        person.set(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+index d1e0ec9c2..3e584d5b6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+@@ -8,9 +8,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadPeople {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            PersonRepository repository, Out<People> people) throws BadRequestException {
++            PersonRepository repository, PatronRepository patrons, Out<People> people) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        people.set(new People(repository.list(id)));
++        people.set(new People(repository.list(id), patrons.list(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Patron.java b/src/main/java/net/officefloor/hq/app/person/Patron.java
+new file mode 100644
+index 000000000..a1b01df7d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Patron.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** One of a person's patrons: another person on the same sheet, by id. */
++public record Patron(long personId, long patronId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronRepository.java b/src/main/java/net/officefloor/hq/app/person/PatronRepository.java
+new file mode 100644
+index 000000000..7b464c4fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PatronRepository.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class PatronRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public PatronRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Every patron named on the sheet, by person. */
++    public List<Patron> list(String sheetId) {
++        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
++                (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id")), sheetId);
++    }
++
++    /** Whether the person has already named this patron. */
++    public boolean named(String sheetId, long personId, long patronId) {
++        Integer known = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM patron WHERE sheet_id = ? AND person_id = ? AND patron_id = ?", Integer.class,
++                sheetId, personId, patronId);
++        return known != null && known > 0;
++    }
++
++    public void add(String sheetId, long personId, long patronId) {
++        jdbc.update("INSERT INTO patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)", sheetId, personId,
++                patronId);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronRequest.java b/src/main/java/net/officefloor/hq/app/person/PatronRequest.java
+new file mode 100644
+index 000000000..9bc8b7ad1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PatronRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The add-patron form: the id of the person to name as a patron. */
++public record PatronRequest(Long patronId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 3064d8e04..0a1c32a2e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
+ 
+-/** A sheet's people, in the order they were added. */
+-public record People(List<Person> people) {
++/** A sheet's people, in the order they were added, and every patron any of them has named. */
++public record People(List<Person> people, List<Patron> patrons) {
+ }
+diff --git a/src/main/resources/db/migration/V22__patron.sql b/src/main/resources/db/migration/V22__patron.sql
+new file mode 100644
+index 000000000..0e35b2e44
+--- /dev/null
++++ b/src/main/resources/db/migration/V22__patron.sql
+@@ -0,0 +1,8 @@
++-- A person's patrons: other people on the same sheet they have named, each at most once.
++CREATE TABLE patron (
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    patron_id BIGINT       NOT NULL REFERENCES person (id),
++    PRIMARY KEY (person_id, patron_id)
++);
++CREATE INDEX patron_sheet ON patron (sheet_id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+new file mode 100644
+index 000000000..b2df1d088
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -0,0 +1,7 @@
++# Name another person on the sheet as one of a person's patrons (not themselves, not twice).
++add:
++  class: net.officefloor.hq.app.person.AddPatron
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
