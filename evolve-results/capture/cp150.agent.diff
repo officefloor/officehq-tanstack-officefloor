@@ -1,0 +1,141 @@
+diff --git a/src/main/frontend/features/search/search.slot.tsx b/src/main/frontend/features/search/search.slot.tsx
+new file mode 100644
+index 00000000..130247ce
+--- /dev/null
++++ b/src/main/frontend/features/search/search.slot.tsx
+@@ -0,0 +1,100 @@
++import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
++import { getJson } from '../../api/http';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { usePeople } from '../people/people';
++import { useAliases } from '../aliases/aliases';
++import { useClaims, usePersonDueCentsOf } from '../claims/claims';
++import { useRates, showDue } from '../rates/rates';
++import { useSheet } from '../sheet/sheet';
++import { useSettings } from '../settings/settings';
++import { LiveFigures } from '../../query/live';
++
++// One sheet's matching people, each as "<sheet id> <name> <due-total>", in list order. Renders nothing; it reports
++// them up once every read its lines are figured from has come back from the store (it mounts afresh on each search,
++// so a stale read is fetched again first).
++function SheetMatches({ sheet, text, report }: { sheet: string; text: string; report: (sheet: string, lines: string[]) => void }) {
++  const reads = [usePeople(sheet), useAliases(sheet), useClaims(sheet), useRates(sheet), useSheet(sheet), useSettings(sheet)];
++  const ready = reads.every((r) => r.isSuccess && !r.isFetching);
++  const people = reads[0].data as ReturnType<typeof usePeople>['data'];
++  const aliases = reads[1].data as ReturnType<typeof useAliases>['data'];
++  const dueOf = usePersonDueCentsOf(sheet);
++  const needle = text.toLowerCase();
++  const lines =
++    ready && people && aliases
++      ? people
++          .filter(
++            (p) =>
++              p.name.toLowerCase().includes(needle) ||
++              aliases.some((a) => a.person === p.id && a.alias.toLowerCase().includes(needle)),
++          )
++          .map((p) => `${sheet} ${p.name} ${showDue(dueOf(p))}`)
++      : null;
++  const key = lines === null ? null : JSON.stringify(lines);
++  useEffect(() => {
++    if (key !== null) report(sheet, JSON.parse(key) as string[]);
++  }, [sheet, key, report]);
++  return null;
++}
++
++type Search = { run: number; text: string; sheets: string[] | null };
++
++// Searches this sheet and every other sheet of its tree for the people whose name or an alias contains the typed text
++// (ignoring case): one line each, this sheet's people first in list order, then the other sheets' by sheet id. The
++// figures are the sheets' as they stand now, even while the screen shows the sheet as of a date.
++function TreeSearch({ sheet }: { sheet: string; user: string }) {
++  const [text, setText] = useState('');
++  const [search, setSearch] = useState<Search | null>(null);
++  const [found, setFound] = useState<Map<string, string[]>>(new Map());
++  const runs = useRef(0);
++
++  useEffect(() => {
++    setSearch(null);
++    setFound(new Map());
++  }, [sheet]);
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const run = ++runs.current;
++    setFound(new Map());
++    setSearch({ run, text, sheets: null });
++    getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/tree`).then(
++      (sheets) => setSearch((s) => (s?.run === run ? { ...s, sheets } : s)),
++      () => setSearch((s) => (s?.run === run ? { ...s, sheets: [sheet] } : s)),
++    );
++  };
++
++  // Only the current search's sheets are mounted, so every report belongs to it.
++  const report = useCallback((s: string, lines: string[]) => setFound((prev) => new Map(prev).set(s, lines)), []);
++
++  const sheets = search?.sheets ?? null;
++  const done = sheets !== null && sheets.every((s) => found.has(s));
++  const lines = done ? sheets.flatMap((s) => found.get(s) ?? []) : [];
++
++  return (
++    <section>
++      <form onSubmit={submit}>
++        <input data-testid="search-name" placeholder="name or alias" value={text} onChange={(e) => setText(e.target.value)} />{' '}
++        <button type="submit" data-testid="search">
++          Search tree
++        </button>{' '}
++        Found <strong data-testid="search-count">{done ? lines.length : ''}</strong>
++      </form>
++      {search && sheets && (
++        <LiveFigures.Provider value={true}>
++          {sheets.map((s) => (
++            <SheetMatches key={`${search.run}-${s}`} sheet={s} text={search.text} report={report} />
++          ))}
++        </LiveFigures.Provider>
++      )}
++      <ul>
++        {lines.map((line, i) => (
++          <li key={i} data-testid="search-line">
++            {line}
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: -8, Component: TreeSearch });
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithTree.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithTree.java
+new file mode 100644
+index 00000000..373adb5b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithTree.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Responds with the sheet's id then those of every other sheet of its whole tree, by id. */
++public class RespondWithTree {
++    public void respond(@PathVariable("sheet") String sheet, Settings settings,
++            ObjectResponse<List<String>> response) {
++        List<String> others = new ArrayList<>(settings.wholeTree(sheet));
++        others.remove(sheet);
++        others.sort(null);
++        List<String> found = new ArrayList<>(List.of(sheet));
++        found.addAll(others);
++        response.send(found);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/tree.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/tree.GET.yml
+new file mode 100644
+index 00000000..ba8d528f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/tree.GET.yml
+@@ -0,0 +1,4 @@
++# The sheet then every other sheet of its whole tree (its topmost ancestor and all that ancestor's descendants), by id.
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithTree
++  govern: [ readonly-transaction ]
