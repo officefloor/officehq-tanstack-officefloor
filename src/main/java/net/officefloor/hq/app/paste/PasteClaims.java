@@ -45,7 +45,7 @@ public class PasteClaims {
                     throw new BadRequestException("no one on the sheet is named " + line.name());
                 }
                 LocalDate date = line.claim().date() != null ? line.claim().date() : entry;
-                PeriodGuard.open(periods, id, date);
+                PeriodGuard.open(periods, id, claims.dueBy(id, person.id(), date));
                 people.claimAllowed(id, person.id(), date);
                 line.claim().checkCorrection(claims, id, person.id());
                 checked.add(new Checked(person, line, date));

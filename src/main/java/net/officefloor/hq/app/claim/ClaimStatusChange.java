@@ -48,7 +48,7 @@ final class ClaimStatusChange {
         if (!from.contains(found.status())) {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         // Open, settle and void go by the sheet's permission matrix; approve and reject stay with stewards (below).
         String act = action.trim();
         if ((act.equals("open") || act.equals("settle") || act.equals("void")) && !settings.allows(id, act, by)) {
@@ -124,7 +124,7 @@ final class ClaimStatusChange {
         String openedBy = found.openedBy();
         if (found.status().equals("DRAFT") && to.equals("OPEN")) {
             number = repository.numbersPerPeriod(id)
-                    ? repository.numberInPeriod(id, cid, LocalDate.parse(found.date()))
+                    ? repository.numberInPeriod(id, cid, LocalDate.parse(found.dueBy()))
                     : repository.number(id, cid);
             repository.openedBy(id, cid, by);
             openedBy = by;
@@ -170,7 +170,7 @@ final class ClaimStatusChange {
         if (!found.status().equals("SETTLED")) {
             throw new BadRequestException("only a SETTLED claim can be re-settled");
         }
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
                 found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry());
         BigDecimal now = repository.dueNow(id, live);

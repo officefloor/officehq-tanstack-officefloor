@@ -21,7 +21,7 @@ final class ClaimProof {
         if (found.status().equals("SETTLED") || found.status().equals("VOID")) {
             throw new BadRequestException("a " + found.status() + " claim cannot be given a proof");
         }
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         Integer proofs = repository.addProof(id, cid);
         if (proofs == null) {
             throw new BadRequestException("a " + found.status() + " claim cannot be given a proof");

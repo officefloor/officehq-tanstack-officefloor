@@ -3,7 +3,8 @@ package net.officefloor.hq.app.period;
 import java.time.LocalDate;
 import net.officefloor.hq.app.BadRequestException;
 
-/** Refuse a change to a claim dated inside a closed period. */
+/** Refuse a change to a claim whose due-by (or, for one about to be added, the due-by it would be fixed with) falls
+ *  inside a closed period. */
 public final class PeriodGuard {
     private PeriodGuard() {
     }

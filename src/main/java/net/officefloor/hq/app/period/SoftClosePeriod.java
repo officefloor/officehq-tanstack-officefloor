@@ -8,8 +8,8 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Soft-close an open period, by a role the sheet's permission matrix allows to close one, with {@link PeriodCloser}:
- *  its due-total and each person's due-total for it are fixed as a close fixes them, but claims dated inside it can
- *  still be added, edited, opened, settled and voided. A closed or soft-closed period cannot be soft-closed. */
+ *  its due-total and each person's due-total for it are fixed as a close fixes them, but claims whose due-by falls
+ *  inside it can still be added, edited, opened, settled and voided. A closed or soft-closed period cannot be soft-closed. */
 public class SoftClosePeriod {
     public void softClose(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
             ServerHttpConnection connection, PeriodRepository repository, SettingsRepository settings,

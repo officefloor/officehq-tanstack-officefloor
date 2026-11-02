@@ -39,8 +39,7 @@ public class SaveClaim {
             throw new BadRequestException("the claim is being edited by " + holder);
         }
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
-        PeriodGuard.open(periods, id, date);
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         people.claimAllowed(id, found.personId(), date);
         input.checkCorrection(repository, id, found.personId());
         Rollup.Snapshot before = rollup.take(id);

@@ -169,7 +169,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     });
   };
 
-  // Only a DRAFT outside a closed period, not locked by another user, can be edited, and not by a viewer: editing
+  // Only a DRAFT outside a closed period (the one containing its due-by), not locked by another user, can be edited, and not by a viewer: editing
   // any other claim is refused on its row, opens no editor and takes no lock (to change an open claim, void it and
   // add a new one). What this screen already knows is refused at once; the server refuses the rest, and the editor
   // then goes back to what it was.
@@ -183,7 +183,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       sheet?.archived ? 'the sheet is archived'
       : role === 'viewer' ? 'a viewer can change nothing'
       : c.status !== 'DRAFT' ? 'only a DRAFT claim can be edited'
-      : periodOf(periods.data, c.date)?.closed ? `the period ${periodOf(periods.data, c.date)?.name} is closed`
+      : periodOf(periods.data, c.dueBy)?.closed ? `the period ${periodOf(periods.data, c.dueBy)?.name} is closed`
       : c.lockedBy !== null && c.lockedBy !== user ? `the claim is being edited by ${c.lockedBy}`
       : null;
     if (known !== null) {
@@ -295,7 +295,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-number">{c.number ?? ''}</td>
                 <td data-testid="claim-amount">{c.amount}</td>
                 <td data-testid="claim-date">{c.date}</td>
-                <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
+                <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">
                   {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today)}

@@ -31,8 +31,8 @@ public class QuickAdd {
             throw new BadRequestException("no such sheet");
         }
         LocalDate date = sheets.entryDate(id);
-        PeriodGuard.open(periods, id, date);
         Person person = people.findByName(id, input.name());
+        PeriodGuard.open(periods, id, person != null ? claims.dueBy(id, person.id(), date) : claims.dueByOfGrade(id, "A", date));
         if (person != null) {
             people.claimAllowed(id, person.id(), date);
         }

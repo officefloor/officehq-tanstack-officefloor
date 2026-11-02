@@ -7,7 +7,7 @@ import { useSheetToday } from '../today/useSheetToday';
 import { usePeriods } from './usePeriods';
 
 /** Each person's due-total for each period, by person id then period name: the figures of their claims
- *  whose date falls in it that count by the status they had at the end of its last day (see `countsOn`) (a settled claim's frozen due, else the figure its last statement
+ *  whose due-by falls in it that count by the status they had at the end of its last day (see `countsOn`) (a settled claim's frozen due, else the figure its last statement
  *  bound it to, else its live due, with its late charge while overdue), skipping those with none — the
  *  one fixed when the period was closed while it is closed or soft-closed (0.00 for a person added since). */
 export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<string, string>> {
@@ -29,7 +29,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
           ? (p.personTotals[String(person.id)] ?? '0.00')
           : sumDues(
               own
-                .filter((c) => p.from <= c.date && c.date <= p.to && countsOn(c, p.to, holds, today))
+                .filter((c) => p.from <= c.dueBy && c.dueBy <= p.to && countsOn(c, p.to, holds, today))
                 .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today)),
             ),
       );

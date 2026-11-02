@@ -21,7 +21,7 @@ final class ClaimLock {
         if (!found.status().equals("DRAFT")) {
             throw new BadRequestException("only a DRAFT claim can be edited");
         }
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         if (!repository.lock(id, found, by)) {
             throw new BadRequestException("the claim is being edited by " + repository.lockedBy(id, cid));
         }

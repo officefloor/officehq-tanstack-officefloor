@@ -108,7 +108,7 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
-    /** Give an opened claim the next number in the sequence of the period its date falls in,
+    /** Give an opened claim the next number in the sequence of the period its due-by ({@code date}) falls in,
      *  <period name>-<n>, or X-<n> when it is in no period. The sheet's row is locked first, so two
      *  claims opened at once get consecutive numbers. */
     public String numberInPeriod(String sheetId, long claimId, LocalDate date) {
@@ -134,12 +134,6 @@ public class ClaimRepository {
                 + " AND to_date >= ? ORDER BY from_date LIMIT 1",
                 (rs, i) -> new Object[] { rs.getLong("id"), rs.getString("name") }, sheetId, Date.valueOf(date),
                 Date.valueOf(date));
-    }
-
-    /** The key of the numbering sequence of the period a date falls in: P<period id>, or X when in no period. */
-    public String sequenceKey(String sheetId, LocalDate date) {
-        List<Object[]> period = periodOn(sheetId, date);
-        return period.isEmpty() ? "X" : "P" + period.get(0)[0];
     }
 
     /** Re-date an OPEN or PENDING claim (its due-by and statement binding stay as they are); false when the
@@ -314,13 +308,19 @@ public class ClaimRepository {
         }
         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
                 date.toString());
-        Integer own = grade.isEmpty() || grade.get(0) == null ? null : settings.gradeTerms(sheetId, grade.get(0), date);
+        return dueByOfGrade(sheetId, grade.isEmpty() ? null : grade.get(0), date);
+    }
+
+    /** The due-by of a claim created now with a date for a person of a grade (null when none) with no terms of their
+     *  own: the date plus the grade's terms in force on it, else the sheet's terms in force on it. */
+    public LocalDate dueByOfGrade(String sheetId, String grade, LocalDate date) {
+        Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, date);
         return date.plusDays(own != null ? own : settings.terms(sheetId, date));
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         LocalDate dueBy = dueBy(sheetId, personId, date);
-        boolean late = lateEntry(sheetId, date);
+        boolean late = lateEntry(sheetId, dueBy);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
@@ -341,7 +341,7 @@ public class ClaimRepository {
                 dueBy.toString(), false, null, false, 0, null, late);
     }
 
-    /** Whether a claim added now on a date is a late entry: the date falls in a soft-closed period of the sheet. */
+    /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */
     private boolean lateEntry(String sheetId, LocalDate date) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND soft_closed"
                 + " AND from_date <= ? AND to_date >= ?", Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
@@ -351,7 +351,7 @@ public class ClaimRepository {
     /** Split an amount off an OPEN claim: the claim keeps the rest of its amount and is unbound from its last
      *  statement (live again); a new OPEN claim of the same person with the split-off amount, the same date and
      *  note, opened by {@code by}, with its due-by fixed now and the original's number as split-from, is added
-     *  (unnumbered: the caller numbers it). The new claim's id, or null when the sheet has no such OPEN claim. */
+     *  (unnumbered: the caller numbers it; a late entry when its due-by falls in a soft-closed period). The new claim's id, or null when the sheet has no such OPEN claim. */
     public Long split(String sheetId, Claim claim, BigDecimal amount, String by) {
         BigDecimal rest = new BigDecimal(claim.amount()).subtract(amount);
         if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE"
@@ -361,11 +361,12 @@ public class ClaimRepository {
         kept(sheetId, claim.id(), true);
         LocalDate date = LocalDate.parse(claim.date());
         LocalDate dueBy = dueBy(sheetId, claim.personId(), date);
+        boolean late = lateEntry(sheetId, dueBy);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, due_by, status, opened_by, split_from)"
-                            + " VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, due_by, status, opened_by, split_from, late_entry)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, claim.personId());
@@ -375,6 +376,7 @@ public class ClaimRepository {
             ps.setDate(6, Date.valueOf(dueBy));
             ps.setString(7, by);
             ps.setString(8, claim.number());
+            ps.setBoolean(9, late);
             return ps;
         }, keys);
         kept(sheetId, keys.getKey().longValue(), true);

@@ -10,7 +10,7 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 
 /** Split an amount (more than 0.00, less than the claim's amount) off an OPEN claim not deferred nor in a closed
- *  period, by a user whose role may open a claim: the claim keeps the rest and is unbound from its last statement;
+ *  period (judged by the original claim's due-by alone), by a user whose role may open a claim: the claim keeps the rest and is unbound from its last statement;
  *  a new OPEN claim with the split-off amount, the same date and note and the next number, opened by the user, with
  *  its due-by fixed now and the original's number as split-from, is listed under the person. Every check is made
  *  before anything is written, so a refusal writes nothing to the store or the audit. Answers the new claim. */
@@ -34,8 +34,7 @@ final class ClaimSplit {
         if (part.signum() <= 0 || part.compareTo(new BigDecimal(found.amount())) >= 0) {
             throw new BadRequestException("the amount split off must be more than 0.00 and less than the claim's amount");
         }
-        LocalDate date = LocalDate.parse(found.date());
-        PeriodGuard.open(periods, id, date);
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         if (!settings.allows(id, "open", by)) {
             throw new BadRequestException("a " + settings.role(id, by) + " cannot open a claim, so cannot split one");
         }
@@ -44,7 +43,8 @@ final class ClaimSplit {
         if (nid == null) {
             throw new BadRequestException("a " + found.status() + " claim cannot be split");
         }
-        String number = repository.numbersPerPeriod(id) ? repository.numberInPeriod(id, nid, date)
+        String number = repository.numbersPerPeriod(id)
+                ? repository.numberInPeriod(id, nid, LocalDate.parse(repository.find(id, nid).dueBy()))
                 : repository.number(id, nid);
         repository.log(id, nid, by);
         Claim kept = repository.find(id, cid);

@@ -10,11 +10,10 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 
-/** A steward re-dates an OPEN or PENDING claim: neither its old nor its new date may be in a closed period, nor the
- *  new date after its person's retirement. Its due-by stays as it was fixed and a figure its statement bound stays
- *  bound; its period follows the new date, and under period numbering a claim whose period changes takes the next
- *  number of its new period's sequence (its old one is never reused). Every check is made before anything is
- *  written, so a refusal writes nothing to the store or the audit. */
+/** A steward re-dates an OPEN or PENDING claim: its due-by may not be in a closed period, nor the new date after its
+ *  person's retirement. Its due-by stays as it was fixed and a figure its statement bound stays bound, so its period
+ *  (the one containing its due-by) and its number stay as they are. Every check is made before anything is written,
+ *  so a refusal writes nothing to the store or the audit. */
 final class ClaimRedate {
     private ClaimRedate() {
     }
@@ -46,18 +45,13 @@ final class ClaimRedate {
             throw new BadRequestException("the new date must be yyyy-mm-dd");
         }
         LocalDate old = LocalDate.parse(found.date());
-        PeriodGuard.open(periods, id, old);
-        PeriodGuard.open(periods, id, date);
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         people.claimAllowed(id, found.personId(), date);
         Rollup.Snapshot before = rollup.take(id);
-        boolean moved = !repository.sequenceKey(id, old).equals(repository.sequenceKey(id, date));
         if (!repository.redate(id, cid, date)) {
             throw new BadRequestException("a " + found.status() + " claim cannot be re-dated");
         }
         String number = found.number();
-        if (moved && repository.numbersPerPeriod(id)) {
-            number = repository.numberInPeriod(id, cid, date);
-        }
         audit.record("CLAIM_REDATED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + found.amount() + " date=" + date + Claim.auditNumber(number)
                 + " old=" + old + " new=" + date);

@@ -30,7 +30,7 @@ public class AddClaim {
             throw new BadRequestException("no such person");
         }
         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(id);
-        PeriodGuard.open(periods, id, date);
+        PeriodGuard.open(periods, id, repository.dueBy(id, pid, date));
         people.claimAllowed(id, pid, date);
         input.checkCorrection(repository, id, pid);
         Rollup.Snapshot before = rollup.take(id);

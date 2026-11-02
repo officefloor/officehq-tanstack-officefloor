@@ -46,7 +46,7 @@ public class ReassignClaim {
         if (to == found.personId()) {
             throw new BadRequestException("the claim is already that person's");
         }
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         String fromName = repository.personName(id, found.personId());
         String toName = repository.personName(id, to);
         Rollup.Snapshot before = rollup.take(id);

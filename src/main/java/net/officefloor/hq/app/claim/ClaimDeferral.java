@@ -38,7 +38,7 @@ final class ClaimDeferral {
         if (!date.isAfter(sheets.today(id))) {
             throw new BadRequestException("a claim can be deferred only to a date after today");
         }
-        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
+        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         Rollup.Snapshot before = rollup.take(id);
         if (!repository.defer(id, cid, date)) {
             throw new BadRequestException("a " + found.status() + " claim cannot be deferred");

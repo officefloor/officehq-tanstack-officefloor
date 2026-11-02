@@ -16,8 +16,8 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import org.springframework.stereotype.Service;
 
-/** Close an open period: fix its due-total as shown now (the dues now, late charges included, of the claims dated in
- *  it that count by the status they had at the end of its last day, a person's open (OPEN or PENDING) claims dated
+/** Close an open period: fix its due-total as shown now (the dues now, late charges included, of the claims whose
+ *  due-by falls in it that count by the status they had at the end of its last day, a person's open (OPEN or PENDING) claims dated
  *  within one of their holds left out unless bound by a statement, skipping those with none), so later changes to
  *  rates do not alter it; and each person's due-total for it likewise, for every person on the sheet (0.00 for one
  *  with nothing in it). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
@@ -58,7 +58,7 @@ public class PeriodCloser {
         }
         Map<Long, String> statusesThen = claims.statusesOn(sheetId, to);
         for (Claim c : claims.list(sheetId)) {
-            LocalDate on = LocalDate.parse(c.date());
+            LocalDate on = LocalDate.parse(c.dueBy());
             if (on.isBefore(from) || on.isAfter(to)
                     || !c.countsAs(statusesThen.get(c.id()), holds.getOrDefault(c.personId(), List.of()), today)) continue;
             BigDecimal now = claims.dueNow(sheetId, c);

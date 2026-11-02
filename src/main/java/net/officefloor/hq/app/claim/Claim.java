@@ -15,7 +15,7 @@ import net.officefloor.hq.app.person.Hold;
  *  deferred now (OPEN and that date after the sheet's today: it then counts in no total, is not overdue,
  *  cannot be settled and a statement leaves it unbound), and how many proofs it has been given, and, for a claim
  *  split off another, the number of the claim it was split from (null otherwise), and whether it was a late entry
- *  (added while the period its date falls in was soft-closed). */
+ *  (added while the period its due-by falls in was soft-closed). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,

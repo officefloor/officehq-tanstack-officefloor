@@ -9,7 +9,7 @@ import { periodsKey, usePeriods, type Period } from './usePeriods';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
  *  inclusive, overlapping no other period), and each period with its due-total: the figures of the
- *  claims that count whose date falls in it (a settled claim's frozen due, else the figure its last
+ *  claims that count whose due-by falls in it (a settled claim's frozen due, else the figure its last
  *  statement bound it to, else its live due, with its late charge while overdue), skipping those with none — fixed once it is closed —
  *  and whether it is closed (soft for a soft-closed one), with buttons that close and soft-close it. */
 function Periods({ sheetId }: { sheetId: string }) {
