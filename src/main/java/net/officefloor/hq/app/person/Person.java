@@ -45,6 +45,20 @@ public record Person(long id, String name, String grade, long version, String re
         return !claim.held() && !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date()));
     }
 
+    /**
+     * Whether the claim, theirs, counts toward claimed and the claimed-total: as {@link #counts}, except that a hold
+     * (theirs or the claim's) does not take it out; only their retirement date being reached does.
+     */
+    public boolean countsClaimed(Claim claim) {
+        if (!claim.counts()) {
+            return false;
+        }
+        if (claim.status() == ClaimStatus.SETTLED || claim.bound()) {
+            return true;
+        }
+        return !retiredNow;
+    }
+
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
     public Person on(LocalDate today) {
         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades,

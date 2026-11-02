@@ -18,6 +18,7 @@ import {
   claimed,
   claimsKey,
   claimsPath,
+  claimedCounted,
   counted,
   overdue,
   reviewLate,
@@ -137,7 +138,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
   const waive = useSubmitOnce(waiveMutation);
-  // An OPEN or PENDING claim is held, or released when held: while held (and not bound by a statement) it counts in no live total.
+  // An OPEN or PENDING claim is held, or released when held: while held (and not bound by a statement) it counts in no due figure, but stays in claimed.
   const holdMutation = useMutation({
     mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/hold`, user), {}),
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
@@ -997,7 +998,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   return (
     <>
-      {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>}
+      {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(claimedCounted(claims, [person]))}</Fig></td>}
       {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>}
       {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
       {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}

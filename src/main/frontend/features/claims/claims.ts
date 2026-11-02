@@ -109,7 +109,7 @@ export type Claim = {
   added: number | null;
   /** Whether a steward waived its late charge (only while OPEN or PENDING, once): from then on it bears none. */
   waived: boolean;
-  /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no live total. */
+  /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no due figure (it stays in claimed). */
   held: boolean;
 };
 
@@ -136,7 +136,7 @@ export function useClaims(sheet: string) {
   });
 }
 
-/** The claims that count toward claimed, due-total and every total: the OPEN, PENDING and SETTLED ones, but not
+/** The claims that count toward due-total and every due figure (claimed: see {@link claimedCounted}): the OPEN, PENDING and SETTLED ones, but not
  *  the deferred ones, nor the OPEN or PENDING ones held, dated within a hold of their person or whose person's
  *  retirement date is reached, unless bound by a statement. */
 export function counted(claims: Claim[], people: Person[]): Claim[] {
@@ -147,6 +147,19 @@ export function counted(claims: Claim[], people: Person[]): Claim[] {
     if (!isOpen(c)) return false;
     const person = byId.get(c.person);
     return bound(c) || (!c.held && (person === undefined || !setAsideOn(person, c.date)));
+  });
+}
+
+/** The claims that count toward claimed and the claimed-total: as {@link counted}, but a hold (the person's or the
+ *  claim's) does not take a claim out; only its person's retirement date being reached does. */
+export function claimedCounted(claims: Claim[], people: Person[]): Claim[] {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return claims.filter((c) => {
+    if (c.deferred) return false;
+    if (c.status === 'SETTLED') return true;
+    if (!isOpen(c)) return false;
+    const person = byId.get(c.person);
+    return bound(c) || person === undefined || !person.retiredNow;
   });
 }
 
@@ -435,7 +448,7 @@ export function useSheetTotals(sheet: string): {
   // The settled-total and open-total: everyone's added up, not trimmed.
   const split = people.map((p) => splitDueCents(all, rates, p, floor, late));
   return {
-    claimed: claimed(counted(all, people)),
+    claimed: claimed(claimedCounted(all, people)),
     due,
     overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
     settled: split.reduce((s, x) => s + x.settled, 0n),

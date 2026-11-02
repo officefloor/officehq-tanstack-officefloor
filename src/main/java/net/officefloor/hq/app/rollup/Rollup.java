@@ -76,10 +76,13 @@ public class Rollup {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
-            for (Claim claim : mine) {
-                if (!claim.correction()) {
+            // A held claim stays in claimed; only its due leaves the totals.
+            for (Claim claim : all) {
+                if (claim.person() == person.id() && person.countsClaimed(claim) && !claim.correction()) {
                     claimed = claimed.add(new BigDecimal(claim.amount()));
                 }
+            }
+            for (Claim claim : mine) {
                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 due = d == null ? due : due.add(d);
                 if (d != null && late.overdue(claim, person.gradeOn(claim.date()))) {

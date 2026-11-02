@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Holds an OPEN or PENDING claim, or releases it when held: while held and not bound by a statement it counts in no
- * live total, as a held person's claims do. Refuses any other status.
+ * due figure (it stays in claimed), as a held person's claims do. Refuses any other status.
  */
 public class HoldClaim {
     public void hold(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
