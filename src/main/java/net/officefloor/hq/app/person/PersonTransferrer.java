@@ -192,6 +192,7 @@ public class PersonTransferrer {
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE sheet = ? AND id = ?", sheet, f);
 
         audit.record("PERSON_TRANSFERRED sheet=" + sheet + " by=" + user + " name=" + person.name() + " to=" + to);
@@ -219,6 +220,8 @@ public class PersonTransferrer {
         }, keys);
         long t = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
+                + " WHERE person_id = ?", t, f);
+        jdbc.update("INSERT INTO person_terms (person_id, terms, from_date) SELECT ?, terms, from_date FROM person_terms"
                 + " WHERE person_id = ?", t, f);
         for (String alias : theirAliases) {
             aliases.add(to, t, alias);

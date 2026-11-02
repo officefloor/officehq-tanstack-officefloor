@@ -94,6 +94,7 @@ public class SheetCloner {
             long t = copy("PERSON", Map.of("SHEET", to), "sheet = ? AND id = ?", sheet, f);
             people.put(f, t);
             copy("PERSON_GRADE", Map.of("PERSON_ID", t), "person_id = ?", f);
+            copy("PERSON_TERMS", Map.of("PERSON_ID", t), "person_id = ? ORDER BY from_date", f);
             copy("PERSON_HOLD", Map.of("PERSON_ID", t), "person_id = ? ORDER BY id", f);
             copy("PERSON_RETIREMENT", Map.of("PERSON_ID", t), "person_id = ? ORDER BY id", f);
             copy("PERSON_ALIAS", Map.of("SHEET", to, "PERSON_ID", t), "sheet = ? AND person_id = ?", sheet, f);

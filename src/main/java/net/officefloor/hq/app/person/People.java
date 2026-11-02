@@ -75,6 +75,13 @@ public class People {
                             .add(new GradeFrom(rs.getString("grade"),
                                     rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString()));
                 }, sheet);
+        Map<Long, List<TermsFrom>> dated = new HashMap<>();
+        jdbc.query("SELECT t.person_id, t.terms, t.from_date FROM person_terms t JOIN person p ON p.id = t.person_id"
+                + " WHERE p.sheet = ? ORDER BY t.person_id, t.from_date", (rs) -> {
+                    dated.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>())
+                            .add(new TermsFrom(rs.getObject("terms", Integer.class),
+                                    rs.getDate("from_date").toLocalDate().toString()));
+                }, sheet);
         Map<Long, List<Hold>> holds = new HashMap<>();
         jdbc.query("SELECT h.person_id, h.from_date, h.to_date FROM person_hold h JOIN person p ON p.id = h.person_id"
                 + " WHERE p.sheet = ? ORDER BY h.person_id, h.id", (rs) -> {
@@ -98,13 +105,16 @@ public class People {
         List<Person> people = new ArrayList<>();
         for (Row r : rows) {
             List<GradeFrom> mine = List.copyOf(grades.getOrDefault(r.id(), List.of()));
+            List<TermsFrom> terms = new ArrayList<>();
+            terms.add(new TermsFrom(r.terms(), null));
+            terms.addAll(dated.getOrDefault(r.id(), List.of()));
             people.add(new Person(r.id(), r.name(), Person.gradeOn(mine, today), r.version(), r.retiredFrom(),
-                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms(),
+                    List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, Person.termsOn(terms, today),
                     Person.retiredOn(r.retiredFrom(), today), r.contact(),
                     tree.contains(r.name().toLowerCase(Locale.ROOT))
                             || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains), r.origin(),
                     List.copyOf(retirements.getOrDefault(r.id(), List.of())),
-                    r.tags().isEmpty() ? List.of() : List.of(r.tags().split(","))));
+                    r.tags().isEmpty() ? List.of() : List.of(r.tags().split(",")), List.copyOf(terms)));
         }
         return people;
     }
@@ -192,9 +202,18 @@ public class People {
         }
     }
 
-    /** Sets the person's own terms (null: none). */
+    /** Sets the person's own terms from the beginning of time (null: none). */
     public void setTerms(long id, Integer terms) {
         jdbc.update("UPDATE person SET terms = ? WHERE id = ?", terms, id);
+    }
+
+    /** Records the person's own terms (null: none) from the from-date, replacing the ones there for it. */
+    public void setTerms(long id, Integer terms, LocalDate from) {
+        if (jdbc.update("UPDATE person_terms SET terms = ? WHERE person_id = ? AND from_date = ?", terms, id,
+                Date.valueOf(from)) == 0) {
+            jdbc.update("INSERT INTO person_terms (person_id, terms, from_date) VALUES (?, ?, ?)", id, terms,
+                    Date.valueOf(from));
+        }
     }
 
     /** Sets the person's contact (null: none). */

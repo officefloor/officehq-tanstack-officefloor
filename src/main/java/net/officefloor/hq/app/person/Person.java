@@ -14,7 +14,8 @@ import net.officefloor.hq.app.setting.Settings;
  * from-date; grade is the one in force on the sheet's today. The version is raised by one on every save. The
  * retired-from date (yyyy-mm-dd) is null unless they are retired; once it is set they count as retired, whatever
  * the date. Their holds are listed in the order they were added; their OPEN claims dated within a hold, unless bound
- * by a statement, count in no live total. Their own terms (days) are null when they have none. retiredNow is whether
+ * by a statement, count in no live total. Their own terms are dated (termsFrom, the ones from the beginning of time
+ * first); terms are the ones in force on the sheet's today (days), null when they have none then. retiredNow is whether
  * the sheet's today is on or after their retired-from date: from then their OPEN and PENDING claims, unless bound by a
  * statement, count in no live total. Their contact (trimmed, lower-cased, not another's on the sheet) is null when they
  * have none. clashing is whether their name or one of their aliases is already a name or alias on another sheet of
@@ -25,7 +26,7 @@ import net.officefloor.hq.app.setting.Settings;
  */
 public record Person(long id, String name, String grade, long version, String retiredFrom, List<Hold> holds,
         List<GradeFrom> grades, Integer terms, boolean retiredNow, String contact, boolean clashing, String origin,
-        List<Retirement> retirements, List<String> tags) {
+        List<Retirement> retirements, List<String> tags, List<TermsFrom> termsFrom) {
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
@@ -43,8 +44,9 @@ public record Person(long id, String name, String grade, long version, String re
 
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
     public Person on(LocalDate today) {
-        return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades, terms,
-                retiredOn(retiredFrom, today), contact, clashing, origin, retirements, tags);
+        return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades,
+                termsOn(termsFrom, today), retiredOn(retiredFrom, today), contact, clashing, origin, retirements, tags,
+                termsFrom);
     }
 
     /** Whether the sheet's today is on or after the retired-from date (null: never retired). */
@@ -109,9 +111,27 @@ public record Person(long id, String name, String grade, long version, String re
         return holidays.businessDaysAfter(sheet, date, termsOn(sheet, date, settings));
     }
 
-    /** The terms a claim of theirs dated {@code date} is fixed with: their own, else their grade's then, else the sheet's then. */
+    /**
+     * The terms a claim of theirs dated {@code date} is fixed with: their own in force then, else their grade's then,
+     * else the sheet's then.
+     */
     public int termsOn(String sheet, LocalDate date, Settings settings) {
-        return terms != null ? terms : settings.terms(sheet, gradeOn(date), date);
+        Integer own = termsOn(termsFrom, date);
+        return own != null ? own : settings.terms(sheet, gradeOn(date), date);
+    }
+
+    /** Their own terms in force on the date: the ones whose from-date is the latest on or before it (null: none). */
+    static Integer termsOn(List<TermsFrom> termsFrom, LocalDate date) {
+        TermsFrom found = null;
+        for (TermsFrom t : termsFrom) {
+            if (t.from() != null && LocalDate.parse(t.from()).isAfter(date)) {
+                continue;
+            }
+            if (found == null || (t.from() != null && (found.from() == null || t.from().compareTo(found.from()) > 0))) {
+                found = t;
+            }
+        }
+        return found == null ? null : found.terms();
     }
 
     /** The grade in force on the claim's date (yyyy-mm-dd). */

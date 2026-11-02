@@ -114,6 +114,7 @@ public class PersonMerger {
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE sheet = ? AND id = ?", sheet, f);
 
         audit.record("PERSON_MERGED sheet=" + sheet + " by=" + user + " from=" + from.name() + " into=" + into.name());

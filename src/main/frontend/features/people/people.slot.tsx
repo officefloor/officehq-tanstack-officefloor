@@ -15,12 +15,23 @@ import { useShown } from '../columns/columns';
 import type { Claim } from '../claims/claims';
 
 // gradeFrom is the date an edit records the grade from (yyyy-mm-dd; blank for the sheet's today); a person's
-// first grade applies from the beginning of time. terms are the person's own days (blank for none); contact is
+// first grade applies from the beginning of time. terms are the person's own days (blank for none), recorded on an
+// edit from termsFrom (yyyy-mm-dd; blank: from the beginning of time), keeping the ones already dated; contact is
 // theirs, not another's on the sheet (blank for none); tags are comma separated (the server trims, lower-cases and
 // drops repeats).
-type Draft = { name: string; grade: Grade; gradeFrom: string; terms: string; contact: string; tags: string };
-const EMPTY: Draft = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+type Draft = { name: string; grade: Grade; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string };
+const EMPTY: Draft = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
 const termsText = (p: Person) => (p.terms === null ? '' : String(p.terms));
+// The editor starts from the person as the row shows them: the grade and terms in force on the sheet's today.
+const draftOf = (p: Person): Draft => ({
+  name: p.name,
+  grade: p.grade,
+  gradeFrom: '',
+  terms: termsText(p),
+  termsFrom: '',
+  contact: p.contact ?? '',
+  tags: p.tags.join(', '),
+});
 
 type Quick = { name: string; amount: string };
 const QUICK_EMPTY: Quick = { name: '', amount: '' };
@@ -118,7 +129,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
       const p = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((c) => c.id === edit.id);
       if (p) {
-        setDraft({ name: p.name, grade: p.grade, gradeFrom: '', terms: termsText(p), contact: p.contact ?? '', tags: p.tags.join(', ') });
+        setDraft(draftOf(p));
         setEditing({ id: p.id, version: p.version });
       }
     },
@@ -132,7 +143,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
 
   const open = (p: Person) => {
     setEditing({ id: p.id, version: p.version });
-    setDraft({ name: p.name, grade: p.grade, gradeFrom: '', terms: termsText(p), contact: p.contact ?? '', tags: p.tags.join(', ') });
+    setDraft(draftOf(p));
     save.reset();
   };
 
@@ -187,6 +198,15 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             placeholder="days"
             value={draft.terms}
             onChange={(e) => change({ terms: e.target.value })}
+          />
+        </label>{' '}
+        <label>
+          Terms from{' '}
+          <input
+            data-testid="person-form-terms-from"
+            placeholder="yyyy-mm-dd"
+            value={draft.termsFrom}
+            onChange={(e) => change({ termsFrom: e.target.value })}
           />
         </label>{' '}
         <label>

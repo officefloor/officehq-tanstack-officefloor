@@ -7,6 +7,8 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 
 /** One of a person's grades, in force from its from-date (yyyy-MM-dd; null when it applies from the beginning of time). */
 export type GradeFrom = { grade: Grade; from: string | null };
+/** A person's own terms (days; null: none) from the from-date (null: from the beginning of time). */
+export type TermsFrom = { terms: number | null; from: string | null };
 
 // grade is the one in force on the sheet's today; grades are every one recorded, by from-date.
 // retiredFrom is null unless the person is retired; once set, they count as retired whatever the date.
@@ -26,8 +28,10 @@ export type Person = {
   retiredFrom: string | null;
   holds: Hold[];
   grades: GradeFrom[];
-  /** The person's own terms in days, ahead of their grade's and the sheet's; null when they have none. */
+  /** The person's own terms in force on the sheet's today, in days, ahead of their grade's and the sheet's; null when none. */
   terms: number | null;
+  /** Their own terms by from-date, the ones from the beginning of time first. */
+  termsFrom: TermsFrom[];
   /** Whether the sheet's today is on or after retiredFrom: from then their OPEN and PENDING claims, unless bound by a
    *  statement, count in no live total. */
   retiredNow: boolean;

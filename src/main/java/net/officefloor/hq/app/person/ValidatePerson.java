@@ -24,14 +24,8 @@ public class ValidatePerson {
         if (!GRADES.contains(grade)) {
             throw new InvalidPersonException("Grade must be A, B or C");
         }
-        String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
-        if (!from.isEmpty()) {
-            try {
-                from = LocalDate.parse(from).toString();
-            } catch (DateTimeParseException e) {
-                throw new InvalidPersonException("Not a valid from-date: " + from);
-            }
-        }
+        String from = date(request.gradeFrom());
+        String termsFrom = date(request.termsFrom());
         String terms = request.terms() == null ? "" : request.terms().trim();
         if (!terms.isEmpty()) {
             if (!terms.matches("[0-9]{1,6}")) {
@@ -40,7 +34,19 @@ public class ValidatePerson {
             terms = Integer.toString(Integer.parseInt(terms));
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(Locale.ROOT);
-        return new PersonRequest(name, grade, request.version(), from.isEmpty() ? null : from, terms, contact,
-                request.tags());
+        return new PersonRequest(name, grade, request.version(), from, terms, contact, request.tags(), termsFrom);
+    }
+
+    /** The from-date the form gave (yyyy-mm-dd); null when blank. */
+    private static String date(String given) throws InvalidPersonException {
+        String from = given == null ? "" : given.trim();
+        if (from.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(from).toString();
+        } catch (DateTimeParseException e) {
+            throw new InvalidPersonException("Not a valid from-date: " + from);
+        }
     }
 }

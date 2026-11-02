@@ -36,17 +36,21 @@ public class SavePerson {
         Rollup.Snapshot before = rollup.take(sheet);
         people.update(sheet, new Person(person.id(), request.name(), person.grade(), loaded, person.retiredFrom(),
                 person.holds(), person.grades(), person.terms(), person.retiredNow(), person.contact(), person.clashing(),
-                person.origin(), person.retirements(), person.tags()));
+                person.origin(), person.retirements(), person.tags(), person.termsFrom()));
         // The form's grade is recorded from its from-date (the sheet's today when blank), keeping the ones already
         // recorded; leaving the grade as the row showed it, with the from-date blank, records nothing.
         if (request.gradeFrom() != null || !request.grade().equals(person.grade())) {
             LocalDate from = request.gradeFrom() == null ? clock.today(sheet) : LocalDate.parse(request.gradeFrom());
             people.setGrade(person.id(), request.grade(), from);
         }
-        // The terms are recorded as the form gave them; only a change from what the row showed is audited.
+        // The form's terms are recorded from its from-date, keeping the ones already recorded (one there for it is
+        // replaced); with the from-date blank, from the beginning of time, unless left as the row showed them. Only
+        // such a save is audited, with the terms then in force on the sheet's today.
         Integer terms = request.termsDays();
-        boolean termsChanged = !java.util.Objects.equals(terms, person.terms());
-        if (termsChanged) {
+        boolean termsChanged = request.termsFrom() != null || !java.util.Objects.equals(terms, person.terms());
+        if (request.termsFrom() != null) {
+            people.setTerms(person.id(), terms, LocalDate.parse(request.termsFrom()));
+        } else if (termsChanged) {
             people.setTerms(person.id(), terms);
         }
         // Likewise the contact; only a change from the one stored is audited (empty when it was cleared).
@@ -60,7 +64,7 @@ public class SavePerson {
         }
         Person saved = people.find(sheet, person.id());
         audit.record("PERSON_EDITED sheet=" + sheet + " by=" + user + " name=" + saved.name() + " grade="
-                + saved.grade() + (termsChanged ? " terms=" + (terms == null ? "" : terms) : "")
+                + saved.grade() + (termsChanged ? " terms=" + (saved.terms() == null ? "" : saved.terms()) : "")
                 + (contactChanged ? " contact=" + (contact == null ? "" : contact) : ""));
         rollup.record(sheet, user, before);
     }
