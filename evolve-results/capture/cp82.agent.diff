@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 08cdd07ec..16be54233 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -6,8 +6,8 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../today/useSheetToday';
+-import { useDueTotals, useExcess } from './useDueTotals';
+-import { rateFor, ratesKey, trimmedSum, useRates, type Rate } from './useRates';
++import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
++import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
+ 
+ /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
+  *  grade's rate from that date; blank is from the beginning of time) through an optional to-date
+@@ -150,6 +150,29 @@ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number
+   return <td data-testid="person-excess">{excess.get(personId) ?? ''}</td>;
+ }
+ 
++/** A person's settled-total and open-total: the parts of their due-total (before the cap) from their
++ *  SETTLED claims and from their open (OPEN or PENDING) claims. */
++function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const split = useSettledOpenTotals(sheetId).get(personId);
++  return (
++    <>
++      <td data-testid="person-settled-total">{split?.settled ?? ''}</td>
++      <td data-testid="person-open-total">{split?.open ?? ''}</td>
++    </>
++  );
++}
++
++/** The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed). */
++function SettledOpenTotals({ sheetId }: { sheetId: string }) {
++  const split = [...useSettledOpenTotals(sheetId).values()];
++  return (
++    <p>
++      Settled total: <strong data-testid="rollup-settled-total">{sumDues(split.map((s) => s.settled))}</strong>,
++      open total <strong data-testid="rollup-open-total">{sumDues(split.map((s) => s.open))}</strong>
++    </p>
++  );
++}
++
+ /** The sheet's due-total: everyone's due-total added up, skipping 'n/a',
+  *  leaving out the highest and the lowest when three or more people have one. */
+ function DueTotal({ sheetId }: { sheetId: string }) {
+@@ -167,5 +190,8 @@ export const contributions = [
+   PersonCells.fill({ order: 20, Component: PersonDueTotal }),
+   PersonColumnHead.fill({ order: 21, Component: () => <th>Excess</th> }),
+   PersonCells.fill({ order: 21, Component: PersonExcess }),
++  PersonColumnHead.fill({ order: 21.5, Component: () => <><th>Settled</th><th>Open</th></> }),
++  PersonCells.fill({ order: 21.5, Component: PersonSettledOpen }),
+   SheetBody.fill({ order: 30, Component: ({ sheetId }) => <DueTotal sheetId={sheetId} /> }),
++  SheetBody.fill({ order: 31, Component: ({ sheetId }) => <SettledOpenTotals sheetId={sheetId} /> }),
+ ];
+diff --git a/src/main/frontend/features/rates/useDueTotals.ts b/src/main/frontend/features/rates/useDueTotals.ts
+index 7179597da..0a000530b 100644
+--- a/src/main/frontend/features/rates/useDueTotals.ts
++++ b/src/main/frontend/features/rates/useDueTotals.ts
+@@ -25,8 +25,17 @@ export function useExcess(sheetId: string): Map<number, string> {
+   return excess;
+ }
+ 
+-/** Each person's due-total held to the cap, and their excess over it. */
+-function useDueFigures(sheetId: string): Map<number, { total: string; excess: string }> {
++/** Each person's settled-total and open-total, by person id: the sum of the figures of their counting SETTLED
++ *  claims, and of their counting open (OPEN or PENDING) claims, as in their due-total ('n/a' figures skipped).
++ *  The two add up to the due-total before the cap. */
++export function useSettledOpenTotals(sheetId: string): Map<number, { settled: string; open: string }> {
++  const split = new Map<number, { settled: string; open: string }>();
++  for (const [id, f] of useDueFigures(sheetId)) split.set(id, { settled: f.settled, open: f.open });
++  return split;
++}
++
++/** Each person's due-total held to the cap, their excess over it, and its settled and open parts. */
++function useDueFigures(sheetId: string): Map<number, { total: string; excess: string; settled: string; open: string }> {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId);
+@@ -34,7 +43,7 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
+   const settings = useSettings(sheetId).data;
+   const holds = holdsById(people.data, today.data?.today);
+   const cap = settingOn(settings, 'cap', today.data?.today);
+-  const totals = new Map<number, { total: string; excess: string }>();
++  const totals = new Map<number, { total: string; excess: string; settled: string; open: string }>();
+   for (const p of people.data ?? []) {
+     const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, holds, today.data?.today));
+     const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
+@@ -46,6 +55,8 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
+     totals.set(p.id, {
+       total: !shown ? 'n/a' : over ? cap : sum,
+       excess: over ? money(hundredths(sum) - hundredths(cap)) : '0.00',
++      settled: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED')),
++      open: sumDues(dues.filter((_, i) => counting[i].status !== 'SETTLED')),
+     });
+   }
+   return totals;
