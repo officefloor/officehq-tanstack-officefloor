@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Clones the sheet to another id; only a steward may, and only to a sheet never used. The clone gets this sheet's
- * today, settings (its parent among them), roles, rates, holidays, void reasons, templates, people (with their grades,
+ * today, settings (its parent among them), roles, rates (with their older versions), holidays, void reasons, templates, people (with their grades,
  * terms, contacts, aliases, holds, retirements and patrons, listed as they are), pools, periods (all open) and claims
  * (status, frozen figures, dates, notes, logs, comments and lines, listed as they are). Each claim that had a number takes the
  * clone's next one by the clone's own numbering, in the order the claims were opened (by the sheet's today when each
@@ -79,6 +79,7 @@ public class SheetCloner {
                 sheet);
         copy("USER_ROLE", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("RATE", Map.of("SHEET", to), "sheet = ?", sheet);
+        copy("RATE_VERSION", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("HOLIDAY", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("VOID_REASON", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("CLAIM_TEMPLATE", Map.of("SHEET", to), "sheet = ?", sheet);

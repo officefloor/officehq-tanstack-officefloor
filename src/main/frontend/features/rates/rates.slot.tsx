@@ -16,7 +16,7 @@ const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
 
 // The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), every rate with its
 // from-date (a blank from-date applies from the start) and to-date (a blank one has no end), and a form that sets one, replacing the rate already
-// there for that grade and from-date.
+// there for that grade and from-date as a new version (each row shows its version count; the newest is in force).
 function Rates({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: rates = [] } = useRates(sheet);
@@ -171,6 +171,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -182,6 +183,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
               <td>
                 <span data-testid="rate-pct">{r.pct}</span>
               </td>
+              <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>
           ))}
         </tbody>

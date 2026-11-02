@@ -10,20 +10,26 @@ import java.util.List;
  * A grade's rate on a sheet: a percent with two decimals, as the screen shows it, in force from its from-date
  * (yyyy-MM-dd; null when it applies from the beginning of time) through its to-date (null when it has no end). Its
  * level is the sheet it is kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link #LEVELS}.
+ * Its version counts the values set for its grade and from-date, this one (the newest, the one in force) included.
  */
-public record Rate(String grade, String pct, String from, String to, int level) {
+public record Rate(String grade, String pct, String from, String to, int level, int version) {
 
     /** The most levels up a sheet's parents give it rates. */
     public static final int LEVELS = 3;
 
     /** A sheet's own rate. */
     public Rate(String grade, String pct, String from, String to) {
-        this(grade, pct, from, to, 0);
+        this(grade, pct, from, to, 1);
+    }
+
+    /** A sheet's own rate at its version. */
+    public Rate(String grade, String pct, String from, String to, int version) {
+        this(grade, pct, from, to, 0, version);
     }
 
     /** This rate as one inherited from the levels up. */
     public Rate up(int levels) {
-        return new Rate(grade, pct, from, to, level + levels);
+        return new Rate(grade, pct, from, to, level + levels, version);
     }
 
     /**

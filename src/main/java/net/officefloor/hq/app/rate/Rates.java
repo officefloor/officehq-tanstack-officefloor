@@ -10,7 +10,8 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 /**
- * The rates kept per sheet: per grade, one for each from-date (and at most one with none). A sheet is given its
+ * The rates kept per sheet: per grade, one for each from-date (and at most one with none), the newest of its versions;
+ * the older versions it replaced are kept in rate_version. A sheet is given its
  * parents' rates too, up to {@link Rate#LEVELS} up, each at its level.
  */
 @Repository
@@ -19,7 +20,7 @@ public class Rates {
     private static final RowMapper<Rate> ROW = (rs, i) -> new Rate(rs.getString("grade"),
             rs.getBigDecimal("pct").setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
             rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate().toString(),
-            rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString());
+            rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate().toString(), rs.getInt("version"));
 
     private final JdbcTemplate jdbc;
 
@@ -45,16 +46,23 @@ public class Rates {
 
     /** The rates kept on the sheet itself, by grade then from-date (the one with none first). */
     public List<Rate> own(String sheet) {
-        return jdbc.query("SELECT grade, pct, from_date, to_date FROM rate WHERE sheet = ? ORDER BY grade, from_key", ROW,
+        return jdbc.query("SELECT grade, pct, from_date, to_date, version FROM rate WHERE sheet = ? ORDER BY grade, from_key", ROW,
                 sheet);
     }
 
-    /** Sets the grade's rate from the from-date (through its to-date), replacing the one already there for that grade and from-date. */
+    /**
+     * Sets the grade's rate from the from-date (through its to-date) as a new version: the one already there for that
+     * grade and from-date is kept as an older version.
+     */
     public void set(String sheet, RateInput input) {
         Date from = input.from() == null ? null : Date.valueOf(input.from());
         Date to = input.to() == null ? null : Date.valueOf(input.to());
+        jdbc.update("INSERT INTO rate_version (sheet, grade, from_date, version, pct, to_date) SELECT sheet, grade,"
+                + " from_date, version, pct, to_date FROM rate WHERE sheet = ? AND grade = ? AND from_date IS NOT"
+                + " DISTINCT FROM ?", sheet, input.grade(), from);
         if (jdbc.update(
-                "UPDATE rate SET pct = ?, to_date = ? WHERE sheet = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                "UPDATE rate SET pct = ?, to_date = ?, version = version + 1 WHERE sheet = ? AND grade = ?"
+                        + " AND from_date IS NOT DISTINCT FROM ?",
                 input.pct(), to, sheet, input.grade(), from) == 0) {
             jdbc.update("INSERT INTO rate (sheet, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)", sheet,
                     input.grade(), input.pct(), from, to);

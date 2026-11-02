@@ -4,8 +4,9 @@ import type { Grade } from '../people/people';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
  *  applies from the beginning of time) through its to-date (null when it has no end). Its level is the sheet it is
- *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. */
-export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null; level: number };
+ *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. Its version counts
+ *  the values set for its grade and from-date, this one (the newest, the one in force) included. */
+export type Rate = { grade: Grade; pct: string; from: string | null; to: string | null; level: number; version: number };
 
 /** The most levels up a sheet's parents give it rates. */
 export const RATE_LEVELS = 3;
