@@ -1,0 +1,438 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index e931ca30..059a4aca 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -58,7 +58,7 @@ export function bound(claim: Claim): boolean {
+  * corrects shows (null unless it is a correction: a negative amount), and the date it rounds on (its own, or for a
+  * correction the date of the claim it corrects), and its number within its period (<period>-<n>, or X-<n> in no
+  * period) when it was opened while the sheet numbered by period, shown in place of its number (null otherwise), and
+- * its due-by (yyyy-MM-dd), fixed when it was added as the terms-th business day after its date (skipping weekends and holidays), from the terms of its person's grade in force on its date (worked out again with those terms when a holiday on or before it is added, unless SETTLED or VOID), and
++ * its due-by (yyyy-MM-dd), fixed when it was added as the terms-th business day after its date (skipping weekends and holidays), from the terms in force on the sheet's today when it was added (its person's own, their grade's, else the sheet's) (worked out again with those terms when a holiday on or before it is added, unless SETTLED or VOID), and
+  * its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
+  * deferred now (OPEN, or VOID when voided while deferred, with that date after the sheet's today: it counts in no total, is not overdue and cannot be
+  * settled), and the number the claim it was split off shows (null unless it was split off one). */
+diff --git a/src/main/java/db/migration/V86__claim_due_terms_when_made.java b/src/main/java/db/migration/V86__claim_due_terms_when_made.java
+new file mode 100644
+index 00000000..271c20d1
+--- /dev/null
++++ b/src/main/java/db/migration/V86__claim_due_terms_when_made.java
+@@ -0,0 +1,125 @@
++package db.migration;
++
++import java.sql.Connection;
++import java.sql.Date;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.holiday.Holidays;
++import org.flywaydb.core.api.migration.BaseJavaMigration;
++import org.flywaydb.core.api.migration.Context;
++
++/**
++ * A claim's due-by is fixed from the terms in force on the day it was made (the sheet's today then), not on its date.
++ * Every claim kept takes the terms in force on the day of its first status log line (its date when it has none): its
++ * person's own then, else those of the grade the person had then, else the sheet's then (14 when none is set). A claim
++ * whose terms change takes as its due-by the terms-th business day after its date, skipping Saturdays, Sundays and the
++ * sheet's holidays as they stand now.
++ */
++public class V86__claim_due_terms_when_made extends BaseJavaMigration {
++
++    private record Kept(long id, String sheet, long person, LocalDate date, LocalDate made, int terms) {
++    }
++
++    @Override
++    public void migrate(Context context) throws Exception {
++        Connection con = context.getConnection();
++        List<Kept> kept = new ArrayList<>();
++        try (var ps = con.prepareStatement("SELECT c.id, c.sheet, c.person, c.claimed_on, c.due_terms,"
++                + " (SELECT MIN(l.on_date) FROM claim_log l WHERE l.claim = c.id) FROM claim c");
++                ResultSet rs = ps.executeQuery()) {
++            while (rs.next()) {
++                LocalDate date = rs.getDate(4).toLocalDate();
++                Date made = rs.getDate(6);
++                kept.add(new Kept(rs.getLong(1), rs.getString(2), rs.getLong(3), date,
++                        made == null ? date : made.toLocalDate(), rs.getInt(5)));
++            }
++        }
++        try (var update = con.prepareStatement("UPDATE claim SET due_terms = ?, due_by = ? WHERE id = ?")) {
++            for (Kept claim : kept) {
++                int terms = terms(con, claim);
++                if (terms == claim.terms()) {
++                    continue;
++                }
++                update.setInt(1, terms);
++                update.setDate(2, Date.valueOf(Holidays.businessDaysAfter(claim.date(), terms, holidays(con, claim.sheet()))));
++                update.setLong(3, claim.id());
++                update.executeUpdate();
++            }
++        }
++    }
++
++    private static int terms(Connection con, Kept claim) throws Exception {
++        // The person's own: the dated ones from the latest from-date on or before the day, else those from the
++        // beginning of time.
++        String own = one(con, "SELECT CAST(terms AS VARCHAR) FROM person_terms WHERE person_id = ? AND from_date <= ?"
++                + " ORDER BY from_date DESC LIMIT 1", (ps) -> {
++                    ps.setLong(1, claim.person());
++                    ps.setDate(2, Date.valueOf(claim.made()));
++                }, true);
++        if (own == null) {
++            own = one(con, "SELECT CAST(terms AS VARCHAR) FROM person WHERE id = ?", (ps) -> ps.setLong(1, claim.person()), false);
++        }
++        if (own != null && !own.isEmpty() && !own.equals(NONE)) {
++            return Integer.parseInt(own);
++        }
++        String grade = one(con, "SELECT grade FROM person_grade WHERE person_id = ? AND from_key <= ? ORDER BY from_key DESC LIMIT 1",
++                (ps) -> {
++                    ps.setLong(1, claim.person());
++                    ps.setDate(2, Date.valueOf(claim.made()));
++                }, false);
++        String gradeTerms = grade == null ? null : setting(con, claim, "terms-" + grade);
++        if (gradeTerms != null && !gradeTerms.isEmpty()) {
++            return Integer.parseInt(gradeTerms);
++        }
++        String terms = setting(con, claim, "terms");
++        return terms != null && !terms.isEmpty() ? Integer.parseInt(terms) : 14;
++    }
++
++    /** Stands for a dated row whose terms are none (null), so it is told apart from no row at all. */
++    private static final String NONE = "";
++
++    private static String setting(Connection con, Kept claim, String key) throws Exception {
++        return one(con, "SELECT setting_value FROM setting WHERE sheet = ? AND setting_key = ? AND from_date <= ?"
++                + " ORDER BY from_date DESC LIMIT 1", (ps) -> {
++                    ps.setString(1, claim.sheet());
++                    ps.setString(2, key);
++                    ps.setDate(3, Date.valueOf(claim.made()));
++                }, false);
++    }
++
++    private static Set<LocalDate> holidays(Connection con, String sheet) throws Exception {
++        Set<LocalDate> days = new HashSet<>();
++        try (var ps = con.prepareStatement("SELECT holiday_on FROM holiday WHERE sheet = ?")) {
++            ps.setString(1, sheet);
++            try (ResultSet rs = ps.executeQuery()) {
++                while (rs.next()) {
++                    days.add(rs.getDate(1).toLocalDate());
++                }
++            }
++        }
++        return days;
++    }
++
++    private interface Binder {
++        void bind(PreparedStatement ps) throws Exception;
++    }
++
++    /** The first row's value (null: no row); a null value is {@link #NONE} when asked to tell it apart. */
++    private static String one(Connection con, String sql, Binder binder, boolean nullAsNone) throws Exception {
++        try (var ps = con.prepareStatement(sql)) {
++            binder.bind(ps);
++            try (ResultSet rs = ps.executeQuery()) {
++                if (!rs.next()) {
++                    return null;
++                }
++                String value = rs.getString(1);
++                return value == null && nullAsNone ? NONE : value;
++            }
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index d03a9390..ed9344f6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -7,17 +7,19 @@ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class BuildClaim {
+     public void build(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
+-            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup)
++            @Val ClaimInput input, Claims claims, Periods periods, Settings settings, Holidays holidays, SheetClock clock, ClaimLog log, Audit audit, Rollup rollup)
+             throws InvalidClaimException {
+-        // The due-by is fixed now, from the terms of the person's grade in force on the claim's date, as they
+-        // stand on that date; the claim belongs to the period its due-by falls in.
+-        LocalDate dueBy = person.dueBy(sheet, input.date(), settings, holidays);
++        // The due-by is fixed now, from the terms in force on the sheet's today (the day the claim is made); the
++        // claim belongs to the period its due-by falls in.
++        LocalDate today = clock.today(sheet);
++        LocalDate dueBy = person.dueBy(sheet, input.date(), today, settings, holidays);
+         if (periods.closedOn(sheet, dueBy)) {
+             throw new InvalidClaimException("A claim may not be due inside a closed period");
+         }
+@@ -27,7 +29,7 @@ public class BuildClaim {
+         input.checkCorrects(sheet, person.id(), null, claims);
+         input.checkRef(sheet, null, claims);
+         Rollup.Snapshot before = rollup.take(sheet);
+-        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, input.date(), settings));
++        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, today, settings));
+         log.record(sheet, user, id);
+         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
+         if (periods.softClosedOn(sheet, dueBy)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 2f407206..ee88a780 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -15,7 +15,7 @@ import net.officefloor.hq.app.setting.Dated;
+  * the number of the claim it corrects (null unless it is a correction), and the date it rounds on: its own, or for
+  * a correction the date of the claim it corrects, and its number within its period (<period>-<n>, or X-<n> in no
+  * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise),
+- * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date,
++ * and its due-by (yyyy-MM-dd), fixed when it was added from the terms in force on the sheet's today then (its person's own, their grade's, the sheet's),
+  * and its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
+  * deferred now: OPEN (or VOID, voided while deferred) with that date after the sheet's today, and its proofs count, and the number (as it shows) of
+  * the claim it was split off (null unless it was), and the user whose open editor locks it (null when none does),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index 0ad539fd..6bd1bb09 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -11,6 +11,7 @@ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -19,12 +20,12 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor due inside a
+  * closed period; only a role that may open a claim may, as the new claim is theirs to open. The claim keeps the rest
+  * and loses any figure a statement bound it to; the new OPEN claim has the same date, note and tags, the next number,
+- * the user as its opener, a due-by fixed now from the terms in force on its date, and the claim's number as split-from.
++ * the user as its opener, a due-by fixed now from the terms in force today, and the claim's number as split-from.
+  */
+ public class SplitClaim {
+     public void split(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val BigDecimal amount,
+             @Val Claim claim, Claims claims, People people, Periods periods, Roles roles, Settings settings, Holidays holidays,
+-            ClaimStatusChanger changer, ClaimLog log, Audit audit, Rollup rollup)
++            SheetClock clock, ClaimStatusChanger changer, ClaimLog log, Audit audit, Rollup rollup)
+             throws InvalidClaimStatusChangeException {
+         if (Role.VIEWER.equals(roles.of(sheet, user)) || !settings.permits(sheet, "open", roles.of(sheet, user))) {
+             throw new InvalidClaimStatusChangeException("Your role may not open a claim, so may not split one");
+@@ -51,9 +52,10 @@ public class SplitClaim {
+         if (!claims.split(sheet, claim.id(), was, rest)) {
+             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
+         }
+-        LocalDate dueBy = person.dueBy(sheet, date, settings, holidays);
++        LocalDate today = clock.today(sheet);
++        LocalDate dueBy = person.dueBy(sheet, date, today, settings, holidays);
+         long id = claims.addSplit(sheet, person.id(), amount, date, claim.note(), claim.tags(), dueBy,
+-                person.termsOn(sheet, date, settings), claim.shownNumber(), user);
++                person.termsOn(sheet, today, settings), claim.shownNumber(), user);
+         // Judged by the claim split alone: the new claim is a late entry when that claim is one.
+         if (claim.lateEntry()) {
+             claims.setLateEntry(sheet, id);
+diff --git a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+index 197f1f81..566e948b 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+@@ -19,6 +19,7 @@ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.transaction.PlatformTransactionManager;
+@@ -38,7 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class AddPastedClaims {
+     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+             @Val PastedClaims pasted, Claims claims, Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup,
+-            ClaimStatusChanger changer, PlatformTransactionManager transactions, ObjectResponse<PasteResponse> response)
++            ClaimStatusChanger changer, SheetClock clock, PlatformTransactionManager transactions, ObjectResponse<PasteResponse> response)
+             throws InvalidClaimException {
+         TransactionTemplate transaction = new TransactionTemplate(transactions);
+         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+@@ -49,7 +50,7 @@ public class AddPastedClaims {
+             // Within a savepoint, so a refusal part way through undoes the lines before it.
+             transaction.execute((status) -> {
+                 try {
+-                    take(sheet, user, pasted, was, claims, periods, settings, holidays, log, audit, rollup, changer);
++                    take(sheet, user, clock.today(sheet), pasted, was, claims, periods, settings, holidays, log, audit, rollup, changer);
+                 } catch (InvalidClaimException refused) {
+                     throw new Refused(refused);
+                 }
+@@ -66,7 +67,7 @@ public class AddPastedClaims {
+         response.send(new PasteResponse(pasted.lines().size(), claims.list(sheet)));
+     }
+ 
+-    private static void take(String sheet, String user, PastedClaims pasted, List<Claim> was, Claims claims,
++    private static void take(String sheet, String user, LocalDate today, PastedClaims pasted, List<Claim> was, Claims claims,
+             Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup,
+             ClaimStatusChanger changer) throws InvalidClaimException {
+         for (PastedClaim line : pasted.lines()) {
+@@ -80,7 +81,7 @@ public class AddPastedClaims {
+                     .toList();
+             long id;
+             if (matches.isEmpty()) {
+-                id = add(sheet, user, person, input, claims, periods, settings, holidays, log, audit, rollup);
++                id = add(sheet, user, today, person, input, claims, periods, settings, holidays, log, audit, rollup);
+             } else {
+                 Claim draft = matches.stream().filter((c) -> c.status() == ClaimStatus.DRAFT).findFirst()
+                         .orElseThrow(() -> new InvalidClaimException(
+@@ -107,11 +108,11 @@ public class AddPastedClaims {
+         }
+     }
+ 
+-    private static long add(String sheet, String user, Person person, ClaimInput input, Claims claims, Periods periods,
++    private static long add(String sheet, String user, LocalDate today, Person person, ClaimInput input, Claims claims, Periods periods,
+             Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup) {
+         Rollup.Snapshot before = rollup.take(sheet);
+-        LocalDate dueBy = person.dueBy(sheet, input.date(), settings, holidays);
+-        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, input.date(), settings));
++        LocalDate dueBy = person.dueBy(sheet, input.date(), today, settings, holidays);
++        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, today, settings));
+         log.record(sheet, user, id);
+         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
+         if (periods.softClosedOn(sheet, dueBy)) {
+diff --git a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+index 93cedd7a..2b4d0e8a 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
++++ b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+@@ -17,6 +17,7 @@ import net.officefloor.hq.app.period.Periods;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -33,7 +34,7 @@ public class ValidatePaste {
+     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheet") String sheet, @RequestBody PasteRequest request, People people,
+-            Settings settings, Holidays holidays, Periods periods, Claims claims, Out<PastedClaims> pasted)
++            Settings settings, Holidays holidays, Periods periods, Claims claims, SheetClock clock, Out<PastedClaims> pasted)
+             throws InvalidClaimException {
+         String text = request == null || request.text() == null ? "" : request.text();
+         List<PastedClaim> lines = new ArrayList<>();
+@@ -44,7 +45,7 @@ public class ValidatePaste {
+             if (line.isBlank()) {
+                 continue;
+             }
+-            PastedClaim checked = check(sheet, at, line, people, settings, holidays, periods);
++            PastedClaim checked = check(sheet, at, line, people, settings, holidays, periods, clock.today(sheet));
+             String ref = checked.input().ref();
+             if (ref != null) {
+                 if (!refs.add(ref.toLowerCase(Locale.ROOT))) {
+@@ -65,7 +66,7 @@ public class ValidatePaste {
+     }
+ 
+     private static PastedClaim check(String sheet, int at, String line, People people, Settings settings, Holidays holidays,
+-            Periods periods) throws InvalidClaimException {
++            Periods periods, LocalDate today) throws InvalidClaimException {
+         String[] fields = line.split(",", 4);
+         String name = fields[0].trim();
+         String amount = fields.length > 1 ? fields[1].trim() : "";
+@@ -95,7 +96,7 @@ public class ValidatePaste {
+         } catch (DateTimeParseException e) {
+             throw new InvalidClaimException("Line " + at + ": not a valid date: " + date);
+         }
+-        if (periods.closedOn(sheet, person.dueBy(sheet, on, settings, holidays))) {
++        if (periods.closedOn(sheet, person.dueBy(sheet, on, today, settings, holidays))) {
+             throw new InvalidClaimException("Line " + at + ": a claim may not be due inside a closed period");
+         }
+         if (person.retiredBefore(on)) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 653ec9d4..c023a45e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -111,21 +111,21 @@ public record Person(long id, String name, String grade, long version, String re
+     }
+ 
+     /**
+-     * The due-by of a claim of theirs dated {@code date}, fixed when it is made: the terms-th business day after the
+-     * date (skipping weekends and the sheet's holidays as they stand now), the terms being the first of their own
+-     * terms, the terms of their grade then, and the sheet's terms then.
++     * The due-by of a claim of theirs dated {@code date}, fixed when it is made on {@code made} (the sheet's today
++     * then): the terms-th business day after the date (skipping weekends and the sheet's holidays as they stand now),
++     * the terms being those in force on the day it is made (see {@link #termsOn}).
+      */
+-    public LocalDate dueBy(String sheet, LocalDate date, Settings settings, Holidays holidays) {
+-        return holidays.businessDaysAfter(sheet, date, termsOn(sheet, date, settings));
++    public LocalDate dueBy(String sheet, LocalDate date, LocalDate made, Settings settings, Holidays holidays) {
++        return holidays.businessDaysAfter(sheet, date, termsOn(sheet, made, settings));
+     }
+ 
+     /**
+-     * The terms a claim of theirs dated {@code date} is fixed with: their own in force then, else their grade's then,
+-     * else the sheet's then.
++     * The terms a claim of theirs made on {@code made} (the sheet's today then) is fixed with: their own in force that
++     * day, else those of the grade they had that day, else the sheet's that day.
+      */
+-    public int termsOn(String sheet, LocalDate date, Settings settings) {
+-        Integer own = termsOn(termsFrom, date);
+-        return own != null ? own : settings.terms(sheet, gradeOn(date), date);
++    public int termsOn(String sheet, LocalDate made, Settings settings) {
++        Integer own = termsOn(termsFrom, made);
++        return own != null ? own : settings.terms(sheet, gradeOn(made), made);
+     }
+ 
+     /** Their own terms in force on the date: the ones whose from-date is the latest on or before it (null: none). */
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
+index a5d8a6c6..1a203203 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
+@@ -44,13 +44,13 @@ public class GeneratePlans {
+                 if (plans.made(plan.id(), day)) {
+                     continue;
+                 }
+-                LocalDate dueBy = person.dueBy(sheet, day, settings, holidays);
++                LocalDate dueBy = person.dueBy(sheet, day, today, settings, holidays);
+                 if (periods.closedOn(sheet, dueBy) || person.retiredBefore(day)) {
+                     continue;
+                 }
+                 ClaimInput input = new ClaimInput(new BigDecimal(plan.amount()), day, "");
+                 Rollup.Snapshot before = rollup.take(sheet);
+-                long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, day, settings));
++                long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, today, settings));
+                 log.record(sheet, user, id);
+                 plans.recordMade(plan.id(), day, id);
+                 audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+index 7b3995fb..72449763 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+@@ -11,6 +11,7 @@ import net.officefloor.hq.app.person.InvalidPersonException;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -24,7 +25,7 @@ public class ValidateQuickAdd {
+     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheet") String sheet, @RequestBody QuickAddRequest request, Settings settings, Holidays holidays,
+-            Periods periods, People people, Out<QuickAddRequest> body, Out<ClaimInput> claim)
++            Periods periods, People people, SheetClock clock, Out<QuickAddRequest> body, Out<ClaimInput> claim)
+             throws InvalidPersonException, InvalidClaimException {
+         String name = request == null || request.name() == null ? "" : request.name().trim();
+         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+@@ -35,10 +36,12 @@ public class ValidateQuickAdd {
+             throw new InvalidClaimException("The amount must be a number of 0.00 or more with up to two decimals");
+         }
+         ClaimInput input = new ClaimInput(new BigDecimal(amount), settings.entryDay(sheet), "");
+-        // The due-by it would be fixed with: from the person of the name, else from a new person of grade A.
++        // The due-by it would be fixed with, from the terms in force today: from the person of the name, else from a
++        // new person of grade A.
+         Person person = people.findByName(sheet, name);
+-        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings, holidays)
+-                : holidays.businessDaysAfter(sheet, input.date(), settings.terms(sheet, "A", input.date()));
++        LocalDate today = clock.today(sheet);
++        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), today, settings, holidays)
++                : holidays.businessDaysAfter(sheet, input.date(), settings.terms(sheet, "A", today));
+         if (periods.closedOn(sheet, dueBy)) {
+             throw new InvalidClaimException("A claim may not be due inside a closed period");
+         }
