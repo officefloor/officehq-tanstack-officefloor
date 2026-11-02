@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.core.Ordered;
@@ -30,6 +31,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * today, and nothing is ever written. The sheet's parents whose rates it takes (see Rates) are put as they stood at
  * the end of that date too, bar a parent whose today was never set: it has no dated history, so it is taken as it
  * stands now — unless the sheet itself had nothing then (the date is before its history), when no parent is taken.
+ * So too the sheet it was cloned from, and its parents and source in turn.
  * Every change sent while the as-of date is set is refused (see ViewerGuard).
  */
 @Component
@@ -43,13 +45,15 @@ public class AsOfView extends OncePerRequestFilter {
     private final SheetSnapshots snapshots;
     private final Settings settings;
     private final SheetClock clock;
+    private final Rates rates;
     private final TransactionTemplate transaction;
 
-    public AsOfView(SheetSnapshots snapshots, Settings settings, SheetClock clock,
+    public AsOfView(SheetSnapshots snapshots, Settings settings, SheetClock clock, Rates rates,
             PlatformTransactionManager transactions) {
         this.snapshots = snapshots;
         this.settings = settings;
         this.clock = clock;
+        this.rates = rates;
         this.transaction = new TransactionTemplate(transactions);
     }
 
@@ -75,12 +79,22 @@ public class AsOfView extends OncePerRequestFilter {
                 status.setRollbackOnly();
                 boolean had = snapshots.show(sheet, date);
                 Set<String> shown = new HashSet<>(Set.of(sheet));
-                String parent = settings.parent(sheet);
-                for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
-                    if (clock.isSet(parent) || !had) {
-                        snapshots.show(parent, date);
+                for (String from = sheet; !from.isEmpty(); ) {
+                    String parent = settings.parent(from);
+                    for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
+                        if (clock.isSet(parent) || !had) {
+                            snapshots.show(parent, date);
+                        }
+                        parent = settings.parent(parent);
                     }
-                    parent = settings.parent(parent);
+                    from = rates.source(from);
+                    if (!from.isEmpty() && shown.add(from)) {
+                        if (clock.isSet(from) || !had) {
+                            snapshots.show(from, date);
+                        }
+                    } else {
+                        from = "";
+                    }
                 }
                 try {
                     chain.doFilter(request, response);

@@ -3,8 +3,10 @@ package net.officefloor.hq.app.rate;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.hq.app.setting.Settings;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +16,8 @@ import org.springframework.stereotype.Repository;
 /**
  * The rates kept per sheet: per grade, one for each from-date (and at most one with none), the newest of its versions;
  * the older versions it replaced are kept in rate_version. A sheet is given its
- * parents' rates too, up to {@link Rate#LEVELS} up, each at its level.
+ * parents' rates too, up to {@link Rate#LEVELS} up, each at its level; a cloned sheet then the rates of the sheet it
+ * was cloned from, as that sheet is given them, further up.
  */
 @Repository
 public class Rates {
@@ -37,17 +40,34 @@ public class Rates {
         this.clock = clock;
     }
 
-    /** Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level. */
+    /**
+     * Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level,
+     * then (for a cloned sheet) those of the sheet it was cloned from, its parents' and source's in turn, each a
+     * {@link Rate#SOURCE_LEVELS} further up.
+     */
     public List<Rate> list(String sheet) {
-        List<Rate> all = new ArrayList<>(own(sheet));
-        String parent = settings.parent(sheet);
-        for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty(); level++) {
-            for (Rate rate : own(parent)) {
-                all.add(rate.up(level));
+        List<Rate> all = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int base = 0; !sheet.isEmpty() && seen.add(sheet); base += Rate.SOURCE_LEVELS) {
+            for (Rate rate : own(sheet)) {
+                all.add(rate.up(base));
             }
-            parent = settings.parent(parent);
+            String parent = settings.parent(sheet);
+            for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty(); level++) {
+                for (Rate rate : own(parent)) {
+                    all.add(rate.up(base + level));
+                }
+                parent = settings.parent(parent);
+            }
+            sheet = source(sheet);
         }
         return all;
+    }
+
+    /** The id of the sheet the sheet was cloned from, or "" when it was not cloned. */
+    public String source(String sheet) {
+        List<String> found = jdbc.queryForList("SELECT source FROM sheet_source WHERE child = ?", String.class, sheet);
+        return found.isEmpty() ? "" : found.get(0);
     }
 
     /**

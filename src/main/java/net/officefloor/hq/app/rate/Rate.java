@@ -10,7 +10,8 @@ import java.util.List;
 /**
  * A grade's rate on a sheet: a percent with two decimals, as the screen shows it, in force from its from-date
  * (yyyy-MM-dd; null when it applies from the beginning of time) through its to-date (null when it has no end). Its
- * level is the sheet it is kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link #LEVELS}.
+ * level is the sheet it is kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link #LEVELS};
+ * a cloned sheet then has the rates of the sheet it was cloned from (and so on), each {@link #SOURCE_LEVELS} further up.
  * Its version counts the values set for its grade and from-date, this one (the newest, the one in force) included.
  * A forward-only rate (saved with a from-date on or after the sheet's today) carries the claim sequence's value when
  * it was saved (after; null for a rate that applies to every claim) and the version it replaced (before; null when
@@ -20,6 +21,9 @@ public record Rate(String grade, String pct, String from, String to, int level, 
 
     /** The most levels up a sheet's parents give it rates. */
     public static final int LEVELS = 3;
+
+    /** How many levels further up the rates of the sheet a sheet was cloned from are than its own. */
+    public static final int SOURCE_LEVELS = LEVELS + 1;
 
     /** A sheet's own rate. */
     public Rate(String grade, String pct, String from, String to) {
@@ -58,10 +62,11 @@ public record Rate(String grade, String pct, String from, String to, int level, 
     /**
      * The percent the grade's rates give on a date: the one whose from-date is the latest on or before it, or null
      * when the date is before every rate the grade has, or after the to-date of that one. When a level gives none, the
-     * next level up is used.
+     * next level up is used (through the sheet's parents, then the sheet it was cloned from).
      */
     public static String on(List<Rate> rates, String grade, LocalDate date) {
-        for (int level = 0; level <= LEVELS; level++) {
+        int top = rates.stream().mapToInt(Rate::level).max().orElse(0);
+        for (int level = 0; level <= top; level++) {
             String pct = on(rates, grade, date, level);
             if (pct != null) {
                 return pct;

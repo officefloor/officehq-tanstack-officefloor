@@ -4,7 +4,8 @@ import type { Grade } from '../people/people';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-MM-dd; null when it
  *  applies from the beginning of time) through its to-date (null when it has no end). Its level is the sheet it is
- *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}. Its version counts
+ *  kept on: 0 this sheet's own, 1 its parent's, 2 its parent's parent, up to {@link RATE_LEVELS}; a cloned sheet then
+ *  has the rates of the sheet it was cloned from (and so on), each RATE_LEVELS + 1 further up. Its version counts
  *  the values set for its grade and from-date, this one (the newest, the one in force) included. A forward-only rate
  *  (saved with a from-date on or after the sheet's today) carries the claim sequence's value when it was saved (after;
  *  null for a rate that applies to every claim) and the version it replaced (before; null when none): a claim added
@@ -34,8 +35,8 @@ export type RatePreview = { count: number; diff: string };
 export const ratePreviewPath = (sheet: string, grade: Grade, pct: string) =>
   `${ratesPath(sheet)}/preview?grade=${encodeURIComponent(grade)}&pct=${encodeURIComponent(pct)}`;
 
-/** Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level;
- *  a grade with no rate is absent. */
+/** Every rate on the sheet, its own by grade then from-date (the one with none first), then its parents' by level,
+ *  then those of the sheet it was cloned from; a grade with no rate is absent. */
 export function useRates(sheet: string) {
   const read = useReadScope(ratesKey(sheet));
   return useQuery({
@@ -46,10 +47,12 @@ export function useRates(sheet: string) {
 
 /** The rate for a grade on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it, or
  *  undefined when the date is before every rate the grade has, or after the to-date of that one (or the date
- *  is not yet known). When the sheet's own rates give none, the next level up is used. */
+ *  is not yet known). When the sheet's own rates give none, the next level up is used (its parents', then
+ *  those of the sheet it was cloned from). */
 export function rateOf(rates: Rate[], grade: Grade | undefined, date: string | undefined): string | undefined {
   if (date === undefined || grade === undefined) return undefined;
-  for (let level = 0; level <= RATE_LEVELS; level++) {
+  const top = rates.reduce((m, r) => Math.max(m, r.level ?? 0), 0);
+  for (let level = 0; level <= top; level++) {
     const pct = rateAt(rates, grade, date, level);
     if (pct !== undefined) return pct;
   }
