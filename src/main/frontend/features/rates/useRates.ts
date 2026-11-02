@@ -39,13 +39,15 @@ function hundredths(v: string): bigint {
 }
 
 /** A due: an amount (two decimals) times a rate (a two-decimal percent), divided by 100, rounded
- *  half to even to two decimals; 'n/a' when there is no rate. Worked in whole numbers, so exact. */
-export function due(amount: string, pct: string | undefined): string {
+ *  half to even to two decimals, and at least the sheet's floor (two decimals; none while it is not
+ *  loaded); 'n/a' when there is no rate. Worked in whole numbers, so exact. */
+export function due(amount: string, pct: string | undefined, floor: string | undefined): string {
   if (pct === undefined) return 'n/a';
   const product = hundredths(amount) * hundredths(pct);       // in 1/1_000_000 of a unit
   const rest = product % 10000n;                               // amounts are never negative
   let cents = product / 10000n;
   if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  if (floor !== undefined && cents < hundredths(floor)) cents = hundredths(floor);
   return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
 }
 

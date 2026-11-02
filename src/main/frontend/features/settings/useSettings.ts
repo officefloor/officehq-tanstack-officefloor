@@ -4,8 +4,9 @@ import { getJson } from '../../api/http';
 /** The role a user name holds on the sheet: clerk or steward. A name not listed is a clerk. */
 export type Role = { user: string; role: string };
 
-/** The sheet's settings: its clerk limit (two decimals; null means no limit) and the roles set. */
-export type Settings = { clerkLimit: string | null; roles: Role[] };
+/** The sheet's settings: its clerk limit (two decimals; null means no limit), its floor (two decimals:
+ *  the least a live due can be) and the roles set. */
+export type Settings = { clerkLimit: string | null; floor: string; roles: Role[] };
 
 export function settingsKey(sheetId: string) {
   return ['sheet', sheetId, 'settings'];

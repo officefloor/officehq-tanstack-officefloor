@@ -1,4 +1,5 @@
 package net.officefloor.hq.app.settings;
 
-public record SettingsRequest(String clerkLimit) {
+/** The settings form: each setting given is saved; one left out (null) stays as it is. */
+public record SettingsRequest(String clerkLimit, String floor) {
 }

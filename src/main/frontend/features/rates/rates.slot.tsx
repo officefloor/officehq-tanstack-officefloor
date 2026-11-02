@@ -6,6 +6,7 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, fixedDue, useClaims } from '../claims/useClaims';
 import { GRADES, heldIds, usePeople } from '../people/usePeople';
+import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { due, rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
 
@@ -131,13 +132,14 @@ function useDueTotals(sheetId: string): Map<number, string> {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
+  const floor = useSettings(sheetId).data?.floor;
   const held = heldIds(people.data);
   const totals = new Map<number, string>();
   for (const p of people.data ?? []) {
     const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
     const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
     totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null)
-      ? sumDues(counting.map((c) => fixedDue(c) ?? due(c.amount, rateFor(rates.data, p.grade, c.date))))
+      ? sumDues(counting.map((c) => fixedDue(c) ?? due(c.amount, rateFor(rates.data, p.grade, c.date), floor)))
       : 'n/a');
   }
   return totals;

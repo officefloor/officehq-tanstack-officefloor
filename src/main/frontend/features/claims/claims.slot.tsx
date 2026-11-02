@@ -7,6 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { due, rateFor, useRates } from '../rates/useRates';
+import { useSettings } from '../settings/useSettings';
 import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
 
 /** A person's claimed: the sum of their counted (OPEN or SETTLED; only SETTLED while held) claims' amounts. */
@@ -36,6 +37,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
+  const floor = useSettings(sheetId).data?.floor;
   const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
@@ -107,7 +109,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   // A claim's due: the one fixed when it was settled, else the one its last statement bound it to,
-  // else its amount at the rate for its person's grade in force on its date ('n/a' when none applies).
+  // else its amount at the rate for its person's grade in force on its date, at least the sheet's floor
+  // ('n/a' when none applies).
   const grade = people.data?.find((p) => p.id === personId)?.grade;
 
   return (
@@ -154,7 +157,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
-                <td data-testid="claim-due">{fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date))}</td>
+                <td data-testid="claim-due">{fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date), floor)}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>

@@ -6,6 +6,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, fixedDue, useClaims } from '../claims/useClaims';
 import { heldIds, usePeople } from '../people/usePeople';
 import { due, rateFor, sumDues, useRates } from '../rates/useRates';
+import { useSettings } from '../settings/useSettings';
 import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
@@ -18,6 +19,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
+  const floor = useSettings(sheetId).data?.floor;
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
@@ -47,7 +49,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     return sumDues(
       (claims.data ?? [])
         .filter((c) => counts(c, held) && periodOf([p], c.date) !== undefined)
-        .map((c) => fixedDue(c) ?? due(c.amount, rateFor(rates.data, grades.get(c.personId), c.date))),
+        .map((c) => fixedDue(c) ?? due(c.amount, rateFor(rates.data, grades.get(c.personId), c.date), floor)),
     );
   };
 

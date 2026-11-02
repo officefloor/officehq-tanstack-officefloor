@@ -72,15 +72,24 @@ public class ClaimRepository {
 
     /** A claim's due now: its amount at the rate for its person's grade in force on the claim's date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time), rounded half to even to two decimals; null when no rate applies. */
+     *  of time), rounded half to even to two decimals, and at least the sheet's floor; null when no
+     *  rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
                 + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?"
                 + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
                 + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1", BigDecimal.class, sheetId,
                 claim.personId(), claim.date());
-        return pct.isEmpty() ? null
-                : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        if (pct.isEmpty()) return null;
+        BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
+                .setScale(2, RoundingMode.HALF_EVEN);
+        return due.max(floor(sheetId));
+    }
+
+    /** The sheet's floor: the least a live due can be (two decimals). */
+    public BigDecimal floor(String sheetId) {
+        List<BigDecimal> found = jdbc.queryForList("SELECT floor FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
+        return found.isEmpty() || found.get(0) == null ? BigDecimal.ONE.setScale(2) : found.get(0).setScale(2);
     }
 
     /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound

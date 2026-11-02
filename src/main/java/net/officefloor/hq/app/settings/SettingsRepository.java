@@ -26,7 +26,7 @@ public class SettingsRepository {
         List<Role> roles = jdbc.query("SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new Role(rs.getString("user_name"), rs.getString("role")), sheetId);
         BigDecimal limit = clerkLimit(sheetId);
-        return new Settings(limit == null ? null : money(limit), roles);
+        return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), roles);
     }
 
     /** The sheet's clerk limit; null when it has none. */
@@ -38,6 +38,17 @@ public class SettingsRepository {
 
     public void setClerkLimit(String sheetId, BigDecimal limit) {
         jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
+    }
+
+    /** The sheet's floor: the least a live due can be; 1.00 unless set otherwise. */
+    public BigDecimal floor(String sheetId) {
+        List<BigDecimal> found = jdbc.query("SELECT floor FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBigDecimal("floor"), sheetId);
+        return found.isEmpty() || found.get(0) == null ? BigDecimal.ONE : found.get(0);
+    }
+
+    public void setFloor(String sheetId, BigDecimal floor) {
+        jdbc.update("UPDATE sheet SET floor = ? WHERE id = ?", floor, sheetId);
     }
 
     /** The role a user name holds on the sheet: clerk unless set otherwise. */

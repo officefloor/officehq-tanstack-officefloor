@@ -6,20 +6,24 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
- *  it; blank is no limit), and the role (clerk or steward) assigned to each user name. */
+ *  it; blank is no limit), its floor (the least a live due can be), and the role (clerk or steward)
+ *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
+ *  in, even when left blank); the others stay as they are. */
 function SettingsPanel({ sheetId }: { sheetId: string }) {
   const settings = useSettings(sheetId);
   const queryClient = useQueryClient();
-  const [limit, setLimit] = useState('');
+  const [limit, setLimit] = useState<string | null>(null);
+  const [floor, setFloor] = useState<string | null>(null);
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (clerkLimit: string) =>
-      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, { clerkLimit }),
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null }) =>
+      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
-      setLimit('');
+      setLimit(null);
+      setFloor(null);
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -43,7 +47,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync(limit);
+            return save.mutateAsync({ clerkLimit: limit, floor });
           });
         }}
       >
@@ -52,9 +56,23 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           <input
             data-testid="setting-clerk-limit"
             inputMode="decimal"
-            value={limit}
+            value={limit ?? ''}
+            onFocus={() => setLimit((v) => v ?? '')}
             onChange={(e) => {
               setLimit(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          Floor{' '}
+          <input
+            data-testid="setting-floor"
+            inputMode="decimal"
+            value={floor ?? ''}
+            onFocus={() => setFloor((v) => v ?? '')}
+            onChange={(e) => {
+              setFloor(e.target.value);
               save.reset();
             }}
           />
@@ -62,7 +80,8 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
-        Current: <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>
+        Current: clerk limit <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>,
+        floor <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form
