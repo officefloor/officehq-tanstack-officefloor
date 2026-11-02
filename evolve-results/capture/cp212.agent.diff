@@ -1,0 +1,73 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 6fa01966..0dfae950 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1016,7 +1016,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const lateClaims = overdueCents(claims, [person], rates, late, floor);
+   const aged = agedCents(claims, person, rates, late, floor);
+   const split = splitDueCents(claims, rates, person, floor, late);
+-  const score = scoreOf(split.settled, lateClaims.count);
++  const score = scoreOf(split.scored, lateClaims.count);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
+   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index df6753f6..43f7abe4 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -326,24 +326,27 @@ export function uncappedPersonDueCents(
+ 
+ /** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
+  *  frozen figures, corrections included) and of their OPEN and PENDING ones that count (see {@link counted}). Together
+- *  they make the due-total before the cap; a claim with no due adds nothing. */
++ *  they make the due-total before the cap; a claim with no due adds nothing. Also the score's settled figure: the
++ *  settled-total less the corrections. */
+ export function splitDueCents(
+   claims: Claim[],
+   rates: Rate[],
+   person: Person,
+   floor: DatedCents,
+   late: Late,
+-): { settled: bigint; open: bigint } {
+-  const split = { settled: 0n, open: 0n };
++): { settled: bigint; open: bigint; scored: bigint } {
++  const split = { settled: 0n, open: 0n, scored: 0n };
+   for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
+     const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
+-    if (c.status === 'SETTLED') split.settled += due;
+-    else if (isOpen(c)) split.open += due;
++    if (c.status === 'SETTLED') {
++      split.settled += due;
++      if (c.corrects === null) split.scored += due;
++    } else if (isOpen(c)) split.open += due;
+   }
+   return split;
+ }
+ 
+-/** A person's score: their settled-total (in hundredths) divided by 100, minus 5 for every overdue claim of theirs
++/** A person's score: the settled figure of their SETTLED claims that correct nothing (in hundredths) divided by 100, minus 5 for every overdue claim of theirs
+  *  that counts, rounded half to even to a whole number. */
+ export function scoreOf(settledCents: bigint, overdueCount: number): bigint {
+   // In ten-thousandths of the score: hundredths divided by 100 is ten-thousandths of a whole.
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index ae2943a5..627881f4 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -88,7 +88,7 @@ public class Rollup {
+             for (Claim claim : mine) {
+                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
+                 due = d == null ? due : due.add(d);
+-                if (d != null && claim.status() == ClaimStatus.SETTLED) {
++                if (d != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
+                     settled = settled.add(d);
+                 }
+                 if (late.overdue(claim, person.gradeOn(claim.date()))) {
+@@ -114,7 +114,7 @@ public class Rollup {
+                 trimmedSum(overdueFigures).toPlainString());
+     }
+ 
+-    /** A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
++    /** A person's score: the settled figure of their SETTLED claims that correct nothing, divided by 100, minus 5 for every overdue claim of theirs that counts,
+      *  rounded half to even to a whole number. */
+     static long score(BigDecimal settled, int overdueCount) {
+         return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
