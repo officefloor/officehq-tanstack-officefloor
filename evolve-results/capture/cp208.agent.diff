@@ -1,0 +1,152 @@
+diff --git a/src/main/frontend/features/claims/bulk.slot.tsx b/src/main/frontend/features/claims/bulk.slot.tsx
+index e1876fbe..e11cdff7 100644
+--- a/src/main/frontend/features/claims/bulk.slot.tsx
++++ b/src/main/frontend/features/claims/bulk.slot.tsx
+@@ -9,7 +9,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
+ 
+ type BulkOpened = { opened: number; refused: number; claims: Claim[] };
+ 
+-// Opens the selected claims together: the server opens each that can be, numbering them in list order (people by
++// Opens the selected claims together: the server opens each that can be, in list order (people by
+ // their list positions, newest claim first), and leaves the rest as they are. Shows how many of each.
+ function BulkOpen({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index ef4e01ba..f8060f62 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -66,7 +66,7 @@ const CHANGES: { change: ClaimStatusChange; label: string }[] = [
+   // A DRAFT outside a closed period is deleted (it then counts nowhere); restored to a DRAFT only on the sheet's today it was deleted.
+   { change: 'delete', label: 'Delete' },
+   { change: 'restore', label: 'Restore' },
+-  // A steward's review opens a REVIEW claim (numbering it then).
++  // A steward's review opens a REVIEW claim (it is numbered only when settled).
+   { change: 'review', label: 'Review' },
+ ];
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index dbc971f2..1e7c335d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Opens each selected claim in list order (people by their list positions, newest claim first within a
+- * person), so they are numbered in that order; one that cannot be opened is left as it is and counted refused.
++ * person); one that cannot be opened is left as it is and counted refused.
+  */
+ public class BulkOpenClaims {
+     public void open(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java b/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java
+index 995fc901..dc0e5962 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimReassigner.java
+@@ -13,8 +13,8 @@ import org.springframework.stereotype.Service;
+ /**
+  * Moves a DRAFT, OPEN or PENDING claim dated outside a closed period (which may not be edited) to another person on
+  * the sheet, on or before that person's retirement; only a role the permission matrix lets (by default a steward) may.
+- * The claim keeps its date but takes the next number in the sequence it would be opened in (its old number is never
+- * used again; a draft has none to take), loses any figure a statement bound it to, and lists as its new person's newest
++ * The claim keeps its date; one numbered before numbers moved to settlement takes the next number in its sequence (its
++ * old number is never used again), while one not yet settled has none to take. It loses any figure a statement bound it to, and lists as its new person's newest
+  * claim. Shared by a claim's own Reassign button and the bulk reassign.
+  */
+ @Service
+@@ -70,9 +70,10 @@ public class ClaimReassigner {
+         if (!claims.reassign(sheet, claim.id(), claim.person(), claim.status(), to.id())) {
+             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
+         }
+-        // A numbered claim is renumbered as if opened now; the number it showed before is dropped.
++        // A numbered claim is renumbered as if numbered now; the number it showed before is dropped. A claim not yet
++        // settled has no number, so it moves with none.
+         Claim moved = claim;
+-        if (claim.status() != ClaimStatus.DRAFT) {
++        if (claim.status() != ClaimStatus.DRAFT && claim.shownNumber() != null) {
+             if (claim.periodNumber() != null) {
+                 claims.setPeriodNumber(sheet, claim.id(), null);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimSplitter.java b/src/main/java/net/officefloor/hq/app/claim/ClaimSplitter.java
+index 5d1b7633..817eaf56 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimSplitter.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimSplitter.java
+@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
+ /**
+  * Splits an amount (more than 0.00 and less than the claim's) off an OPEN claim that is not deferred nor due inside a
+  * closed period; only a role that may open a claim may, as the new claim is theirs to open. The claim keeps the rest
+- * and loses any figure a statement bound it to; the new OPEN claim has the same date, note and tags, the next number,
++ * and loses any figure a statement bound it to; the new OPEN claim has the same date, note and tags, no number (it is given at settlement),
+  * the user as its opener, a due-by fixed now from the terms in force today, and the claim's number as split-from.
+  * Shared by a claim's Split and Settle part buttons.
+  */
+@@ -86,10 +86,11 @@ public class ClaimSplitter {
+         if (claim.lateEntry()) {
+             claims.setLateEntry(sheet, id);
+         }
+-        Claim opened = changer.number(sheet, claims.find(sheet, id));
++        // The new claim is OPEN, so has no number until it is settled.
++        Claim opened = claims.find(sheet, id);
+         log.record(sheet, user, id);
+         audit.record("CLAIM_SPLIT sheet=" + sheet + " by=" + user + " "
+-                + claim.withAmount(rest.toPlainString()).statusAuditFields(person.name()) + " into=" + opened.shownNumber());
++                + claim.withAmount(rest.toPlainString()).statusAuditFields(person.name()) + " into=" + (opened.shownNumber() == null ? "" : opened.shownNumber()));
+         audit.record(ClaimStatusChange.OPEN.event() + " sheet=" + sheet + " by=" + user + " "
+                 + opened.statusAuditFields(person.name()));
+         rollup.record(sheet, user, before);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index a10fceb5..9972134d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -98,11 +98,13 @@ public class ClaimStatusChanger {
+             throw new InvalidClaimStatusChangeException(
+                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+         }
+-        // Opening gives the next number (FY<yyyy>-<n>) of its fiscal year its sheet's tree shares, or, while the sheet numbers by period from on or
+-        // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
+-        // had (never reused).
++        // Settling (or approving) gives the next number (FY<yyyy>-<n>) of its fiscal year its sheet's tree shares, or,
++        // while the sheet numbers by period from on or before its today, the next number in the claim's period (X for
++        // none); an OPEN, PENDING or REVIEW claim has none. A claim numbered already keeps its number, and a voided
++        // claim keeps the number it had (never reused).
+         Claim changed = claim;
+-        if (requested == ClaimStatusChange.OPEN || requested == ClaimStatusChange.REVIEW) {
++        if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
++                && claim.shownNumber() == null) {
+             changed = number(sheet, claim);
+         }
+         // Who opened it is the user who pressed open, also when it went to REVIEW first (not the reviewing steward).
+@@ -135,7 +137,7 @@ public class ClaimStatusChanger {
+             fields += " reason=" + voidReason;
+         }
+         log.record(sheet, user, claim.id());
+-        // A review is written (naming the claim, before its number) then the open it makes, with its number.
++        // A review is written (naming the claim) then the open it makes.
+         if (requested == ClaimStatusChange.REVIEW) {
+             audit.record(requested.event() + " sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name()));
+             audit.record(ClaimStatusChange.OPEN.event() + " sheet=" + sheet + " by=" + user + " " + fields);
+@@ -316,7 +318,7 @@ public class ClaimStatusChanger {
+     }
+ 
+     /**
+-     * Gives an opening claim the next number (FY<yyyy>-<n>) of its due-by's fiscal year in the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
++     * Gives a settling claim the next number (FY<yyyy>-<n>) of its due-by's fiscal year in the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
+      * today, the next number in the claim's period (X for none); returns the claim so numbered.
+      */
+     public Claim number(String sheet, Claim claim) {
+diff --git a/tmp_e2e/nos.log b/tmp_e2e/nos.log
+new file mode 100644
+index 00000000..90996860
+--- /dev/null
++++ b/tmp_e2e/nos.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › number on settle › number on settle (1.3m)
++  ✓  2 [chromium] › acceptance.spec.ts:116:7 › number on settle › number on settle scenario 1 (23.5s)
++  ✓  3 [chromium] › acceptance.spec.ts:530:7 › number on settle › number on settle scenario 2 (35.4s)
++  ✓  4 [chromium] › acceptance.spec.ts:1005:7 › number on settle › number on settle scenario 3 (34.1s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (2.8m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.9m)
