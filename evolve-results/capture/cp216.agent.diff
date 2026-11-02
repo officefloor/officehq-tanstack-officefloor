@@ -1,0 +1,245 @@
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 1111cf2b..312f711f 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -7,7 +7,8 @@ import { getJson } from '../../api/http';
+  *  of the pool's pot (two decimals), '' when the pool is not balanced, has no pot or has only retired members, or the member is
+  *  outside their dates. A pool in none has the sheet's pot; a pool in another has its cut there. And, by the name of
+  *  every period whose to-date is on or before the sheet's today, their cut as it stood at the end of that period (the
+- *  pool, its members, the pot and the holds as they were then, with that day as the sheet's today), '' when none. */
++ *  pool, its members, the pot and the holds as they were then, with that day as the sheet's today), '' when none; a closed or soft-closed period (ended or not) instead shows their cut
++ *  fixed when it was closed, '' when they were not then in the pool. */
+ export type PoolMember = {
+   person: number;
+   memberPool: string | null;
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index 9994f576..c6ea6952 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -14,6 +14,7 @@ import net.officefloor.hq.app.claim.Claims;
+ import net.officefloor.hq.app.claim.Late;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.pool.Pools;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.setting.Dated;
+@@ -26,7 +27,7 @@ import org.springframework.stereotype.Service;
+  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
+  * within its person's hold) (a claim with no rate adds nothing); and each person's carried figure for it: the due now of
+  * their claims that count at its end whose due-by falls in an earlier period (one ending before it starts) and that were
+- * still OPEN or PENDING at its end by their status log, plus their opening balance for it. Shared by a close by hand and the auto close of a today change.
++ * still OPEN or PENDING at its end by their status log, plus their opening balance for it; and every pool member's cut as it stands now. Shared by a close by hand and the auto close of a today change.
+  */
+ @Service
+ public class PeriodCloser {
+@@ -38,9 +39,11 @@ public class PeriodCloser {
+     private final Settings settings;
+     private final SheetClock clock;
+     private final Audit audit;
++    private final Pools pools;
+ 
+     public PeriodCloser(Periods periods, Claims claims, People people, Rates rates, Settings settings, SheetClock clock,
+-            Audit audit) {
++            Audit audit, Pools pools) {
++        this.pools = pools;
+         this.periods = periods;
+         this.claims = claims;
+         this.people = people;
+@@ -107,6 +110,7 @@ public class PeriodCloser {
+         if (!periods.close(sheet, found.name(), total, perPerson, carried, soft)) {
+             return false;
+         }
++        periods.fixPoolCuts(sheet, found.name(), pools.currentCuts(sheet));
+         audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheet + " by=" + user + " period=" + found.name() + " total="
+                 + total.toPlainString() + (auto ? " auto=yes" : ""));
+         return true;
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index 2bc7959c..ff06fba5 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.period;
+ import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.HashMap;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
+@@ -157,7 +158,30 @@ public class Periods {
+         return true;
+     }
+ 
+-    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither, is locked (or is gone). */
++    /**
++     * Fixes each pool member's cut for the period (by pool, then by member key: the person's id or pool:<name>; ""
++     * when they have none), replacing any fixed before.
++     */
++    public void fixPoolCuts(String sheet, String name, Map<String, Map<String, String>> cuts) {
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND period = ?", sheet, name);
++        cuts.forEach((pool, members) -> members.forEach((member, cut) -> jdbc.update(
++                "INSERT INTO period_pool_cut (sheet, period, pool, member, cut) VALUES (?, ?, ?, ?, ?)", sheet, name,
++                pool, member, cut)));
++    }
++
++    /** Each fixed pool cut on the sheet, by period name, then pool, then member key (see {@link #fixPoolCuts}). */
++    public Map<String, Map<String, Map<String, String>>> poolCuts(String sheet) {
++        Map<String, Map<String, Map<String, String>>> cuts = new HashMap<>();
++        jdbc.query("SELECT period, pool, member, cut FROM period_pool_cut WHERE sheet = ?",
++                (rs) -> {
++                    cuts.computeIfAbsent(rs.getString("period"), (k) -> new HashMap<>())
++                            .computeIfAbsent(rs.getString("pool"), (k) -> new HashMap<>())
++                            .put(rs.getString("member"), rs.getString("cut"));
++                }, sheet);
++        return cuts;
++    }
++
++    /** Reopens the closed or soft-closed period, dropping its fixed due-totals, carried figures and pool cuts; false when it was neither, is locked (or is gone). */
+     public boolean reopen(String sheet, String name) {
+         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet = ? AND name = ?"
+                 + " AND (closed OR soft) AND NOT locked",
+@@ -165,6 +189,7 @@ public class Periods {
+             return false;
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND period = ?", sheet, name);
+         return true;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+index f3c0bbfc..06b1a436 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.math.BigDecimal;
++import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.role.Role;
+@@ -117,6 +118,26 @@ public class PersonMerger {
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
+ 
++        // Closed periods' fixed pool cuts follow the memberships, cuts added where the other was already a member.
++        for (Map<String, Object> c : jdbc.queryForList(
++                "SELECT period, pool, cut FROM period_pool_cut WHERE sheet = ? AND member = ?", sheet, String.valueOf(f))) {
++            String period = (String) c.get("PERIOD");
++            String pool = (String) c.get("POOL");
++            String cut = (String) c.get("CUT");
++            List<String> other = jdbc.queryForList("SELECT cut FROM period_pool_cut WHERE sheet = ? AND period = ?"
++                    + " AND pool = ? AND member = ?", String.class, sheet, period, pool, String.valueOf(t));
++            if (other.isEmpty()) {
++                jdbc.update("UPDATE period_pool_cut SET member = ? WHERE sheet = ? AND period = ? AND pool = ? AND member = ?",
++                        String.valueOf(t), sheet, period, pool, String.valueOf(f));
++            } else if (!cut.isEmpty()) {
++                String sum = other.get(0).isEmpty() ? cut
++                        : new BigDecimal(other.get(0)).add(new BigDecimal(cut)).toPlainString();
++                jdbc.update("UPDATE period_pool_cut SET cut = ? WHERE sheet = ? AND period = ? AND pool = ? AND member = ?",
++                        sum, sheet, period, pool, String.valueOf(t));
++            }
++        }
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND member = ?", sheet, String.valueOf(f));
++
+         // Opening balances add to the other's.
+         for (Map<String, Object> o : jdbc.queryForList(
+                 "SELECT period, amount FROM period_opening WHERE sheet = ? AND person = ?", sheet, f)) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index 927b6b4d..846a23e4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -216,6 +216,7 @@ public class PersonTransferrer {
+         jdbc.update("DELETE FROM patron WHERE sheet = ? AND (person_id = ? OR patron_id = ?)", sheet, f, f);
+         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet = ? AND member = ?", sheet, String.valueOf(f));
+         jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND person = ?", sheet, f);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+index 907834db..27cd189e 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+@@ -9,7 +9,8 @@ import java.util.Map;
+  * their cut of the pool's pot (two decimals), or "" when the pool is not balanced or has no pot, or the member is
+  * outside their dates; and, by the name of every period whose to-date is on or before the sheet's today, their cut as
+  * it stood at the end of that period (the pool, its members, the pot and the holds as they were then, with that day as
+- * the sheet's today), "" when there was none.
++ * the sheet's today), "" when there was none; a closed or soft-closed period (ended or not) instead has their cut
++ * fixed when it was closed, "" when they were not then in the pool.
+  */
+ public record PoolMember(long person, String memberPool, String name, String share, boolean retired, String from,
+         String to, boolean current, String cut, Map<String, String> cuts) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index eb2c0828..34a81e27 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -51,19 +51,27 @@ public class Pools {
+      * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
+      * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}). Each member
+      * also has, for every period whose to-date is on or before the sheet's today, their cut as it stood at the end of
+-     * that period (see {@link #asAt}); blank when they were not then in the pool.
++     * that period (see {@link #asAt}); blank when they were not then in the pool. A closed or soft-closed period instead
++     * shows, whether or not it has ended, each member's cut fixed when it was closed (see {@link #currentCuts}); blank for
++     * a member not then in the pool.
+      */
+     public List<Pool> list(String sheet) {
+         LocalDate now = clock.today(sheet);
+         List<Pool> pools = list(sheet, now, settings.pot(sheet), null);
+         Map<String, Map<String, String>> cuts = new HashMap<>();
+-        List<Period> ended = periods.list(sheet).stream()
+-                .filter((period) -> !LocalDate.parse(period.to()).isAfter(now)).toList();
+-        // A member not in the pool at a period's end (or the pool not yet added) has a blank cut for it.
++        // A closed or soft-closed period shows the cuts fixed when it was, whether or not it has ended.
++        List<Period> shown = periods.list(sheet).stream()
++                .filter((period) -> period.fixed() || !LocalDate.parse(period.to()).isAfter(now)).toList();
++        Map<String, Map<String, Map<String, String>>> fixed = periods.poolCuts(sheet);
++        List<Period> ended = shown.stream().filter((period) -> !period.fixed()).toList();
++        // A member not in the pool at a period's end (or the pool not yet added), or when it was closed, has a blank cut for it.
+         for (Pool pool : pools) {
+             for (PoolMember m : pool.members()) {
+                 Map<String, String> blank = new LinkedHashMap<>();
+-                ended.forEach((period) -> blank.put(period.name(), ""));
++                shown.forEach((period) -> blank.put(period.name(), period.fixed()
++                        ? fixed.getOrDefault(period.name(), Map.of()).getOrDefault(pool.name(), Map.of())
++                                .getOrDefault(m.key(), "")
++                        : ""));
+                 cuts.put(pool.name() + "\n" + m.key(), blank);
+             }
+         }
+@@ -82,6 +90,17 @@ public class Pools {
+                 .toList(), pool.totalShare(), pool.balanced())).toList();
+     }
+ 
++    /** Each pool member's cut as it stands now, by pool then member key ("" when they have none), to fix for a period at its close. */
++    public Map<String, Map<String, String>> currentCuts(String sheet) {
++        Map<String, Map<String, String>> cuts = new LinkedHashMap<>();
++        for (Pool pool : list(sheet, clock.today(sheet), settings.pot(sheet), null)) {
++            Map<String, String> members = new LinkedHashMap<>();
++            pool.members().forEach((m) -> members.put(m.key(), m.cut()));
++            cuts.put(pool.name(), members);
++        }
++        return cuts;
++    }
++
+     /**
+      * The pools as they stood at the end of the day, with it as the sheet's today: only the pools and members added
+      * (on a sheet's today) on or before it, a person retired when their retirement date is on or before it, the holds
+diff --git a/src/main/resources/db/migration/V96__period_pool_cut.sql b/src/main/resources/db/migration/V96__period_pool_cut.sql
+new file mode 100644
+index 00000000..b98c5895
+--- /dev/null
++++ b/src/main/resources/db/migration/V96__period_pool_cut.sql
+@@ -0,0 +1,11 @@
++-- A closed or soft-closed period's cut per pool member, fixed as it stood when the period was (soft-)closed: one row
++-- for every member of every pool then, the member being the person's id or pool:<name>, the cut '' when they had none.
++-- A member added later has none (and shows blank); reopening the period drops its rows.
++CREATE TABLE period_pool_cut (
++    sheet  VARCHAR(200) NOT NULL,
++    period VARCHAR(200) NOT NULL,
++    pool   VARCHAR(200) NOT NULL,
++    member VARCHAR(200) NOT NULL,
++    cut    VARCHAR(40)  NOT NULL,
++    PRIMARY KEY (sheet, period, pool, member)
++);
