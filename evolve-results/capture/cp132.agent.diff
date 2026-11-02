@@ -1,0 +1,98 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index 6802f8b3..4138167f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -77,8 +77,9 @@ public class ClaimStatusChanger {
+             throw new InvalidClaimStatusChangeException(
+                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
+         }
+-        // Opening gives the sheet's next number, or, while the sheet numbers by period from on or before its today,
+-        // the next number in the claim's period (X for none); a voided claim keeps the number it had (never reused).
++        // Opening gives the next number its sheet's tree shares, or, while the sheet numbers by period from on or
++        // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
++        // had (never reused).
+         Claim changed = claim;
+         if (requested == ClaimStatusChange.OPEN) {
+             changed = number(sheet, claim);
+@@ -225,7 +226,7 @@ public class ClaimStatusChanger {
+     }
+ 
+     /**
+-     * Gives an opening claim the sheet's next number, or, while the sheet numbers by period from on or before its
++     * Gives an opening claim the next number of the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
+      * today, the next number in the claim's period (X for none); returns the claim so numbered.
+      */
+     public Claim number(String sheet, Claim claim) {
+@@ -237,7 +238,7 @@ public class ClaimStatusChanger {
+             claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
+             return numbered;
+         }
+-        Claim numbered = claim.withNumber(claims.nextNumber(sheet));
++        Claim numbered = claim.withNumber(claims.nextNumber(sheet, settings.wholeTree(sheet)));
+         claims.setNumber(sheet, claim.id(), numbered.number());
+         return numbered;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index d20bf791..d697b8da 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -384,21 +384,24 @@ public class Claims {
+     }
+ 
+     /**
+-     * Takes the sheet's next claim number: 1 first, then 2, and so on. The counter row stays locked until the
+-     * transaction ends, so two claims opened at once get different numbers.
++     * Takes the next number of the sheet-wide sequence the sheet shares with the other sheets of its tree: the one
++     * after the last number given on any of them (1 when none has given one), recorded as the sheet's last number.
++     * The counter rows of the whole tree stay locked until the transaction ends, so two claims opened at once
++     * anywhere in the tree get different numbers.
+      */
+-    public int nextNumber(String sheet) {
+-        while (true) {
+-            if (jdbc.update("UPDATE claim_number SET last_number = last_number + 1 WHERE sheet = ?", sheet) == 1) {
+-                return jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet = ?", Integer.class,
+-                        sheet);
+-            }
+-            try {
+-                jdbc.update("INSERT INTO claim_number (sheet, last_number) VALUES (?, 1)", sheet);
+-                return 1;
+-            } catch (DuplicateKeyException raced) {
+-                // Another user took the sheet's first number at the same moment: take the one after it.
+-            }
++    public int nextNumber(String sheet, List<String> tree) {
++        try {
++            jdbc.update("INSERT INTO claim_number (sheet, last_number) VALUES (?, 0)", sheet);
++        } catch (DuplicateKeyException exists) {
++            // The sheet has given a number already: its counter is in place.
+         }
++        java.util.TreeSet<String> sheets = new java.util.TreeSet<>(tree);
++        sheets.add(sheet);
++        String in = String.join(", ", java.util.Collections.nCopies(sheets.size(), "?"));
++        List<Integer> lasts = jdbc.queryForList("SELECT last_number FROM claim_number WHERE sheet IN (" + in
++                + ") ORDER BY sheet FOR UPDATE", Integer.class, sheets.toArray());
++        int next = lasts.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
++        jdbc.update("UPDATE claim_number SET last_number = ? WHERE sheet = ?", next, sheet);
++        return next;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 815dd516..5d75ef67 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -311,6 +311,16 @@ public class Settings {
+         return List.copyOf(found);
+     }
+ 
++    /** Every sheet of the sheet's whole tree: its topmost ancestor then all that ancestor's descendants, each once. */
++    public List<String> wholeTree(String sheet) {
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheet));
++        String root = sheet;
++        for (String up = parent(root); !up.isEmpty() && seen.add(up); up = parent(up)) {
++            root = up;
++        }
++        return family(root);
++    }
++
+     /** The other sheets of the sheet's tree: its ancestors, then its descendants (theirs too), each once. */
+     public List<String> tree(String sheet) {
+         java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
