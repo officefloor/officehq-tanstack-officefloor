@@ -37,9 +37,19 @@ public class ChangeClaimStatus {
         if (!repository.changeStatus(id, cid, from, to)) {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
-        Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to);
+        // Opening gives the sheet's next number; voiding clears it, but its line carries the number it had.
+        Long number = found.number();
+        Long had = number;
+        if (to.equals("OPEN")) {
+            number = had = repository.number(id, cid);
+        } else if (to.equals("VOID")) {
+            repository.clearNumber(id, cid);
+            number = null;
+        }
+        Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
+                number);
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
-                + " amount=" + changed.amount() + " date=" + changed.date());
+                + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(had));
         claim.set(changed);
     }
 }

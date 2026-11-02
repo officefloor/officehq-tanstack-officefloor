@@ -4,8 +4,17 @@ import { getJson } from '../../api/http';
 /** A claim's status: DRAFT -> OPEN -> SETTLED; a DRAFT or OPEN claim can become VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note and its status. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+/** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status and its number on
+ *  the sheet (given when it is opened; null while a draft and once void). */
+export type Claim = {
+  id: number;
+  personId: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: number | null;
+};
 
 /** Whether a claim counts toward claimed and every total: only OPEN and SETTLED claims do. */
 export function counts(c: Claim): boolean {

@@ -14,11 +14,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
-            rs.getString("note"), rs.getString("status"));
+            rs.getString("note"), rs.getString("status"),
+            rs.getObject("claim_no", Long.class));
 
     private final JdbcTemplate jdbc;
 
@@ -53,6 +54,20 @@ public class ClaimRepository {
                 args.toArray()) > 0;
     }
 
+    /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
+     *  transaction commits, so two claims opened at once get consecutive numbers. */
+    public long number(String sheetId, long claimId) {
+        jdbc.update("UPDATE sheet SET claim_number = claim_number + 1 WHERE id = ?", sheetId);
+        Long next = jdbc.queryForObject("SELECT claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
+        jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", next, claimId, sheetId);
+        return next;
+    }
+
+    /** Clear a claim's number (it is never given to another claim). */
+    public void clearNumber(String sheetId, long claimId) {
+        jdbc.update("UPDATE claim SET claim_no = NULL WHERE id = ? AND sheet_id = ?", claimId, sheetId);
+    }
+
     /** The name of a person on the sheet. */
     public String personName(String sheetId, long personId) {
         return jdbc.queryForObject("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
@@ -72,7 +87,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT");
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null);
     }
 
     /** Change a claim's amount, date and note; false when the sheet has no such claim. */
