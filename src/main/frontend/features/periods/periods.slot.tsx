@@ -106,8 +106,8 @@ function Periods({ sheetId }: { sheetId: string }) {
   );
 }
 
-/** One period's row; closing it fixes its due-total. A refused close shows its error, cleared when
- *  the next action on the row is taken. */
+/** One period's row; closing it fixes its due-total, reopening it (a steward only) makes it live again.
+ *  A refused close or reopen shows its error, cleared when the next action on the row is taken. */
 function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
   const closeOnce = useSingleFlight();
@@ -121,6 +121,17 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
   });
+  const reopen = useMutation({
+    mutationFn: () =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(p.name)}/reopen`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const error = close.error ?? reopen.error;
 
   return (
     <tr data-testid={`period-row-${p.name}`}>
@@ -137,13 +148,28 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
           onClick={() =>
             closeOnce(() => {
               close.reset();
+              reopen.reset();
               return close.mutateAsync();
             })
           }
         >
           Close
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-reopen"
+          disabled={reopen.isPending}
+          onClick={() =>
+            closeOnce(() => {
+              close.reset();
+              reopen.reset();
+              return reopen.mutateAsync();
+            })
+          }
+        >
+          Reopen
         </button>
-        {close.isError && <span data-testid="period-error">{close.error.message}</span>}
+        {error && <span data-testid="period-error">{error.message}</span>}
       </td>
     </tr>
   );

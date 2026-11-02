@@ -58,6 +58,12 @@ public class PeriodRepository {
                 periodId, sheetId);
     }
 
+    /** Reopen a closed period, dropping its fixed due-total. */
+    public void reopen(String sheetId, long periodId) {
+        jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE id = ? AND sheet_id = ?", periodId,
+                sheetId);
+    }
+
     /** Whether the sheet has a period of this name, without regard to case. */
     public boolean named(String sheetId, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND name_key = LOWER(?)",
