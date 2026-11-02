@@ -1,0 +1,401 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 62f71dd3..670e9447 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -3,7 +3,7 @@ import { useReadScope } from '../../query/live';
+ import { gradeOn, setAsideOn, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
+-import { useSheetToday } from '../sheet/sheet';
++import { useSheet, useSheetToday } from '../sheet/sheet';
+ import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
+ 
+ /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
+@@ -405,9 +405,12 @@ export function useSheetTotals(sheet: string): {
+   };
+ }
+ 
+-/** Every tag ever carried by a claim on the sheet, or carried by a person on it, sorted. */
+-export function sheetTags(claims: Claim[], people: Person[] = []): string[] {
+-  return [...new Set([...claims.flatMap((c) => [...c.tagsEver, ...c.tags]), ...people.flatMap((p) => p.tags)])].sort();
++/** Every tag ever carried by a claim on the sheet (`gone`: by claims since gone from it), or carried by a person on it,
++ *  sorted. */
++export function sheetTags(claims: Claim[], people: Person[] = [], gone: string[] = []): string[] {
++  return [
++    ...new Set([...claims.flatMap((c) => [...c.tagsEver, ...c.tags]), ...people.flatMap((p) => p.tags), ...gone]),
++  ].sort();
+ }
+ 
+ /** The due-total of each tag ever used on the sheet (in hundredths): the dues of the claims that count (see
+@@ -419,8 +422,9 @@ export function useTagDueTotals(sheet: string): { tag: string; cents: bigint }[]
+   const { data: rates = [] } = useRates(sheet);
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
++  const { data: shown } = useSheet(sheet);
+   const byId = new Map(people.map((p) => [p.id, p]));
+-  const totals = new Map(sheetTags(all, people).map((t) => [t, 0n]));
++  const totals = new Map(sheetTags(all, people, shown?.tagsGone).map((t) => [t, 0n]));
+   for (const c of counted(all, people)) {
+     const person = byId.get(c.person);
+     if (person === undefined) continue;
+diff --git a/src/main/frontend/features/people/inline-grade.slot.tsx b/src/main/frontend/features/people/inline-grade.slot.tsx
+new file mode 100644
+index 00000000..3bbaded1
+--- /dev/null
++++ b/src/main/frontend/features/people/inline-grade.slot.tsx
+@@ -0,0 +1,69 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useIsLatest } from '../../query/useIsLatest';
++import { byUser } from '../session/session';
++import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import { GRADES, peopleKey, peoplePath, personActionKey } from './people';
++import type { Grade, Person } from './people';
++
++function InlineGradeHeader() {
++  return <th>Set grade</th>;
++}
++
++// The row's grade select (showing the person's grade until another is chosen) and the button that saves the chosen
++// grade from the sheet's today, exactly as the person form would with its from-date blank.
++function PersonInlineGrade({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [chosen, setChosen] = useState<Grade | null>(null);
++  const grade = chosen ?? person.grade;
++  const save = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
++    mutationFn: (body: { grade: Grade }) =>
++      postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/grade`, user), body),
++    onSuccess: (updated) => {
++      queryClient.setQueryData(peopleKey(sheet), updated);
++      setChosen(null);
++    },
++  });
++  const act = useSubmitOnce(save);
++  const latest = useIsLatest(personActionKey(sheet, person.id), save.submittedAt);
++
++  return (
++    <td>
++      <select
++        data-testid="person-inline-grade"
++        value={grade}
++        onChange={(e) => {
++          setChosen(e.target.value as Grade);
++          save.reset();
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="person-inline-grade-save"
++        disabled={save.isPending}
++        onClick={() => act({ grade })}
++      >
++        Save grade
++      </button>
++      {save.isError && latest && (
++        <span data-testid="person-error" role="alert">
++          {' '}That grade was refused.
++        </span>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeaders.fill({ order: 4, Component: InlineGradeHeader }),
++  PersonColumns.fill({ order: 4, Component: PersonInlineGrade }),
++];
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index 98a69846..de3527ba 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -1,8 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { useReadScope } from '../../query/live';
+ 
+-/** `lastBatch`: the number of the sheet's last bulk settle batch, null when there has been none. */
+-export type Sheet = { id: string; today: string; archived: boolean; lastBatch: number | null };
++/** `lastBatch`: the number of the sheet's last bulk settle batch, null when there has been none. `tagsGone`: the tags
++ *  claims carried on the sheet before leaving it (a transfer takes them away), sorted. */
++export type Sheet = { id: string; today: string; archived: boolean; lastBatch: number | null; tagsGone: string[] };
+ 
+ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java b/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
+index f92ab7e4..3c6b77aa 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetSnapshots.java
+@@ -35,8 +35,9 @@ public class SheetSnapshots {
+     /** Tables that are history themselves, never part of what a sheet shows. */
+     private static final Set<String> SKIP = Set.of("FLYWAY_SCHEMA_HISTORY", "SHEET_STATE", "SHEET_SNAPSHOT");
+ 
+-    /** A table kept per sheet: its stored columns and how its rows of one sheet are found. */
+-    private record Kept(String table, String columns, String scope) {
++    /** A table kept per sheet: its stored columns, how its rows of one sheet are found, and its primary key (null when it
++     *  has none kept). */
++    private record Kept(String table, String columns, String scope, String key) {
+     }
+ 
+     private final JdbcTemplate jdbc;
+@@ -91,8 +92,15 @@ public class SheetSnapshots {
+                 String scope = "SHEET".equals(next) ? "ID = ?"
+                         : cols.contains("SHEET") ? "SHEET = ?"
+                         : cols.contains("PERSON_ID") ? "PERSON_ID IN (SELECT ID FROM PERSON WHERE SHEET = ?)" : null;
++                List<String> key = new ArrayList<>();
++                try (ResultSet rs = meta.getPrimaryKeys(null, "PUBLIC", next)) {
++                    while (rs.next()) {
++                        key.add(rs.getString("COLUMN_NAME"));
++                    }
++                }
+                 if (scope != null) {
+-                    out.add(new Kept(next, String.join(", ", cols), scope));
++                    out.add(new Kept(next, String.join(", ", cols), scope,
++                            key.isEmpty() || !cols.containsAll(key) ? null : String.join(", ", key)));
+                 }
+             }
+             try (Statement st = con.createStatement()) {
+@@ -140,6 +148,12 @@ public class SheetSnapshots {
+             for (int i = kept.size() - 1; i >= 0; i--) {
+                 Kept k = kept.get(i);
+                 jdbc.update("DELETE FROM " + k.table() + " WHERE " + k.scope(), sheet);
++                // A row moved to another sheet since (keeping its key, as a transferred statement does) is put back
++                // here, so it is taken from where it is now.
++                if (!found.isEmpty() && k.key() != null) {
++                    jdbc.update("DELETE FROM " + k.table() + " WHERE (" + k.key() + ") IN (SELECT " + k.key() + " FROM "
++                            + k.table() + SHADOW + " WHERE SNAPSHOT_ID = ?)", found.get(0));
++                }
+             }
+             if (!found.isEmpty()) {
+                 for (Kept k : kept) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SheetTags.java b/src/main/java/net/officefloor/hq/app/claim/SheetTags.java
+new file mode 100644
+index 00000000..4e298d5b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SheetTags.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.Collection;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The tags claims carried on a sheet before they left it, kept so the sheet still counts them as ever used. */
++@Repository
++public class SheetTags {
++    private final JdbcTemplate jdbc;
++
++    public SheetTags(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Keeps each of the claims' tags (current or ever carried) as used on the sheet. */
++    public void keepOf(String sheet, Collection<Long> claimIds) {
++        for (long id : claimIds) {
++            List<String> kept = jdbc.queryForList("SELECT tags || ',' || tags_ever FROM claim WHERE sheet = ? AND id = ?",
++                    String.class, sheet, id);
++            for (String all : kept) {
++                for (String tag : all.split(",")) {
++                    if (!tag.isEmpty()) {
++                        jdbc.update("MERGE INTO sheet_tag (sheet, tag) KEY (sheet, tag) VALUES (?, ?)", sheet, tag);
++                    }
++                }
++            }
++        }
++    }
++
++    /** The tags kept for the sheet, sorted. */
++    public List<String> list(String sheet) {
++        return jdbc.queryForList("SELECT tag FROM sheet_tag WHERE sheet = ? ORDER BY tag", String.class, sheet);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradePerson.java b/src/main/java/net/officefloor/hq/app/person/GradePerson.java
+new file mode 100644
+index 00000000..0bc9f673
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/GradePerson.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.SheetClock;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Saves the row's chosen grade exactly as the person form would with its from-date blank (the sheet's today), keeping
++ * everything else as stored: the same refusals, and the same PERSON_EDITED and rollup lines.
++ */
++public class GradePerson {
++    public void grade(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
++            @Val InlineGradeRequest request, People people, SheetClock clock, Audit audit, Rollup rollup)
++            throws DuplicatePersonNameException, StalePersonException, InvalidPersonException {
++        if (people.usedInTree(sheet, person.name()) || people.aliasClashes(sheet, person.id())) {
++            throw new DuplicatePersonNameException(person.name());
++        }
++        SavePerson.apply(sheet, user, person,
++                new PersonRequest(person.name(), request.grade(), null, null,
++                        person.terms() == null ? "" : person.terms().toString(),
++                        person.contact() == null ? "" : person.contact(), null),
++                people, clock, audit, rollup);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java b/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java
+new file mode 100644
+index 00000000..9ae510c1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of POST /api/sheets/{sheet}/people/{person}/grade: the grade the row's select chose. */
++public record InlineGradeRequest(String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index 996b85ec..be09475c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -10,6 +10,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.alias.Aliases;
+ import net.officefloor.hq.app.claim.ClaimStatusChanger;
+ import net.officefloor.hq.app.claim.Claims;
++import net.officefloor.hq.app.claim.SheetTags;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.rollup.Rollup;
+@@ -48,10 +49,11 @@ public class PersonTransferrer {
+     private final Audit audit;
+     private final Rollup rollup;
+     private final Statements statements;
++    private final SheetTags sheetTags;
+ 
+     public PersonTransferrer(JdbcTemplate jdbc, People people, Aliases aliases, Claims claims,
+             ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup,
+-            Statements statements) {
++            Statements statements, SheetTags sheetTags) {
+         this.jdbc = jdbc;
+         this.people = people;
+         this.aliases = aliases;
+@@ -62,6 +64,7 @@ public class PersonTransferrer {
+         this.audit = audit;
+         this.rollup = rollup;
+         this.statements = statements;
++        this.sheetTags = sheetTags;
+     }
+ 
+     /** Transfers the person to the sheet {@code to}, writing nothing when it is refused. */
+@@ -171,8 +174,9 @@ public class PersonTransferrer {
+         // Statements go with them, the receiving person's last staying theirs.
+         statements.move(sheet, f, to, t);
+ 
+-        // They leave this sheet entirely.
++        // They leave this sheet entirely, the tags their claims carried still counting as used on it.
+         if (!moved.isEmpty()) {
++            sheetTags.keepOf(sheet, moved.keySet());
+             String in = moved.keySet().stream().map(String::valueOf).collect(Collectors.joining(","));
+             jdbc.update("DELETE FROM claim_log WHERE sheet = ? AND claim IN (" + in + ")", sheet);
+             jdbc.update("DELETE FROM claim_comment WHERE sheet = ? AND claim IN (" + in + ")", sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java b/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java
+new file mode 100644
+index 00000000..fa237257
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.person;
++
++import java.util.Set;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateInlineGrade {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void validate(@RequestBody InlineGradeRequest request, Out<InlineGradeRequest> body)
++            throws InvalidPersonException {
++        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
++        if (!GRADES.contains(grade)) {
++            throw new InvalidPersonException("Grade must be A, B or C");
++        }
++        body.set(new InlineGradeRequest(grade));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index ca03c834..3095e217 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -1,13 +1,14 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ import net.officefloor.hq.app.claim.SettleBatches;
++import net.officefloor.hq.app.claim.SheetTags;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class RespondWithSheet {
+     public void respond(@PathVariable("sheet") String sheet, SheetClock clock, SheetArchive archive, SettleBatches batches,
+-            ObjectResponse<SheetResponse> response) {
++            SheetTags tags, ObjectResponse<SheetResponse> response) {
+         response.send(new SheetResponse(sheet, clock.today(sheet).toString(), archive.archived(sheet),
+-                batches.last(sheet)));
++                batches.last(sheet), tags.list(sheet)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index f5919343..7c4f0f39 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet as the screen shows it: its id, its today (ISO yyyy-MM-dd) whether it is archived, and the number of its last bulk settle batch (null when none). */
+-public record SheetResponse(String id, String today, boolean archived, Integer lastBatch) {
++import java.util.List;
++
++/** A sheet as the screen shows it: its id, its today (ISO yyyy-MM-dd) whether it is archived, the number of its last bulk settle batch (null when none), and the tags claims carried on it before leaving it (sorted). */
++public record SheetResponse(String id, String today, boolean archived, Integer lastBatch, List<String> tagsGone) {
+ }
+diff --git a/src/main/resources/db/migration/V67__sheet_tag.sql b/src/main/resources/db/migration/V67__sheet_tag.sql
+new file mode 100644
+index 00000000..79340a9e
+--- /dev/null
++++ b/src/main/resources/db/migration/V67__sheet_tag.sql
+@@ -0,0 +1,7 @@
++-- The tags claims carried on a sheet before leaving it (a person's transfer takes their claims away), so the sheet
++-- still lists a due-total for every tag ever used on it.
++CREATE TABLE sheet_tag (
++    sheet VARCHAR(200)  NOT NULL,
++    tag   VARCHAR(4000) NOT NULL,
++    PRIMARY KEY (sheet, tag)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/grade.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/grade.POST.yml
+new file mode 100644
+index 00000000..e91e335e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/grade.POST.yml
+@@ -0,0 +1,16 @@
++# Gives the person the grade from the sheet's today, exactly as the person form would. Validate before load so a bad
++# grade is a 400, not masked by a 404. Responds with the sheet's people.
++validate:
++  class: net.officefloor.hq.app.person.ValidateInlineGrade
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: grade
++grade:
++  class: net.officefloor.hq.app.person.GradePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPeople
++  govern: [ transaction ]
