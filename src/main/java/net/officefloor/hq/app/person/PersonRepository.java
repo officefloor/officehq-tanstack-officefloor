@@ -22,8 +22,9 @@ public class PersonRepository {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
-                (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"), rs.getString("grade")), sheetId);
+        return jdbc.query("SELECT id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
+                (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"), rs.getString("grade"),
+                        rs.getLong("version")), sheetId);
     }
 
     /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name, ignoring case. */
@@ -44,12 +45,21 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), name, grade);
+        return new Person(keys.getKey().longValue(), name, grade, 1);
     }
 
-    /** Change a person's name and grade; false when the sheet has no such person. */
-    public boolean update(String sheetId, Person person) {
-        return jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ? AND sheet_id = ?",
-                person.name(), person.grade(), person.id(), sheetId) > 0;
+    /** Whether the sheet has this person. */
+    public boolean exists(String sheetId, long id) {
+        Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE id = ? AND sheet_id = ?",
+                Integer.class, id, sheetId);
+        return known != null && known > 0;
+    }
+
+    /** Change a person's name and grade, if they are still at {@code version}, moving them to the
+     *  next version; false when the sheet has no such person at that version. */
+    public boolean update(String sheetId, long id, long version, String name, String grade) {
+        return jdbc.update(
+                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
+                name, grade, id, sheetId, version) > 0;
     }
 }

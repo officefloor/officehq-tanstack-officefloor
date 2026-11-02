@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { usePeople } from '../people/usePeople';
@@ -42,6 +43,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     setNote('');
   };
 
+  const submitOnce = useSingleFlight();
   const save = useMutation({
     mutationFn: (f: { id: number | null; amount: string; date: string; note: string }) => {
       const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
@@ -99,8 +101,10 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           data-testid="claim-form"
           onSubmit={(e) => {
             e.preventDefault();
-            save.reset();
-            save.mutate({ id: editing, amount, date, note });
+            submitOnce(() => {
+              save.reset();
+              return save.mutateAsync({ id: editing, amount, date, note });
+            });
           }}
         >
           <label>

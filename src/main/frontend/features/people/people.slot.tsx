@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { HttpError, postJson } from '../../api/http';
+import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
-import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
+import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
- *  list of everyone in the order they were added. Each person is a <tbody> so features can add
+ *  list of everyone in the order they were added. The editor remembers the version of the person
+ *  it loaded; when someone else has saved them since, the save is refused (409) and the editor
+ *  shows their current values, at their current version. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). */
 function People({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
@@ -14,17 +17,36 @@ function People({ sheetId }: { sheetId: string }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
+  const [version, setVersion] = useState<number | null>(null);
 
+  const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; name: string; grade: string }) => {
+    mutationFn: (f: { id: number | null; name: string; grade: string; version: number | null }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
-      return postJson<Person>(f.id === null ? base : `${base}/${f.id}`, { name: f.name, grade: f.grade });
+      return f.id === null
+        ? postJson<Person>(base, { name: f.name, grade: f.grade })
+        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, version: f.version });
     },
     onSuccess: async () => {
       setEditing(null);
       setName('');
       setGrade('A');
+      setVersion(null);
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+    },
+    onError: async (err, f) => {
+      if (!(err instanceof HttpError && err.status === 409) || f.id === null) return;
+      const people = await queryClient.fetchQuery({
+        queryKey: peopleKey(sheetId),
+        queryFn: () => fetchPeople(sheetId),
+        staleTime: 0,
+      });
+      const current = people.find((p) => p.id === f.id);
+      if (current) {
+        setName(current.name);
+        setGrade(current.grade);
+        setVersion(current.version);
+      }
     },
   });
 
@@ -33,6 +55,7 @@ function People({ sheetId }: { sheetId: string }) {
     setEditing(p.id);
     setName(p.name);
     setGrade(p.grade);
+    setVersion(p.version);
   };
 
   const cancel = () => {
@@ -40,6 +63,7 @@ function People({ sheetId }: { sheetId: string }) {
     setEditing(null);
     setName('');
     setGrade('A');
+    setVersion(null);
   };
 
   return (
@@ -48,8 +72,10 @@ function People({ sheetId }: { sheetId: string }) {
         data-testid="person-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate({ id: editing, name, grade });
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync({ id: editing, name, grade, version });
+          });
         }}
       >
         <label>

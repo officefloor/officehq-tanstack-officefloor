@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSingleFlight } from '../../query/useSingleFlight';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/useClaims';
@@ -19,6 +20,7 @@ function Rates({ sheetId }: { sheetId: string }) {
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
 
+  const submitOnce = useSingleFlight();
   const save = useMutation({
     mutationFn: (f: { grade: string; pct: string; from: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, f),
@@ -35,8 +37,10 @@ function Rates({ sheetId }: { sheetId: string }) {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate({ grade, pct, from });
+          submitOnce(() => {
+            save.reset();
+            return save.mutateAsync({ grade, pct, from });
+          });
         }}
       >
         <label>

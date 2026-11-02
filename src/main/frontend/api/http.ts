@@ -5,6 +5,13 @@
 // Every request carries the signed-in name in X-User (the server records it as `by=<user>`).
 let signedInUser = '';
 
+/** A non-2xx answer: the server's message, and its status (409 when someone else saved first). */
+export class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 /** Called by the session (features/session) whenever the signed-in name changes. */
 export function setSignedInUser(name: string): void {
   signedInUser = name;
@@ -22,7 +29,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* no JSON body: keep the status message */
     }
-    throw new Error(message);
+    throw new HttpError(message, res.status);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
